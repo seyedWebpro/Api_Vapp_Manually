@@ -36,6 +36,18 @@ namespace Api_Vapp.Models
         // فعال/غیرفعال
         public bool IsActive { get; set; } = true;
 
+        // وضعیت تأیید ادمین (Pending, Approved, Rejected)
+        public string ApprovalStatus { get; set; } = "Pending";
+
+        // تاریخ تأیید توسط ادمین
+        public DateTime? ApprovedAt { get; set; }
+
+        // شناسه ادمین تأییدکننده
+        public int? ApprovedByUserId { get; set; }
+
+        // دلیل رد توسط ادمین
+        public string? RejectionReason { get; set; }
+
         // حذف شده (Soft Delete)
         public bool IsDeleted { get; set; } = false;
 

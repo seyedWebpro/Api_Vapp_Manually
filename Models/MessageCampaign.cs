@@ -57,8 +57,20 @@ namespace Api_Vapp.Models
         // وضعیت کیف پول (Sufficient, Insufficient)
         public string WalletStatus { get; set; } = "Unknown";
 
-        // وضعیت کمپین (Draft, Pending, Sending, Sent, Failed, Cancelled)
-        public string Status { get; set; } = "Draft"; // Draft, Pending, Sending, Sent, Failed, Cancelled
+        // وضعیت کمپین (Draft, Pending, PendingApproval, Sending, Sent, Failed, Cancelled)
+        public string Status { get; set; } = "Draft"; // Draft, Pending, PendingApproval, Sending, Sent, Failed, Cancelled
+
+        // وضعیت تأیید ادمین (Pending, Approved, Rejected)
+        public string AdminApprovalStatus { get; set; } = "Pending";
+
+        // تاریخ تأیید توسط ادمین
+        public DateTime? AdminApprovedAt { get; set; }
+
+        // شناسه ادمین تأییدکننده
+        public int? AdminApprovedByUserId { get; set; }
+
+        // دلیل رد توسط ادمین
+        public string? AdminRejectionReason { get; set; }
 
         // فعال/غیرفعال بودن کمپین
         public bool IsActive { get; set; } = true;

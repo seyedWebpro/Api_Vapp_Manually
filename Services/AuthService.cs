@@ -13,6 +13,7 @@ namespace Api_Vapp.Services
     public class AuthService : IAuthService
     {
         private readonly IUserRepository _userRepository;
+        private readonly IUserRoleRepository _userRoleRepository;
         private readonly IJwtService _jwtService;
         private readonly ISmsService _smsService;
         private readonly IRefreshTokenService _refreshTokenService;
@@ -28,6 +29,7 @@ namespace Api_Vapp.Services
 
         public AuthService(
             IUserRepository userRepository,
+            IUserRoleRepository userRoleRepository,
             IJwtService jwtService,
             ISmsService smsService,
             IRefreshTokenService refreshTokenService,
@@ -37,6 +39,7 @@ namespace Api_Vapp.Services
             ILogger<AuthService> logger)
         {
             _userRepository = userRepository;
+            _userRoleRepository = userRoleRepository;
             _jwtService = jwtService;
             _smsService = smsService;
             _refreshTokenService = refreshTokenService;
@@ -44,6 +47,17 @@ namespace Api_Vapp.Services
             _cache = cache;
             _context = context;
             _logger = logger;
+        }
+
+        private async Task<string> GenerateAccessTokenWithRolesAsync(User user)
+        {
+            var userRoles = await _userRoleRepository.GetActiveUserRolesAsync(user.Id);
+            var roleNames = userRoles
+                .Where(ur => ur.Role != null && ur.Role.IsActive && !ur.Role.IsDeleted)
+                .Select(ur => ur.Role.Name)
+                .ToList();
+
+            return _jwtService.GenerateAccessToken(user, roleNames);
         }
 
         /// <summary>
@@ -311,7 +325,7 @@ namespace Api_Vapp.Services
                     await _userRepository.AddAsync(user);
 
                     // تولید توکن‌ها
-                    var accessToken = _jwtService.GenerateAccessToken(user);
+                    var accessToken = await GenerateAccessTokenWithRolesAsync(user);
                     var refreshToken = await _refreshTokenService.CreateRefreshTokenAsync(user.Id);
 
                     await transaction.CommitAsync();
@@ -609,7 +623,7 @@ namespace Api_Vapp.Services
                 _cache.Remove(attemptKey);
 
                 // تولید توکن‌ها
-                var accessToken = _jwtService.GenerateAccessToken(user);
+                var accessToken = await GenerateAccessTokenWithRolesAsync(user);
                 var refreshToken = await _refreshTokenService.CreateRefreshTokenAsync(user.Id);
 
                 _logger.LogInformation("User logged in successfully: {PhoneNumber} from IP {IpAddress}", 
@@ -939,7 +953,7 @@ namespace Api_Vapp.Services
                 _cache.Remove(attemptKey);
 
                 // تولید توکن‌ها
-                var accessToken = _jwtService.GenerateAccessToken(user);
+                var accessToken = await GenerateAccessTokenWithRolesAsync(user);
                 var refreshToken = await _refreshTokenService.CreateRefreshTokenAsync(user.Id);
 
                 _logger.LogInformation("Password reset successfully for {PhoneNumber} from IP {IpAddress}", 
@@ -1025,7 +1039,7 @@ namespace Api_Vapp.Services
 
                 // تولید توکن‌های جدید
                 // Refresh Token جدید با همان Expiration Time اولیه ایجاد می‌شود (برای 24 ساعت لاگین بودن)
-                var accessToken = _jwtService.GenerateAccessToken(user);
+                var accessToken = await GenerateAccessTokenWithRolesAsync(user);
                 var newRefreshToken = await _refreshTokenService.CreateRefreshTokenAsync(user.Id, originalExpiresAt);
 
                 _logger.LogInformation("Token refreshed successfully for user {UserId} from IP {IpAddress}", 

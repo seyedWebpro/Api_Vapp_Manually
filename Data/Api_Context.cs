@@ -37,6 +37,14 @@ namespace Api_Vapp.Data
         public DbSet<ContactCashbackBalance> ContactCashbackBalances { get; set; }
         public DbSet<ManualCashbackTransaction> ManualCashbackTransactions { get; set; }
 
+        // پنل ادمین
+        public DbSet<SubscriptionPlan> SubscriptionPlans { get; set; }
+        public DbSet<UserSubscription> UserSubscriptions { get; set; }
+        public DbSet<SupportTicket> SupportTickets { get; set; }
+        public DbSet<TicketMessage> TicketMessages { get; set; }
+        public DbSet<EducationalVideo> EducationalVideos { get; set; }
+        public DbSet<SmsApprovalRequest> SmsApprovalRequests { get; set; }
+
         public Api_Context(DbContextOptions<Api_Context> options) : base(options)
         {
         }
@@ -984,6 +992,117 @@ namespace Api_Vapp.Data
                 entity.HasIndex(mct => mct.UserId);
                 entity.HasIndex(mct => mct.TransactionType);
                 entity.HasIndex(mct => mct.CreatedAt);
+            });
+
+            // تنظیمات SubscriptionPlan
+            modelBuilder.Entity<SubscriptionPlan>(entity =>
+            {
+                entity.HasKey(p => p.Id);
+                entity.Property(p => p.Id).ValueGeneratedOnAdd();
+                entity.Property(p => p.Name).IsRequired().HasMaxLength(200);
+                entity.Property(p => p.TierCode).IsRequired().HasMaxLength(50);
+                entity.Property(p => p.Description).HasMaxLength(1000);
+                entity.Property(p => p.Price).HasPrecision(18, 2);
+                entity.Property(p => p.IsActive).HasDefaultValue(true);
+                entity.Property(p => p.IsDeleted).HasDefaultValue(false);
+                entity.Property(p => p.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+                entity.HasIndex(p => p.TierCode);
+                entity.HasIndex(p => p.IsActive);
+            });
+
+            // تنظیمات UserSubscription
+            modelBuilder.Entity<UserSubscription>(entity =>
+            {
+                entity.HasKey(us => us.Id);
+                entity.Property(us => us.Id).ValueGeneratedOnAdd();
+                entity.Property(us => us.Status).IsRequired().HasMaxLength(50).HasDefaultValue("Active");
+                entity.Property(us => us.IsDeleted).HasDefaultValue(false);
+                entity.Property(us => us.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+                entity.HasOne(us => us.User).WithMany().HasForeignKey(us => us.UserId).OnDelete(DeleteBehavior.NoAction);
+                entity.HasOne(us => us.Plan).WithMany(p => p.UserSubscriptions).HasForeignKey(us => us.SubscriptionPlanId).OnDelete(DeleteBehavior.NoAction);
+                entity.HasIndex(us => us.UserId);
+                entity.HasIndex(us => us.Status);
+            });
+
+            // تنظیمات SupportTicket
+            modelBuilder.Entity<SupportTicket>(entity =>
+            {
+                entity.HasKey(t => t.Id);
+                entity.Property(t => t.Id).ValueGeneratedOnAdd();
+                entity.Property(t => t.Subject).IsRequired().HasMaxLength(300);
+                entity.Property(t => t.Status).IsRequired().HasMaxLength(50).HasDefaultValue("Open");
+                entity.Property(t => t.Priority).IsRequired().HasMaxLength(50).HasDefaultValue("Normal");
+                entity.Property(t => t.IsDeleted).HasDefaultValue(false);
+                entity.Property(t => t.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+                entity.HasOne(t => t.User).WithMany().HasForeignKey(t => t.UserId).OnDelete(DeleteBehavior.NoAction);
+                entity.HasOne(t => t.AssignedToUser).WithMany().HasForeignKey(t => t.AssignedToUserId).OnDelete(DeleteBehavior.NoAction);
+                entity.HasIndex(t => t.UserId);
+                entity.HasIndex(t => t.Status);
+            });
+
+            // تنظیمات TicketMessage
+            modelBuilder.Entity<TicketMessage>(entity =>
+            {
+                entity.HasKey(m => m.Id);
+                entity.Property(m => m.Id).ValueGeneratedOnAdd();
+                entity.Property(m => m.Content).IsRequired().HasMaxLength(4000);
+                entity.Property(m => m.IsDeleted).HasDefaultValue(false);
+                entity.Property(m => m.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+                entity.HasOne(m => m.Ticket).WithMany(t => t.Messages).HasForeignKey(m => m.TicketId).OnDelete(DeleteBehavior.Cascade);
+                entity.HasOne(m => m.SenderUser).WithMany().HasForeignKey(m => m.SenderUserId).OnDelete(DeleteBehavior.NoAction);
+                entity.HasIndex(m => m.TicketId);
+            });
+
+            // تنظیمات EducationalVideo
+            modelBuilder.Entity<EducationalVideo>(entity =>
+            {
+                entity.HasKey(v => v.Id);
+                entity.Property(v => v.Id).ValueGeneratedOnAdd();
+                entity.Property(v => v.Title).IsRequired().HasMaxLength(300);
+                entity.Property(v => v.Description).HasMaxLength(1000);
+                entity.Property(v => v.VideoUrl).IsRequired().HasMaxLength(1000);
+                entity.Property(v => v.ThumbnailUrl).HasMaxLength(1000);
+                entity.Property(v => v.IsActive).HasDefaultValue(true);
+                entity.Property(v => v.IsDeleted).HasDefaultValue(false);
+                entity.Property(v => v.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+                entity.HasIndex(v => v.IsActive);
+                entity.HasIndex(v => v.SortOrder);
+            });
+
+            // تنظیمات SmsApprovalRequest
+            modelBuilder.Entity<SmsApprovalRequest>(entity =>
+            {
+                entity.HasKey(r => r.Id);
+                entity.Property(r => r.Id).ValueGeneratedOnAdd();
+                entity.Property(r => r.RequestType).IsRequired().HasMaxLength(50);
+                entity.Property(r => r.ContentPreview).IsRequired().HasMaxLength(4000);
+                entity.Property(r => r.TitlePreview).HasMaxLength(300);
+                entity.Property(r => r.Status).IsRequired().HasMaxLength(50).HasDefaultValue("Pending");
+                entity.Property(r => r.RejectionReason).HasMaxLength(1000);
+                entity.Property(r => r.IsDeleted).HasDefaultValue(false);
+                entity.Property(r => r.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+                entity.HasOne(r => r.User).WithMany().HasForeignKey(r => r.UserId).OnDelete(DeleteBehavior.NoAction);
+                entity.HasOne(r => r.MessageCampaign).WithMany().HasForeignKey(r => r.MessageCampaignId).OnDelete(DeleteBehavior.NoAction);
+                entity.HasOne(r => r.Message).WithMany().HasForeignKey(r => r.MessageId).OnDelete(DeleteBehavior.NoAction);
+                entity.HasOne(r => r.MessageSession).WithMany().HasForeignKey(r => r.MessageSessionId).OnDelete(DeleteBehavior.NoAction);
+                entity.HasOne(r => r.ReviewedByUser).WithMany().HasForeignKey(r => r.ReviewedByUserId).OnDelete(DeleteBehavior.NoAction);
+                entity.HasIndex(r => r.Status);
+                entity.HasIndex(r => r.UserId);
+                entity.HasIndex(r => r.MessageCampaignId);
+            });
+
+            // فیلدهای تأیید ادمین روی MessageTemplate
+            modelBuilder.Entity<MessageTemplate>(entity =>
+            {
+                entity.Property(t => t.ApprovalStatus).HasMaxLength(50).HasDefaultValue("Pending");
+                entity.Property(t => t.RejectionReason).HasMaxLength(1000);
+            });
+
+            // فیلدهای تأیید ادمین روی MessageCampaign
+            modelBuilder.Entity<MessageCampaign>(entity =>
+            {
+                entity.Property(c => c.AdminApprovalStatus).HasMaxLength(50).HasDefaultValue("Pending");
+                entity.Property(c => c.AdminRejectionReason).HasMaxLength(1000);
             });
         }
     }

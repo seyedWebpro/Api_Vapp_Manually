@@ -277,17 +277,21 @@ builder.Services.AddAuthorization(options =>
 
     if (isDevelopment && disableAuth)
     {
-        // در Development و با DisableAuth = true، Policy همیشه موفق است
         options.DefaultPolicy = new AuthorizationPolicyBuilder()
-            .RequireAssertion(_ => true) // همیشه موفق
+            .RequireAssertion(_ => true)
             .Build();
+
+        options.AddPolicy("AdminOnly", policy =>
+            policy.RequireAssertion(_ => true));
     }
     else
     {
-        // در Production یا Development با DisableAuth = false، احراز هویت لازم است
         options.DefaultPolicy = new AuthorizationPolicyBuilder()
             .RequireAuthenticatedUser()
             .Build();
+
+        options.AddPolicy("AdminOnly", policy =>
+            policy.RequireRole("Admin"));
     }
 });
 #endregion
@@ -355,6 +359,16 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.ICashbackService, Api_Vapp.Servic
 
 // ثبت سرویس تنظیمات اعلان‌ها
 builder.Services.AddScoped<Api_Vapp.Interfaces.INotificationSettingsService, Api_Vapp.Services.NotificationSettingsService>();
+
+// ثبت سرویس‌های پنل ادمین
+builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminSubscriptionPlanService, Api_Vapp.Services.Admin.AdminSubscriptionPlanService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminUserSubscriptionService, Api_Vapp.Services.Admin.AdminUserSubscriptionService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminSupportTicketService, Api_Vapp.Services.Admin.AdminSupportTicketService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IUserSupportTicketService, Api_Vapp.Services.Admin.UserSupportTicketService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminEducationalVideoService, Api_Vapp.Services.Admin.AdminEducationalVideoService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminMessageApprovalService, Api_Vapp.Services.Admin.AdminMessageApprovalService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminTemplateApprovalService, Api_Vapp.Services.Admin.AdminTemplateApprovalService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminDashboardService, Api_Vapp.Services.Admin.AdminDashboardService>();
 
 // ثبت Background Services برای پیام‌های خودکار و زمان‌دار
 builder.Services.AddHostedService<Api_Vapp.Services.BackgroundServices.AutomatedMessageBackgroundService>();

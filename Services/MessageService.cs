@@ -1,6 +1,7 @@
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.DTOs.Message;
 using Api_Vapp.DTOs.Sms;
+using Api_Vapp.Constants;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
 using Api_Vapp.Utilities;
@@ -1049,7 +1050,7 @@ namespace Api_Vapp.Services
             }
         }
 
-        public async Task<ApiResponse<bool>> ConfirmAndSendCampaignAsync(int campaignId, int userId)
+        public async Task<ApiResponse<bool>> ConfirmAndSendCampaignAsync(int campaignId, int userId, bool bypassAdminApproval = false)
         {
             try
             {
@@ -1065,32 +1066,52 @@ namespace Api_Vapp.Services
                     return ApiResponse<bool>.Forbidden("شما مجاز به ارسال این کمپین نیستید");
                 }
 
-                if (campaign.Status != "Draft" && campaign.Status != "Pending")
+                if (campaign.Status != "Draft" && campaign.Status != "Pending" && campaign.Status != "PendingApproval")
                 {
                     return ApiResponse<bool>.BadRequest("این کمپین قابل ارسال نیست");
                 }
 
-                // بررسی موجودی کیف پول
-                // غیرفعال شده - دیگر کیف پول چک نمی‌شود
-                /*
-                var user = await _userRepository.GetByIdAsync(userId);
-                if (user == null || user.WalletBalance < campaign.EstimatedTotalCost)
-                {
-                    return ApiResponse<bool>.BadRequest("موجودی کیف پول کافی نیست");
-                }
-                */
                 var user = await _userRepository.GetByIdAsync(userId);
                 if (user == null)
                 {
                     return ApiResponse<bool>.NotFound("کاربر یافت نشد");
                 }
 
-                // دریافت پیام
                 var message = await _messageRepository.GetByIdAsync(campaign.MessageId);
                 if (message == null)
                 {
                     return ApiResponse<bool>.NotFound("پیام مربوط به کمپین یافت نشد");
                 }
+
+                if (!bypassAdminApproval)
+                {
+                    var templateError = await ValidateTemplateApprovalForMessageAsync(message);
+                    if (templateError != null)
+                        return ApiResponse<bool>.BadRequest(templateError);
+
+                    if (campaign.AdminApprovalStatus != AdminApprovalStatuses.Approved)
+                    {
+                        campaign.AdminApprovalStatus = AdminApprovalStatuses.Pending;
+                        campaign.Status = "PendingApproval";
+                        campaign.UpdatedAt = DateTime.UtcNow;
+                        await _campaignRepository.UpdateAsync(campaign);
+                        await UpsertCampaignApprovalRequestAsync(campaign, message);
+
+                        return ApiResponse<bool>.CreateSuccess(
+                            true,
+                            "درخواست ارسال در صف تأیید ادمین قرار گرفت",
+                            202);
+                    }
+                }
+
+                // بررسی موجودی کیف پول
+                // غیرفعال شده - دیگر کیف پول چک نمی‌شود
+                /*
+                if (user.WalletBalance < campaign.EstimatedTotalCost)
+                {
+                    return ApiResponse<bool>.BadRequest("موجودی کیف پول کافی نیست");
+                }
+                */
 
                 campaign.Status = "Sending";
                 campaign.UpdatedAt = DateTime.UtcNow;
@@ -1484,6 +1505,7 @@ namespace Api_Vapp.Services
                     GroupId = createDto.GroupId,
                     IsDefault = false, // قالب‌های شخصی کاربر پیش‌فرض نیستند
                     IsActive = true,
+                    ApprovalStatus = AdminApprovalStatuses.Pending,
                     CreatedAt = DateTime.UtcNow
                 };
 
@@ -1721,9 +1743,22 @@ namespace Api_Vapp.Services
                 // برای حذف گروه از قالب، می‌توان از endpoint جداگانه استفاده کرد یا GroupId را به 0 تنظیم کرد
 
                 if (updateDto.Name != null) template.Name = updateDto.Name.Trim();
-                if (updateDto.Content != null) template.Content = updateDto.Content.Trim();
+                var contentChanged = false;
+                if (updateDto.Content != null)
+                {
+                    template.Content = updateDto.Content.Trim();
+                    contentChanged = true;
+                }
                 if (updateDto.Category != null) template.Category = updateDto.Category.Trim();
                 if (updateDto.Description != null) template.Description = updateDto.Description.Trim();
+
+                if (contentChanged || updateDto.Name != null)
+                {
+                    template.ApprovalStatus = AdminApprovalStatuses.Pending;
+                    template.ApprovedAt = null;
+                    template.ApprovedByUserId = null;
+                    template.RejectionReason = null;
+                }
                 
                 // تعیین مقدار Icon: اولویت با فایل آپلود شده، سپس Icon متنی
                 if (!string.IsNullOrWhiteSpace(uploadedIconPath))
@@ -3421,7 +3456,7 @@ namespace Api_Vapp.Services
         /// <summary>
         /// ارسال مستقیم پیام (بدون ایجاد کمپین) - برای استفاده در CalculateCampaignSummaryAsync و Background Services
         /// </summary>
-        public async Task<ApiResponse<DirectSendResultDto>> SendDirectMessageAsync(int userId, int messageId, SendDirectMessageDto sendDto, MessageSession? session = null)
+        public async Task<ApiResponse<DirectSendResultDto>> SendDirectMessageAsync(int userId, int messageId, SendDirectMessageDto sendDto, MessageSession? session = null, bool bypassAdminApproval = false)
         {
             var startTime = DateTime.UtcNow;
             try
@@ -3435,6 +3470,13 @@ namespace Api_Vapp.Services
                 if (message == null || message.UserId != userId)
                 {
                     return ApiResponse<DirectSendResultDto>.NotFound("پیام یافت نشد");
+                }
+
+                if (!bypassAdminApproval)
+                {
+                    var templateError = await ValidateTemplateApprovalForMessageAsync(message);
+                    if (templateError != null)
+                        return ApiResponse<DirectSendResultDto>.BadRequest(templateError);
                 }
                 
                 _logger.LogInformation("پیام یافت شد - Title: {Title}, Content Length: {ContentLength}, Parts: {Parts}", 
@@ -3546,6 +3588,30 @@ namespace Api_Vapp.Services
                 if (!recipients.Any())
                 {
                     return ApiResponse<DirectSendResultDto>.BadRequest("هیچ گیرنده‌ای برای ارسال وجود ندارد");
+                }
+
+                if (!bypassAdminApproval)
+                {
+                    var existingPending = await _context.SmsApprovalRequests
+                        .AnyAsync(r => r.MessageId == messageId
+                            && r.UserId == userId
+                            && r.MessageSessionId == session.Id
+                            && r.Status == AdminApprovalStatuses.Pending
+                            && !r.IsDeleted);
+
+                    if (existingPending)
+                    {
+                        return ApiResponse<DirectSendResultDto>.CreateSuccess(
+                            new DirectSendResultDto(),
+                            "درخواست ارسال در صف تأیید ادمین قرار دارد",
+                            202);
+                    }
+
+                    await UpsertDirectMessageApprovalRequestAsync(message, session, sendDto, recipients.Count);
+                    return ApiResponse<DirectSendResultDto>.CreateSuccess(
+                        new DirectSendResultDto(),
+                        "درخواست ارسال در صف تأیید ادمین قرار گرفت",
+                        202);
                 }
 
                 // اعتبارسنجی گیرندگان قبل از ارسال (مشکل 4.1)
@@ -5049,8 +5115,101 @@ namespace Api_Vapp.Services
                 IsActive = template.IsActive,
                 GroupId = template.GroupId,
                 GroupName = groupName,
+                ApprovalStatus = template.ApprovalStatus,
+                RejectionReason = template.RejectionReason,
+                ApprovedAt = template.ApprovedAt,
                 CreatedAt = template.CreatedAt
             };
+        }
+
+        private async Task<string?> ValidateTemplateApprovalForMessageAsync(Message message)
+        {
+            if (!message.TemplateId.HasValue)
+                return null;
+
+            var template = await _templateRepository.GetByIdAsync(message.TemplateId.Value);
+            if (template == null || template.IsDeleted)
+                return null;
+
+            if (template.ApprovalStatus != AdminApprovalStatuses.Approved)
+                return "قالب پیام هنوز توسط ادمین تأیید نشده است";
+
+            return null;
+        }
+
+        private async Task UpsertCampaignApprovalRequestAsync(MessageCampaign campaign, Message message)
+        {
+            var existing = await _context.SmsApprovalRequests
+                .FirstOrDefaultAsync(r => r.MessageCampaignId == campaign.Id
+                    && r.Status == AdminApprovalStatuses.Pending
+                    && !r.IsDeleted);
+
+            if (existing != null)
+            {
+                existing.ContentPreview = message.Content;
+                existing.TitlePreview = message.Title ?? campaign.Title;
+                existing.RecipientsCount = campaign.RecipientsCount;
+                existing.UpdatedAt = DateTime.UtcNow;
+            }
+            else
+            {
+                _context.SmsApprovalRequests.Add(new SmsApprovalRequest
+                {
+                    UserId = campaign.UserId,
+                    RequestType = SmsApprovalRequestTypes.Campaign,
+                    MessageCampaignId = campaign.Id,
+                    MessageId = message.Id,
+                    ContentPreview = message.Content,
+                    TitlePreview = message.Title ?? campaign.Title,
+                    RecipientsCount = campaign.RecipientsCount,
+                    Status = AdminApprovalStatuses.Pending,
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+
+            await _context.SaveChangesAsync();
+        }
+
+        private async Task UpsertDirectMessageApprovalRequestAsync(
+            Message message,
+            MessageSession session,
+            SendDirectMessageDto sendDto,
+            int recipientsCount)
+        {
+            var existing = await _context.SmsApprovalRequests
+                .FirstOrDefaultAsync(r => r.MessageId == message.Id
+                    && r.MessageSessionId == session.Id
+                    && r.Status == AdminApprovalStatuses.Pending
+                    && !r.IsDeleted);
+
+            var payload = JsonSerializer.Serialize(sendDto);
+
+            if (existing != null)
+            {
+                existing.ContentPreview = message.Content;
+                existing.TitlePreview = message.Title;
+                existing.RecipientsCount = recipientsCount;
+                existing.SendPayloadJson = payload;
+                existing.UpdatedAt = DateTime.UtcNow;
+            }
+            else
+            {
+                _context.SmsApprovalRequests.Add(new SmsApprovalRequest
+                {
+                    UserId = message.UserId,
+                    RequestType = SmsApprovalRequestTypes.DirectMessage,
+                    MessageId = message.Id,
+                    MessageSessionId = session.Id,
+                    ContentPreview = message.Content,
+                    TitlePreview = message.Title,
+                    RecipientsCount = recipientsCount,
+                    SendPayloadJson = payload,
+                    Status = AdminApprovalStatuses.Pending,
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+
+            await _context.SaveChangesAsync();
         }
 
         /// <summary>

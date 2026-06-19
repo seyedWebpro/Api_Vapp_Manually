@@ -23,7 +23,7 @@ namespace Api_Vapp.Interfaces
         Task<ApiResponse<CampaignResponseDto>> CreateCampaignAsync(int userId, CreateCampaignDto createDto);
         Task<ApiResponse<CampaignResponseDto>> GetCampaignByIdAsync(int campaignId, int userId);
         Task<ApiResponse<CampaignListResponseDto>> GetCampaignsAsync(int userId, int pageNumber = 1, int pageSize = 10, string? status = null);
-        Task<ApiResponse<bool>> ConfirmAndSendCampaignAsync(int campaignId, int userId);
+        Task<ApiResponse<bool>> ConfirmAndSendCampaignAsync(int campaignId, int userId, bool bypassAdminApproval = false);
         Task<ApiResponse<bool>> CancelCampaignAsync(int campaignId, int userId);
         Task<ApiResponse<bool>> ToggleCampaignStatusAsync(int campaignId, int userId, bool isActive);
 
@@ -47,7 +47,7 @@ namespace Api_Vapp.Interfaces
         Task<ApiResponse<RecipientListResponseDto>> SelectRecipientsAsync(int userId, SelectRecipientsDto selectDto);
 
         // Direct send operations (without campaign) - برای استفاده در Background Services
-        Task<ApiResponse<DirectSendResultDto>> SendDirectMessageAsync(int userId, int messageId, SendDirectMessageDto sendDto, MessageSession? session = null);
+        Task<ApiResponse<DirectSendResultDto>> SendDirectMessageAsync(int userId, int messageId, SendDirectMessageDto sendDto, MessageSession? session = null, bool bypassAdminApproval = false);
         
         // Quick send operations
         Task<ApiResponse<DirectSendResultDto>> QuickSendMessageAsync(int userId, QuickSendMessageDto quickSendDto);

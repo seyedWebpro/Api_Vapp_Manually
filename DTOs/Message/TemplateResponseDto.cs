@@ -15,6 +15,9 @@ namespace Api_Vapp.DTOs.Message
         public bool IsActive { get; set; }
         public int? GroupId { get; set; }
         public string? GroupName { get; set; }
+        public string ApprovalStatus { get; set; } = "Pending";
+        public string? RejectionReason { get; set; }
+        public DateTime? ApprovedAt { get; set; }
         public DateTime CreatedAt { get; set; }
     }
 }

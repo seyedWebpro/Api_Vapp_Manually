@@ -6,7 +6,7 @@ namespace Api_Vapp.Interfaces
 {
     public interface IJwtService
     {
-        string GenerateAccessToken(User user);
+        string GenerateAccessToken(User user, IEnumerable<string>? roleNames = null);
         string GenerateRefreshToken();
         ClaimsPrincipal? GetPrincipalFromExpiredToken(string token);
         

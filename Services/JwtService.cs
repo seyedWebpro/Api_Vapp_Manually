@@ -33,14 +33,22 @@ namespace Api_Vapp.Services
             _accessTokenExpirationMinutes = int.Parse(_configuration["Jwt:AccessTokenExpirationMinutes"] ?? "60");
         }
 
-        public string GenerateAccessToken(User user)
+        public string GenerateAccessToken(User user, IEnumerable<string>? roleNames = null)
         {
-            var claims = new[]
+            var claims = new List<Claim>
             {
                 new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
                 new Claim(ClaimTypes.MobilePhone, user.PhoneNumber),
                 new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
             };
+
+            if (roleNames != null)
+            {
+                foreach (var roleName in roleNames.Where(r => !string.IsNullOrWhiteSpace(r)).Distinct(StringComparer.OrdinalIgnoreCase))
+                {
+                    claims.Add(new Claim(ClaimTypes.Role, roleName));
+                }
+            }
 
             var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_secretKey));
             var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
