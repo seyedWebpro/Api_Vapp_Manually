@@ -533,4 +533,70 @@ public async Task<ActionResult> Create([FromBody] CreateProductDto dto)
 
 ---
 
+## 22. تست endpoint با curl — الزامی بعد از اضافه/تغییر API
+
+بعد از اضافه یا تغییر endpoint (چه ۱ تا، چه ۱۰ تا یا بیشتر)، **در انتهای همان کار** باید همه endpointهای تحت تأثیر با curl تست شوند؛ اگر خطا بود، **فیکس شود** و دوباره تست شود.
+
+### چه زمانی
+
+- endpoint جدید اضافه شد
+- endpoint موجود تغییر کرد (مسیر، body، auth، validation)
+- refactor روی Controller/Service که رفتار API را عوض می‌کند
+
+### سناریوهای تست (حالت‌های مختلف)
+
+برای **هر endpoint** حداقل این حالت‌ها را بررسی کن:
+
+| حالت | انتظار |
+|------|--------|
+| درخواست معتبر (Happy path) | `success: true`، status مناسب (200/201) |
+| body ناقص / فیلد اجباری خالی | 400 + `VALIDATION_FAILED` + `errors` فارسی |
+| ورودی نامعتبر (نوع/مقدار اشتباه) | 400 + `INVALID_INPUT` |
+| بدون توکن (endpoint محافظت‌شده) | 401 + `UNAUTHORIZED` |
+| توکن نامعتبر/منقضی | 401 + `TOKEN_INVALID` / `TOKEN_EXPIRED` |
+| منبع وجود ندارد | 404 + `NOT_FOUND` |
+| دسترسی غیرمجاز (کاربر دیگر) | 403 + `FORBIDDEN` |
+
+### نحوه اجرا
+
+1. API در حال اجرا باشد (مثلاً `http://localhost:5054`)
+2. با `curl` واقعی تست کن — فقط «باید کار کند» نگو
+3. پاسخ را چک کن: `statusCode`، `success`، `errorCode`، `message`، `traceId`
+4. خطا → ریشه‌یابی → فیکس → **retest همان سناریو**
+5. در پایان کار، خلاصه تست بده: چند endpoint، چند سناریو، pass/fail
+
+### نمونه curl
+
+```bash
+# GET — بدون auth (public)
+curl -s -w "\nHTTP:%{http_code}\n" \
+  http://localhost:5054/api/Product/1 | jq .
+
+# POST — با body معتبر + JWT
+curl -s -w "\nHTTP:%{http_code}\n" \
+  -X POST http://localhost:5054/api/Product/create \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -d '{"name":"تست","price":1000}' | jq .
+
+# POST — validation fail (فیلد خالی)
+curl -s -w "\nHTTP:%{http_code}\n" \
+  -X POST http://localhost:5054/api/Product/create \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -d '{}' | jq .
+```
+
+### ثبت در Api_Vapp.http (اختیاری ولی توصیه‌شده)
+
+درخواست‌های پرکاربرد را به `Api_Vapp.http` اضافه کن تا تیم هم بتواند سریع تست کند.
+
+### ممنوع
+
+- تحویل endpoint بدون تست curl
+- نادیده گرفتن خطای 500 یا `ex.Message` در پاسخ
+- بستن task وقتی حتی یک سناریوی مهم fail است
+
+---
+
 **نکته:** هر feature جدید باید بخش 4.1 (مدیریت خطا) را رعایت کند. مرجع اصلی: `RoleCodingManually_Vapp.txt`
