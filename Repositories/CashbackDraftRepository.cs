@@ -15,14 +15,14 @@ namespace Api_Vapp.Repositories
         {
         }
 
-        public async Task<CashbackDraft> AddAsync(CashbackDraft draft)
+        public new async Task<CashbackDraft> AddAsync(CashbackDraft draft)
         {
             await _dbSet.AddAsync(draft);
             await _context.SaveChangesAsync();
             return draft;
         }
 
-        public async Task<CashbackDraft> UpdateAsync(CashbackDraft draft)
+        public new async Task<CashbackDraft> UpdateAsync(CashbackDraft draft)
         {
             draft.UpdatedAt = DateTime.UtcNow;
             _dbSet.Update(draft);

@@ -1,7 +1,9 @@
 using Api_Vapp.DTOs.Auth;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.DTOs.User;
+using Api_Vapp.Exceptions;
 using Api_Vapp.Interfaces;
+using Api_Vapp.Utilities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
@@ -22,36 +24,14 @@ namespace Api_Vapp.Controller
     [ApiController]
     [Route("api/[controller]")]
     [Produces("application/json")]
-    public class AuthController : ControllerBase
+    public class AuthController : VappControllerBase
     {
         private readonly IAuthService _authService;
-        private readonly IUserRepository _userRepository;
-        private readonly IConfiguration _configuration;
 
         public AuthController(IAuthService authService, IUserRepository userRepository, IConfiguration configuration)
+            : base(configuration, userRepository)
         {
             _authService = authService;
-            _userRepository = userRepository;
-            _configuration = configuration;
-        }
-
-        /// <summary>
-        /// استخراج خطاهای ModelState برای نمایش به کاربر
-        /// </summary>
-        private List<string> ExtractModelStateErrors()
-        {
-            return ModelState
-                .Where(e => e.Value?.Errors.Count > 0)
-                .SelectMany(x => x.Value!.Errors.Select(error => 
-                {
-                    var errorMessage = error.ErrorMessage;
-                    if (string.IsNullOrWhiteSpace(errorMessage) && error.Exception != null)
-                    {
-                        errorMessage = error.Exception.Message;
-                    }
-                    return errorMessage;
-                }))
-                .ToList();
         }
 
         /// <summary>
@@ -551,36 +531,11 @@ namespace Api_Vapp.Controller
         [ProducesResponseType(typeof(LogoutResponseDto), StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<LogoutResponseDto>> Logout()
         {
-            try
-            {
-                // استخراج شناسه کاربر از JWT Token
-                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
-                {
-                    return StatusCode(401, new LogoutResponseDto
-                    {
-                        StatusCode = 401,
-                        Success = false,
-                        Message = "توکن معتبر نیست - شناسه کاربر یافت نشد"
-                    });
-                }
+            var userId = await GetCurrentUserIdAsync();
 
-                // استخراج JTI (JWT ID) از توکن برای اضافه کردن به blacklist
-                var jti = User.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Jti)?.Value;
-
-                var result = await _authService.LogoutAsync(userId, jti, GetClientIpAddress());
-                
-                return StatusCode(result.StatusCode, result);
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new LogoutResponseDto
-                {
-                    StatusCode = 500,
-                    Success = false,
-                    Message = $"خطا در پردازش درخواست: {ex.Message}"
-                });
-            }
+            var jti = User.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Jti)?.Value;
+            var result = await _authService.LogoutAsync(userId, jti, GetClientIpAddress());
+            return StatusCode(result.StatusCode, result);
         }
 
         /// <summary>
@@ -620,17 +575,15 @@ namespace Api_Vapp.Controller
 
             try
             {
-                // استخراج توکن (اگر Bearer prefix داشته باشد، حذف می‌کنیم)
                 var token = tokenDto.Token.Trim();
                 if (token.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
                 {
                     token = token.Substring(7).Trim();
                 }
 
-                // Validate و استخراج Claims از توکن
-                var secretKey = _configuration["Jwt:Secret"] ?? throw new InvalidOperationException("JWT Secret not configured");
-                var issuer = _configuration["Jwt:Issuer"] ?? throw new InvalidOperationException("JWT Issuer not configured");
-                var audience = _configuration["Jwt:Audience"] ?? throw new InvalidOperationException("JWT Audience not configured");
+                var secretKey = Configuration["Jwt:Secret"] ?? throw AppException.Internal(ErrorCodes.TokenProcessFailed, ControlledErrorHelper.TokenProcessFailed);
+                var issuer = Configuration["Jwt:Issuer"] ?? throw AppException.Internal(ErrorCodes.TokenProcessFailed, ControlledErrorHelper.TokenProcessFailed);
+                var audience = Configuration["Jwt:Audience"] ?? throw AppException.Internal(ErrorCodes.TokenProcessFailed, ControlledErrorHelper.TokenProcessFailed);
 
                 var tokenValidationParameters = new TokenValidationParameters
                 {
@@ -649,24 +602,21 @@ namespace Api_Vapp.Controller
                 if (validatedToken is not JwtSecurityToken jwtSecurityToken ||
                     !jwtSecurityToken.Header.Alg.Equals(SecurityAlgorithms.HmacSha256, StringComparison.InvariantCultureIgnoreCase))
                 {
-                    return StatusCode(401, ApiResponse<UserResponseDto>.Unauthorized("توکن نامعتبر است"));
+                    throw AppException.Unauthorized(ErrorCodes.TokenInvalid, ControlledErrorHelper.InvalidToken);
                 }
 
-                // استخراج UserId از Claims
                 var userIdClaim = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
                 if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
                 {
-                    return StatusCode(401, ApiResponse<UserResponseDto>.Unauthorized("توکن معتبر نیست - شناسه کاربر یافت نشد"));
+                    throw AppException.Unauthorized(ErrorCodes.InvalidUserId, "توکن معتبر نیست - شناسه کاربر یافت نشد");
                 }
 
-                // دریافت اطلاعات کاربر از دیتابیس
-                var user = await _userRepository.GetByIdAsync(userId);
+                var user = await UserRepository.GetByIdAsync(userId);
                 if (user == null || user.IsDeleted)
                 {
-                    return StatusCode(404, ApiResponse<UserResponseDto>.NotFound("کاربر یافت نشد"));
+                    throw AppException.NotFound(ErrorCodes.NotFound, ControlledErrorHelper.NotFound);
                 }
 
-                // تبدیل به DTO
                 var userDto = new UserResponseDto
                 {
                     Id = user.Id,
@@ -686,15 +636,11 @@ namespace Api_Vapp.Controller
             }
             catch (SecurityTokenExpiredException)
             {
-                return StatusCode(401, ApiResponse<UserResponseDto>.Unauthorized("توکن منقضی شده است"));
+                throw AppException.Unauthorized(ErrorCodes.TokenExpired, "توکن منقضی شده است");
             }
-            catch (SecurityTokenException ex)
+            catch (SecurityTokenException)
             {
-                return StatusCode(401, ApiResponse<UserResponseDto>.Unauthorized($"توکن نامعتبر است: {ex.Message}"));
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, ApiResponse<UserResponseDto>.InternalServerError($"خطا در پردازش توکن: {ex.Message}"));
+                throw AppException.Unauthorized(ErrorCodes.TokenInvalid, ControlledErrorHelper.InvalidToken);
             }
         }
     }

@@ -3,8 +3,6 @@ using Api_Vapp.DTOs.User;
 using Api_Vapp.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Configuration;
-using System.Security.Claims;
 
 namespace Api_Vapp.Controller
 {
@@ -19,11 +17,9 @@ namespace Api_Vapp.Controller
     [Route("api/[controller]")]
     [Authorize]
     [Produces("application/json")]
-    public class UserController : ControllerBase
+    public class UserController : VappControllerBase
     {
         private readonly IUserService _userService;
-        private readonly IConfiguration _configuration;
-        private readonly IUserRepository _userRepository;
         private readonly INotificationSettingsService _notificationSettingsService;
 
         public UserController(
@@ -31,54 +27,10 @@ namespace Api_Vapp.Controller
             IConfiguration configuration, 
             IUserRepository userRepository,
             INotificationSettingsService notificationSettingsService)
+            : base(configuration, userRepository)
         {
             _userService = userService;
-            _configuration = configuration;
-            _userRepository = userRepository;
             _notificationSettingsService = notificationSettingsService;
-        }
-
-        /// <summary>
-        /// استخراج خطاهای ModelState برای نمایش به کاربر
-        /// </summary>
-        private List<string> ExtractModelStateErrors()
-        {
-            return ModelState
-                .Where(e => e.Value?.Errors.Count > 0)
-                .SelectMany(x => x.Value!.Errors.Select(error => 
-                {
-                    var errorMessage = error.ErrorMessage;
-                    if (string.IsNullOrWhiteSpace(errorMessage) && error.Exception != null)
-                    {
-                        errorMessage = error.Exception.Message;
-                    }
-                    return errorMessage;
-                }))
-                .ToList();
-        }
-
-        /// <summary>
-        /// دریافت شناسه کاربر از JWT Token یا برگرداندن کاربر پیش‌فرض در حالت DisableAuth
-        /// </summary>
-        private async Task<int> GetCurrentUserIdAsync()
-        {
-            // ابتدا سعی می‌کنیم از Token بخوانیم (اگر وجود داشته باشد)
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (!string.IsNullOrEmpty(userIdClaim) && int.TryParse(userIdClaim, out int userId))
-            {
-                return userId;
-            }
-
-            // اگر Token وجود نداشت و DisableAuth فعال بود، از کاربر پیش‌فرض استفاده می‌کنیم
-            var disableAuth = _configuration.GetValue<bool>("Development:DisableAuth", false);
-            if (disableAuth)
-            {
-                var defaultUser = await _userRepository.GetOrCreateDefaultUserAsync();
-                return defaultUser.Id;
-            }
-
-            // در غیر این صورت خطا می‌دهیم
-            throw new UnauthorizedAccessException("شناسه کاربر معتبر نیست");
         }
 
         /// <summary>
@@ -353,16 +305,9 @@ namespace Api_Vapp.Controller
         [ProducesResponseType(typeof(ApiResponse<UserResponseDto>), StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<ApiResponse<UserResponseDto>>> GetCurrentUser()
         {
-            try
-            {
-                var userId = await GetCurrentUserIdAsync();
-                var result = await _userService.GetUserByIdAsync(userId);
-                return StatusCode(result.StatusCode, result);
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                return StatusCode(401, ApiResponse<UserResponseDto>.Unauthorized(ex.Message));
-            }
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _userService.GetUserByIdAsync(userId);
+            return StatusCode(result.StatusCode, result);
         }
 
         #region Profile Management
@@ -392,16 +337,9 @@ namespace Api_Vapp.Controller
         [ProducesResponseType(typeof(ApiResponse<UserProfileDto>), StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<ApiResponse<UserProfileDto>>> GetProfile()
         {
-            try
-            {
-                var userId = await GetCurrentUserIdAsync();
-                var result = await _userService.GetUserProfileAsync(userId);
-                return StatusCode(result.StatusCode, result);
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                return StatusCode(401, ApiResponse<UserProfileDto>.Unauthorized(ex.Message));
-            }
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _userService.GetUserProfileAsync(userId);
+            return StatusCode(result.StatusCode, result);
         }
 
         /// <summary>
@@ -437,27 +375,13 @@ namespace Api_Vapp.Controller
 
             if (!ModelState.IsValid)
             {
-                var errors = ModelState.Values
-                    .SelectMany(v => v.Errors)
-                    .Select(e => e.ErrorMessage)
-                    .ToList();
+                var errors = ExtractModelStateErrors();
                 return StatusCode(400, ApiResponse<UserProfileDto>.BadRequest("داده‌های ورودی نامعتبر است", errors));
             }
 
-            try
-            {
-                var userId = await GetCurrentUserIdAsync();
-                var result = await _userService.UpdateUserProfileAsync(userId, updateDto);
-                return StatusCode(result.StatusCode, result);
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                return StatusCode(401, ApiResponse<UserProfileDto>.Unauthorized("شما مجاز به انجام این عملیات نیستید"));
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, ApiResponse<UserProfileDto>.InternalServerError("خطا در پردازش درخواست. لطفاً دوباره تلاش کنید"));
-            }
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _userService.UpdateUserProfileAsync(userId, updateDto);
+            return StatusCode(result.StatusCode, result);
         }
 
         /// <summary>
@@ -493,27 +417,13 @@ namespace Api_Vapp.Controller
 
             if (!ModelState.IsValid)
             {
-                var errors = ModelState.Values
-                    .SelectMany(v => v.Errors)
-                    .Select(e => e.ErrorMessage)
-                    .ToList();
+                var errors = ExtractModelStateErrors();
                 return StatusCode(400, ApiResponse<string>.BadRequest("داده‌های ورودی نامعتبر است", errors));
             }
 
-            try
-            {
-                var userId = await GetCurrentUserIdAsync();
-                var result = await _userService.UploadProfileImageAsync(userId, dto.ImageFile);
-                return StatusCode(result.StatusCode, result);
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                return StatusCode(401, ApiResponse<string>.Unauthorized("شما مجاز به انجام این عملیات نیستید"));
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, ApiResponse<string>.InternalServerError("خطا در پردازش درخواست. لطفاً دوباره تلاش کنید"));
-            }
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _userService.UploadProfileImageAsync(userId, dto.ImageFile);
+            return StatusCode(result.StatusCode, result);
         }
 
         /// <summary>
@@ -538,16 +448,9 @@ namespace Api_Vapp.Controller
         [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<ApiResponse<bool>>> DeleteProfileImage()
         {
-            try
-            {
-                var userId = await GetCurrentUserIdAsync();
-                var result = await _userService.DeleteProfileImageAsync(userId);
-                return StatusCode(result.StatusCode, result);
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                return StatusCode(401, ApiResponse<bool>.Unauthorized(ex.Message));
-            }
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _userService.DeleteProfileImageAsync(userId);
+            return StatusCode(result.StatusCode, result);
         }
 
         #endregion
@@ -578,16 +481,9 @@ namespace Api_Vapp.Controller
         [ProducesResponseType(typeof(ApiResponse<NotificationSettingsDto>), StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<ApiResponse<NotificationSettingsDto>>> GetNotificationSettings()
         {
-            try
-            {
-                var userId = await GetCurrentUserIdAsync();
-                var result = await _notificationSettingsService.GetSettingsAsync(userId);
-                return StatusCode(result.StatusCode, result);
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                return StatusCode(401, ApiResponse<NotificationSettingsDto>.Unauthorized(ex.Message));
-            }
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _notificationSettingsService.GetSettingsAsync(userId);
+            return StatusCode(result.StatusCode, result);
         }
 
         /// <summary>
@@ -620,27 +516,13 @@ namespace Api_Vapp.Controller
 
             if (!ModelState.IsValid)
             {
-                var errors = ModelState.Values
-                    .SelectMany(v => v.Errors)
-                    .Select(e => e.ErrorMessage)
-                    .ToList();
+                var errors = ExtractModelStateErrors();
                 return StatusCode(400, ApiResponse<NotificationSettingsDto>.BadRequest("داده‌های ورودی نامعتبر است", errors));
             }
 
-            try
-            {
-                var userId = await GetCurrentUserIdAsync();
-                var result = await _notificationSettingsService.UpdateSettingsAsync(userId, settingsDto);
-                return StatusCode(result.StatusCode, result);
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                return StatusCode(401, ApiResponse<NotificationSettingsDto>.Unauthorized("شما مجاز به انجام این عملیات نیستید"));
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, ApiResponse<NotificationSettingsDto>.InternalServerError("خطا در پردازش درخواست. لطفاً دوباره تلاش کنید"));
-            }
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _notificationSettingsService.UpdateSettingsAsync(userId, settingsDto);
+            return StatusCode(result.StatusCode, result);
         }
 
         #endregion

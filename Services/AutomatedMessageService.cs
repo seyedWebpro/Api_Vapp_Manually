@@ -1185,8 +1185,9 @@ namespace Api_Vapp.Services
                 if (automationType == "Birthday")
                 {
                     // بررسی وضعیت هر مخاطب برای birthday
-                    var hasAdditionalInfo = contact.AdditionalInfo != null;
-                    var hasDateOfBirth = hasAdditionalInfo && contact.AdditionalInfo.DateOfBirth.HasValue;
+                    var additionalInfo = contact.AdditionalInfo;
+                    var hasAdditionalInfo = additionalInfo != null;
+                    var hasDateOfBirth = additionalInfo?.DateOfBirth.HasValue == true;
 
                     // لاگ دقیق وضعیت هر مخاطب
                     _logger.LogInformation("بررسی تولد - مخاطب {ContactId} ({Name}): " +
@@ -1195,7 +1196,7 @@ namespace Api_Vapp.Services
                         "IsEligible: {IsEligible}",
                         contact.Id, contact.FullName ?? "بدون نام",
                         hasAdditionalInfo,
-                        hasAdditionalInfo ? contact.AdditionalInfo.DateOfBirth?.ToString("yyyy-MM-dd HH:mm:ss") ?? "null" : "N/A",
+                        additionalInfo?.DateOfBirth?.ToString("yyyy-MM-dd HH:mm:ss") ?? "null",
                         hasDateOfBirth);
 
                     recipient.HasDateOfBirth = hasDateOfBirth;
@@ -2152,7 +2153,7 @@ namespace Api_Vapp.Services
             {
                 await transaction.RollbackAsync();
                 _logger.LogWarning(ex, "Invalid message content for automated message {Id}", automatedMessageId);
-                return ApiResponse<MessageContentResponseDto>.BadRequest(ex.Message);
+                return ApiResponse<MessageContentResponseDto>.BadRequest(ControlledErrorHelper.SanitizeArgumentMessage(ex.Message, ControlledErrorHelper.InvalidInput));
             }
             catch (DbUpdateException ex)
             {
@@ -2568,7 +2569,10 @@ namespace Api_Vapp.Services
                         _logger.LogInformation("Recipients in session have no eligible recipients, re-filtering for automation {AutomationId}", automatedMessageId);
 
                         // دریافت مخاطبان از Recipients موجود
-                        var contactIds = recipients.Where(r => r.ContactId.HasValue).Select(r => r.ContactId.Value).ToList();
+                        var contactIds = recipients
+                            .Where(r => r.ContactId.HasValue)
+                            .Select(r => r.ContactId!.Value)
+                            .ToList();
 
                         if (contactIds.Any())
                         {

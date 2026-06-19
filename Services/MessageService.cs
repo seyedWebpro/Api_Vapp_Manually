@@ -3,6 +3,7 @@ using Api_Vapp.DTOs.Message;
 using Api_Vapp.DTOs.Sms;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
+using Api_Vapp.Utilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
@@ -110,10 +111,7 @@ namespace Api_Vapp.Services
             {
                 _logger.LogWarning(ex, "محتوای پیام نامعتبر برای کاربر: {UserId}", userId);
                 // استفاده از Middleware برای ترجمه - اگر پیام فارسی است همان را برمی‌گردانیم
-                var errorMessage = ex.Message.Contains("الزامی") || ex.Message.Contains("صحیح نیست") || 
-                                   ex.Message.Contains("نمی‌تواند") || ex.Message.Contains("باید") 
-                                   ? ex.Message 
-                                   : "محتویات پیام نامعتبر است";
+                var errorMessage = ControlledErrorHelper.SanitizeArgumentMessage(ex.Message, "محتویات پیام نامعتبر است");
                 return ApiResponse<MessageResponseDto>.BadRequest(errorMessage);
             }
             catch (DbUpdateException ex)
@@ -260,10 +258,7 @@ namespace Api_Vapp.Services
             {
                 _logger.LogWarning(ex, "Invalid message content for message: {MessageId}", messageId);
                 // استفاده از Middleware برای ترجمه - اگر پیام فارسی است همان را برمی‌گردانیم
-                var errorMessage = ex.Message.Contains("الزامی") || ex.Message.Contains("صحیح نیست") || 
-                                   ex.Message.Contains("نمی‌تواند") || ex.Message.Contains("باید") 
-                                   ? ex.Message 
-                                   : "محتویات پیام نامعتبر است";
+                var errorMessage = ControlledErrorHelper.SanitizeArgumentMessage(ex.Message, "محتویات پیام نامعتبر است");
                 return ApiResponse<MessageResponseDto>.BadRequest(errorMessage);
             }
             catch (DbUpdateException ex)
@@ -578,7 +573,7 @@ namespace Api_Vapp.Services
                             _logger.LogWarning(ex, "Concurrency conflict while saving campaign settings - MessageId: {MessageId}", messageId);
                             // خطا در ذخیره تنظیمات مانع از برگرداندن خلاصه نمی‌شود
                         }
-                        catch (Exception ex)
+                        catch (Exception)
                         {
                             await transaction.RollbackAsync();
                             throw;
@@ -1146,7 +1141,7 @@ namespace Api_Vapp.Services
                         {
                             // پیام بیش از 10 صفحه است
                             recipient.Status = "Failed";
-                            recipient.ErrorMessage = ex.Message;
+                            recipient.ErrorMessage = ControlledErrorHelper.SendFailed;
                             recipient.RetryCount++;
                             failedCount++;
                             _logger.LogWarning("Message exceeds max pages for {Mobile} - Campaign: {CampaignId}, Error: {Error}", 
@@ -1184,7 +1179,7 @@ namespace Api_Vapp.Services
                         {
                             // ارسال ناموفق
                             recipient.Status = "Failed";
-                            recipient.ErrorMessage = smsResult.Data?.Message ?? smsResult.Message ?? "خطا در ارسال پیامک";
+                            recipient.ErrorMessage = ControlledErrorHelper.SendFailed;
                             recipient.RetryCount++;
                             failedCount++;
                             
@@ -1196,7 +1191,7 @@ namespace Api_Vapp.Services
                     {
                         // خطا در ارسال
                         recipient.Status = "Failed";
-                        recipient.ErrorMessage = ex.Message;
+                        recipient.ErrorMessage = ControlledErrorHelper.SendFailed;
                         recipient.RetryCount++;
                         failedCount++;
                         
@@ -1377,7 +1372,7 @@ namespace Api_Vapp.Services
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "❌ Error uploading icon file for template");
-                    return ApiResponse<TemplateResponseDto>.BadRequest($"خطا در آپلود فایل آیکون: {ex.Message}");
+                    return ApiResponse<TemplateResponseDto>.BadRequest(ControlledErrorHelper.FileUploadFailed);
                 }
             }
 
@@ -1663,7 +1658,7 @@ namespace Api_Vapp.Services
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "❌ Error uploading icon file for template");
-                    return ApiResponse<TemplateResponseDto>.BadRequest($"خطا در آپلود فایل آیکون: {ex.Message}");
+                    return ApiResponse<TemplateResponseDto>.BadRequest(ControlledErrorHelper.FileUploadFailed);
                 }
             }
 
@@ -2410,7 +2405,7 @@ namespace Api_Vapp.Services
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "❌ Error uploading icon file for template group");
-                    return ApiResponse<TemplateGroupResponseDto>.BadRequest($"خطا در آپلود فایل آیکون: {ex.Message}");
+                    return ApiResponse<TemplateGroupResponseDto>.BadRequest(ControlledErrorHelper.FileUploadFailed);
                 }
             }
 
@@ -2750,7 +2745,7 @@ namespace Api_Vapp.Services
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "❌ Error uploading icon file for template group");
-                    return ApiResponse<TemplateGroupResponseDto>.BadRequest($"خطا در آپلود فایل آیکون: {ex.Message}");
+                    return ApiResponse<TemplateGroupResponseDto>.BadRequest(ControlledErrorHelper.FileUploadFailed);
                 }
             }
 
@@ -3234,7 +3229,7 @@ namespace Api_Vapp.Services
                                             
                                             _logger.LogInformation("Successfully created contact with mobile {MobileNumber} after retry", mobileNumber);
                                         }
-                                        catch (DbUpdateException retryEx)
+                                        catch (DbUpdateException)
                                         {
                                             // اگر باز هم خطا داد، مخاطب موجود را پیدا می‌کنیم
                                             var existingContact = await _context.Contacts
@@ -3666,14 +3661,14 @@ namespace Api_Vapp.Services
                             recipientIndex, recipients.Count, recipient.FullName ?? "بدون نام", recipient.MobileNumber);
                         
                         // آماده‌سازی متن پیام (شخصی‌سازی در صورت نیاز)
-                        string messageContent = message.Content;
+                        string messageContent = message.Content ?? string.Empty;
 
                         if (message.IsPersonalized && recipient.ContactId.HasValue)
                         {
                             var contact = await _contactRepository.GetByIdAsync(recipient.ContactId.Value);
                             if (contact != null)
                             {
-                                messageContent = await PersonalizeMessageWithContactAsync(message.Content, contact);
+                                messageContent = await PersonalizeMessageWithContactAsync(message.Content ?? string.Empty, contact);
                                 _logger.LogInformation("پیام شخصی‌سازی شد برای {FullName} ({Mobile})", 
                                     recipient.FullName ?? "بدون نام", recipient.MobileNumber);
                             }
@@ -4296,10 +4291,7 @@ namespace Api_Vapp.Services
             catch (ArgumentException ex)
             {
                 _logger.LogWarning(ex, "Invalid personalized message content for message: {MessageId}", messageId);
-                var errorMessage = ex.Message.Contains("الزامی") || ex.Message.Contains("صحیح نیست") || 
-                                   ex.Message.Contains("نمی‌تواند") || ex.Message.Contains("باید") 
-                                   ? ex.Message 
-                                   : "محتویات پیام نامعتبر است";
+                var errorMessage = ControlledErrorHelper.SanitizeArgumentMessage(ex.Message, "محتویات پیام نامعتبر است");
                 return ApiResponse<PersonalizedMessageResponseDto>.BadRequest(errorMessage);
             }
             catch (Exception ex)
@@ -4930,8 +4922,7 @@ namespace Api_Vapp.Services
             if (lastException != null)
             {
                 _logger.LogError(lastException, "SMS send failed after all retries - Mobile: {Mobile}", request.Mobile);
-                return ApiResponse<DTOs.Sms.SendSmsResponseDto>.InternalServerError(
-                    $"خطا در ارسال پیامک پس از {maxRetries + 1} تلاش: {lastException.Message}");
+                return ApiResponse<DTOs.Sms.SendSmsResponseDto>.InternalServerError(ControlledErrorHelper.SmsFailed);
             }
 
             return ApiResponse<DTOs.Sms.SendSmsResponseDto>.InternalServerError("خطا در ارسال پیامک");
@@ -4982,7 +4973,7 @@ namespace Api_Vapp.Services
             return filteredRecipients;
         }
 
-        private async Task<MessageResponseDto> MapToMessageResponseDtoAsync(Message message)
+        private Task<MessageResponseDto> MapToMessageResponseDtoAsync(Message message)
         {
             List<string>? placeholders = null;
             if (!string.IsNullOrEmpty(message.Placeholders))
@@ -4990,7 +4981,7 @@ namespace Api_Vapp.Services
                 placeholders = JsonSerializer.Deserialize<List<string>>(message.Placeholders);
             }
 
-            return new MessageResponseDto
+            return Task.FromResult(new MessageResponseDto
             {
                 Id = message.Id,
                 Content = message.Content,
@@ -5001,10 +4992,10 @@ namespace Api_Vapp.Services
                 Status = message.Status,
                 CreatedAt = message.CreatedAt,
                 UpdatedAt = message.UpdatedAt
-            };
+            });
         }
 
-        private async Task<CampaignResponseDto> MapToCampaignResponseDtoAsync(MessageCampaign campaign)
+        private Task<CampaignResponseDto> MapToCampaignResponseDtoAsync(MessageCampaign campaign)
         {
             List<int>? selectedTagIds = null;
             if (!string.IsNullOrEmpty(campaign.SelectedTags))
@@ -5012,7 +5003,7 @@ namespace Api_Vapp.Services
                 selectedTagIds = JsonSerializer.Deserialize<List<int>>(campaign.SelectedTags);
             }
 
-            return new CampaignResponseDto
+            return Task.FromResult(new CampaignResponseDto
             {
                 Id = campaign.Id,
                 MessageId = campaign.MessageId,
@@ -5034,7 +5025,7 @@ namespace Api_Vapp.Services
                 SentCount = campaign.SentCount,
                 FailedCount = campaign.FailedCount,
                 CreatedAt = campaign.CreatedAt
-            };
+            });
         }
 
         private TemplateResponseDto MapToTemplateResponseDto(MessageTemplate template)

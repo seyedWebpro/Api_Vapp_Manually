@@ -19,60 +19,14 @@ namespace Api_Vapp.Controller
     [Route("api/[controller]")]
     [Authorize]
     [Produces("application/json")]
-    public class ContactController : ControllerBase
+    public class ContactController : VappControllerBase
     {
         private readonly IContactService _contactService;
-        private readonly IConfiguration _configuration;
-        private readonly IUserRepository _userRepository;
 
         public ContactController(IContactService contactService, IConfiguration configuration, IUserRepository userRepository)
+            : base(configuration, userRepository)
         {
             _contactService = contactService;
-            _configuration = configuration;
-            _userRepository = userRepository;
-        }
-
-        /// <summary>
-        /// دریافت شناسه کاربر از JWT Token یا برگرداندن کاربر پیش‌فرض در حالت DisableAuth
-        /// </summary>
-        private async Task<int> GetCurrentUserIdAsync()
-        {
-            // ابتدا سعی می‌کنیم از Token بخوانیم (اگر وجود داشته باشد)
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (!string.IsNullOrEmpty(userIdClaim) && int.TryParse(userIdClaim, out int userId))
-            {
-                return userId;
-            }
-
-            // اگر Token وجود نداشت و DisableAuth فعال بود، از کاربر پیش‌فرض استفاده می‌کنیم
-            var disableAuth = _configuration.GetValue<bool>("Development:DisableAuth", false);
-            if (disableAuth)
-            {
-                var defaultUser = await _userRepository.GetOrCreateDefaultUserAsync();
-                return defaultUser.Id;
-            }
-
-            // در غیر این صورت خطا می‌دهیم
-            throw new UnauthorizedAccessException("شناسه کاربر معتبر نیست");
-        }
-
-        /// <summary>
-        /// استخراج خطاهای ModelState برای نمایش به کاربر
-        /// </summary>
-        private List<string> ExtractModelStateErrors()
-        {
-            return ModelState
-                .Where(e => e.Value?.Errors.Count > 0)
-                .SelectMany(x => x.Value!.Errors.Select(error => 
-                {
-                    var errorMessage = error.ErrorMessage;
-                    if (string.IsNullOrWhiteSpace(errorMessage) && error.Exception != null)
-                    {
-                        errorMessage = error.Exception.Message;
-                    }
-                    return errorMessage;
-                }))
-                .ToList();
         }
 
         /// <summary>

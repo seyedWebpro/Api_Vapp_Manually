@@ -25,60 +25,17 @@ namespace Api_Vapp.Controller
     [Route("api/[controller]")]
     [Authorize]
     [Produces("application/json")]
-    public class WalletController : ControllerBase
+    public class WalletController : VappControllerBase
     {
         private readonly IWalletService _walletService;
-        private readonly IConfiguration _configuration;
-        private readonly IUserRepository _userRepository;
 
         public WalletController(
             IWalletService walletService,
             IConfiguration configuration,
             IUserRepository userRepository)
+            : base(configuration, userRepository)
         {
             _walletService = walletService;
-            _configuration = configuration;
-            _userRepository = userRepository;
-        }
-
-        /// <summary>
-        /// استخراج خطاهای ModelState برای نمایش به کاربر
-        /// </summary>
-        private List<string> ExtractModelStateErrors()
-        {
-            return ModelState
-                .Where(e => e.Value?.Errors.Count > 0)
-                .SelectMany(x => x.Value!.Errors.Select(error => 
-                {
-                    var errorMessage = error.ErrorMessage;
-                    if (string.IsNullOrWhiteSpace(errorMessage) && error.Exception != null)
-                    {
-                        errorMessage = error.Exception.Message;
-                    }
-                    return errorMessage;
-                }))
-                .ToList();
-        }
-
-        /// <summary>
-        /// دریافت شناسه کاربر از JWT Token یا برگرداندن کاربر پیش‌فرض در حالت DisableAuth
-        /// </summary>
-        private async Task<int> GetCurrentUserIdAsync()
-        {
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (!string.IsNullOrEmpty(userIdClaim) && int.TryParse(userIdClaim, out int userId))
-            {
-                return userId;
-            }
-
-            var disableAuth = _configuration.GetValue<bool>("Development:DisableAuth", false);
-            if (disableAuth)
-            {
-                var defaultUser = await _userRepository.GetOrCreateDefaultUserAsync();
-                return defaultUser.Id;
-            }
-
-            throw new UnauthorizedAccessException("شناسه کاربر معتبر نیست");
         }
 
         /// <summary>

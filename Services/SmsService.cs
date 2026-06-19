@@ -1,6 +1,7 @@
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.DTOs.Sms;
 using Api_Vapp.Interfaces;
+using Api_Vapp.Utilities;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using System.Security.Cryptography;
@@ -79,8 +80,7 @@ namespace Api_Vapp.Services
                 _logger.LogInformation("Sending OTP via SMS - Template: {TemplateType}, OTP Code: {OtpCode}, Phone: {PhoneNumber}", 
                     templateType, otpCode, normalizedPhone);
                 
-                // اضافه کردن 'لغو11' در انتهای پیامک (الزام API)
-                message = $"{message}\nلغو11";
+                message = EnsureCancelSuffix(message);
 
                 var result = await SendSmsInternalAsync(normalizedPhone, message);
                 
@@ -100,16 +100,16 @@ namespace Api_Vapp.Services
                         otpCode, result.Message);
                 }
                 
-                if (result.Status > 0)
+                if (IsSmsSendSuccessful(result.Sid, result.Status))
                 {
-                    _logger.LogInformation("OTP sent successfully - Phone: {PhoneNumber}, OTP: {OtpCode}, Sid: {Sid}", 
-                        normalizedPhone, otpCode, result.Sid);
+                    _logger.LogInformation("OTP sent successfully - Phone: {PhoneNumber}, OTP: {OtpCode}, Sid: {Sid}, Status: {Status}", 
+                        normalizedPhone, otpCode, result.Sid, result.Status);
                     return true;
                 }
                 else
                 {
-                    _logger.LogError("Failed to send OTP - Phone: {PhoneNumber}, Status: {Status}, Message: {Message}", 
-                        normalizedPhone, result.Status, result.Message);
+                    _logger.LogError("Failed to send OTP - Phone: {PhoneNumber}, Sid: {Sid}, Status: {Status}, Message: {Message}", 
+                        normalizedPhone, result.Sid, result.Status, result.Message);
                     return false;
                 }
             }
@@ -136,7 +136,32 @@ namespace Api_Vapp.Services
                                        .Replace(")", "")
                                        .Trim();
 
+            // تبدیل پیش‌شماره بین‌المللی به فرمت داخلی (09...)
+            if (normalized.StartsWith("+98"))
+                normalized = "0" + normalized[3..];
+            else if (normalized.StartsWith("98") && normalized.Length == 12)
+                normalized = "0" + normalized[2..];
+
             return normalized;
+        }
+
+        /// <summary>
+        /// بررسی موفقیت ارسال پیامک بر اساس پاسخ API ایران نوین
+        /// Sid > 0 یعنی پیام در صف ارسال است (حتی اگر Status = 0 باشد)
+        /// </summary>
+        private static bool IsSmsSendSuccessful(long sid, int status) => sid > 0 || status > 0;
+
+        /// <summary>
+        /// افزودن متن الزامی «لغو11» در انتهای پیامک (مطابق الزامات API)
+        /// </summary>
+        private static string EnsureCancelSuffix(string message)
+        {
+            if (string.IsNullOrWhiteSpace(message))
+                return message;
+
+            return message.TrimEnd().EndsWith("لغو11")
+                ? message
+                : $"{message.TrimEnd()}\nلغو11";
         }
 
         /// <summary>
@@ -199,17 +224,14 @@ namespace Api_Vapp.Services
                 {
                     SenderNumber = finalSenderNumber,
                     Mobile = normalizedMobile,
-                    Message = request.Message
+                    Message = EnsureCancelSuffix(request.Message)
                 };
 
                 var response = await SendRequestAsync<SendSmsRequestDto, SendSmsResponseDto>(
                     "/api/v1/Send",
                     sendRequest);
 
-                // Sid > 0 یعنی پیام ارسال شده (حتی اگر Status = 0 باشد)
-                // Status > 0 هم یعنی موفقیت
-                // Status < 0 یعنی خطا
-                if (response.Sid > 0 || response.Status > 0)
+                if (IsSmsSendSuccessful(response.Sid, response.Status))
                 {
                     _logger.LogInformation("SMS sent successfully - Mobile: {Mobile}, Sid: {Sid}, Status: {Status}", 
                         normalizedMobile, response.Sid, response.Status);
@@ -219,13 +241,13 @@ namespace Api_Vapp.Services
                 {
                     _logger.LogWarning("SMS send failed - Mobile: {Mobile}, Status: {Status}, Message: {Message}",
                         normalizedMobile, response.Status, response.Message);
-                    return ApiResponse<SendSmsResponseDto>.BadRequest($"خطا در ارسال پیامک: {response.Message}");
+                    return ApiResponse<SendSmsResponseDto>.BadRequest(ControlledErrorHelper.SmsFailed);
                 }
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error sending SMS to {Mobile}", request.Mobile);
-                return ApiResponse<SendSmsResponseDto>.InternalServerError($"خطا در ارسال پیامک: {ex.Message}");
+                return ApiResponse<SendSmsResponseDto>.InternalServerError(ControlledErrorHelper.SmsFailed);
             }
         }
 
@@ -259,15 +281,14 @@ namespace Api_Vapp.Services
                 {
                     SenderNumber = finalSenderNumber,
                     Mobiles = normalizedMobiles,
-                    Message = request.Message
+                    Message = EnsureCancelSuffix(request.Message)
                 };
 
                 var response = await SendRequestAsync<SendBulkRequestDto, SendBulkResponseDto>(
                     "/api/v1/SendBulk",
                     sendRequest);
 
-                // Sid > 0 یعنی پیام ارسال شده (حتی اگر Status = 0 باشد)
-                if (response.Sid > 0 || response.Status > 0)
+                if (IsSmsSendSuccessful(response.Sid, response.Status))
                 {
                     _logger.LogInformation("Bulk SMS sent successfully - Count: {Count}, Sid: {Sid}, Status: {Status}",
                         normalizedMobiles.Count, response.Sid, response.Status);
@@ -277,13 +298,13 @@ namespace Api_Vapp.Services
                 {
                     _logger.LogWarning("Bulk SMS send failed - Status: {Status}, Message: {Message}",
                         response.Status, response.Messege);
-                    return ApiResponse<SendBulkResponseDto>.BadRequest($"خطا در ارسال پیامک‌های گروهی: {response.Messege}");
+                    return ApiResponse<SendBulkResponseDto>.BadRequest(ControlledErrorHelper.SmsFailed);
                 }
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error sending bulk SMS");
-                return ApiResponse<SendBulkResponseDto>.InternalServerError($"خطا در ارسال پیامک‌های گروهی: {ex.Message}");
+                return ApiResponse<SendBulkResponseDto>.InternalServerError(ControlledErrorHelper.SmsFailed);
             }
         }
 
@@ -322,15 +343,14 @@ namespace Api_Vapp.Services
                 {
                     SenderNumber = finalSenderNumber,
                     Mobiles = normalizedMobiles,
-                    Message = request.Message
+                    Message = request.Message.Select(EnsureCancelSuffix).ToList()
                 };
 
                 var response = await SendRequestAsync<SendArrayRequestDto, SendArrayResponseDto>(
                     "/api/v1/SendArray",
                     sendRequest);
 
-                // Sid > 0 یعنی پیام ارسال شده (حتی اگر Status = 0 باشد)
-                if (response.Sid > 0 || response.Status > 0)
+                if (IsSmsSendSuccessful(response.Sid, response.Status))
                 {
                     _logger.LogInformation("Array SMS sent successfully - Count: {Count}, Sid: {Sid}, Status: {Status}",
                         normalizedMobiles.Count, response.Sid, response.Status);
@@ -340,13 +360,13 @@ namespace Api_Vapp.Services
                 {
                     _logger.LogWarning("Array SMS send failed - Status: {Status}, Message: {Message}",
                         response.Status, response.Message);
-                    return ApiResponse<SendArrayResponseDto>.BadRequest($"خطا در ارسال پیامک‌های نظیر به نظیر: {response.Message}");
+                    return ApiResponse<SendArrayResponseDto>.BadRequest(ControlledErrorHelper.SmsFailed);
                 }
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error sending array SMS");
-                return ApiResponse<SendArrayResponseDto>.InternalServerError($"خطا در ارسال پیامک‌های نظیر به نظیر: {ex.Message}");
+                return ApiResponse<SendArrayResponseDto>.InternalServerError(ControlledErrorHelper.SmsFailed);
             }
         }
 
@@ -378,13 +398,13 @@ namespace Api_Vapp.Services
                 {
                     _logger.LogWarning("Delivery status retrieval failed - Sid: {Sid}, Status: {Status}, Message: {Message}",
                         sid, response.Status, response.Messege);
-                    return ApiResponse<DeliveryResponseDto>.BadRequest($"خطا در دریافت وضعیت: {response.Messege}");
+                    return ApiResponse<DeliveryResponseDto>.BadRequest(ControlledErrorHelper.SmsFailed);
                 }
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting delivery status for Sid: {Sid}", sid);
-                return ApiResponse<DeliveryResponseDto>.InternalServerError($"خطا در دریافت وضعیت ارسال: {ex.Message}");
+                return ApiResponse<DeliveryResponseDto>.InternalServerError(ControlledErrorHelper.SmsFailed);
             }
         }
 
@@ -419,13 +439,13 @@ namespace Api_Vapp.Services
                 {
                     _logger.LogWarning("Inbox retrieval failed - SenderNumber: {SenderNumber}, Status: {Status}, Message: {Message}",
                         request.SenderNumber, response.Status, response.Message);
-                    return ApiResponse<InboxResponseDto>.BadRequest($"خطا در دریافت پیامک‌های ورودی: {response.Message}");
+                    return ApiResponse<InboxResponseDto>.BadRequest(ControlledErrorHelper.SmsFailed);
                 }
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting inbox for SenderNumber: {SenderNumber}", request.SenderNumber);
-                return ApiResponse<InboxResponseDto>.InternalServerError($"خطا در دریافت پیامک‌های ورودی: {ex.Message}");
+                return ApiResponse<InboxResponseDto>.InternalServerError(ControlledErrorHelper.SmsFailed);
             }
         }
 
@@ -448,13 +468,13 @@ namespace Api_Vapp.Services
                 {
                     _logger.LogWarning("Wallet info retrieval failed - Status: {Status}, Message: {Message}",
                         response.Status, response.Message);
-                    return ApiResponse<InfoResponseDto>.BadRequest($"خطا در دریافت موجودی: {response.Message}");
+                    return ApiResponse<InfoResponseDto>.BadRequest(ControlledErrorHelper.SmsFailed);
                 }
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting wallet info");
-                return ApiResponse<InfoResponseDto>.InternalServerError($"خطا در دریافت موجودی کیف پول: {ex.Message}");
+                return ApiResponse<InfoResponseDto>.InternalServerError(ControlledErrorHelper.SmsFailed);
             }
         }
 
@@ -487,31 +507,19 @@ namespace Api_Vapp.Services
                 _logger.LogError("SMS API Error - Endpoint: {Endpoint}, Status: {StatusCode}, Response: {Response}", 
                     endpoint, response.StatusCode, responseContent);
                 
-                // تلاش برای خواندن خطا از Response
-                try
+                var errorResponse = JsonSerializer.Deserialize<SendSmsResponseDto>(responseContent, JsonSerializerOptions);
+                if (errorResponse != null && errorResponse.Status < 0)
                 {
-                    var errorResponse = JsonSerializer.Deserialize<SendSmsResponseDto>(responseContent, new JsonSerializerOptions
-                    {
-                        PropertyNameCaseInsensitive = true
-                    });
-                    
-                    if (errorResponse != null && errorResponse.Status < 0)
-                    {
-                        throw new InvalidOperationException($"SMS API Error: {errorResponse.Message}");
-                    }
-                }
-                catch
-                {
-                    // اگر نتوانستیم parse کنیم، خطای عمومی می‌دهیم
+                    throw new InvalidOperationException(
+                        string.IsNullOrWhiteSpace(errorResponse.Message)
+                            ? $"SMS API Error (Status: {errorResponse.Status})"
+                            : $"SMS API Error: {errorResponse.Message}");
                 }
                 
                 response.EnsureSuccessStatusCode();
             }
 
-            var result = JsonSerializer.Deserialize<TResponse>(responseContent, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
+            var result = JsonSerializer.Deserialize<TResponse>(responseContent, JsonSerializerOptions);
 
             if (result == null)
             {
@@ -546,10 +554,7 @@ namespace Api_Vapp.Services
                 response.EnsureSuccessStatusCode();
             }
 
-            var result = JsonSerializer.Deserialize<TResponse>(responseContent, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
+            var result = JsonSerializer.Deserialize<TResponse>(responseContent, JsonSerializerOptions);
 
             if (result == null)
             {
@@ -558,6 +563,11 @@ namespace Api_Vapp.Services
 
             return result;
         }
+
+        private static readonly JsonSerializerOptions JsonSerializerOptions = new()
+        {
+            PropertyNameCaseInsensitive = true
+        };
 
         #endregion
     }

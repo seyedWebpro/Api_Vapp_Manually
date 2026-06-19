@@ -1,0 +1,65 @@
+# Build outputs
+**/bin/
+**/obj/
+**/publish/
+
+# Visual Studio
+.vs/
+.vscode/
+*.user
+*.suo
+
+# Test results
+**/TestResults/
+*.trx
+*.coverage
+
+# NuGet
+**/packages/
+*.nupkg
+
+# Logs
+**/log/
+**/logs/
+*.log
+
+# Git
+.git/
+.gitignore
+.gitattributes
+.github/
+
+# Docker (compose/scripts — entrypoint.sh is copied explicitly in Dockerfile)
+docker/docker-compose*.yml
+docker/docker-start.sh
+docker/.env.example
+docker/Dockerfile
+.dockerignore
+
+# Documentation
+*.md
+
+# IDE
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.cache
+
+# Backup files
+**/backups/
+*.bak
+
+# Uploads (will be mounted as volume)
+**/wwwroot/uploads/
+
+# Environment files
+.env
+
+# Tests
+tests/

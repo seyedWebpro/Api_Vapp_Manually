@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
@@ -11,13 +12,73 @@ using Swashbuckle.AspNetCore.SwaggerGen;
 using Swashbuckle.AspNetCore.SwaggerUI;
 using System.Linq;
 using System.Text;
+using Api_Vapp.Configuration;
 using Api_Vapp.Data;
+using Api_Vapp.Filters;
 using Api_Vapp.Utilities;
+using Serilog;
+using Serilog.Events;
+
+// Configure Serilog before creating the builder
+var logPath = Path.Combine(Directory.GetCurrentDirectory(), "log");
+if (!Directory.Exists(logPath))
+{
+    Directory.CreateDirectory(logPath);
+}
+
+Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Information()
+    .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
+    .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
+    .MinimumLevel.Override("Microsoft.EntityFrameworkCore", LogEventLevel.Warning)
+    .Enrich.FromLogContext()
+    .Filter.ByExcluding(logEvent => logEvent.MessageTemplate.Text == "در حال پردازش درخواست")
+    .WriteTo.Console()
+    .WriteTo.File(
+        Path.Combine(logPath, "log-.txt"),
+        rollingInterval: RollingInterval.Day,
+        retainedFileCountLimit: 30,
+        outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj}{NewLine}{Exception}",
+        encoding: Encoding.UTF8
+    )
+    .CreateLogger();
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. Configuration را از appsettings.json بارگذاری کنید:
-builder.Configuration.AddJsonFile("appsettings.json");
+// Use Serilog for logging
+builder.Host.UseSerilog();
+
+var isDocker = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true"
+    || Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Docker"
+    || File.Exists("/.dockerenv");
+
+if (builder.Environment.IsDevelopment() && !isDocker)
+{
+    if (OperatingSystem.IsWindows())
+    {
+        builder.Configuration.AddJsonFile("appsettings.Development.Windows.json", optional: false, reloadOnChange: true);
+        Log.Information("Vapp Windows dev — appsettings.Development.Windows.json (Trusted_Connection, Server=.)");
+    }
+    else
+    {
+        builder.Configuration.AddJsonFile("appsettings.Development.Mac.json", optional: false, reloadOnChange: true);
+        Log.Information("Vapp non-Windows dev — appsettings.Development.Mac.json (LocalDocker → localhost:1436).");
+    }
+
+    builder.Configuration.AddJsonFile("appsettings.Development.Local.json", optional: true, reloadOnChange: true);
+}
+
+if (isDocker && File.Exists("appsettings.Docker.json"))
+{
+    builder.Configuration.AddJsonFile("appsettings.Docker.json", optional: true, reloadOnChange: true);
+    Log.Information("Vapp Docker environment detected — loading appsettings.Docker.json");
+}
+else if (!isDocker)
+{
+    Log.Information("Vapp development/local environment — using appsettings.Development.json");
+}
+
+builder.Configuration.AddEnvironmentVariables();
 
 #region File Upload Configuration for Large Files
 // تنظیمات برای آپلود فایل‌های حجیم
@@ -57,33 +118,19 @@ builder.Services.AddHttpClient();
 
 
 // Add services to the container.
-builder.Services.AddControllers()
+builder.Services.AddControllers(options =>
+{
+    options.Filters.Add<ApiTraceIdResultFilter>();
+})
     .ConfigureApiBehaviorOptions(options =>
     {
         options.InvalidModelStateResponseFactory = context =>
         {
-            // استخراج تمام پیام‌های خطا از ModelState و تبدیل به فارسی
-            var errors = context.ModelState
-                .Where(e => e.Value.Errors.Count > 0)
-                .SelectMany(x => x.Value.Errors.Select(error => 
-                {
-                    var fieldName = x.Key;
-                    var errorMessage = error.ErrorMessage;
-                    
-                    // اگر ErrorMessage خالی باشد، از ExceptionMessage استفاده می‌کنیم
-                    if (string.IsNullOrWhiteSpace(errorMessage) && error.Exception != null)
-                    {
-                        errorMessage = error.Exception.Message;
-                    }
-                    
-                    return ErrorTranslator.TranslateValidationError(errorMessage, fieldName);
-                }))
-                .ToList();
-
-            // ساخت پاسخ استاندارد با استفاده از ApiResponse
-            var response = Api_Vapp.DTOs.Common.ApiResponse<object>.BadRequest("خطای اعتبارسنجی اطلاعات ورودی", errors);
-
-            // بازگرداندن نتیجه با کد 400
+            var errors = ErrorTranslator.ExtractModelStateErrors(context.ModelState);
+            var response = Api_Vapp.DTOs.Common.ApiResponse<object>.BadRequest(
+                "خطای اعتبارسنجی اطلاعات ورودی",
+                errors,
+                Api_Vapp.DTOs.Common.ErrorCodes.ValidationFailed);
             return new Microsoft.AspNetCore.Mvc.BadRequestObjectResult(response);
         };
     });
@@ -325,9 +372,10 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.IFileUploadService, Api_Vapp.Serv
 #endregion
 
 #region dbContext
+var connectionString = SqlServerConnectionConfiguration.GetConnectionString(builder.Configuration);
 builder.Services.AddDbContext<Api_Context>(options =>
 {
-    options.UseSqlServer(builder.Configuration["defultConnection"]);  //  localConnection  
+    options.UseSqlServer(connectionString);
 });
 #endregion
 
@@ -389,6 +437,44 @@ builder.Services.AddMemoryCache(options =>
 
 var app = builder.Build();
 
+if (app.Environment.IsProduction() || app.Environment.EnvironmentName == "Docker" || app.Environment.IsDevelopment())
+{
+    using var scope = app.Services.CreateScope();
+    var services = scope.ServiceProvider;
+    try
+    {
+        var context = services.GetRequiredService<Api_Context>();
+        var logger = services.GetRequiredService<ILogger<Program>>();
+
+        logger.LogInformation("Checking database connection...");
+        logger.LogInformation("Database: {DatabaseName}", context.Database.GetDbConnection().Database);
+
+        try
+        {
+            var csb = new SqlConnectionStringBuilder(context.Database.GetDbConnection().ConnectionString);
+            logger.LogInformation(
+                "SQL endpoint: {DataSource}; User: {User}; DatabaseProvider: {Provider}",
+                csb.DataSource,
+                csb.UserID ?? "(integrated)",
+                builder.Configuration["DatabaseProvider"] ?? "(legacy)");
+        }
+        catch
+        {
+            /* ignore parse errors */
+        }
+
+        var pendingMigrations = context.Database.GetPendingMigrations().ToList();
+        logger.LogInformation("Pending migrations: {PendingCount}", pendingMigrations.Count);
+        context.Database.Migrate();
+        logger.LogInformation("Migration completed successfully.");
+    }
+    catch (Exception ex)
+    {
+        var logger = services.GetRequiredService<ILogger<Program>>();
+        logger.LogError(ex, "An error occurred while migrating the database.");
+    }
+}
+
 // Configure the HTTP request pipeline.
 app.UseSwagger();
 app.UseSwaggerUI(c =>
@@ -432,6 +518,25 @@ app.UseStaticFiles(); // برای wwwroot
 
 app.MapControllers();
 
+app.MapGet("/health", () => Results.Ok(new
+{
+    status = "healthy",
+    timestamp = DateTime.UtcNow
+}));
+
 app.MapFallbackToFile("index.html");
 
-app.Run();
+try
+{
+    Log.Information("Application starting up");
+    app.Run();
+}
+catch (Exception ex)
+{
+    Log.Fatal(ex, "Application failed to start");
+    throw;
+}
+finally
+{
+    Log.CloseAndFlush();
+}

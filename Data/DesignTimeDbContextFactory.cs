@@ -1,3 +1,4 @@
+using Api_Vapp.Configuration;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Microsoft.Extensions.Configuration;
@@ -12,24 +13,20 @@ namespace Api_Vapp.Data
     {
         public Api_Context CreateDbContext(string[] args)
         {
-            // خواندن تنظیمات از appsettings.json
             var configuration = new ConfigurationBuilder()
                 .SetBasePath(Directory.GetCurrentDirectory())
                 .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
                 .AddJsonFile("appsettings.Development.json", optional: true)
+                .AddJsonFile(
+                    OperatingSystem.IsWindows()
+                        ? "appsettings.Development.Windows.json"
+                        : "appsettings.Development.Mac.json",
+                    optional: true)
+                .AddEnvironmentVariables()
                 .Build();
 
             var optionsBuilder = new DbContextOptionsBuilder<Api_Context>();
-            
-            // استفاده از connection string از تنظیمات
-            var connectionString = configuration["defultConnection"] ?? configuration.GetConnectionString("DefaultConnection");
-            
-            if (string.IsNullOrEmpty(connectionString))
-            {
-                throw new InvalidOperationException("Connection string 'defultConnection' or 'DefaultConnection' not found in appsettings.json");
-            }
-
-            optionsBuilder.UseSqlServer(connectionString);
+            optionsBuilder.UseSqlServer(SqlServerConnectionConfiguration.GetConnectionString(configuration));
 
             return new Api_Context(optionsBuilder.Options);
         }

@@ -1,0 +1,69 @@
+# ===========================================
+# Vapp API - Docker Compose (SQL Server + API)
+# اجرا: ./docker/docker-start.sh dev
+# API: http://127.0.0.1:5054/swagger
+# ===========================================
+
+name: vapp
+
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    platform: linux/amd64
+    container_name: vapp_sqlserver
+    environment:
+      - ACCEPT_EULA=Y
+      - MSSQL_SA_PASSWORD=Vapp@Secure2025!
+      - MSSQL_PID=Developer
+    ports:
+      - "1436:1433"
+    volumes:
+      - vapp_sqlserver_data:/var/opt/mssql
+    networks:
+      - vapp_network
+    healthcheck:
+      test: ["CMD-SHELL", "exit 0"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 50s
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: vapp_api
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:5054:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:8080
+      - DOTNET_RUNNING_IN_CONTAINER=true
+      - DatabaseProvider=Docker
+      - ConnectionStrings__DockerConnection=Server=sqlserver;Database=DbVapp;User Id=sa;Password=Vapp@Secure2025!;TrustServerCertificate=True;Encrypt=False;MultipleActiveResultSets=true;Max Pool Size=100;Min Pool Size=5;Connection Timeout=60;Pooling=true
+      - ConnectionStrings__LocalConnection=Server=sqlserver;Database=DbVapp;User Id=sa;Password=Vapp@Secure2025!;TrustServerCertificate=True;Encrypt=False;MultipleActiveResultSets=true;Max Pool Size=100;Min Pool Size=5;Connection Timeout=60;Pooling=true
+      - SA_PASSWORD=Vapp@Secure2025!
+    volumes:
+      - ../wwwroot/uploads:/app/wwwroot/uploads
+      - ../log:/app/log
+    networks:
+      - vapp_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+
+volumes:
+  vapp_sqlserver_data:
+    driver: local
+
+networks:
+  vapp_network:
+    driver: bridge

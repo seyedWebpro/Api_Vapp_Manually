@@ -34,60 +34,17 @@ namespace Api_Vapp.Controller
     [Route("api/[controller]")]
     [Authorize]
     [Produces("application/json")]
-    public class PaymentController : ControllerBase
+    public class PaymentController : VappControllerBase
     {
         private readonly IPaymentService _paymentService;
-        private readonly IConfiguration _configuration;
-        private readonly IUserRepository _userRepository;
 
         public PaymentController(
             IPaymentService paymentService,
             IConfiguration configuration,
             IUserRepository userRepository)
+            : base(configuration, userRepository)
         {
             _paymentService = paymentService;
-            _configuration = configuration;
-            _userRepository = userRepository;
-        }
-
-        /// <summary>
-        /// استخراج خطاهای ModelState برای نمایش به کاربر
-        /// </summary>
-        private List<string> ExtractModelStateErrors()
-        {
-            return ModelState
-                .Where(e => e.Value?.Errors.Count > 0)
-                .SelectMany(x => x.Value!.Errors.Select(error => 
-                {
-                    var errorMessage = error.ErrorMessage;
-                    if (string.IsNullOrWhiteSpace(errorMessage) && error.Exception != null)
-                    {
-                        errorMessage = error.Exception.Message;
-                    }
-                    return errorMessage;
-                }))
-                .ToList();
-        }
-
-        /// <summary>
-        /// دریافت شناسه کاربر از JWT Token یا برگرداندن کاربر پیش‌فرض در حالت DisableAuth
-        /// </summary>
-        private async Task<int> GetCurrentUserIdAsync()
-        {
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (!string.IsNullOrEmpty(userIdClaim) && int.TryParse(userIdClaim, out int userId))
-            {
-                return userId;
-            }
-
-            var disableAuth = _configuration.GetValue<bool>("Development:DisableAuth", false);
-            if (disableAuth)
-            {
-                var defaultUser = await _userRepository.GetOrCreateDefaultUserAsync();
-                return defaultUser.Id;
-            }
-
-            throw new UnauthorizedAccessException("شناسه کاربر معتبر نیست");
         }
 
         /// <summary>
@@ -311,7 +268,7 @@ namespace Api_Vapp.Controller
         /// <response code="302">ریدایرکت به صفحه نتیجه پرداخت</response>
         [HttpGet("callback/behpardakht")]
         [AllowAnonymous]
-        public async Task<ActionResult> BehpardakhtCallbackGet(
+        public Task<ActionResult> BehpardakhtCallbackGet(
             [FromQuery] int? PaymentId,
             [FromQuery] string? RefId,
             [FromQuery] string? ResCode,
@@ -320,7 +277,7 @@ namespace Api_Vapp.Controller
             [FromQuery] string? CardHolderPan)
         {
             // ریدایرکت به فرانت‌اند با پارامترها
-            var redirectUrl = _configuration["Payment:Behpardakht:FrontendCallbackUrl"] ?? "/payment/result";
+            var redirectUrl = Configuration["Payment:Behpardakht:FrontendCallbackUrl"] ?? "/payment/result";
             
             var queryParams = new List<string>();
             if (PaymentId.HasValue) queryParams.Add($"paymentId={PaymentId}");
@@ -332,7 +289,7 @@ namespace Api_Vapp.Controller
 
             var fullUrl = queryParams.Any() ? $"{redirectUrl}?{string.Join("&", queryParams)}" : redirectUrl;
             
-            return Redirect(fullUrl);
+            return Task.FromResult<ActionResult>(Redirect(fullUrl));
         }
 
         /// <summary>
@@ -412,13 +369,13 @@ namespace Api_Vapp.Controller
         /// <response code="302">ریدایرکت به درگاه پرداخت</response>
         [HttpGet("redirect/{paymentId}")]
         [AllowAnonymous]
-        public async Task<ActionResult> RedirectToGateway(int paymentId)
+        public Task<ActionResult> RedirectToGateway(int paymentId)
         {
             // در اینجا باید پرداخت را از دیتابیس بخوانیم و به درگاه ریدایرکت کنیم
             // برای حالت توسعه، یک صفحه شبیه‌سازی نشان می‌دهیم
             
-            var simulationUrl = _configuration["Payment:SimulationUrl"] ?? "/payment/simulation";
-            return Redirect($"{simulationUrl}?paymentId={paymentId}");
+            var simulationUrl = Configuration["Payment:SimulationUrl"] ?? "/payment/simulation";
+            return Task.FromResult<ActionResult>(Redirect($"{simulationUrl}?paymentId={paymentId}"));
         }
     }
 }

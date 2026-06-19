@@ -6,6 +6,24 @@ namespace Api_Vapp.Utilities
     public static class ErrorTranslator
     {
         /// <summary>
+        /// استخراج امن خطاهای ModelState بدون نشت ExceptionMessage خام
+        /// </summary>
+        public static List<string> ExtractModelStateErrors(Microsoft.AspNetCore.Mvc.ModelBinding.ModelStateDictionary modelState)
+        {
+            return modelState
+                .Where(e => e.Value is { Errors.Count: > 0 })
+                .SelectMany(x => x.Value!.Errors.Select(error =>
+                {
+                    var errorMessage = error.ErrorMessage;
+                    if (string.IsNullOrWhiteSpace(errorMessage))
+                        errorMessage = "مقدار وارد شده نامعتبر است";
+
+                    return TranslateValidationError(errorMessage, x.Key);
+                }))
+                .ToList();
+        }
+
+        /// <summary>
         /// تبدیل خطاهای اعتبارسنجی انگلیسی به فارسی
         /// </summary>
         public static string TranslateValidationError(string errorMessage, string fieldName)

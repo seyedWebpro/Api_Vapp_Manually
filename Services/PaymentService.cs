@@ -2,6 +2,7 @@ using Api_Vapp.Data;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.DTOs.Payment;
 using Api_Vapp.Interfaces;
+using Api_Vapp.Utilities;
 using Api_Vapp.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -406,7 +407,7 @@ namespace Api_Vapp.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "خطا در درخواست توکن به‌پرداخت");
-                return (false, null, ex.Message);
+                return (false, null, ControlledErrorHelper.PaymentFailed);
             }
         }
 
@@ -427,7 +428,7 @@ namespace Api_Vapp.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "خطا در تأیید پرداخت به‌پرداخت");
-                return (false, null, ex.Message);
+                return (false, null, ControlledErrorHelper.PaymentFailed);
             }
         }
 

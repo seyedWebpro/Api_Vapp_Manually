@@ -4,6 +4,7 @@ using Api_Vapp.DTOs.Cashback;
 using Api_Vapp.DTOs.Sms;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
+using Api_Vapp.Utilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using System.Globalization;
@@ -300,6 +301,11 @@ namespace Api_Vapp.Services
                     {
                         try
                         {
+                            if (string.IsNullOrEmpty(activeCashback.TargetNotebookIds))
+                            {
+                                continue;
+                            }
+
                             var activeNotebookIds = JsonSerializer.Deserialize<List<int>>(activeCashback.TargetNotebookIds);
                             if (activeNotebookIds != null && activeNotebookIds.Any())
                             {
@@ -601,7 +607,7 @@ namespace Api_Vapp.Services
                 // غیرفعال شده - دیگر کیف پول چک نمی‌شود
                 // var balance = await _walletService.GetBalanceAsync(userId);
                 // var hasSufficientBalance = balance >= estimatedTotalCost;
-                var balance = 0m; // غیرفعال شده
+                const decimal currentWalletBalance = 0m;
                 var hasSufficientBalance = true; // همیشه کافی است
 
                 // تعیین نوع کش‌بک
@@ -632,8 +638,8 @@ namespace Api_Vapp.Services
                     FormattedEstimatedCost = $"{estimatedTotalCost:N0} تومان",
                     WalletStatus = hasSufficientBalance ? "موجودی کافی است" : "موجودی ناکافی",
                     HasSufficientBalance = hasSufficientBalance,
-                    CurrentWalletBalance = balance,
-                    FormattedWalletBalance = $"{balance:N0} تومان"
+                    CurrentWalletBalance = currentWalletBalance,
+                    FormattedWalletBalance = $"{currentWalletBalance:N0} تومان"
                 };
 
                 return ApiResponse<CashbackFinalSummaryDto>.CreateSuccess(summary);
@@ -905,7 +911,6 @@ namespace Api_Vapp.Services
                 // غیرفعال شده - دیگر کیف پول چک نمی‌شود
                 // var balance = await _walletService.GetBalanceAsync(userId);
                 // var hasSufficientBalance = balance >= estimatedTotalCost;
-                var balance = 0m; // غیرفعال شده
                 var hasSufficientBalance = true; // همیشه کافی است
 
                 var summary = new CashbackCostSummaryDto
@@ -1550,7 +1555,7 @@ namespace Api_Vapp.Services
                             else
                             {
                                 cashbackTransaction.Status = CashbackTransactionStatuses.Failed;
-                                cashbackTransaction.Description = $"خطا در ارسال پیامک: {smsResult.Message}";
+                                cashbackTransaction.Description = ControlledErrorHelper.SmsFailed;
                                 failedCount++;
                             }
 
@@ -1977,11 +1982,11 @@ namespace Api_Vapp.Services
                         balance.TotalBalance = balanceBefore;
                         balance.UsableBalance = balanceBefore;
                         cashbackTransaction.Status = CashbackTransactionStatuses.Failed;
-                        cashbackTransaction.Description = $"خطا در ارسال پیامک: {smsResult.Message}";
+                        cashbackTransaction.Description = ControlledErrorHelper.SmsFailed;
                         await _context.SaveChangesAsync();
                         await transaction.CommitAsync();
 
-                        return ApiResponse<ApplyCashbackToContactResultDto>.BadRequest($"خطا در ارسال پیامک: {smsResult.Message}");
+                        return ApiResponse<ApplyCashbackToContactResultDto>.BadRequest(ControlledErrorHelper.SmsFailed);
                     }
                 }
                 catch (DbUpdateConcurrencyException ex)

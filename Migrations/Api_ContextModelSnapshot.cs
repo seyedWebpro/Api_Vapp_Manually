@@ -1442,6 +1442,65 @@ namespace Api_Vapp.Migrations
                     b.ToTable("Roles");
                 });
 
+            modelBuilder.Entity("Api_Vapp.Models.SocialMediaLink", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
+                    b.Property<bool>("IsDefault")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<string>("LinkUrl")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("Platform")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IsActive");
+
+                    b.HasIndex("IsDefault");
+
+                    b.HasIndex("IsDeleted");
+
+                    b.HasIndex("Platform");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("SocialMediaLinks");
+                });
+
             modelBuilder.Entity("Api_Vapp.Models.SpecialOccasion", b =>
                 {
                     b.Property<int>("Id")
@@ -2159,6 +2218,17 @@ namespace Api_Vapp.Migrations
                 });
 
             modelBuilder.Entity("Api_Vapp.Models.RefreshToken", b =>
+                {
+                    b.HasOne("Api_Vapp.Models.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Api_Vapp.Models.SocialMediaLink", b =>
                 {
                     b.HasOne("Api_Vapp.Models.User", "User")
                         .WithMany()

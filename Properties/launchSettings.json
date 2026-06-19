@@ -19,6 +19,17 @@
         "ASPNETCORE_ENVIRONMENT": "Development"
       }
     },
+    "http (SQL in Docker, API on host)": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": true,
+      "launchUrl": "swagger",
+      "applicationUrl": "http://localhost:5054",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "DatabaseProvider": "LocalDocker"
+      }
+    },
     "https": {
       "commandName": "Project",
       "dotnetRunMessages": true,

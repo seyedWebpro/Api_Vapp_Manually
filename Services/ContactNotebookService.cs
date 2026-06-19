@@ -3,6 +3,7 @@ using Api_Vapp.DTOs.Contact;
 using Api_Vapp.DTOs.File;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
+using Api_Vapp.Utilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -109,7 +110,7 @@ namespace Api_Vapp.Services
                     // اگر خطا مربوط به validation فایل بود، پیام واضح‌تری برمی‌گردانیم
                     if (ex is ArgumentException)
                     {
-                        return ApiResponse<ContactNotebookResponseDto>.BadRequest(ex.Message);
+                        return ApiResponse<ContactNotebookResponseDto>.BadRequest(ControlledErrorHelper.SanitizeArgumentMessage(ex.Message, ControlledErrorHelper.InvalidInput));
                     }
                     
                     throw;

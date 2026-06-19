@@ -256,7 +256,7 @@ namespace Api_Vapp.Services.BackgroundServices
                 automatedMessage.Id, sentCount, failedCount, skippedCount, eligibleContacts.Count, today.ToString("yyyy-MM-dd"));
         }
 
-        private async Task ProcessCashbackExpiryAutomationAsync(
+        private Task ProcessCashbackExpiryAutomationAsync(
             Api_Context context,
             AutomatedMessage automatedMessage,
             IContactRepository contactRepository,
@@ -264,7 +264,7 @@ namespace Api_Vapp.Services.BackgroundServices
             CancellationToken cancellationToken)
         {
             if (!automatedMessage.DaysBeforeEvent.HasValue)
-                return;
+                return Task.CompletedTask;
 
             var expiryDate = today.AddDays(automatedMessage.DaysBeforeEvent.Value);
 
@@ -272,9 +272,10 @@ namespace Api_Vapp.Services.BackgroundServices
             // فعلاً فقط ساختار کلی را می‌گذاریم
             _logger.LogInformation("Processing CashbackExpiry automation {Id} for date {ExpiryDate}", 
                 automatedMessage.Id, expiryDate);
+            return Task.CompletedTask;
         }
 
-        private async Task ProcessPurchaseReminderAutomationAsync(
+        private Task ProcessPurchaseReminderAutomationAsync(
             Api_Context context,
             AutomatedMessage automatedMessage,
             IContactRepository contactRepository,
@@ -282,7 +283,7 @@ namespace Api_Vapp.Services.BackgroundServices
             CancellationToken cancellationToken)
         {
             if (!automatedMessage.DaysBeforeEvent.HasValue)
-                return;
+                return Task.CompletedTask;
 
             var reminderDate = today.AddDays(-automatedMessage.DaysBeforeEvent.Value);
 
@@ -290,6 +291,7 @@ namespace Api_Vapp.Services.BackgroundServices
             // فعلاً فقط ساختار کلی را می‌گذاریم
             _logger.LogInformation("Processing PurchaseReminder automation {Id} for date {ReminderDate}", 
                 automatedMessage.Id, reminderDate);
+            return Task.CompletedTask;
         }
 
         private async Task ProcessSpecialOccasionAutomationAsync(
@@ -371,7 +373,7 @@ namespace Api_Vapp.Services.BackgroundServices
                 automatedMessage.Id, sentCount, skippedCount);
         }
 
-        private async Task ProcessCustomAutomationAsync(
+        private Task ProcessCustomAutomationAsync(
             Api_Context context,
             AutomatedMessage automatedMessage,
             IContactRepository contactRepository,
@@ -380,6 +382,7 @@ namespace Api_Vapp.Services.BackgroundServices
         {
             // TODO: پردازش شرایط سفارشی از ActivationConditions (JSON)
             _logger.LogInformation("Processing Custom automation {Id}", automatedMessage.Id);
+            return Task.CompletedTask;
         }
 
         private async Task SendAutomatedMessageAsync(
@@ -440,7 +443,7 @@ namespace Api_Vapp.Services.BackgroundServices
                         (smsResult.Data.Sid > 0 || smsResult.Data.Status > 0);
                     
                     string status = isSuccess ? "Success" : "Failed";
-                    string? errorMessage = isSuccess ? null : smsResult.Message;
+                    string? errorMessage = isSuccess ? null : ControlledErrorHelper.SendFailed;
 
                     _logger.LogInformation(
                         "Sending automated message {AutomationId} to contact {ContactId} ({MobileNumber}). Content: {Content}, Status: {Status}",
@@ -480,7 +483,7 @@ namespace Api_Vapp.Services.BackgroundServices
                         Status = "Failed",
                         MessageContent = messageContent,
                         SentCount = 0,
-                        ErrorMessage = smsEx.Message
+                        ErrorMessage = ControlledErrorHelper.SendFailed
                     };
 
                     await context.AutomationExecutions.AddAsync(execution, cancellationToken);
@@ -708,8 +711,7 @@ namespace Api_Vapp.Services.BackgroundServices
             // اگر Exception داشتیم
             if (lastException != null)
             {
-                return ApiResponse<DTOs.Sms.SendSmsResponseDto>.InternalServerError(
-                    $"خطا در ارسال SMS بعد از {maxRetries + 1} تلاش: {lastException.Message}");
+                return ApiResponse<DTOs.Sms.SendSmsResponseDto>.InternalServerError(ControlledErrorHelper.SmsFailed);
             }
 
             return ApiResponse<DTOs.Sms.SendSmsResponseDto>.InternalServerError("خطای ناشناخته در ارسال SMS");

@@ -3,6 +3,7 @@ using Api_Vapp.DTOs.File;
 using Api_Vapp.DTOs.User;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
+using Api_Vapp.Utilities;
 using BCrypt.Net;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -637,7 +638,7 @@ namespace Api_Vapp.Services
                     
                     if (ex is ArgumentException)
                     {
-                        return ApiResponse<string>.BadRequest(ex.Message);
+                        return ApiResponse<string>.BadRequest(ControlledErrorHelper.SanitizeArgumentMessage(ex.Message, ControlledErrorHelper.FileUploadFailed));
                     }
                     
                     throw;

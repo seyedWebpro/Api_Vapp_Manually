@@ -4,6 +4,7 @@ using Api_Vapp.DTOs.Message;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
 using Api_Vapp.Data;
+using Api_Vapp.Utilities;
 using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore;
 
@@ -129,7 +130,7 @@ namespace Api_Vapp.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error creating quick action for user: {UserId}", userId);
-                return ApiResponse<QuickActionResponseDto>.InternalServerError($"خطا در ایجاد لینک: {ex.Message}");
+                return ApiResponse<QuickActionResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -166,7 +167,7 @@ namespace Api_Vapp.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting quick actions for user: {UserId}", userId);
-                return ApiResponse<QuickActionListResponseDto>.InternalServerError($"خطا در دریافت لیست لینک‌ها: {ex.Message}");
+                return ApiResponse<QuickActionListResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -185,7 +186,7 @@ namespace Api_Vapp.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting quick action: {Id}", id);
-                return ApiResponse<QuickActionResponseDto>.InternalServerError($"خطا در دریافت لینک: {ex.Message}");
+                return ApiResponse<QuickActionResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -277,7 +278,7 @@ namespace Api_Vapp.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error updating quick action: {Id}", id);
-                return ApiResponse<QuickActionResponseDto>.InternalServerError($"خطا در به‌روزرسانی لینک: {ex.Message}");
+                return ApiResponse<QuickActionResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -319,7 +320,7 @@ namespace Api_Vapp.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error deleting quick action: {Id}", id);
-                return ApiResponse<bool>.InternalServerError($"خطا در حذف لینک: {ex.Message}");
+                return ApiResponse<bool>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -415,7 +416,7 @@ namespace Api_Vapp.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "خطا در آپلود آیکون برای اکشن {ActionId}", id);
-                return ApiResponse<string>.InternalServerError($"خطا در آپلود آیکون: {ex.Message}");
+                return ApiResponse<string>.InternalServerError(ControlledErrorHelper.FileUploadFailed);
             }
         }
 

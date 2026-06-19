@@ -1,0 +1,30 @@
+# SQL Server only — API runs with `dotnet run` on the host.
+# Start: ./docker/docker-start.sh sql
+# Port 1436 matches LocalDockerHostConnection in appsettings.
+
+name: vapp
+
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    platform: linux/amd64
+    container_name: vapp_sqlserver_dev
+    environment:
+      - ACCEPT_EULA=Y
+      - MSSQL_SA_PASSWORD=Vapp@Secure2025!
+      - MSSQL_PID=Developer
+    ports:
+      - "1436:1433"
+    volumes:
+      - vapp_sqlserver_dev_data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "exit 0"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 50s
+    restart: unless-stopped
+
+volumes:
+  vapp_sqlserver_dev_data:
+    driver: local

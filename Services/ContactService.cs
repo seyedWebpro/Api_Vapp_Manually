@@ -292,10 +292,7 @@ namespace Api_Vapp.Services
                     
                     if (ex is ArgumentException)
                     {
-                        var errorMessage = ex.Message.Contains("الزامی") || ex.Message.Contains("صحیح نیست") || 
-                                           ex.Message.Contains("نمی‌تواند") || ex.Message.Contains("باید") 
-                                           ? ex.Message 
-                                           : "اطلاعات وارد شده نامعتبر است";
+                        var errorMessage = ControlledErrorHelper.SanitizeArgumentMessage(ex.Message, ControlledErrorHelper.InvalidInput);
                         return ApiResponse<ContactResponseDto>.BadRequest(errorMessage);
                     }
                     
@@ -630,7 +627,7 @@ namespace Api_Vapp.Services
 
                                 existingTags.Add(newTag);
                             }
-                            catch (DbUpdateException ex)
+                            catch (DbUpdateException)
                             {
                                 // Race condition: تگ توسط request دیگر ایجاد شده
                                 var allUserTagsRetry = await _context.MessageTags
@@ -1267,7 +1264,7 @@ namespace Api_Vapp.Services
                 _logger.LogError(ex, "خطا در خواندن فایل اکسل");
 
                 // اگر خطایی در خواندن رخ دهد، فایل هنوز آپلود نشده است پس نیازی به حذف نیست
-                return ApiResponse<ImportExcelResultDto>.BadRequest($"خطا در خواندن فایل اکسل: {ex.Message}");
+                return ApiResponse<ImportExcelResultDto>.BadRequest(ControlledErrorHelper.ExcelReadFailed);
             }
         }
 
@@ -1352,7 +1349,7 @@ namespace Api_Vapp.Services
             return new string(result);
         }
 
-        public async Task<ApiResponse<ExportExcelResultDto>> GetImportExcelTemplateAsync()
+        public Task<ApiResponse<ExportExcelResultDto>> GetImportExcelTemplateAsync()
         {
             try
             {
@@ -1406,12 +1403,12 @@ namespace Api_Vapp.Services
                     ExportedCount = 0
                 };
 
-                return ApiResponse<ExportExcelResultDto>.CreateSuccess(result, "قالب اکسل آماده دانلود است");
+                return Task.FromResult(ApiResponse<ExportExcelResultDto>.CreateSuccess(result, "قالب اکسل آماده دانلود است"));
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error creating import excel template");
-                return ApiResponse<ExportExcelResultDto>.InternalServerError("خطا در ایجاد فایل قالب");
+                return Task.FromResult(ApiResponse<ExportExcelResultDto>.InternalServerError("خطا در ایجاد فایل قالب"));
             }
         }
 
@@ -1755,7 +1752,7 @@ namespace Api_Vapp.Services
                     
                     if (ex is ArgumentException)
                     {
-                        return ApiResponse<string>.BadRequest(ex.Message);
+                        return ApiResponse<string>.BadRequest(ControlledErrorHelper.SanitizeArgumentMessage(ex.Message, ControlledErrorHelper.FileUploadFailed));
                     }
                     
                     throw;
@@ -1839,7 +1836,7 @@ namespace Api_Vapp.Services
                     
                     if (ex is ArgumentException)
                     {
-                        return ApiResponse<string>.BadRequest(ex.Message);
+                        return ApiResponse<string>.BadRequest(ControlledErrorHelper.SanitizeArgumentMessage(ex.Message, ControlledErrorHelper.FileUploadFailed));
                     }
                     
                     throw;
@@ -1988,7 +1985,7 @@ namespace Api_Vapp.Services
                 
                 if (ex is ArgumentException || ex is InvalidOperationException)
                 {
-                    return ApiResponse<List<string>>.BadRequest(ex.Message);
+                    return ApiResponse<List<string>>.BadRequest(ControlledErrorHelper.SanitizeArgumentMessage(ex.Message, ControlledErrorHelper.FileUploadFailed));
                 }
                 
                 throw;

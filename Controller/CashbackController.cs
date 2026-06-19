@@ -3,7 +3,6 @@ using Api_Vapp.DTOs.Cashback;
 using Api_Vapp.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.Security.Claims;
 
 namespace Api_Vapp.Controller
 {
@@ -38,60 +37,17 @@ namespace Api_Vapp.Controller
     [Route("api/[controller]")]
     [Authorize]
     [Produces("application/json")]
-    public class CashbackController : ControllerBase
+    public class CashbackController : VappControllerBase
     {
         private readonly ICashbackService _cashbackService;
-        private readonly IConfiguration _configuration;
-        private readonly IUserRepository _userRepository;
 
         public CashbackController(
             ICashbackService cashbackService,
             IConfiguration configuration,
             IUserRepository userRepository)
+            : base(configuration, userRepository)
         {
             _cashbackService = cashbackService;
-            _configuration = configuration;
-            _userRepository = userRepository;
-        }
-
-        /// <summary>
-        /// دریافت شناسه کاربر از JWT Token یا برگرداندن کاربر پیش‌فرض در حالت DisableAuth
-        /// </summary>
-        private async Task<int> GetCurrentUserIdAsync()
-        {
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (!string.IsNullOrEmpty(userIdClaim) && int.TryParse(userIdClaim, out int userId))
-            {
-                return userId;
-            }
-
-            var disableAuth = _configuration.GetValue<bool>("Development:DisableAuth", false);
-            if (disableAuth)
-            {
-                var defaultUser = await _userRepository.GetOrCreateDefaultUserAsync();
-                return defaultUser.Id;
-            }
-
-            throw new UnauthorizedAccessException("شناسه کاربر معتبر نیست");
-        }
-
-        /// <summary>
-        /// استخراج خطاها از ModelState و تبدیل به لیست
-        /// </summary>
-        private List<string> ExtractModelStateErrors()
-        {
-            return ModelState
-                .Where(e => e.Value.Errors.Count > 0)
-                .SelectMany(x => x.Value.Errors.Select(error => 
-                {
-                    var errorMessage = error.ErrorMessage;
-                    if (string.IsNullOrWhiteSpace(errorMessage) && error.Exception != null)
-                    {
-                        errorMessage = error.Exception.Message;
-                    }
-                    return errorMessage;
-                }))
-                .ToList();
         }
 
         /// <summary>
@@ -509,22 +465,15 @@ namespace Api_Vapp.Controller
         public async Task<ActionResult<ApiResponse<CashbackSummaryDto>>> GetSummary(
             [FromQuery] string? draftId = null)
         {
-            try
+            if (string.IsNullOrEmpty(draftId))
             {
-                if (string.IsNullOrEmpty(draftId))
-                {
-                    return StatusCode(400, ApiResponse<CashbackSummaryDto>.BadRequest("draftId الزامی است"));
-                }
+                return StatusCode(400, ApiResponse<CashbackSummaryDto>.BadRequest("draftId الزامی است"));
+            }
 
-                var userId = await GetCurrentUserIdAsync();
-                var request = new GetCashbackSummaryRequestDto { DraftId = draftId };
-                var result = await _cashbackService.GetCashbackSummaryAsync(userId, request);
-                return StatusCode(result.StatusCode, result);
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, ApiResponse<CashbackSummaryDto>.InternalServerError("خطا در دریافت خلاصه"));
-            }
+            var userId = await GetCurrentUserIdAsync();
+            var request = new GetCashbackSummaryRequestDto { DraftId = draftId };
+            var result = await _cashbackService.GetCashbackSummaryAsync(userId, request);
+            return StatusCode(result.StatusCode, result);
         }
 
         /// <summary>

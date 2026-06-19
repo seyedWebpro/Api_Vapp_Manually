@@ -42,21 +42,8 @@ namespace Api_Vapp.Controller
         /// <summary>
         /// استخراج خطاهای ModelState برای نمایش به کاربر
         /// </summary>
-        private List<string> ExtractModelStateErrors()
-        {
-            return ModelState
-                .Where(e => e.Value?.Errors.Count > 0)
-                .SelectMany(x => x.Value!.Errors.Select(error => 
-                {
-                    var errorMessage = error.ErrorMessage;
-                    if (string.IsNullOrWhiteSpace(errorMessage) && error.Exception != null)
-                    {
-                        errorMessage = error.Exception.Message;
-                    }
-                    return errorMessage;
-                }))
-                .ToList();
-        }
+        private List<string> ExtractModelStateErrors() =>
+            Api_Vapp.Utilities.ErrorTranslator.ExtractModelStateErrors(ModelState);
 
         /// <summary>
         /// ایجاد رابطه کاربر-نقش (اختصاص نقش به کاربر)

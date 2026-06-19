@@ -1,5 +1,6 @@
 using Api_Vapp.DTOs.File;
 using Api_Vapp.Interfaces;
+using Api_Vapp.Utilities;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
@@ -108,7 +109,7 @@ namespace Api_Vapp.Services
             ValidateEntityInfo(entityType, entityId);
 
             // تولید نام یکتا برای فایل (GUID + Timestamp)
-            string fileName = GenerateUniqueFileName(file.FileName);
+            string fileName = GenerateUniqueFileName(file!.FileName);
             
             // ساخت مسیر کامل فایل با ساختار: {entityType}/{entityId}/{subFolder}/{fileName}
             // اگر subFolder نباشد: {entityType}/{entityId}/{fileName}
@@ -126,7 +127,7 @@ namespace Api_Vapp.Services
                 catch (UnauthorizedAccessException ex)
                 {
                     _logger.LogError(ex, "❌ خطای دسترسی: امکان ایجاد پوشه {Directory} وجود ندارد. لطفاً دسترسی نوشتن را برای Application Pool Identity تنظیم کنید.", directory);
-                    throw new UnauthorizedAccessException($"دسترسی به مسیر '{directory}' امکان‌پذیر نیست. لطفاً با مدیر سیستم تماس بگیرید.");
+                    throw new UnauthorizedAccessException("دسترسی به مسیر فایل امکان‌پذیر نیست. لطفاً با پشتیبانی تماس بگیرید.");
                 }
                 catch (Exception ex)
                 {
@@ -152,19 +153,17 @@ namespace Api_Vapp.Services
             {
                 _logger.LogError(ex, "❌ خطای دسترسی: امکان نوشتن فایل در مسیر {FilePath} وجود ندارد.", filePath);
                 throw new UnauthorizedAccessException(
-                    $"دسترسی به مسیر '{filePath}' امکان‌پذیر نیست. " +
-                    "لطفاً دسترسی نوشتن (Write) را برای Application Pool Identity در پوشه wwwroot/uploads تنظیم کنید. " +
-                    "برای راهنمایی بیشتر با مدیر سیستم تماس بگیرید.", ex);
+                    "دسترسی به مسیر فایل امکان‌پذیر نیست. لطفاً با پشتیبانی تماس بگیرید.", ex);
             }
             catch (DirectoryNotFoundException ex)
             {
                 _logger.LogError(ex, "❌ پوشه یافت نشد: {FilePath}", filePath);
-                throw new DirectoryNotFoundException($"پوشه مورد نظر یافت نشد: {filePath}", ex);
+                throw new DirectoryNotFoundException(ControlledErrorHelper.FileUploadFailed, ex);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "❌ خطا در آپلود فایل: {FileName}", file.FileName);
-                throw new InvalidOperationException($"خطا در آپلود فایل: {ex.Message}", ex);
+                throw new InvalidOperationException(ControlledErrorHelper.FileUploadFailed, ex);
             }
         }
 
@@ -191,7 +190,7 @@ namespace Api_Vapp.Services
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex, "⚠️ خطا در آپلود فایل: {FileName}", file.FileName);
-                    errors.Add($"{file.FileName}: {ex.Message}");
+                    errors.Add($"{file.FileName}: {ControlledErrorHelper.FileUploadFailed}");
                 }
             }
 
@@ -211,7 +210,7 @@ namespace Api_Vapp.Services
             return fileUrls;
         }
 
-        public async Task DeleteFileAsync(string filePath, string entityType, int entityId, string? subFolder = null)
+        public Task DeleteFileAsync(string filePath, string entityType, int entityId, string? subFolder = null)
         {
             _logger.LogDebug("🗑️ شروع حذف فایل: {FilePath}, EntityType: {EntityType}, EntityId: {EntityId}",
                 filePath, entityType, entityId);
@@ -261,7 +260,7 @@ namespace Api_Vapp.Services
                 else
                 {
                     _logger.LogWarning("⚠️ فایل یافت نشد: {FullPath}", fullPath);
-                    throw new FileNotFoundException($"فایل پیدا نشد: {filePath}");
+                    throw new FileNotFoundException(ControlledErrorHelper.FileUploadFailed);
                 }
             }
             catch (FileNotFoundException)
@@ -271,8 +270,10 @@ namespace Api_Vapp.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "❌ خطا در حذف فایل: {FilePath}", filePath);
-                throw new InvalidOperationException($"در هنگام حذف فایل خطایی رخ داده است: {ex.Message}", ex);
+                throw new InvalidOperationException(ControlledErrorHelper.FileUploadFailed, ex);
             }
+
+            return Task.CompletedTask;
         }
 
         public Task<List<string>> ListFilesAsync(string entityType, int entityId, string? subFolder = null)
@@ -356,7 +357,7 @@ namespace Api_Vapp.Services
             return $"/{relativePath}";
         }
 
-        public async Task<int> DeleteAllEntityFilesAsync(string entityType, int entityId, string? subFolder = null)
+        public Task<int> DeleteAllEntityFilesAsync(string entityType, int entityId, string? subFolder = null)
         {
             _logger.LogDebug("🗑️ حذف تمام فایل‌های موجودیت: EntityType: {EntityType}, EntityId: {EntityId}",
                 entityType, entityId);
@@ -373,7 +374,7 @@ namespace Api_Vapp.Services
             if (!Directory.Exists(entityFolder))
             {
                 _logger.LogDebug("📁 پوشه وجود ندارد: {EntityFolder}", entityFolder);
-                return 0;
+                return Task.FromResult(0);
             }
 
             int deletedCount = 0;
@@ -400,12 +401,12 @@ namespace Api_Vapp.Services
                 _logger.LogInformation("✅ تعداد {Count} فایل از موجودیت {EntityType}/{EntityId} حذف شد",
                     deletedCount, entityType, entityId);
 
-                return deletedCount;
+                return Task.FromResult(deletedCount);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "❌ خطا در حذف فایل‌های موجودیت {EntityType}/{EntityId}", entityType, entityId);
-                throw new InvalidOperationException($"خطا در حذف فایل‌های موجودیت: {ex.Message}", ex);
+                throw new InvalidOperationException(ControlledErrorHelper.FileUploadFailed, ex);
             }
         }
 
@@ -462,7 +463,7 @@ namespace Api_Vapp.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "❌ خطا در حذف فایل‌های قدیمی تیکت‌ها");
-                throw new InvalidOperationException($"خطا در حذف فایل‌های قدیمی: {ex.Message}", ex);
+                throw new InvalidOperationException(ControlledErrorHelper.FileUploadFailed, ex);
             }
         }
 
@@ -641,7 +642,7 @@ namespace Api_Vapp.Services
             }
         }
 
-        private async Task<int> DeleteOldFilesInDirectoryAsync(string directory, DateTime cutoffDate)
+        private Task<int> DeleteOldFilesInDirectoryAsync(string directory, DateTime cutoffDate)
         {
             int deletedCount = 0;
 
@@ -671,7 +672,7 @@ namespace Api_Vapp.Services
                 _logger.LogWarning(ex, "⚠️ خطا در بررسی فایل‌های قدیمی در پوشه: {Directory}", directory);
             }
 
-            return deletedCount;
+            return Task.FromResult(deletedCount);
         }
 
         #endregion

@@ -43,9 +43,9 @@ namespace Api_Vapp.Services
                     201
                 );
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return ApiResponse<SpecialOccasionResponseDto>.InternalServerError($"خطا در ایجاد مناسبت: {ex.Message}");
+                return ApiResponse<SpecialOccasionResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -63,9 +63,9 @@ namespace Api_Vapp.Services
                 var occasionDtos = allOccasions.Select(MapToDto).ToList();
                 return ApiResponse<List<SpecialOccasionResponseDto>>.CreateSuccess(occasionDtos);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return ApiResponse<List<SpecialOccasionResponseDto>>.InternalServerError($"خطا در دریافت لیست مناسبت‌ها: {ex.Message}");
+                return ApiResponse<List<SpecialOccasionResponseDto>>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -81,9 +81,9 @@ namespace Api_Vapp.Services
 
                 return ApiResponse<SpecialOccasionResponseDto>.CreateSuccess(MapToDto(occasion));
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return ApiResponse<SpecialOccasionResponseDto>.InternalServerError($"خطا در دریافت مناسبت: {ex.Message}");
+                return ApiResponse<SpecialOccasionResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -124,9 +124,9 @@ namespace Api_Vapp.Services
                     "مناسبت با موفقیت به‌روزرسانی شد"
                 );
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return ApiResponse<SpecialOccasionResponseDto>.InternalServerError($"خطا در به‌روزرسانی مناسبت: {ex.Message}");
+                return ApiResponse<SpecialOccasionResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -157,9 +157,9 @@ namespace Api_Vapp.Services
 
                 return ApiResponse<bool>.CreateSuccess(true, "مناسبت با موفقیت حذف شد");
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return ApiResponse<bool>.InternalServerError($"خطا در حذف مناسبت: {ex.Message}");
+                return ApiResponse<bool>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 

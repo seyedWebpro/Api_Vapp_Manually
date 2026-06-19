@@ -7,11 +7,15 @@
 🏗️ 1. معماری پروژه (Architecture)
 
 ساختار پوشه‌ها:
-- Controllers/ - کنترلرهای API
+- Controller/ - کنترلرهای API (ارث‌بری از VappControllerBase)
 - Services/ - سرویس‌ها (Business Logic)
 - Repositories/ - ریپازیتوری‌ها (Data Access)
 - Models/ - مدل‌های دیتابیس (Entities)
-- DTOs/ - Data Transfer Objects
+- DTOs/ - Data Transfer Objects (شامل Common/ApiResponse، ErrorCodes)
+- Exceptions/ - AppException
+- Middleware/ - GlobalExceptionHandlerMiddleware
+- Filters/ - ApiTraceIdResultFilter
+- Utilities/ - ControlledErrorHelper، ErrorTranslator
 - Data/ - DbContext و تنظیمات دیتابیس
 
 اصول:
@@ -56,59 +60,204 @@ Data Annotations در DTO:
 ```csharp
 [Required(ErrorMessage = "نام الزامی است")]
 [MaxLength(100, ErrorMessage = "نام نمی‌تواند بیشتر از 100 کاراکتر باشد")]
-در Controller:
+```
 
-بررسی ModelState.IsValid
+در Controller (استاندارد پروژه):
 
-برگرداندن خطاها به فارسی
+- Controllerها از VappControllerBase ارث‌بری کنند
+- برای ModelState از ErrorTranslator استفاده کنید (هرگز ExceptionMessage خام نخوانید)
+- errorCode اعتبارسنجی: VALIDATION_FAILED
 
-مثال در Controller:
-
-csharp
+```csharp
+// ✅ درست
 if (!ModelState.IsValid)
 {
-    var errors = ModelState.Values
-        .SelectMany(v => v.Errors)
-        .Select(e => e.ErrorMessage)
-        .ToList();
-    
-    return BadRequest(new { 
-        success = false, 
-        message = "داده‌های ورودی نامعتبر است",
-        errors = errors 
-    });
+    var errors = ExtractModelStateErrors(); // از VappControllerBase
+    return StatusCode(400, ApiResponse<T>.BadRequest(
+        "داده‌های ورودی نامعتبر است",
+        errors,
+        ErrorCodes.ValidationFailed));
 }
+
+// ❌ غلط — هرگز
+errorMessage = error.Exception.Message;
+var errors = ModelState.Values.SelectMany(...).Select(e => e.ErrorMessage);
+```
+
 در Service:
 
-بررسی قوانین کسب و کار
+- قوانین کسب‌وکار: throw AppException یا return ApiResponse با پیام ثابت فارسی
+- هرگز ex.Message را به کاربر نفرستید
 
-استفاده از Exception با پیام فارسی
-
-csharp
+```csharp
+// ✅ درست — خطای کنترل‌شده
 if (amount <= 0)
+    throw AppException.BadRequest(ErrorCodes.InvalidInput, "مبلغ باید بیشتر از صفر باشد");
+
+// ✅ درست — خطای غیرمنتظره
+catch (Exception ex)
 {
-    throw new ArgumentException("مبلغ باید بیشتر از صفر باشد");
+    _logger.LogError(ex, "خطا در عملیات — {EntityId}", entityId);
+    return ApiResponse<T>.InternalServerError(ControlledErrorHelper.Unexpected);
 }
+
+// ❌ غلط — هرگز
+return ApiResponse<T>.InternalServerError($"خطا: {ex.Message}");
+throw new Exception(ex.Message);
+```
+
 ================================================================================
 
-📤 5. یکپارچگی ریسپانس‌ها (Response)
+🚨 4.1. مدیریت خطا — قانون طلایی پروژه
 
-ساختار استاندارد:
+اصل اصلی:
+  خطای واقعی (دیتابیس، Exception، StackTrace) → فقط در لاگ سرور
+  پیام کنترل‌شده (فارسی، ثابت)              → فقط برای کاربر
 
-csharp
+فایل‌های مرجع (قبل از نوشتن کد خطا، این‌ها را ببینید):
+- Utilities/ControlledErrorHelper.cs  → پیام‌های امن کاربر
+- DTOs/Common/ErrorCodes.cs           → کدهای خطای استاندارد
+- Exceptions/AppException.cs          → Exception کنترل‌شده
+- Middleware/GlobalExceptionHandlerMiddleware.cs
+- Filters/ApiTraceIdResultFilter.cs
+- Controller/VappControllerBase.cs
+
+ساختار ApiResponse (الزامی):
+```csharp
 public class ApiResponse<T>
 {
     public int StatusCode { get; set; }
     public bool Success { get; set; }
     public string Message { get; set; }
+    public string? ErrorCode { get; set; }   // برای فرانت
     public T? Data { get; set; }
     public List<string>? Errors { get; set; }
+    public string? TraceId { get; set; }   // برای پشتیبانی
 }
-استفاده:
+```
 
-موفقیت: return Ok(new ApiResponse<T> { Success = true, Data = data })
+ErrorCodes — کدهای استاندارد (از ErrorCodes.cs استفاده کنید، رشته آزاد ننویسید):
+- UNEXPECTED_ERROR      → خطای غیرمنتظره سرور
+- VALIDATION_FAILED     → خطای اعتبارسنجی فرم
+- INVALID_INPUT         → ورودی نامعتبر
+- INVALID_USER_ID       → شناسه کاربر نامعتبر
+- UNAUTHORIZED          → دسترسی غیرمجاز
+- FORBIDDEN             → ممنوع
+- NOT_FOUND             → یافت نشد
+- DATABASE_ERROR        → خطای ذخیره‌سازی
+- TOKEN_EXPIRED         → توکن منقضی
+- TOKEN_INVALID         → توکن نامعتبر
+- SMS_FAILED            → خطای پیامک
+- PAYMENT_FAILED        → خطای پرداخت
+- FILE_UPLOAD_FAILED    → خطای آپلود
 
-خطا: return BadRequest(new ApiResponse<T> { Success = false, Message = "خطا" })
+AppException — چه زمانی استفاده کنیم:
+```csharp
+// در Controller یا Service — خطای قابل پیش‌بینی
+throw AppException.NotFound(ErrorCodes.NotFound, ControlledErrorHelper.NotFound);
+throw AppException.Unauthorized(ErrorCodes.InvalidUserId, ControlledErrorHelper.Unauthorized);
+throw AppException.BadRequest(ErrorCodes.InvalidInput, "نام الزامی است");
+throw AppException.Internal(ErrorCodes.Unexpected, ControlledErrorHelper.Unexpected);
+```
+→ Middleware خودکار تبدیل به ApiResponse + traceId می‌کند
+
+ControlledErrorHelper — پیام‌های امن (از این‌ها کپی نکنید، import کنید):
+- Unexpected          → "خطای غیرمنتظره. لطفاً با پشتیبانی تماس بگیرید."
+- Database            → "مشکلی در ذخیره‌سازی اطلاعات پیش آمد..."
+- Unauthorized        → "شما مجاز به انجام این عملیات نیستید"
+- NotFound            → "منبع مورد نظر یافت نشد"
+- SmsFailed           → "مشکلی در ارسال پیامک پیش آمد..."
+- FileUploadFailed    → "مشکلی در آپلود فایل پیش آمد..."
+
+Controller — قوانین:
+1. ارث‌بری از VappControllerBase (نه ControllerBase مستقیم)
+2. GetCurrentUserIdAsync() از Base — خودش AppException می‌زند
+3. try/catch در Controller ننویسید — Middleware handle می‌کند
+4. همه endpointها ApiResponse<T> برگردانند (به جز موارد خاص تأییدشده)
+5. ModelState: ExtractModelStateErrors() از Base
+
+```csharp
+public class ProductController : VappControllerBase
+{
+    public ProductController(IConfiguration config, IUserRepository repo, IProductService svc)
+        : base(config, repo) { ... }
+
+    [HttpPost]
+    public async Task<ActionResult<ApiResponse<ProductDto>>> Create([FromBody] CreateProductDto dto)
+    {
+        if (!ModelState.IsValid)
+        {
+            var errors = ExtractModelStateErrors();
+            return StatusCode(400, ApiResponse<ProductDto>.BadRequest(
+                "داده‌های ورودی نامعتبر است", errors, ErrorCodes.ValidationFailed));
+        }
+
+        var userId = await GetCurrentUserIdAsync();
+        var result = await _service.CreateAsync(userId, dto);
+        return StatusCode(result.StatusCode, result);
+    }
+}
+```
+
+Service — قوانین:
+1. خطای قابل پیش‌بینی → return ApiResponse با پیام ثابت یا throw AppException
+2. catch (Exception ex) → فقط _logger.LogError(ex, ...) + پیام ثابت ControlledErrorHelper
+3. هرگز: ex.Message، InnerException.Message، response.Message API خارجی را مستقیم به کاربر ندهید
+4. پیام‌های API خارجی (SMS، پرداخت) → فقط در لاگ؛ به کاربر SmsFailed / PaymentFailed
+
+Middleware (خودکار — دست نزنید مگر بدانید چرا):
+- GlobalExceptionHandlerMiddleware → همه Exceptionهای handle نشده
+- ApiTraceIdResultFilter → traceId روی همه ApiResponseها
+
+فرانت‌اند (اگر مربوط باشد):
+- فقط response.message بک‌اند را نشان بده
+- response.errorCode برای منطق UI (مثلاً TOKEN_EXPIRED → logout)
+- response.traceId را در گزارش خطا به پشتیبانی بده
+- فقط وقتی API در دسترس نبود: "ارتباط برقرار نشد"
+
+================================================================================
+
+📤 5. یکپارچگی ریسپانس‌ها (Response)
+
+ساختار استاندارد (الزامی):
+
+```csharp
+public class ApiResponse<T>
+{
+    public int StatusCode { get; set; }
+    public bool Success { get; set; }
+    public string Message { get; set; }
+    public string? ErrorCode { get; set; }
+    public T? Data { get; set; }
+    public List<string>? Errors { get; set; }
+    public string? TraceId { get; set; }
+}
+```
+
+استفاده (از helperهای ApiResponse — نه new دستی):
+
+```csharp
+// موفقیت
+return StatusCode(200, ApiResponse<T>.CreateSuccess(data, "عملیات با موفقیت انجام شد"));
+
+// خطا — همیشه errorCode بدهید
+return StatusCode(400, ApiResponse<T>.BadRequest("پیام فارسی", errors, ErrorCodes.ValidationFailed));
+return StatusCode(404, ApiResponse<T>.NotFound());
+return StatusCode(401, ApiResponse<T>.Unauthorized());
+return StatusCode(500, ApiResponse<T>.InternalServerError(ControlledErrorHelper.Unexpected));
+```
+
+نمونه پاسخ خطا به کاربر:
+```json
+{
+  "statusCode": 400,
+  "success": false,
+  "message": "داده‌های ورودی نامعتبر است",
+  "errorCode": "VALIDATION_FAILED",
+  "errors": ["نام الزامی است"],
+  "traceId": "0HN4K..."
+}
+```
 
 ================================================================================
 
@@ -177,20 +326,20 @@ var hashedPassword = BCrypt.Net.BCrypt.HashPassword(password);
 var isValid = BCrypt.Net.BCrypt.Verify(password, hashedPassword);
 ================================================================================
 
-📝 9. لاگینگ
+📝 9. لاگینگ (Serilog)
 
-لاگینگ ساده:
+استفاده از Serilog + ILogger:
 
-استفاده از ILogger
-
-لاگ شروع و پایان عملیات‌ها
-
-لاگ خطاها
+- لاگ‌ها در Console و فایل `log/log-.txt` (rotate روزانه، نگه‌داری ۳۰ روز)
+- Structured Logging (نه string interpolation)
+- لاگ شروع و پایان عملیات‌ها
+- لاگ خطاها
 
 csharp
 _logger.LogInformation("شروع عملیات...");
 // عملیات
-_logger.LogInformation("پایان عملیات");
+_logger.LogInformation("پایان عملیات — {EntityId}", entityId);
+_logger.LogError(ex, "خطا در عملیات — {EntityId}", entityId);
 ================================================================================
 
 📄 10. صفحه‌بندی
@@ -272,13 +421,23 @@ Delete: DeleteAsync
 
 تست‌های اصلی کار می‌کنند؟
 
-پیام‌های خطا فارسی هستند؟
+پیام‌های خطا فارسی و کنترل‌شده هستند؟
 
-لاگینگ اضافه شده؟
+❌ هیچ ex.Message / exception.Message در پاسخ API نیست؟
 
-اعتبارسنجی انجام شده؟
+✅ خطاهای کاربر از ControlledErrorHelper یا AppException می‌آیند؟
 
-Response ساختار استاندارد دارد؟
+✅ errorCode در پاسخ‌های خطا set شده؟
+
+Controller از VappControllerBase ارث‌بری می‌کند؟
+
+try/catch اضافی در Controller نیست؟
+
+ModelState از ExtractModelStateErrors() استفاده می‌کند؟
+
+لاگینگ خطا با _logger.LogError(ex, ...) انجام شده؟
+
+Response ساختار ApiResponse<T> استاندارد دارد؟
 
 ================================================================================
 
@@ -315,6 +474,11 @@ var products = await _context.Products
 محدود کردن دسترسی با [Authorize]
 
 بررسی مالکیت منابع
+
+مدیریت خطا (الزامی):
+- هرگز جزئیات Exception به کاربر نرسد
+- traceId برای ردیابی بدون افشای اطلاعات فنی
+- مسیر فایل/سرور در پیام خطا نباشد
 
 ================================================================================
 
@@ -356,33 +520,36 @@ public async Task<string> UploadFileAsync(IFormFile file, string folder)
 
 ✅ 19. پیام‌های نمایشی به کاربر
 
-همیشه از پیام‌های فارسی واضح استفاده کنید:
+قانون: کاربر فقط پیام‌های کنترل‌شده فارسی می‌بیند — هرگز جزئیات فنی.
+
+منابع مجاز پیام:
+- ControlledErrorHelper.* (خطاهای عمومی)
+- AppException با پیام فارسی عمدی (validation کسب‌وکار)
+- Data Annotations در DTO (اعتبارسنجی فرم)
+
+هرگز به کاربر نشان ندهید:
+- ex.Message / exception.Message
+- SqlException / StackTrace / InnerException
+- مسیر فایل سرور (C:\... یا /var/...)
+- پیام خام API خارجی (SMS، درگاه پرداخت)
 
 موفقیت:
+- "عملیات با موفقیت انجام شد"
+- "اطلاعات با موفقیت ذخیره شد"
 
-"عملیات با موفقیت انجام شد"
-
-"اطلاعات با موفقیت ذخیره شد"
-
-"حذف با موفقیت انجام شد"
-
-خطا:
-
-"خطایی در سرور رخ داده است"
-
-"داده‌های ورودی نامعتبر است"
-
-"دسترسی غیرمجاز"
-
-"منبع یافت نشد"
+خطای عمومی (از ControlledErrorHelper):
+- "خطای غیرمنتظره. لطفاً با پشتیبانی تماس بگیرید."
+- "مشکلی در ذخیره‌سازی اطلاعات پیش آمد. لطفاً دوباره تلاش کنید."
+- "شما مجاز به انجام این عملیات نیستید"
+- "منبع مورد نظر یافت نشد"
 
 اعتبارسنجی:
+- "داده‌های ورودی نامعتبر است" + لیست errors
+- "فیلد {نام فیلد} الزامی است"
+- "مقدار وارد شده نامعتبر است"
 
-"فیلد {نام فیلد} الزامی است"
-
-"مقدار وارد شده برای {نام فیلد} نامعتبر است"
-
-"{نام فیلد} نمی‌تواند بیشتر از {عدد} کاراکتر باشد"
+پشتیبانی:
+- همیشه traceId را در لاگ نگه دارید تا کاربر بتواند گزارش دهد
 
 ================================================================================
 
@@ -408,11 +575,12 @@ public async Task<ActionResult> Create([FromBody] CreateProductDto dto)
 
 text
 
-این نسخه ساده‌شده شامل:
+این نسخه شامل:
 1. **ساختار ساده‌تر** - فقط پوشه‌های اصلی و ضروری
 2. **قوانین عملی** - بدون جزئیات پیچیده
-3. **پیام‌های فارسی حفظ شده** - بخش نمایش به کاربر تغییر نکرده
-4. **الگوهای کاربردی** - مثال‌های مستقیم و قابل استفاده
-5. **چک‌لیست عملی** - برای بررسی سریع قبل از commit
+3. **مدیریت خطای استاندارد** - بخش 4.1 (الزامی برای همه توسعه‌دهندگان)
+4. **پیام‌های فارسی کنترل‌شده** - کاربر هرگز خطای فنی نمی‌بیند
+5. **الگوهای کاربردی** - VappControllerBase، AppException، ErrorCodes
+6. **چک‌لیست عملی** - شامل بررسی امنیت پیام خطا قبل از commit
 
-مناسب برای توسعه 1 نفره با سرعت بالا، درحالی که ساختار کلی و تجربه کاربری (پیام‌ها) حفظ شده است
+مناسب برای توسعه تیمی و آینده پروژه — هر feature جدید باید بخش 4.1 را رعایت کند.

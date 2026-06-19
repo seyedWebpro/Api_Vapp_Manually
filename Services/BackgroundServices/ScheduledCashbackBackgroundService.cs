@@ -3,6 +3,7 @@ using Api_Vapp.DTOs.Common;
 using Api_Vapp.DTOs.Sms;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
+using Api_Vapp.Utilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -354,7 +355,7 @@ namespace Api_Vapp.Services.BackgroundServices
                         else
                         {
                             cashbackTransaction.Status = CashbackTransactionStatuses.Failed;
-                            cashbackTransaction.Description = $"خطا در ارسال پیامک: {smsResult.Message}";
+                            cashbackTransaction.Description = ControlledErrorHelper.SmsFailed;
                             failedCount++;
 
                             _logger.LogWarning("خطا در ارسال کش‌بک - ContactId: {ContactId}, Mobile: {Mobile}, Error: {Error}",
@@ -365,7 +366,7 @@ namespace Api_Vapp.Services.BackgroundServices
                     {
                         _logger.LogError(ex, "خطا در ارسال SMS برای تراکنش کش‌بک {TransactionId}", cashbackTransaction.Id);
                         cashbackTransaction.Status = CashbackTransactionStatuses.Failed;
-                        cashbackTransaction.Description = $"خطای سیستمی: {ex.Message}";
+                        cashbackTransaction.Description = ControlledErrorHelper.SystemError;
                         failedCount++;
                     }
                 }
@@ -402,7 +403,7 @@ namespace Api_Vapp.Services.BackgroundServices
             {
                 await transaction.RollbackAsync(cancellationToken);
                 _logger.LogError(ex, "خطا در تراکنش کش‌بک {CashbackId}", cashback.Id);
-                result.ErrorMessage = ex.Message;
+                result.ErrorMessage = ControlledErrorHelper.SystemError;
                 return result;
             }
         }
@@ -538,7 +539,7 @@ namespace Api_Vapp.Services.BackgroundServices
                     else
                     {
                         transaction.Status = CashbackTransactionStatuses.Failed;
-                        transaction.Description = $"خطا در ارسال پیامک: {smsResult.Message}";
+                        transaction.Description = ControlledErrorHelper.SmsFailed;
                         
                         _logger.LogWarning("خطا در ارسال تراکنش کش‌بک {TransactionId}: {Error}",
                             transaction.Id, smsResult.Message);
@@ -555,7 +556,7 @@ namespace Api_Vapp.Services.BackgroundServices
                         try
                         {
                             transaction.Status = CashbackTransactionStatuses.Failed;
-                            transaction.Description = $"خطای سیستمی: {ex.Message}";
+                            transaction.Description = ControlledErrorHelper.SystemError;
                             await context.SaveChangesAsync(cancellationToken);
                         }
                         catch { }
@@ -874,8 +875,7 @@ namespace Api_Vapp.Services.BackgroundServices
 
             if (lastException != null)
             {
-                return ApiResponse<SendSmsResponseDto>.InternalServerError(
-                    $"خطا در ارسال SMS پس از {maxRetries + 1} تلاش: {lastException.Message}");
+                return ApiResponse<SendSmsResponseDto>.InternalServerError(ControlledErrorHelper.SmsFailed);
             }
 
             return ApiResponse<SendSmsResponseDto>.InternalServerError("خطای ناشناخته در ارسال SMS");
