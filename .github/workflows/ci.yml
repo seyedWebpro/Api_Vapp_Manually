@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore Api_Vapp.sln
+
+      - name: Build
+        run: dotnet build Api_Vapp.sln --configuration Release --no-restore
+
+      - name: Publish (verify)
+        run: dotnet publish Api_Vapp.csproj --configuration Release --no-build --output ./publish
