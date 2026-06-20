@@ -1,5 +1,6 @@
 using Api_Vapp.DTOs.Admin;
 using Api_Vapp.DTOs.Common;
+using Microsoft.AspNetCore.Http;
 
 namespace Api_Vapp.Interfaces
 {
@@ -13,6 +14,15 @@ namespace Api_Vapp.Interfaces
         Task<ApiResponse<List<SubscriptionPlanResponseDto>>> GetActivePlansAsync();
     }
 
+    public interface IAdminSubscriptionFeatureService
+    {
+        Task<ApiResponse<List<SubscriptionFeatureResponseDto>>> GetAllAsync(bool includeInactive = true);
+        Task<ApiResponse<SubscriptionFeatureResponseDto>> GetByIdAsync(int id);
+        Task<ApiResponse<SubscriptionFeatureResponseDto>> CreateAsync(CreateSubscriptionFeatureDto dto);
+        Task<ApiResponse<SubscriptionFeatureResponseDto>> UpdateAsync(int id, UpdateSubscriptionFeatureDto dto);
+        Task<ApiResponse<bool>> DeleteAsync(int id);
+    }
+
     public interface IAdminUserSubscriptionService
     {
         Task<ApiResponse<List<UserSubscriptionResponseDto>>> GetAllAsync(int? userId = null, string? status = null);
@@ -24,7 +34,7 @@ namespace Api_Vapp.Interfaces
     {
         Task<ApiResponse<PagedResponse<SupportTicketResponseDto>>> GetAllAsync(string? status = null, int page = 1, int pageSize = 20);
         Task<ApiResponse<SupportTicketResponseDto>> GetByIdAsync(int id);
-        Task<ApiResponse<SupportTicketResponseDto>> ReplyAsync(int id, int adminUserId, ReplySupportTicketDto dto);
+        Task<ApiResponse<SupportTicketResponseDto>> ReplyAsync(int id, int adminUserId, ReplySupportTicketDto dto, IFormFile? imageFile = null);
         Task<ApiResponse<SupportTicketResponseDto>> UpdateStatusAsync(int id, UpdateSupportTicketStatusDto dto);
     }
 
@@ -67,5 +77,6 @@ namespace Api_Vapp.Interfaces
     public interface IAdminDashboardService
     {
         Task<ApiResponse<AdminDashboardStatsDto>> GetStatsAsync();
+        Task<ApiResponse<AdminDashboardChartsDto>> GetChartsAsync();
     }
 }

@@ -285,6 +285,85 @@ namespace Api_Vapp.Controller
         }
 
         /// <summary>
+        /// ورود به پنل مدیریت — ارسال OTP (فقط کاربران دارای نقش Admin)
+        /// </summary>
+        [HttpPost("admin/login")]
+        [ProducesResponseType(typeof(SendOtpResponseDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(SendOtpResponseDto), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(SendOtpResponseDto), StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(typeof(SendOtpResponseDto), StatusCodes.Status404NotFound)]
+        [ProducesResponseType(typeof(SendOtpResponseDto), StatusCodes.Status429TooManyRequests)]
+        public async Task<ActionResult<SendOtpResponseDto>> AdminLogin([FromBody] LoginDto loginDto)
+        {
+            if (!ModelState.IsValid)
+            {
+                var errors = ExtractModelStateErrors();
+                return StatusCode(400, new SendOtpResponseDto
+                {
+                    StatusCode = 400,
+                    Success = false,
+                    Message = "داده‌های ورودی نامعتبر است",
+                    ExpiresInSeconds = 0,
+                    Errors = errors
+                });
+            }
+
+            var result = await _authService.LoginAsync(loginDto, GetClientIpAddress(), requireAdminPanelAccess: true);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        /// <summary>
+        /// تایید OTP ورود به پنل مدیریت (فقط کاربران دارای نقش Admin)
+        /// </summary>
+        [HttpPost("admin/verify-login")]
+        [ProducesResponseType(typeof(AuthResponseDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(AuthResponseDto), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(AuthResponseDto), StatusCodes.Status403Forbidden)]
+        public async Task<ActionResult<AuthResponseDto>> AdminVerifyLogin([FromBody] VerifyOtpDto verifyOtpDto)
+        {
+            if (!ModelState.IsValid)
+            {
+                var errors = ExtractModelStateErrors();
+                return StatusCode(400, new AuthResponseDto
+                {
+                    StatusCode = 400,
+                    Success = false,
+                    Message = "داده‌های ورودی نامعتبر است",
+                    Errors = errors
+                });
+            }
+
+            var result = await _authService.VerifyLoginOtpAsync(verifyOtpDto, GetClientIpAddress(), requireAdminPanelAccess: true);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        /// <summary>
+        /// ارسال مجدد OTP ورود به پنل مدیریت (فقط کاربران دارای نقش Admin)
+        /// </summary>
+        [HttpPost("admin/resend-login-otp")]
+        [ProducesResponseType(typeof(SendOtpResponseDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(SendOtpResponseDto), StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(typeof(SendOtpResponseDto), StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<SendOtpResponseDto>> AdminResendLoginOtp([FromBody] LoginDto loginDto)
+        {
+            if (!ModelState.IsValid)
+            {
+                var errors = ExtractModelStateErrors();
+                return StatusCode(400, new SendOtpResponseDto
+                {
+                    StatusCode = 400,
+                    Success = false,
+                    Message = "داده‌های ورودی نامعتبر است",
+                    ExpiresInSeconds = 0,
+                    Errors = errors
+                });
+            }
+
+            var result = await _authService.ResendLoginOtpAsync(loginDto, GetClientIpAddress(), requireAdminPanelAccess: true);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        /// <summary>
         /// ارسال مجدد کد تایید OTP برای ورود
         /// </summary>
         /// <param name="loginDto">اطلاعات شامل شماره موبایل</param>
@@ -615,6 +694,11 @@ namespace Api_Vapp.Controller
                 if (user == null || user.IsDeleted)
                 {
                     throw AppException.NotFound(ErrorCodes.NotFound, ControlledErrorHelper.NotFound);
+                }
+
+                if (!user.IsActive)
+                {
+                    throw AppException.Forbidden(ErrorCodes.Forbidden, ControlledErrorHelper.InactiveUserAccount);
                 }
 
                 var userDto = new UserResponseDto

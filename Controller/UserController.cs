@@ -161,6 +161,35 @@ namespace Api_Vapp.Controller
         }
 
         /// <summary>
+        /// آپلود عکس پروفایل کاربر (مدیریت)
+        /// </summary>
+        /// <param name="id">شناسه کاربر</param>
+        /// <param name="dto">فایل تصویر پروفایل</param>
+        /// <returns>پاسخ شامل URL عکس پروفایل آپلود شده</returns>
+        [HttpPost("{id}/upload-profile-image")]
+        [Consumes("multipart/form-data")]
+        [ProducesResponseType(typeof(ApiResponse<string>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<string>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(ApiResponse<string>), StatusCodes.Status404NotFound)]
+        [ProducesResponseType(typeof(ApiResponse<string>), StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<ApiResponse<string>>> UploadUserProfileImage(int id, [FromForm] UploadProfileImageDto dto)
+        {
+            if (dto == null || dto.ImageFile == null)
+            {
+                return StatusCode(400, ApiResponse<string>.BadRequest("فایل عکس ارسال نشده است. لطفاً یک فایل تصویری انتخاب کنید"));
+            }
+
+            if (!ModelState.IsValid)
+            {
+                var errors = ExtractModelStateErrors();
+                return StatusCode(400, ApiResponse<string>.BadRequest("داده‌های ورودی نامعتبر است", errors));
+            }
+
+            var result = await _userService.UploadProfileImageAsync(id, dto.ImageFile);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        /// <summary>
         /// حذف نرم کاربر (Soft Delete)
         /// </summary>
         /// <param name="id">شناسه کاربر</param>

@@ -1,4 +1,5 @@
-# Vapp — حالت IP (بدون دامنه)
+# دامنه / IP — یادداشت deploy
+# reuse: DNS، SSL (certbot)، PUBLIC_* URL در .env
 
 فعلاً سرویس روی **http://185.116.162.233** بالا می‌آید.
 

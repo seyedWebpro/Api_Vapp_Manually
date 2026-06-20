@@ -29,5 +29,12 @@ namespace Api_Vapp.Controller.Admin
             var result = await _service.GetStatsAsync();
             return StatusCode(result.StatusCode, result);
         }
+
+        [HttpGet("charts")]
+        public async Task<ActionResult<ApiResponse<AdminDashboardChartsDto>>> GetCharts()
+        {
+            var result = await _service.GetChartsAsync();
+            return StatusCode(result.StatusCode, result);
+        }
     }
 }

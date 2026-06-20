@@ -2,6 +2,46 @@ using System.ComponentModel.DataAnnotations;
 
 namespace Api_Vapp.DTOs.Admin
 {
+    public class SubscriptionFeatureSummaryDto
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string Code { get; set; } = string.Empty;
+    }
+
+    public class SubscriptionFeatureResponseDto
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string Code { get; set; } = string.Empty;
+        public string? Description { get; set; }
+        public int SortOrder { get; set; }
+        public bool IsActive { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public DateTime? UpdatedAt { get; set; }
+    }
+
+    public class CreateSubscriptionFeatureDto
+    {
+        [Required]
+        [MaxLength(200)]
+        public string Name { get; set; } = string.Empty;
+
+        [Required]
+        [MaxLength(50)]
+        public string Code { get; set; } = string.Empty;
+
+        [MaxLength(1000)]
+        public string? Description { get; set; }
+
+        public int SortOrder { get; set; }
+        public bool IsActive { get; set; } = true;
+    }
+
+    public class UpdateSubscriptionFeatureDto : CreateSubscriptionFeatureDto
+    {
+    }
+
     public class SubscriptionPlanResponseDto
     {
         public int Id { get; set; }
@@ -15,6 +55,8 @@ namespace Api_Vapp.DTOs.Admin
         public int? MonthlySmsLimit { get; set; }
         public int SortOrder { get; set; }
         public bool IsActive { get; set; }
+        public List<int> FeatureIds { get; set; } = new();
+        public List<SubscriptionFeatureSummaryDto> Features { get; set; } = new();
         public DateTime CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
     }
@@ -40,6 +82,7 @@ namespace Api_Vapp.DTOs.Admin
 
         public bool FreeQuickSendEnabled { get; set; }
         public bool BusinessCardEnabled { get; set; }
+        public List<int> FeatureIds { get; set; } = new();
         public int? MonthlySmsLimit { get; set; }
         public int SortOrder { get; set; }
         public bool IsActive { get; set; } = true;

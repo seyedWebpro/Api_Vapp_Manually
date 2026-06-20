@@ -39,6 +39,8 @@ namespace Api_Vapp.Data
 
         // پنل ادمین
         public DbSet<SubscriptionPlan> SubscriptionPlans { get; set; }
+        public DbSet<SubscriptionFeature> SubscriptionFeatures { get; set; }
+        public DbSet<SubscriptionPlanFeature> SubscriptionPlanFeatures { get; set; }
         public DbSet<UserSubscription> UserSubscriptions { get; set; }
         public DbSet<SupportTicket> SupportTickets { get; set; }
         public DbSet<TicketMessage> TicketMessages { get; set; }
@@ -1010,6 +1012,35 @@ namespace Api_Vapp.Data
                 entity.HasIndex(p => p.IsActive);
             });
 
+            // تنظیمات SubscriptionFeature
+            modelBuilder.Entity<SubscriptionFeature>(entity =>
+            {
+                entity.HasKey(f => f.Id);
+                entity.Property(f => f.Id).ValueGeneratedOnAdd();
+                entity.Property(f => f.Name).IsRequired().HasMaxLength(200);
+                entity.Property(f => f.Code).IsRequired().HasMaxLength(50);
+                entity.Property(f => f.Description).HasMaxLength(1000);
+                entity.Property(f => f.IsActive).HasDefaultValue(true);
+                entity.Property(f => f.IsDeleted).HasDefaultValue(false);
+                entity.Property(f => f.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+                entity.HasIndex(f => f.Code).IsUnique();
+                entity.HasIndex(f => f.IsActive);
+            });
+
+            // تنظیمات SubscriptionPlanFeature
+            modelBuilder.Entity<SubscriptionPlanFeature>(entity =>
+            {
+                entity.HasKey(pf => new { pf.SubscriptionPlanId, pf.SubscriptionFeatureId });
+                entity.HasOne(pf => pf.Plan)
+                    .WithMany(p => p.PlanFeatures)
+                    .HasForeignKey(pf => pf.SubscriptionPlanId)
+                    .OnDelete(DeleteBehavior.Cascade);
+                entity.HasOne(pf => pf.Feature)
+                    .WithMany(f => f.PlanFeatures)
+                    .HasForeignKey(pf => pf.SubscriptionFeatureId)
+                    .OnDelete(DeleteBehavior.NoAction);
+            });
+
             // تنظیمات UserSubscription
             modelBuilder.Entity<UserSubscription>(entity =>
             {
@@ -1046,6 +1077,7 @@ namespace Api_Vapp.Data
                 entity.HasKey(m => m.Id);
                 entity.Property(m => m.Id).ValueGeneratedOnAdd();
                 entity.Property(m => m.Content).IsRequired().HasMaxLength(4000);
+                entity.Property(m => m.AttachmentUrl).HasMaxLength(1000);
                 entity.Property(m => m.IsDeleted).HasDefaultValue(false);
                 entity.Property(m => m.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
                 entity.HasOne(m => m.Ticket).WithMany(t => t.Messages).HasForeignKey(m => m.TicketId).OnDelete(DeleteBehavior.Cascade);

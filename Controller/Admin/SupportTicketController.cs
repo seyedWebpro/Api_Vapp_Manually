@@ -41,13 +41,24 @@ namespace Api_Vapp.Controller.Admin
         }
 
         [HttpPost("{id:int}/reply")]
-        public async Task<ActionResult<ApiResponse<SupportTicketResponseDto>>> Reply(int id, [FromBody] ReplySupportTicketDto dto)
+        [Consumes("application/json", "multipart/form-data")]
+        public async Task<ActionResult<ApiResponse<SupportTicketResponseDto>>> Reply(
+            int id,
+            [FromForm] ReplySupportTicketFormDto? formDto,
+            [FromBody] ReplySupportTicketDto? jsonDto)
         {
-            var invalid = InvalidModelStateResponse<SupportTicketResponseDto>();
-            if (invalid != null) return invalid;
+            var dto = new ReplySupportTicketDto
+            {
+                Content = formDto?.Content ?? jsonDto?.Content ?? string.Empty
+            };
+
+            if (string.IsNullOrWhiteSpace(dto.Content) && (formDto?.ImageFile == null || formDto.ImageFile.Length == 0))
+            {
+                return StatusCode(400, ApiResponse<SupportTicketResponseDto>.BadRequest("متن یا تصویر پاسخ الزامی است"));
+            }
 
             var adminUserId = await GetCurrentUserIdAsync();
-            var result = await _service.ReplyAsync(id, adminUserId, dto);
+            var result = await _service.ReplyAsync(id, adminUserId, dto, formDto?.ImageFile);
             return StatusCode(result.StatusCode, result);
         }
 

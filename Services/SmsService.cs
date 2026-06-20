@@ -76,7 +76,7 @@ namespace Api_Vapp.Services
                     _ => $"کد تایید شما: {otpCode}"
                 };
                 
-                // لاگ برای دیباگ: بررسی کد OTP قبل از ارسال
+                // DEV ONLY — TODO(production): لاگ‌های زیر که شامل کد OTP هستند را قبل از release حذف کنید.
                 _logger.LogInformation("Sending OTP via SMS - Template: {TemplateType}, OTP Code: {OtpCode}, Phone: {PhoneNumber}", 
                     templateType, otpCode, normalizedPhone);
                 

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# نصب cron بکاپ روزانه + هفتگی DbVapp
+# cron بکاپ روزانه/هفتگی
+# reuse: CRON_DAILY/WEEKLY، مسیر اسکریپت، MARKER cron
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

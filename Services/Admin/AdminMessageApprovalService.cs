@@ -303,5 +303,54 @@ namespace Api_Vapp.Services.Admin
                 return ApiResponse<AdminDashboardStatsDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
+
+        public async Task<ApiResponse<AdminDashboardChartsDto>> GetChartsAsync()
+        {
+            try
+            {
+                var utcNow = DateTime.UtcNow;
+                var lineStart = utcNow.Date.AddDays(-6);
+
+                var userDailyRaw = await _context.Users
+                    .Where(u => !u.IsDeleted && u.CreatedAt >= lineStart)
+                    .GroupBy(u => u.CreatedAt.Date)
+                    .Select(g => new { Date = g.Key, Count = g.Count() })
+                    .ToListAsync();
+
+                var userGrowth = new List<AdminDashboardChartPointDto>();
+                for (var i = 0; i < 7; i++)
+                {
+                    var day = lineStart.AddDays(i);
+                    var count = userDailyRaw.FirstOrDefault(x => x.Date == day)?.Count ?? 0;
+                    userGrowth.Add(new AdminDashboardChartPointDto
+                    {
+                        Label = day.ToString("yyyy-MM-dd"),
+                        Value = count
+                    });
+                }
+
+                var monthStart = new DateTime(utcNow.Year, utcNow.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+
+                var monthlyActivity = new List<AdminDashboardChartPointDto>
+                {
+                    new() { Label = "کاربران جدید", Value = await _context.Users.CountAsync(u => !u.IsDeleted && u.CreatedAt >= monthStart) },
+                    new() { Label = "تیکت‌های جدید", Value = await _context.SupportTickets.CountAsync(t => !t.IsDeleted && t.CreatedAt >= monthStart) },
+                    new() { Label = "اشتراک‌های جدید", Value = await _context.UserSubscriptions.CountAsync(us => !us.IsDeleted && us.CreatedAt >= monthStart) },
+                    new() { Label = "درخواست پیام", Value = await _context.SmsApprovalRequests.CountAsync(r => !r.IsDeleted && r.CreatedAt >= monthStart) },
+                    new() { Label = "قالب جدید", Value = await _context.MessageTemplates.CountAsync(t => !t.IsDeleted && t.CreatedAt >= monthStart) },
+                };
+
+                return ApiResponse<AdminDashboardChartsDto>.CreateSuccess(new AdminDashboardChartsDto
+                {
+                    UserGrowthLast7Days = userGrowth,
+                    MonthlyActivity = monthlyActivity
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error loading admin dashboard charts");
+                return ApiResponse<AdminDashboardChartsDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
     }
 }

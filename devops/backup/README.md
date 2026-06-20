@@ -1,4 +1,5 @@
-# بکاپ DbVapp (SQL Server / Docker)
+# بکاپ DB — Vapp: SQL Server / Docker
+# reuse: DB_NAME، SQL_CONTAINER، مسیر backups/ در compose
 
 ## نصب سریع
 

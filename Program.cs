@@ -11,6 +11,7 @@ using Microsoft.OpenApi.Models;
 using Swashbuckle.AspNetCore.SwaggerGen;
 using Swashbuckle.AspNetCore.SwaggerUI;
 using System.Linq;
+using System.Security.Claims;
 using System.Text;
 using Api_Vapp.Configuration;
 using Api_Vapp.Data;
@@ -127,8 +128,10 @@ builder.Services.AddControllers(options =>
         options.InvalidModelStateResponseFactory = context =>
         {
             var errors = ErrorTranslator.ExtractModelStateErrors(context.ModelState);
+            var path = context.HttpContext.Request.Path.Value ?? string.Empty;
+            var message = ValidationResponseMessageResolver.Resolve(context.ModelState, path, errors);
             var response = Api_Vapp.DTOs.Common.ApiResponse<object>.BadRequest(
-                "خطای اعتبارسنجی اطلاعات ورودی",
+                message,
                 errors,
                 Api_Vapp.DTOs.Common.ErrorCodes.ValidationFailed);
             return new Microsoft.AspNetCore.Mvc.BadRequestObjectResult(response);
@@ -263,6 +266,26 @@ builder.Services.AddAuthentication(option =>
                     return;
                 }
             }
+
+            var userIdClaim = context.Principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (int.TryParse(userIdClaim, out var userId))
+            {
+                var userRepository = context.HttpContext.RequestServices
+                    .GetRequiredService<Api_Vapp.Interfaces.IUserRepository>();
+                var user = await userRepository.GetByIdAsync(userId);
+
+                if (user == null || user.IsDeleted)
+                {
+                    context.Fail(ControlledErrorHelper.InvalidToken);
+                    return;
+                }
+
+                if (!user.IsActive)
+                {
+                    context.HttpContext.Items["InactiveUser"] = true;
+                    context.Fail(ControlledErrorHelper.InactiveUserAccount);
+                }
+            }
         }
     };
 });
@@ -362,6 +385,7 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.INotificationSettingsService, Api
 
 // ثبت سرویس‌های پنل ادمین
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminSubscriptionPlanService, Api_Vapp.Services.Admin.AdminSubscriptionPlanService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminSubscriptionFeatureService, Api_Vapp.Services.Admin.AdminSubscriptionFeatureService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminUserSubscriptionService, Api_Vapp.Services.Admin.AdminUserSubscriptionService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminSupportTicketService, Api_Vapp.Services.Admin.AdminSupportTicketService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IUserSupportTicketService, Api_Vapp.Services.Admin.UserSupportTicketService>();
@@ -520,11 +544,14 @@ app.UseMiddleware<Api_Vapp.Middleware.GlobalExceptionHandlerMiddleware>();
 // Rate Limiting Middleware (قبل از Authentication برای جلوگیری از حملات DDoS)
 //app.UseMiddleware<RateLimitMiddleware>();
 
+// CORS must run before auth middleware that short-circuits with 401/403,
+// otherwise browsers block the response and the SPA sees a network error.
+app.UseCors("myCors");
+
 //jwt
 app.UseAuthentication();
 
-//CORS policy
-app.UseCors("myCors");
+app.UseMiddleware<Api_Vapp.Middleware.BearerAuthenticationEnforcementMiddleware>();
 
 app.UseAuthorization();
 
@@ -539,6 +566,9 @@ app.MapGet("/health", () => Results.Ok(new
 }));
 
 app.MapFallbackToFile("index.html");
+
+if (app.Environment.IsDevelopment() && !isDocker)
+    DevBrowserLauncher.Register(app);
 
 try
 {

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# تبدیل origin از HTTPS به SSH (روی سرور)
+# HTTPS → SSH برای git remote
+# reuse: URL هر repo (API، front، …)
 #
 # Usage:
 #   bash switch-git-remotes-to-ssh.sh

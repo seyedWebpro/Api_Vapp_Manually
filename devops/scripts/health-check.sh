@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# تست سلامت Vapp API + Admin + Nginx
+# Health-check — curl به پورت‌های local
+# reuse: URLها و کدهای HTTP مورد انتظار هر سرویس
 #
 # Usage:
 #   bash health-check.sh

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# کپی سورس از ماشین لوکال به سرور (بدون git)
+# rsync لوکال → سرور (بدون git)
+# reuse: LOCAL_* / REMOTE_* dirs، excludeها (node_modules، bin، …)
 #
 # Usage (روی Mac لوکال — از روت Api_Vapp_Manually):
 #   SERVER=root@185.116.162.233 bash devops/scripts/sync-to-server.sh

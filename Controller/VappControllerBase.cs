@@ -39,6 +39,9 @@ namespace Api_Vapp.Controller
             if (!string.IsNullOrEmpty(userIdClaim) && int.TryParse(userIdClaim, out int userId))
                 return userId;
 
+            if (HasBearerAuthorizationHeader())
+                throw AppException.Unauthorized(ErrorCodes.TokenInvalid, ControlledErrorHelper.InvalidToken);
+
             var disableAuth = Configuration.GetValue<bool>("Development:DisableAuth", false);
             if (disableAuth)
             {
@@ -47,6 +50,13 @@ namespace Api_Vapp.Controller
             }
 
             throw AppException.Unauthorized(ErrorCodes.InvalidUserId, ControlledErrorHelper.Unauthorized);
+        }
+
+        private bool HasBearerAuthorizationHeader()
+        {
+            var authorization = Request.Headers.Authorization.ToString();
+            return authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+                && authorization.Length > "Bearer ".Length;
         }
     }
 }

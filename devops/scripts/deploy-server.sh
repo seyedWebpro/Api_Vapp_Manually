@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Orchestrator آپدیت سرور production Vapp
+# Orchestrator deploy — API + front (+ nginx)
+# reuse: مسیر repoها، branch، modeها؛ سرویس اضافه (مثلاً worker) را اینجا وصل کن
 #
 # Usage (روی سرور بعد از SSH):
 #   bash deploy-server.sh --fast

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# راهنمای ساخت SSH key روی Mac برای ورود به سرور (بدون پسورد)
+# SSH key روی Mac → ورود به VPS
+# reuse: SERVER، KEY_PATH، Host alias در ~/.ssh/config
 #
 # Usage (روی Mac لوکال):
 #   SERVER=root@185.116.162.233 bash devops/scripts/setup-local-ssh-to-server.sh

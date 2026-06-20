@@ -1,12 +1,9 @@
-# Vapp — Nginx reverse proxy (IP mode)
-# IP: 185.116.162.233
+# Nginx reverse proxy — IP/دامنه
+# reuse: server_name، upstream portها؛ FRONT_STATIC_ROOT برای static به‌جای docker
 #
-# نصب:
-#   bash ~/Api_Vapp_Manually/devops/scripts/apply-nginx.sh
+# نصب: bash devops/scripts/apply-nginx.sh
 #
-# پیش‌نیاز:
-#   API   → 127.0.0.1:8080  (docker/.env: API_PORT_MAPPING=127.0.0.1:8080:8080)
-#   Admin → 127.0.0.1:3005  (docker: vapp-admin)
+# Vapp: API→8080  Admin→3005
 
 server {
     listen 80;

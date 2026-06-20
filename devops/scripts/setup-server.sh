@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# نصب اولیه سرور لینوکس برای Vapp
-# Usage: sudo bash ~/Api_Vapp_Manually/devops/scripts/setup-server.sh
-#
-# نصب: Docker, Docker Compose plugin, Nginx, Git, UFW (پورت 80, 22)
+# نصب پایه سرور — Docker، Nginx، UFW (بدون build پروژه)
+# reuse: پورت ufw، مسیر nginx example، API_REPO_DIR
+# Usage: sudo bash setup-server.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

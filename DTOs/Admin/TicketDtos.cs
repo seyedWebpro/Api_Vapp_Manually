@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using Microsoft.AspNetCore.Http;
 
 namespace Api_Vapp.DTOs.Admin
 {
@@ -9,6 +10,7 @@ namespace Api_Vapp.DTOs.Admin
         public string? SenderName { get; set; }
         public bool IsAdminReply { get; set; }
         public string Content { get; set; } = string.Empty;
+        public string? AttachmentUrl { get; set; }
         public DateTime CreatedAt { get; set; }
     }
 
@@ -46,9 +48,16 @@ namespace Api_Vapp.DTOs.Admin
 
     public class ReplySupportTicketDto
     {
-        [Required]
         [MaxLength(4000)]
         public string Content { get; set; } = string.Empty;
+    }
+
+    public class ReplySupportTicketFormDto
+    {
+        [MaxLength(4000)]
+        public string? Content { get; set; }
+
+        public IFormFile? ImageFile { get; set; }
     }
 
     public class UpdateSupportTicketStatusDto

@@ -2,9 +2,11 @@ using Api_Vapp.Constants;
 using Api_Vapp.Data;
 using Api_Vapp.DTOs.Admin;
 using Api_Vapp.DTOs.Common;
+using Api_Vapp.DTOs.File;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
 using Api_Vapp.Utilities;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 
 namespace Api_Vapp.Services.Admin
@@ -12,11 +14,16 @@ namespace Api_Vapp.Services.Admin
     public class AdminSupportTicketService : IAdminSupportTicketService
     {
         private readonly Api_Context _context;
+        private readonly IFileUploadService _fileUploadService;
         private readonly ILogger<AdminSupportTicketService> _logger;
 
-        public AdminSupportTicketService(Api_Context context, ILogger<AdminSupportTicketService> logger)
+        public AdminSupportTicketService(
+            Api_Context context,
+            IFileUploadService fileUploadService,
+            ILogger<AdminSupportTicketService> logger)
         {
             _context = context;
+            _fileUploadService = fileUploadService;
             _logger = logger;
         }
 
@@ -84,22 +91,54 @@ namespace Api_Vapp.Services.Admin
             }
         }
 
-        public async Task<ApiResponse<SupportTicketResponseDto>> ReplyAsync(int id, int adminUserId, ReplySupportTicketDto dto)
+        public async Task<ApiResponse<SupportTicketResponseDto>> ReplyAsync(int id, int adminUserId, ReplySupportTicketDto dto, IFormFile? imageFile = null)
         {
             try
             {
+                var content = dto.Content?.Trim() ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(content) && (imageFile == null || imageFile.Length == 0))
+                    return ApiResponse<SupportTicketResponseDto>.BadRequest("متن یا تصویر پاسخ الزامی است");
+
                 var ticket = await _context.SupportTickets
                     .FirstOrDefaultAsync(t => t.Id == id && !t.IsDeleted);
 
                 if (ticket == null)
                     return ApiResponse<SupportTicketResponseDto>.NotFound("تیکت یافت نشد");
 
+                string? attachmentUrl = null;
+                if (imageFile != null && imageFile.Length > 0)
+                {
+                    var imageValidation = ValidateReplyImage(imageFile);
+                    if (imageValidation != null)
+                        return ApiResponse<SupportTicketResponseDto>.BadRequest(imageValidation);
+
+                    try
+                    {
+                        attachmentUrl = await _fileUploadService.UploadFileAsync(
+                            imageFile,
+                            FileUploadConstants.EntityType_Ticket,
+                            id,
+                            FileUploadConstants.SubFolder_Images);
+                    }
+                    catch (ArgumentException ex)
+                    {
+                        return ApiResponse<SupportTicketResponseDto>.BadRequest(
+                            ControlledErrorHelper.SanitizeArgumentMessage(ex.Message, ControlledErrorHelper.FileUploadFailed));
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error uploading ticket reply image for ticket {TicketId}", id);
+                        return ApiResponse<SupportTicketResponseDto>.BadRequest(ControlledErrorHelper.FileUploadFailed);
+                    }
+                }
+
                 _context.TicketMessages.Add(new TicketMessage
                 {
                     TicketId = id,
                     SenderUserId = adminUserId,
                     IsAdminReply = true,
-                    Content = dto.Content.Trim(),
+                    Content = content,
+                    AttachmentUrl = attachmentUrl,
                     CreatedAt = DateTime.UtcNow
                 });
 
@@ -178,9 +217,30 @@ namespace Api_Vapp.Services.Admin
                     SenderName = m.SenderUser?.FullName,
                     IsAdminReply = m.IsAdminReply,
                     Content = m.Content,
+                    AttachmentUrl = m.AttachmentUrl,
                     CreatedAt = m.CreatedAt
                 }).ToList()
         };
+
+        private static string? ValidateReplyImage(IFormFile imageFile)
+        {
+            const long maxFileSize = 5 * 1024 * 1024;
+            if (imageFile.Length > maxFileSize)
+            {
+                var fileSizeMB = Math.Round(imageFile.Length / (1024.0 * 1024.0), 2);
+                return $"حجم فایل ({fileSizeMB} مگابایت) بیشتر از حد مجاز (5 مگابایت) است";
+            }
+
+            var allowedContentTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "image/jpeg", "image/png", "image/gif", "image/webp"
+            };
+
+            if (!allowedContentTypes.Contains(imageFile.ContentType))
+                return "فقط فایل‌های تصویری (JPG, PNG, GIF, WEBP) مجاز هستند";
+
+            return null;
+        }
     }
 
     public class UserSupportTicketService : IUserSupportTicketService
@@ -329,6 +389,7 @@ namespace Api_Vapp.Services.Admin
                     SenderName = m.SenderUser?.FullName,
                     IsAdminReply = m.IsAdminReply,
                     Content = m.Content,
+                    AttachmentUrl = m.AttachmentUrl,
                     CreatedAt = m.CreatedAt
                 }).ToList()
         };

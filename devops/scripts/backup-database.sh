@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# بکاپ FULL از DbVapp داخل Docker SQL Server
+# بکاپ DB (Vapp: SQL Server در Docker)
+# reuse: SQL_CONTAINER، DB_NAME، مسیر backup، دستور backup DB دیگر (pg_dump، …)
 #
 # Usage:
 #   bash ~/Api_Vapp_Manually/devops/scripts/backup-database.sh

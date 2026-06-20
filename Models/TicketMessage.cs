@@ -10,6 +10,7 @@ namespace Api_Vapp.Models
         public int SenderUserId { get; set; }
         public bool IsAdminReply { get; set; }
         public string Content { get; set; } = string.Empty;
+        public string? AttachmentUrl { get; set; }
         public bool IsDeleted { get; set; }
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 

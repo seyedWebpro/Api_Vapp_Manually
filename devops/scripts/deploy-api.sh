@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Deploy Vapp API (.NET): git pull → docker compose production
+# Deploy API — git pull + docker compose (Vapp: .NET 8)
+# reuse: API_REPO_DIR، COMPOSE_FILE، ENV_FILE، container name، health URL
 #
 # Usage (روی سرور):
 #   bash ~/Api_Vapp_Manually/devops/scripts/deploy-api.sh

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# ساخت SSH Deploy Key روی سرور برای git pull از GitHub
+# SSH key روی سرور → GitHub (git pull)
+# reuse: KEY_NAME، git remote URL؛ برای GitLab/GitHub Enterprise host را عوض کن
 #
 # Usage (روی سرور):
 #   bash ~/Api_Vapp_Manually/devops/scripts/setup-github-deploy-key.sh

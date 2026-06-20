@@ -20,17 +20,29 @@ namespace Api_Vapp.Services
         private readonly Api_Vapp.Data.Api_Context _context;
         private readonly ILogger<UserService> _logger;
         private readonly IFileUploadService _fileUploadService;
+        private readonly IRefreshTokenService _refreshTokenService;
 
         public UserService(
             IUserRepository userRepository, 
             Api_Vapp.Data.Api_Context context, 
             ILogger<UserService> logger,
-            IFileUploadService fileUploadService)
+            IFileUploadService fileUploadService,
+            IRefreshTokenService refreshTokenService)
         {
             _userRepository = userRepository;
             _context = context;
             _logger = logger;
             _fileUploadService = fileUploadService;
+            _refreshTokenService = refreshTokenService;
+        }
+
+        private async Task InvalidateUserSessionsAsync(int userId, string reason)
+        {
+            await _refreshTokenService.RevokeAllUserTokensAsync(userId);
+            _logger.LogInformation(
+                "All refresh tokens revoked for user {UserId}. Reason: {Reason}",
+                userId,
+                reason);
         }
 
         public async Task<ApiResponse<UserResponseDto>> CreateUserAsync(CreateUserDto createUserDto)
@@ -193,6 +205,8 @@ namespace Api_Vapp.Services
                     user.Email = updateUserDto.Email;
                 }
 
+                var wasActive = user.IsActive;
+
                 if (updateUserDto.IsActive.HasValue)
                 {
                     user.IsActive = updateUserDto.IsActive.Value;
@@ -207,6 +221,11 @@ namespace Api_Vapp.Services
                 user.UpdatedAt = DateTime.UtcNow;
 
                 var updatedUser = await _userRepository.UpdateAsync(user);
+
+                if (wasActive && !updatedUser.IsActive)
+                {
+                    await InvalidateUserSessionsAsync(id, "deactivate");
+                }
 
                 _logger.LogInformation("User updated successfully with ID: {UserId}", id);
 
@@ -236,8 +255,10 @@ namespace Api_Vapp.Services
 
                 // Soft Delete
                 user.IsDeleted = true;
+                user.IsActive = false;
                 user.UpdatedAt = DateTime.UtcNow;
                 await _userRepository.UpdateAsync(user);
+                await InvalidateUserSessionsAsync(id, "soft-delete");
 
                 _logger.LogInformation("User soft deleted successfully with ID: {UserId}", id);
 
@@ -323,6 +344,11 @@ namespace Api_Vapp.Services
                 user.UpdatedAt = DateTime.UtcNow;
                 var updatedUser = await _userRepository.UpdateAsync(user);
 
+                if (banUserDto.IsBanned)
+                {
+                    await InvalidateUserSessionsAsync(id, "ban");
+                }
+
                 var message = banUserDto.IsBanned ? "کاربر با موفقیت بن شد" : "بن کاربر با موفقیت رفع شد";
 
                 _logger.LogInformation("User {Action} with ID: {UserId}", banUserDto.IsBanned ? "banned" : "unbanned", id);
@@ -355,6 +381,11 @@ namespace Api_Vapp.Services
                 user.UpdatedAt = DateTime.UtcNow;
                 var updatedUser = await _userRepository.UpdateAsync(user);
 
+                if (!isActive)
+                {
+                    await InvalidateUserSessionsAsync(id, "deactivate");
+                }
+
                 var message = isActive ? "کاربر با موفقیت فعال شد" : "کاربر با موفقیت غیرفعال شد";
 
                 _logger.LogInformation("User active status toggled to {Status} for ID: {UserId}", isActive, id);
@@ -385,6 +416,12 @@ namespace Api_Vapp.Services
                 {
                     _logger.LogWarning("درخواست پروفایل برای کاربر نامعتبر یا حذف شده: {UserId}", userId);
                     return ApiResponse<UserProfileDto>.NotFound("کاربر یافت نشد");
+                }
+
+                if (!user.IsActive)
+                {
+                    _logger.LogWarning("درخواست پروفایل برای کاربر غیرفعال: {UserId}", userId);
+                    return ApiResponse<UserProfileDto>.Forbidden(ControlledErrorHelper.InactiveUserAccount);
                 }
 
                 // دریافت موجودی کیف پول مستقیماً از مدل User

@@ -52,4 +52,16 @@ namespace Api_Vapp.DTOs.Admin
         public int TotalUsers { get; set; }
         public int ActiveSubscriptions { get; set; }
     }
+
+    public class AdminDashboardChartPointDto
+    {
+        public string Label { get; set; } = string.Empty;
+        public int Value { get; set; }
+    }
+
+    public class AdminDashboardChartsDto
+    {
+        public List<AdminDashboardChartPointDto> UserGrowthLast7Days { get; set; } = new();
+        public List<AdminDashboardChartPointDto> MonthlyActivity { get; set; } = new();
+    }
 }

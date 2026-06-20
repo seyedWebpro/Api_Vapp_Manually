@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# منتظر اتمام deploy-front در پس‌زمینه → سپس health-check
+# صبر تا تمام شدن build front (پس‌زمینه) + health-check
+# reuse: الگوی لاگ «deploy-front done»، timeout
 #
 # Usage:
 #   bash wait-front-deploy.sh
