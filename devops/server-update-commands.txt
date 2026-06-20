@@ -1,0 +1,149 @@
+================================================================================
+  راهنمای deploy سرور Vapp — اسکریپت‌محور
+  IP: 185.116.162.233
+================================================================================
+
+
+================================================================================
+  ★ آپدیت معمولی (بعد از push لوکال)
+================================================================================
+
+  cd ~/Api_Vapp_Manually && git pull origin main && bash devops/scripts/deploy-server.sh --fast --wait
+
+  • API + Admin (فرانت پس‌زمینه)
+  • --wait = صبر تا build فرانت + health-check
+  • SSH وسط build قطع شود OK — بعد:
+      tail -f $(cat ~/.vapp-last-front-deploy.log)
+
+  فقط health:
+    bash ~/Api_Vapp_Manually/devops/scripts/health-check.sh
+
+
+================================================================================
+  ★ SSH Key (یک‌بار)
+================================================================================
+
+  راهنمای کامل: devops/GITHUB_SSH.md
+
+  --- Mac → سرور (ورود SSH) — روی Mac ---
+  SERVER=root@185.116.162.233 bash devops/scripts/setup-local-ssh-to-server.sh
+  ssh-copy-id -i ~/.ssh/id_ed25519_vapp_server.pub root@185.116.162.233
+  ssh vapp-prod
+
+  --- سرور → GitHub (git pull) — روی سرور ---
+  bash ~/Api_Vapp_Manually/devops/scripts/setup-github-deploy-key.sh
+  # public key → GitHub Settings → SSH and GPG keys → New SSH key
+  ssh -T git@github.com
+
+  --- clone با SSH ---
+  git clone git@github.com:seyedWebpro/Api_Vapp_Manually.git ~/Api_Vapp_Manually
+  git clone git@github.com:seyedWebpro/Admin_Pannel_Vapp.git ~/Admin_Vapp
+
+  --- HTTPS → SSH (اگر قبلاً clone کرده‌اید) ---
+  bash ~/Api_Vapp_Manually/devops/scripts/switch-git-remotes-to-ssh.sh
+
+
+================================================================================
+  ★ نصب اولیه (یک‌بار روی سرور)
+================================================================================
+
+  # 1) SSH (بعد از setup key)
+  ssh vapp-prod
+
+  # 2) clone (بعد از GitHub deploy key)
+  git clone git@github.com:seyedWebpro/Api_Vapp_Manually.git ~/Api_Vapp_Manually
+  git clone git@github.com:seyedWebpro/Admin_Pannel_Vapp.git ~/Admin_Vapp
+
+  # 3) نصب Docker + Nginx
+  sudo bash ~/Api_Vapp_Manually/devops/scripts/setup-server.sh
+
+  # 4) env
+  cp ~/Api_Vapp_Manually/devops/.env.server.example ~/Api_Vapp_Manually/docker/.env
+  nano ~/Api_Vapp_Manually/docker/.env
+
+  # 5) deploy کامل
+  bash ~/Api_Vapp_Manually/devops/scripts/deploy-server.sh --full --wait
+
+  # 6) تست
+  curl -s http://127.0.0.1/health
+
+
+================================================================================
+  ★ نصب اولیه — جایگزین rsync (بدون git)
+================================================================================
+
+  cd /path/to/Api_Vapp_Manually
+  SERVER=root@185.116.162.233 bash devops/scripts/sync-to-server.sh
+
+
+================================================================================
+  دستورات دیگر
+================================================================================
+
+  --- بدون --wait ---
+  bash devops/scripts/deploy-server.sh --fast
+
+  --- فقط API ---
+  bash devops/scripts/deploy-server.sh --api-only
+
+  --- فقط Admin ---
+  bash devops/scripts/deploy-server.sh --front-only --wait
+
+  --- nginx ---
+  bash devops/scripts/apply-nginx.sh
+
+  --- sync از Mac ---
+  SERVER=root@185.116.162.233 bash devops/scripts/sync-to-server.sh
+
+
+================================================================================
+  اسکریپت‌ها
+================================================================================
+
+  deploy-server.sh       --fast | --full | --front-only | --api-only | --wait
+  deploy-api.sh          API + migration
+  deploy-front.sh        Admin build + run (--background)
+  health-check.sh        API + Front + Nginx
+  wait-front-deploy.sh   صبر روی لاگ فرانت + health-check
+  apply-nginx.sh         نصب/آپدیت nginx
+  setup-server.sh        نصب اولیه Docker + Nginx
+  sync-to-server.sh      rsync از Mac
+  backup-database.sh     بکاپ DbVapp
+
+
+================================================================================
+  مسیرها
+================================================================================
+
+  API:     ~/Api_Vapp_Manually          main
+  Admin:   ~/Admin_Vapp                 main
+  DevOps:  ~/Api_Vapp_Manually/devops/
+
+
+================================================================================
+  پورت‌ها
+================================================================================
+
+  Nginx:   :80  → http://185.116.162.233
+  API:     127.0.0.1:8080  (vapp_api_prod)
+  SQL:     127.0.0.1:1433  (vapp_sqlserver_prod)
+  Admin:   127.0.0.1:3005  (vapp-admin)
+
+  Admin:   http://185.116.162.233/admin
+  Swagger: http://185.116.162.233/swagger
+
+
+================================================================================
+  عیب‌یابی
+================================================================================
+
+  tail -f $(cat ~/.vapp-last-front-deploy.log)
+  docker ps --format 'table {{.Names}}\t{{.Status}}'
+  docker logs --tail 80 vapp_api_prod
+  docker logs --tail 80 vapp-admin
+  docker compose -f ~/Api_Vapp_Manually/docker/docker-compose.production.yml logs api --tail 50
+
+  API:000 → ۳۰–۶۰ ثانیه صبر (migration SQL Server)
+  SSH refused → پورت ۲۲ را در فایروال VPS باز کنید
+
+  بکاپ DB: devops/backup/README.md
