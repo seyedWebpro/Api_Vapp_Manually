@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Deploy Admin Vapp (Vite/React): git pull → docker build → run
+# Deploy front — docker یا host (FRONT_DEPLOY_MODE=host)
+# reuse: FRONT_DIR، FRONT_DEPLOY_MODE=host|docker
 #
 # Usage (روی سرور):
 #   bash ~/Api_Vapp_Manually/devops/scripts/deploy-front.sh
@@ -21,7 +22,11 @@ DEPLOY_LOG="${DEPLOY_LOG:-}"
 
 run_deploy() {
   echo "=== deploy-front started $(date -Is) ==="
-  echo "FRONT_DIR=$FRONT_DIR branch=$FRONT_BRANCH image=$FRONT_IMAGE"
+  echo "FRONT_DIR=$FRONT_DIR branch=$FRONT_BRANCH"
+
+  if [[ "${FRONT_DEPLOY_MODE:-host}" == "host" ]]; then
+    exec bash "$SCRIPT_DIR/deploy-front-host.sh"
+  fi
 
   if [[ ! -d "$FRONT_DIR" ]]; then
     echo "ERROR: front directory not found: $FRONT_DIR" >&2

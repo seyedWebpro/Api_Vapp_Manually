@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# نصب و deploy اولیه Vapp روی سرور (یک‌بار)
+# Bootstrap یک‌بار — Docker، Nginx، .env، build API+front
+# reuse: SERVER_IP، مسیر repo، Dockerfile front، compose path، env vars
 # Usage: sudo bash bootstrap-first-run.sh
 set -euo pipefail
 
@@ -175,20 +176,33 @@ for i in $(seq 1 24); do
   [[ "$api_code" == "200" ]] && break
 done
 
-# --- 7) Admin front (Docker) ---
-log "Building Admin front (~5-10 min)..."
-cd "$FRONT_DIR"
-docker build --build-arg VITE_API_URL= -t vapp-admin:latest .
-docker rm -f vapp-admin 2>/dev/null || true
-docker run -d --name vapp-admin -p 127.0.0.1:3005:80 --restart unless-stopped vapp-admin:latest
-
-front_code="000"
-for i in $(seq 1 12); do
-  sleep 5
-  front_code="$(curl -sS -m 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:3005/ 2>/dev/null || echo "000")"
-  log "Front health $i/12: $front_code"
-  [[ "$front_code" == "200" ]] && break
-done
+# --- 7) Admin front ---
+FRONT_DEPLOY_MODE="${FRONT_DEPLOY_MODE:-host}"
+if [[ "$FRONT_DEPLOY_MODE" == "host" ]]; then
+  log "Building Admin front on host (no Docker Hub)..."
+  FRONT_STATIC_ROOT="${FRONT_STATIC_ROOT:-/var/www/vapp-admin}" \
+    SERVER_IP="$SERVER_IP" bash "$SCRIPT_DIR/deploy-front-host.sh"
+  front_code="$(curl -sS -m 10 -o /dev/null -w '%{http_code}' http://127.0.0.1/ 2>/dev/null || echo "000")"
+else
+  log "Building Admin front (Docker)..."
+  cd "$FRONT_DIR"
+  if docker build --build-arg VITE_API_URL= -t vapp-admin:latest .; then
+    docker rm -f vapp-admin 2>/dev/null || true
+    docker run -d --name vapp-admin -p 127.0.0.1:3005:80 --restart unless-stopped vapp-admin:latest
+    front_code="000"
+    for i in $(seq 1 12); do
+      sleep 5
+      front_code="$(curl -sS -m 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:3005/ 2>/dev/null || echo "000")"
+      log "Front health $i/12: $front_code"
+      [[ "$front_code" == "200" ]] && break
+    done
+  else
+    log "WARN: docker build failed — fallback to host build"
+    FRONT_STATIC_ROOT="${FRONT_STATIC_ROOT:-/var/www/vapp-admin}" \
+      SERVER_IP="$SERVER_IP" bash "$SCRIPT_DIR/deploy-front-host.sh"
+    front_code="$(curl -sS -m 10 -o /dev/null -w '%{http_code}' http://127.0.0.1/ 2>/dev/null || echo "000")"
+  fi
+fi
 
 public_code="$(curl -sS -m 10 -o /dev/null -w '%{http_code}' http://127.0.0.1/ 2>/dev/null || echo "000")"
 
