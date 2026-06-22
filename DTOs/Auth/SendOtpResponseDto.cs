@@ -8,6 +8,9 @@ namespace Api_Vapp.DTOs.Auth
         public int ExpiresInSeconds { get; set; } // زمان انقضای OTP
         public int? RetryAfterSeconds { get; set; } // زمان باقی‌مانده تا امکان درخواست مجدد (برای Rate Limit)
         public List<string>? Errors { get; set; } // لیست خطاهای اعتبارسنجی (اختیاری)
+
+        // DEV ONLY — TODO(production): قبل از release این property را حذف کنید (جستجو: OtpCode)
+        public string? OtpCode { get; set; }
     }
 }
 

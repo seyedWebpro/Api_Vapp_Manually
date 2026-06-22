@@ -134,6 +134,19 @@ namespace Api_Vapp.Services
             DevOtpLogger.Write(_logger, phoneNumber, otpCode, purpose);
         }
 
+        // DEV ONLY — TODO(production): قبل از release این متد و فیلد OtpCode در SendOtpResponseDto را حذف کنید (جستجو: CreateSuccessOtpResponse)
+        private static SendOtpResponseDto CreateSuccessOtpResponse(string message, string otpCode, int expiresInSeconds)
+        {
+            return new SendOtpResponseDto
+            {
+                StatusCode = 200,
+                Success = true,
+                Message = message,
+                ExpiresInSeconds = expiresInSeconds,
+                OtpCode = otpCode
+            };
+        }
+
         private async Task<(User? User, SendOtpResponseDto? BlockedResponse)> ResolveLoginUserForOtpAsync(string phoneNumber)
         {
             var user = await _userRepository.GetByPhoneNumberAsync(phoneNumber);
@@ -307,13 +320,10 @@ namespace Api_Vapp.Services
 
                 LogDevOtpForDevelopment(registerDto.PhoneNumber, otpCode, "Register");
 
-                return new SendOtpResponseDto
-                {
-                    StatusCode = 200,
-                    Success = true,
-                    Message = "کد تایید تولید شد (لطفاً لاگ سیستم را بررسی کنید)",
-                    ExpiresInSeconds = OtpExpirationMinutes * 60
-                };
+                return CreateSuccessOtpResponse(
+                    "کد تایید ارسال شد",
+                    otpCode,
+                    OtpExpirationMinutes * 60);
             }
             catch (Exception ex)
             {
@@ -549,13 +559,10 @@ namespace Api_Vapp.Services
 
                 LogDevOtpForDevelopment(loginDto.PhoneNumber, otpCode, "Register");
 
-                return new SendOtpResponseDto
-                {
-                    StatusCode = 200,
-                    Success = true,
-                    Message = "کد تایید مجدداً ارسال شد (لطفاً لاگ سیستم را بررسی کنید)",
-                    ExpiresInSeconds = OtpExpirationMinutes * 60
-                };
+                return CreateSuccessOtpResponse(
+                    "کد تایید مجدداً ارسال شد",
+                    otpCode,
+                    OtpExpirationMinutes * 60);
             }
             catch (Exception ex)
             {
@@ -618,13 +625,10 @@ namespace Api_Vapp.Services
 
                 LogDevOtpForDevelopment(loginDto.PhoneNumber, otpCode, "Login");
 
-                return new SendOtpResponseDto
-                {
-                    StatusCode = 200,
-                    Success = true,
-                    Message = "کد تایید تولید شد (لطفاً لاگ سیستم را بررسی کنید)",
-                    ExpiresInSeconds = OtpExpirationMinutes * 60
-                };
+                return CreateSuccessOtpResponse(
+                    "کد تایید ارسال شد",
+                    otpCode,
+                    OtpExpirationMinutes * 60);
             }
             catch (Exception ex)
             {
@@ -831,13 +835,10 @@ namespace Api_Vapp.Services
 
                 LogDevOtpForDevelopment(loginDto.PhoneNumber, otpCode, "Login");
 
-                return new SendOtpResponseDto
-                {
-                    StatusCode = 200,
-                    Success = true,
-                    Message = "کد تایید مجدداً ارسال شد (لطفاً لاگ سیستم را بررسی کنید)",
-                    ExpiresInSeconds = OtpExpirationMinutes * 60
-                };
+                return CreateSuccessOtpResponse(
+                    "کد تایید مجدداً ارسال شد",
+                    otpCode,
+                    OtpExpirationMinutes * 60);
             }
             catch (Exception ex)
             {
@@ -898,13 +899,10 @@ namespace Api_Vapp.Services
 
                 LogDevOtpForDevelopment(forgotPasswordDto.PhoneNumber, otpCode, "ResetPassword");
 
-                return new SendOtpResponseDto
-                {
-                    StatusCode = 200,
-                    Success = true,
-                    Message = "کد تایید تولید شد (لطفاً لاگ سیستم را بررسی کنید)",
-                    ExpiresInSeconds = OtpExpirationMinutes * 60
-                };
+                return CreateSuccessOtpResponse(
+                    "کد تایید ارسال شد",
+                    otpCode,
+                    OtpExpirationMinutes * 60);
             }
             catch (Exception ex)
             {
@@ -965,13 +963,10 @@ namespace Api_Vapp.Services
 
                 LogDevOtpForDevelopment(loginDto.PhoneNumber, otpCode, "ResetPassword");
 
-                return new SendOtpResponseDto
-                {
-                    StatusCode = 200,
-                    Success = true,
-                    Message = "کد تایید مجدداً ارسال شد (لطفاً لاگ سیستم را بررسی کنید)",
-                    ExpiresInSeconds = OtpExpirationMinutes * 60
-                };
+                return CreateSuccessOtpResponse(
+                    "کد تایید مجدداً ارسال شد",
+                    otpCode,
+                    OtpExpirationMinutes * 60);
             }
             catch (Exception ex)
             {

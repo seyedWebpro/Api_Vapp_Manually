@@ -5,7 +5,11 @@
 # Usage:
 #   bash deploy-front-host.sh
 #   SERVER_IP=185.116.162.233 bash deploy-front-host.sh
+#   SKIP_NPM_CI=1 bash deploy-front-host.sh   # اگر node_modules از قبل نصب است
 set -euo pipefail
+
+export DEBIAN_FRONTEND=noninteractive
+export NEEDRESTART_MODE=a
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FRONT_DIR="${FRONT_DIR:-$HOME/Admin_Vapp}"
@@ -23,7 +27,6 @@ ensure_node() {
     return 0
   fi
   log "Installing Node.js 22..."
-  export DEBIAN_FRONTEND=noninteractive
   curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
   apt-get install -y -qq nodejs
   log "Node $(node -v) installed"
@@ -44,11 +47,18 @@ if [[ -n "$NPM_REGISTRY" ]]; then
   npm config set registry "$NPM_REGISTRY"
 fi
 
-log "npm ci..."
-npm ci
+export npm_config_fetch_timeout="${NPM_FETCH_TIMEOUT:-600000}"
+export npm_config_fetch_retries="${NPM_FETCH_RETRIES:-5}"
 
-log "npm run build (VITE_API_URL=${VITE_API_URL:-empty})..."
-VITE_API_URL="$VITE_API_URL" npm run build
+if [[ "${SKIP_NPM_CI:-}" == "1" ]] && [[ -d node_modules ]]; then
+  log "SKIP_NPM_CI=1 — using existing node_modules"
+else
+  log "npm ci... (روی سرور ایران ممکن است ۱۵–۳۰ دقیقه طول بکشد — صبر کنید)"
+  npm ci --no-audit --no-fund --loglevel=info
+fi
+
+log "vite build (VITE_API_URL=${VITE_API_URL:-empty})..."
+VITE_API_URL="$VITE_API_URL" npx vite build
 
 [[ -d dist ]] || { echo "ERROR: dist/ not found after build" >&2; exit 1; }
 

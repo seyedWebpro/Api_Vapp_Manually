@@ -146,4 +146,15 @@
   API:000 → ۳۰–۶۰ ثانیه صبر (migration SQL Server)
   SSH refused → پورت ۲۲ را در فایروال VPS باز کنید
 
+  npm ci گیر کرده؟ → معمولاً گیر نکرده؛ روی سرور ایران ۱۵–۳۰ دقیقه طول می‌کشد
+    ps aux | grep npm          # اگر npm هنوز running است صبر کنید
+    npm ci --loglevel=info     # با لاگ بیشتر دوباره
+    SKIP_NPM_CI=1 bash devops/scripts/deploy-front-host.sh   # اگر node_modules آماده است
+
+  Docker Hub timeout → فرانت با host deploy (بدون Docker):
+    bash devops/scripts/deploy-front-host.sh
+
+  build سریع از Mac (اگر SSH از Mac کار می‌کند):
+    SERVER=root@185.116.162.233 bash devops/scripts/deploy-front-upload-dist.sh
+
   بکاپ DB: devops/backup/README.md
