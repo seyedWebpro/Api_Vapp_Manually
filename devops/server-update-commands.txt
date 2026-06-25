@@ -8,10 +8,10 @@
   ★ آپدیت معمولی (بعد از push لوکال)
 ================================================================================
 
-  cd ~/Api_Vapp_Manually && git pull origin main && bash devops/scripts/deploy-server.sh --fast --wait
+  cd ~/Api_Vapp_Manually && git pull origin main && bash devops/scripts/deploy-server-visible.sh --fast
 
-  • API + Admin (فرانت پس‌زمینه)
-  • --wait = صبر تا build فرانت + health-check
+  • API + Admin با نوار پیشرفت 0–100% (مثل vamyab)
+  • فقط Admin: bash devops/scripts/deploy-server-visible.sh --front-only
   • SSH وسط build قطع شود OK — بعد:
       tail -f $(cat ~/.vapp-last-front-deploy.log)
 

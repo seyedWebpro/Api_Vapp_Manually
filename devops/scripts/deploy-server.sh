@@ -8,7 +8,12 @@
 #   bash deploy-server.sh --full
 #   bash deploy-server.sh --api-only
 #   bash deploy-server.sh --front-only
+#   bash deploy-server.sh --front-only --foreground   # progress زنده در همان SSH
 #   bash deploy-server.sh --pull-only
+#
+# با درصد پیشرفت (پیشنهادی — مثل vamyab):
+#   bash deploy-server-visible.sh --front-only
+#   bash deploy-server-visible.sh --fast
 #
 # بعد از deploy:
 #   bash health-check.sh
@@ -55,7 +60,7 @@ run_front() {
   if [[ "$FRONT_BG" == "1" ]]; then
     bash "$SCRIPT_DIR/deploy-front.sh" --background
   else
-    bash "$SCRIPT_DIR/deploy-front.sh"
+    bash "$SCRIPT_DIR/deploy-front.sh" --foreground
   fi
 }
 

@@ -23,30 +23,59 @@ if [[ -z "$LOG" || ! -f "$LOG" ]]; then
   exit 1
 fi
 
-echo "Waiting for deploy-front to finish → $LOG"
+_deploy_done() {
+  grep -qE '=== deploy-front(-host)? done ===' "$LOG" 2>/dev/null
+}
+
+_show_progress() {
+  local line=""
+  line="$(grep -E 'STEP |npm progress|npm ci finished|vite build|deploy-front-host (started|done)|ERROR:' "$LOG" 2>/dev/null | tail -1 || true)"
+  if [[ -n "$line" ]]; then
+    echo ""
+    echo "  latest: $line"
+  fi
+  if [[ -d "$HOME/Admin_Vapp/node_modules" ]]; then
+    echo "  node_modules: $(du -sh "$HOME/Admin_Vapp/node_modules" 2>/dev/null | cut -f1)"
+  fi
+}
+
+echo "Waiting for front deploy → $LOG"
+echo "Live: tail -f $LOG"
 echo "(Ctrl+C only stops this watcher — build continues in background)"
 
-deadline=$((SECONDS + 1200))
+deadline=$((SECONDS + 2400))
+last_progress=$SECONDS
 while [[ $SECONDS -lt $deadline ]]; do
-  if grep -q "=== deploy-front done" "$LOG" 2>/dev/null; then
+  if _deploy_done; then
     echo ""
-    tail -15 "$LOG"
+    echo "=== deploy finished ==="
+    tail -20 "$LOG"
     break
   fi
-  if ! pgrep -f "deploy-front.sh" >/dev/null 2>&1 && ! pgrep -f "docker build.*vapp-admin" >/dev/null 2>&1; then
-    if grep -q "ERROR:" "$LOG" 2>/dev/null && ! grep -q "=== deploy-front done" "$LOG" 2>/dev/null; then
-      echo "ERROR: deploy-front failed — last lines:" >&2
-      tail -30 "$LOG" >&2
+
+  if ! pgrep -f "deploy-front" >/dev/null 2>&1 \
+    && ! pgrep -f "npm ci" >/dev/null 2>&1 \
+    && ! pgrep -f "vite build" >/dev/null 2>&1; then
+    if grep -q "ERROR:" "$LOG" 2>/dev/null && ! _deploy_done; then
+      echo "ERROR: deploy failed — last lines:" >&2
+      tail -40 "$LOG" >&2
       exit 1
     fi
   fi
+
+  if (( SECONDS - last_progress >= 30 )); then
+    _show_progress
+    last_progress=$SECONDS
+  fi
+
   sleep 5
   printf '.'
 done
 
-if ! grep -q "=== deploy-front done" "$LOG" 2>/dev/null; then
+if ! _deploy_done; then
   echo "" >&2
-  echo "WARN: timeout (20 min) — check log: tail -f $LOG" >&2
+  echo "WARN: timeout (40 min) — check log: tail -f $LOG" >&2
+  tail -30 "$LOG" >&2 || true
   exit 1
 fi
 
