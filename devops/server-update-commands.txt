@@ -155,6 +155,11 @@
     FRONT_DEPLOY_MODE=docker bash devops/scripts/deploy-front.sh --foreground
     bash devops/scripts/apply-nginx.sh   # proxy → :3005
 
+  ★ سرور ایران — یک دستور:
+    cd ~/Api_Vapp_Manually && git pull origin main && bash vapp-iran-update.sh
+    bash vapp-iran-update.sh --test      # تست mirrorها
+    bash vapp-iran-update.sh --fast      # API + Admin
+
   ★ سرور ایران — mirror NPM (مثل microless):
     sudo bash devops/scripts/apply-build-mirrors-iranserver.sh
     bash devops/scripts/deploy-front-on-iran.sh --foreground
