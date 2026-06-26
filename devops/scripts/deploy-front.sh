@@ -10,6 +10,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/docker-pull-fallback.sh
+source "$SCRIPT_DIR/lib/docker-pull-fallback.sh"
 FRONT_DIR="${FRONT_DIR:-$HOME/Admin_Vapp}"
 FRONT_BRANCH="${FRONT_BRANCH:-main}"
 FRONT_CONTAINER="${FRONT_CONTAINER:-vapp-admin}"
@@ -42,6 +44,9 @@ run_deploy() {
     build_args=(--no-cache "${build_args[@]}")
     echo "WARN: DOCKER_BUILD_NO_CACHE=1 — build will take longer."
   fi
+
+  echo "=== docker pull base images $(date '+%Y-%m-%dT%H:%M:%S') ==="
+  docker_pull_front_base_images
 
   echo "=== docker build started $(date '+%Y-%m-%dT%H:%M:%S') ==="
   echo "NOTE: npm install + vite build داخل Docker — معمولاً ۵–۱۵ دقیقه"
