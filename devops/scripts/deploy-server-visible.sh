@@ -7,7 +7,7 @@
 #   bash devops/scripts/deploy-server-visible.sh --api-only
 #
 # Env:
-#   FRONT_DEPLOY_MODE=host|docker   (پیش‌فرض: host — npm روی ایران با iranserver mirror)
+#   FRONT_DEPLOY_MODE=host|docker   (پیش‌فرض: docker — مثل vamyab)
 #   PROGRESS_INTERVAL=8
 set -euo pipefail
 
@@ -106,14 +106,14 @@ run_api_visible() {
 
 run_front_foreground() {
   progress_mark 58 "front-start"
-  FRONT_DEPLOY_MODE="${FRONT_DEPLOY_MODE:-host}" \
+  FRONT_DEPLOY_MODE="${FRONT_DEPLOY_MODE:-docker}" \
     bash "$SCRIPT_DIR/deploy-front.sh" --foreground 2>&1 | tee -a "$DEPLOY_LOG"
   progress_mark 90 "front-done"
 }
 
 apply_nginx_front() {
   local env_args=()
-  if [[ "${FRONT_DEPLOY_MODE:-host}" == "host" ]]; then
+  if [[ "${FRONT_DEPLOY_MODE:-docker}" == "host" ]]; then
     env_args=(FRONT_STATIC_ROOT="${FRONT_STATIC_ROOT:-/var/www/vapp-admin}")
   fi
   env "${env_args[@]}" SERVER_IP="${SERVER_IP:-185.116.162.233}" \
@@ -121,7 +121,7 @@ apply_nginx_front() {
 }
 
 run_front_background_and_wait() {
-  FRONT_DEPLOY_MODE="${FRONT_DEPLOY_MODE:-host}" \
+  FRONT_DEPLOY_MODE="${FRONT_DEPLOY_MODE:-docker}" \
     bash "$SCRIPT_DIR/deploy-front.sh" --background 2>&1 | tee -a "$DEPLOY_LOG"
   progress_mark 58 "front-start"
 
@@ -172,7 +172,7 @@ esac
 
 : >"$DEPLOY_LOG"
 log "=== deploy-server-visible mode=$MODE $(date '+%Y-%m-%dT%H:%M:%S') ==="
-log "FRONT_DEPLOY_MODE=${FRONT_DEPLOY_MODE:-host}"
+log "FRONT_DEPLOY_MODE=${FRONT_DEPLOY_MODE:-docker}"
 log "Log file: $DEPLOY_LOG"
 progress_mark 0 "start"
 

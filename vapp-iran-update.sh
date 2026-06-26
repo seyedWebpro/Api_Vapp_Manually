@@ -2,7 +2,8 @@
 # ★ آپدیت سرور ایران Vapp — یک دستور (الگو: microless iran-update.sh)
 #
 # Usage (روی سرور):
-#   bash ~/Api_Vapp_Manually/vapp-iran-update.sh              # Admin فرانت (host + mirror)
+#   bash ~/Api_Vapp_Manually/vapp-iran-update.sh              # Admin — Docker build (مثل vamyab)
+#   bash ~/Api_Vapp_Manually/vapp-iran-update.sh --host       # Admin — host npm (اگر Docker کند بود)
 #   bash ~/Api_Vapp_Manually/vapp-iran-update.sh --fast       # API + Admin
 #   bash ~/Api_Vapp_Manually/vapp-iran-update.sh --api-only   # فقط API
 #   bash ~/Api_Vapp_Manually/vapp-iran-update.sh --test       # تست mirrorها
@@ -22,9 +23,12 @@ usage() {
 }
 
 MODE="${1:---front-only}"
+DEPLOY_STYLE="${DEPLOY_STYLE:-docker}"
 
 case "$MODE" in
   -h|--help) usage 0 ;;
+  --host) DEPLOY_STYLE=host; MODE="--front-only" ;;
+  --docker) DEPLOY_STYLE=docker; MODE="--front-only" ;;
   --mirror)
     exec sudo bash "$DEVOPS/apply-build-mirrors-iranserver.sh"
     ;;
@@ -46,7 +50,10 @@ case "$MODE" in
     cd "$API_DIR" && git pull origin "${API_BRANCH:-main}"
     [[ -d "$FRONT_DIR/.git" ]] && cd "$FRONT_DIR" && git pull origin "${FRONT_BRANCH:-main}"
     unset FRONT_DEPLOY_MODE
-    export FRONT_DEPLOY_MODE=host
+    export FRONT_DEPLOY_MODE="${DEPLOY_STYLE:-docker}"
+    if [[ "$FRONT_DEPLOY_MODE" == "docker" ]]; then
+      FRONT_STATIC_ROOT= bash "$DEVOPS/apply-nginx.sh" 2>/dev/null || true
+    fi
     exec bash "$DEVOPS/deploy-server-visible.sh" "$MODE"
     ;;
   *)

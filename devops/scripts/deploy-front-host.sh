@@ -22,7 +22,7 @@ FRONT_STATIC_ROOT="${FRONT_STATIC_ROOT:-/var/www/vapp-admin}"
 SERVER_IP="${SERVER_IP:-185.116.162.233}"
 VITE_API_URL="${VITE_API_URL:-}"
 NPM_REGISTRY="${NPM_REGISTRY:-https://npm.iranserver.com/repository/npm/}"
-NPM_REGISTRY_FALLBACK="${NPM_REGISTRY_FALLBACK:-https://registry.npmmirror.com}"
+NPM_REGISTRY_FALLBACK="${NPM_REGISTRY_FALLBACK:-https://registry.npmjs.org}"
 DEPLOY_STEP_TOTAL=6
 
 apply_iran_build_mirrors() {

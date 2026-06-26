@@ -17,7 +17,7 @@ FRONT_IMAGE="${FRONT_IMAGE:-vapp-admin:latest}"
 FRONT_PORT_BIND="${FRONT_PORT_BIND:-127.0.0.1:3005:80}"
 VITE_API_URL="${VITE_API_URL:-}"
 DEPLOY_LOG="${DEPLOY_LOG:-}"
-FRONT_DEPLOY_MODE="${FRONT_DEPLOY_MODE:-host}"
+FRONT_DEPLOY_MODE="${FRONT_DEPLOY_MODE:-docker}"
 
 run_deploy() {
   echo "=== deploy-front started $(date '+%Y-%m-%dT%H:%M:%S') ==="
@@ -45,7 +45,7 @@ run_deploy() {
 
   echo "=== docker build started $(date '+%Y-%m-%dT%H:%M:%S') ==="
   echo "NOTE: npm install + vite build داخل Docker — معمولاً ۵–۱۵ دقیقه"
-  echo "      npmmirror + fallback npmjs (مثل vamyab)"
+  echo "      npm: iranserver → npmjs (داخل Dockerfile)"
   docker build --progress=plain "${build_args[@]}" -t "$FRONT_IMAGE" .
 
   echo "=== docker run started $(date '+%Y-%m-%dT%H:%M:%S') ==="

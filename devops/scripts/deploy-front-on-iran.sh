@@ -11,8 +11,8 @@ else
   sudo bash "$SCRIPT_DIR/apply-build-mirrors-iranserver.sh"
 fi
 
-export FRONT_DEPLOY_MODE="${FRONT_DEPLOY_MODE:-host}"
+export FRONT_DEPLOY_MODE="${FRONT_DEPLOY_MODE:-docker}"
 export NPM_REGISTRY="${NPM_REGISTRY:-https://npm.iranserver.com/repository/npm/}"
-export NPM_REGISTRY_FALLBACK="${NPM_REGISTRY_FALLBACK:-https://registry.npmmirror.com}"
+export NPM_REGISTRY_FALLBACK="${NPM_REGISTRY_FALLBACK:-https://registry.npmjs.org}"
 
 exec bash "$SCRIPT_DIR/deploy-front.sh" "$@"
