@@ -10,6 +10,12 @@ docker_pull_with_fallback() {
     return 0
   fi
 
+  # docker.io از ایران معمولاً block است — restart docker فقط اگر صریحاً فعال شده
+  if [[ "${DOCKER_PULL_ALLOW_DIRECT:-0}" != "1" ]]; then
+    echo "ERROR: mirror pull failed for $image (docker.io block — DOCKER_PULL_ALLOW_DIRECT=1 برای تلاش مستقیم)" >&2
+    return 1
+  fi
+
   echo "WARN: mirror pull failed for $image — trying docker.io without mirror"
   local daemon_json="/etc/docker/daemon.json"
   local backup="/tmp/docker-daemon.json.bak.$$"
@@ -53,5 +59,4 @@ EOF
 
 docker_pull_front_base_images() {
   docker_pull_with_fallback "${DOCKER_NODE_IMAGE:-node:20-alpine}"
-  docker_pull_with_fallback "${DOCKER_NGINX_IMAGE:-nginx:alpine}"
 }
