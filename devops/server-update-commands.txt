@@ -151,7 +151,15 @@
     npm ci --loglevel=info     # با لاگ بیشتر دوباره
     SKIP_NPM_CI=1 bash devops/scripts/deploy-front-host.sh   # اگر node_modules آماده است
 
-  Docker Hub timeout → فرانت با host deploy (بدون Docker):
+  Docker mirror (ایران‌سرور) فعال است → می‌توانید فرانت را با Docker هم deploy کنید:
+    FRONT_DEPLOY_MODE=docker bash devops/scripts/deploy-front.sh --foreground
+    bash devops/scripts/apply-nginx.sh   # proxy → :3005
+
+  ★ سرور ایران — mirror NPM (مثل microless):
+    sudo bash devops/scripts/apply-build-mirrors-iranserver.sh
+    bash devops/scripts/deploy-front-on-iran.sh --foreground
+
+  Docker Hub timeout → فرانت با host deploy (بدون pull image):
     bash devops/scripts/deploy-front-host.sh
 
   build سریع از Mac (اگر SSH از Mac کار می‌کند):

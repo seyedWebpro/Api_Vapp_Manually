@@ -17,7 +17,7 @@ FRONT_IMAGE="${FRONT_IMAGE:-vapp-admin:latest}"
 FRONT_PORT_BIND="${FRONT_PORT_BIND:-127.0.0.1:3005:80}"
 VITE_API_URL="${VITE_API_URL:-}"
 DEPLOY_LOG="${DEPLOY_LOG:-}"
-FRONT_DEPLOY_MODE="${FRONT_DEPLOY_MODE:-docker}"
+FRONT_DEPLOY_MODE="${FRONT_DEPLOY_MODE:-host}"
 
 run_deploy() {
   echo "=== deploy-front started $(date '+%Y-%m-%dT%H:%M:%S') ==="

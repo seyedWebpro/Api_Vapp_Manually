@@ -7,7 +7,7 @@
 #   bash devops/scripts/deploy-server-visible.sh --api-only
 #
 # Env:
-#   FRONT_DEPLOY_MODE=host|docker   (پیش‌فرض: docker)
+#   FRONT_DEPLOY_MODE=host|docker   (پیش‌فرض: host — npm روی ایران با iranserver mirror)
 #   PROGRESS_INTERVAL=8
 set -euo pipefail
 
@@ -106,13 +106,22 @@ run_api_visible() {
 
 run_front_foreground() {
   progress_mark 58 "front-start"
-  FRONT_DEPLOY_MODE="${FRONT_DEPLOY_MODE:-docker}" \
+  FRONT_DEPLOY_MODE="${FRONT_DEPLOY_MODE:-host}" \
     bash "$SCRIPT_DIR/deploy-front.sh" --foreground 2>&1 | tee -a "$DEPLOY_LOG"
   progress_mark 90 "front-done"
 }
 
+apply_nginx_front() {
+  local env_args=()
+  if [[ "${FRONT_DEPLOY_MODE:-host}" == "host" ]]; then
+    env_args=(FRONT_STATIC_ROOT="${FRONT_STATIC_ROOT:-/var/www/vapp-admin}")
+  fi
+  env "${env_args[@]}" SERVER_IP="${SERVER_IP:-185.116.162.233}" \
+    bash "$SCRIPT_DIR/apply-nginx.sh" 2>&1 | tee -a "$DEPLOY_LOG" || true
+}
+
 run_front_background_and_wait() {
-  FRONT_DEPLOY_MODE="${FRONT_DEPLOY_MODE:-docker}" \
+  FRONT_DEPLOY_MODE="${FRONT_DEPLOY_MODE:-host}" \
     bash "$SCRIPT_DIR/deploy-front.sh" --background 2>&1 | tee -a "$DEPLOY_LOG"
   progress_mark 58 "front-start"
 
@@ -163,7 +172,7 @@ esac
 
 : >"$DEPLOY_LOG"
 log "=== deploy-server-visible mode=$MODE $(date '+%Y-%m-%dT%H:%M:%S') ==="
-log "FRONT_DEPLOY_MODE=${FRONT_DEPLOY_MODE:-docker}"
+log "FRONT_DEPLOY_MODE=${FRONT_DEPLOY_MODE:-host}"
 log "Log file: $DEPLOY_LOG"
 progress_mark 0 "start"
 
@@ -191,21 +200,21 @@ case "$MODE" in
   --front-only)
     phase_banner 2 "$total_phases" "Deploy Admin (React)" 58
     run_front_foreground
-    bash "$SCRIPT_DIR/apply-nginx.sh" 2>&1 | tee -a "$DEPLOY_LOG" || true
+    apply_nginx_front
     ;;
   --fast)
     phase_banner 2 "$total_phases" "Deploy API" 8
     run_api_visible 0 1
     phase_banner 3 "$total_phases" "Deploy Admin (React)" 58
     run_front_background_and_wait
-    bash "$SCRIPT_DIR/apply-nginx.sh" 2>&1 | tee -a "$DEPLOY_LOG" || true
+    apply_nginx_front
     ;;
   --full)
     phase_banner 2 "$total_phases" "Deploy API + Nginx" 8
     run_api_visible 1 1
     phase_banner 3 "$total_phases" "Deploy Admin (React)" 58
     run_front_background_and_wait
-    bash "$SCRIPT_DIR/apply-nginx.sh" 2>&1 | tee -a "$DEPLOY_LOG" || true
+    apply_nginx_front
     ;;
 esac
 

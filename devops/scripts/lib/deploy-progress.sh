@@ -75,27 +75,112 @@ deploy_npm_lockfile_packages() {
 
 deploy_start_npm_watch() {
   local lockfile="${1:-package-lock.json}"
-  local total
+  local total stall_file last_size="" last_change=$SECONDS
   total="$(deploy_npm_lockfile_packages "$lockfile")"
   local start=$SECONDS
+  stall_file="${NPM_STALL_FILE:-/tmp/vapp-npm-stall-$$}"
 
   (
     while true; do
       sleep 15
-      local installed="0"
+      local installed="0" size="" size_mb=0
       if [[ -d node_modules ]]; then
         installed="$(find node_modules -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')"
+        size="$(du -sh node_modules 2>/dev/null | cut -f1)"
+        size_mb="$(du -sm node_modules 2>/dev/null | cut -f1)"
+      fi
+      if [[ "$size" == "$last_size" ]]; then
+        if (( SECONDS - last_change >= 120 )); then
+          deploy_log "⚠ STUCK: node_modules=${size} unchanged 2+ min — switch registry"
+          echo "stuck" >"$stall_file"
+        fi
+      else
+        last_size="$size"
+        last_change=$SECONDS
       fi
       if [[ "$total" != "?" && "$total" -gt 0 ]]; then
         local pct=$((installed * 100 / total))
         [[ "$pct" -gt 100 ]] && pct=100
-        deploy_log "📦 npm progress ~${pct}% (${installed}/${total} top-level dirs) — elapsed $(_deploy_elapsed "$start")"
+        deploy_log "📦 npm ~${pct}% dirs=${installed}/${total} size=${size:-0} (${size_mb:-0}MB) — $(_deploy_elapsed "$start")"
       else
-        deploy_log "📦 npm progress — ${installed} dirs in node_modules — elapsed $(_deploy_elapsed "$start")"
+        deploy_log "📦 npm size=${size:-0} (${size_mb:-0}MB) — $(_deploy_elapsed "$start")"
       fi
+      [[ "${size_mb:-0}" -ge 150 ]] && deploy_log "✓ node_modules size OK (~${size_mb}MB)"
     done
   ) &
   _NPM_WATCH_PID=$!
+}
+
+deploy_run_npm_install_once() {
+  local registry="$1"
+  npm config set registry "$registry"
+  if [[ "$registry" == *iranserver* ]]; then
+    npm config set strict-ssl false 2>/dev/null || true
+  fi
+  deploy_log "try registry: $registry"
+  npm install --no-audit --no-fund --loglevel="${NPM_LOGLEVEL:-info}" --timing \
+    --maxsockets="${NPM_MAX_SOCKETS:-5}" \
+    --fetch-timeout="${NPM_FETCH_TIMEOUT:-300000}" \
+    --fetch-retries="${NPM_FETCH_RETRIES:-3}" 2>&1 | while IFS= read -r line || [[ -n "$line" ]]; do
+    printf '[npm] %s\n' "$line"
+  done
+  return "${PIPESTATUS[0]}"
+}
+
+deploy_run_npm_deps() {
+  local start=$SECONDS total rc=0 stall_file="${NPM_STALL_FILE:-/tmp/vapp-npm-stall-$$}"
+  local iranserver="https://npm.iranserver.com/repository/npm/"
+  local primary="${NPM_REGISTRY:-$iranserver}"
+  local fallback="${NPM_REGISTRY_FALLBACK:-https://registry.npmmirror.com}"
+  local last_resort="${NPM_REGISTRY_LAST:-https://registry.npmjs.org}"
+  rm -f "$stall_file"
+  total="$(deploy_npm_lockfile_packages package-lock.json)"
+
+  deploy_log "npm install — lockfile packages: ${total}"
+  deploy_log "registries: iranserver → npmmirror → npmjs (mirror.iranserver.com)"
+  deploy_log "node_modules باید به ~200MB+ برسد — اگر 2 دقیقه روی 1.4M ماند = گیر کرده"
+
+  npm cache clean --force 2>/dev/null || true
+  export npm_config_progress=true
+  export npm_config_loglevel="${NPM_LOGLEVEL:-info}"
+
+  deploy_start_heartbeat "npm install" 20 "node_modules"
+  deploy_start_npm_watch "package-lock.json"
+
+  set +e
+  deploy_run_npm_install_once "$primary"
+  rc=$?
+
+  if [[ "$rc" -ne 0 ]] || [[ -f "$stall_file" ]] || [[ "$(du -sm node_modules 2>/dev/null | cut -f1)" -lt 100 ]]; then
+    deploy_log "WARN: retry — clean node_modules + cache + $fallback"
+    rm -f "$stall_file"
+    rm -rf node_modules
+    npm cache clean --force 2>/dev/null || true
+    deploy_run_npm_install_once "$fallback"
+    rc=$?
+  fi
+
+  if [[ "$rc" -ne 0 ]] || [[ -f "$stall_file" ]] || [[ "$(du -sm node_modules 2>/dev/null | cut -f1)" -lt 100 ]]; then
+    deploy_log "WARN: last resort — $last_resort (ممکن است روی ایران کند باشد)"
+    rm -f "$stall_file"
+    rm -rf node_modules
+    npm cache clean --force 2>/dev/null || true
+    deploy_run_npm_install_once "$last_resort"
+    rc=$?
+  fi
+
+  if [[ "$rc" -ne 0 ]] || [[ "$(du -sm node_modules 2>/dev/null | cut -f1)" -lt 100 ]]; then
+    deploy_log "ERROR: npm install failed — node_modules too small"
+    deploy_log "راه‌حل: bash devops/scripts/deploy-front-upload-node-modules.sh (روی Mac)"
+    rc=1
+  fi
+  set -e
+
+  deploy_stop_npm_watch
+  deploy_stop_heartbeat
+  rm -f "$stall_file"
+  deploy_log "✓ npm install finished in $(_deploy_elapsed "$start") (exit ${rc}) size=$(du -sh node_modules 2>/dev/null | cut -f1)"
+  return "$rc"
 }
 
 deploy_run_stream() {
@@ -117,45 +202,6 @@ deploy_run_stream() {
   local rc=${PIPESTATUS[0]}
   set -e
   deploy_log "✓ ${label} finished in $(_deploy_elapsed "$start") (exit ${rc})"
-  return "$rc"
-}
-
-deploy_run_npm_deps() {
-  local start=$SECONDS
-  local total rc=0
-  total="$(deploy_npm_lockfile_packages package-lock.json)"
-
-  deploy_log "npm install — packages in lockfile: ${total}"
-  deploy_log "استراتژی: npmmirror → fallback npmjs (مثل vamyab)"
-
-  export npm_config_progress=true
-  export npm_config_loglevel="${NPM_LOGLEVEL:-verbose}"
-  export npm_config_fetch_timeout="${NPM_FETCH_TIMEOUT:-600000}"
-  export npm_config_fetch_retries="${NPM_FETCH_RETRIES:-5}"
-
-  deploy_start_heartbeat "npm install" 20 "node_modules"
-  deploy_start_npm_watch "package-lock.json"
-
-  set +e
-  npm config set registry "${NPM_REGISTRY:-https://registry.npmmirror.com}"
-  npm install --no-audit --no-fund --loglevel="${NPM_LOGLEVEL:-verbose}" --timing 2>&1 | while IFS= read -r line || [[ -n "$line" ]]; do
-    printf '[npm] %s\n' "$line"
-  done
-  rc=${PIPESTATUS[0]}
-
-  if [[ "$rc" -ne 0 ]]; then
-    deploy_log "WARN: npmmirror failed — retry with registry.npmjs.org"
-    npm config set registry https://registry.npmjs.org
-    npm install --no-audit --no-fund --loglevel="${NPM_LOGLEVEL:-verbose}" --timing 2>&1 | while IFS= read -r line || [[ -n "$line" ]]; do
-      printf '[npm] %s\n' "$line"
-    done
-    rc=${PIPESTATUS[0]}
-  fi
-  set -e
-
-  deploy_stop_npm_watch
-  deploy_stop_heartbeat
-  deploy_log "✓ npm install finished in $(_deploy_elapsed "$start") (exit ${rc})"
   return "$rc"
 }
 

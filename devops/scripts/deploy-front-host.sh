@@ -21,8 +21,19 @@ FRONT_BRANCH="${FRONT_BRANCH:-main}"
 FRONT_STATIC_ROOT="${FRONT_STATIC_ROOT:-/var/www/vapp-admin}"
 SERVER_IP="${SERVER_IP:-185.116.162.233}"
 VITE_API_URL="${VITE_API_URL:-}"
-NPM_REGISTRY="${NPM_REGISTRY:-https://registry.npmmirror.com}"
+NPM_REGISTRY="${NPM_REGISTRY:-https://npm.iranserver.com/repository/npm/}"
+NPM_REGISTRY_FALLBACK="${NPM_REGISTRY_FALLBACK:-https://registry.npmmirror.com}"
 DEPLOY_STEP_TOTAL=6
+
+apply_iran_build_mirrors() {
+  if [[ -x "$SCRIPT_DIR/apply-build-mirrors-iranserver.sh" ]]; then
+    if [[ "$(id -u)" -eq 0 ]]; then
+      bash "$SCRIPT_DIR/apply-build-mirrors-iranserver.sh"
+    else
+      sudo bash "$SCRIPT_DIR/apply-build-mirrors-iranserver.sh" 2>/dev/null || true
+    fi
+  fi
+}
 
 ensure_node() {
   if command -v node >/dev/null 2>&1 && [[ "$(node -p 'process.versions.node.split(".")[0]')" -ge 18 ]]; then
@@ -54,6 +65,8 @@ fi
 deploy_step "Node.js check"
 ensure_node
 
+apply_iran_build_mirrors
+
 deploy_step "npm registry"
 if [[ -n "$NPM_REGISTRY" ]]; then
   npm config set registry "$NPM_REGISTRY"
@@ -64,7 +77,7 @@ if [[ "${SKIP_NPM_CI:-}" == "1" ]] && [[ -d node_modules ]]; then
   deploy_step "npm install (skipped — SKIP_NPM_CI=1)"
   deploy_log "Using existing node_modules ($(du -sh node_modules | cut -f1))"
 else
-  deploy_step "npm install (dependencies — npmmirror + fallback)"
+  deploy_step "npm install (dependencies — iranserver npm + fallback)"
   rm -rf node_modules
   deploy_run_npm_deps
 fi

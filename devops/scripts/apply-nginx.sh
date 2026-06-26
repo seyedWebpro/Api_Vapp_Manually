@@ -11,6 +11,11 @@ SERVER_IP="${SERVER_IP:-185.116.162.233}"
 FRONT_STATIC_ROOT="${FRONT_STATIC_ROOT:-}"
 DEST="/etc/nginx/sites-available/vapp"
 
+# host deploy: static در /var/www/vapp-admin — اگر unset بود و فایل هست، auto-detect
+if [[ -z "$FRONT_STATIC_ROOT" && "${FRONT_DEPLOY_MODE:-host}" == "host" && -f /var/www/vapp-admin/index.html ]]; then
+  FRONT_STATIC_ROOT=/var/www/vapp-admin
+fi
+
 if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
   sudo SERVER_IP="$SERVER_IP" FRONT_STATIC_ROOT="$FRONT_STATIC_ROOT" bash "$0"
   exit $?

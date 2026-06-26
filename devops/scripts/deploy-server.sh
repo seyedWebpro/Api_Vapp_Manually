@@ -105,7 +105,12 @@ if [[ "$MODE" == "--fast" || "$MODE" == "--full" || "$MODE" == "--front-only" ]]
 fi
 
 if [[ "$MODE" == "--fast" || "$MODE" == "--full" || "$MODE" == "--front-only" ]]; then
-  bash "$SCRIPT_DIR/apply-nginx.sh" || echo "WARN: apply-nginx failed" >&2
+  if [[ "${FRONT_DEPLOY_MODE:-host}" == "host" ]]; then
+    FRONT_STATIC_ROOT="${FRONT_STATIC_ROOT:-/var/www/vapp-admin}" \
+      bash "$SCRIPT_DIR/apply-nginx.sh" || echo "WARN: apply-nginx failed" >&2
+  else
+    bash "$SCRIPT_DIR/apply-nginx.sh" || echo "WARN: apply-nginx failed" >&2
+  fi
 fi
 
 if [[ "$WAIT_FOR_FRONT" == "1" && "$FRONT_BG" == "1" ]]; then

@@ -4,6 +4,7 @@
 # Usage: sudo bash bootstrap-first-run.sh
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 API_DIR="${API_DIR:-$HOME/Api_Vapp_Manually}"
 FRONT_DIR="${FRONT_DIR:-$HOME/Admin_Vapp}"
 SERVER_IP="${SERVER_IP:-185.116.162.233}"
