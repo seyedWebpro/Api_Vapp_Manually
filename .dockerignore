@@ -61,5 +61,6 @@ Thumbs.db
 # Environment files
 .env
 
-# Tests
+# Tests (not needed in production image)
 tests/
+Tests/
