@@ -9,6 +9,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/docker-pull-fallback.sh
+source "$SCRIPT_DIR/lib/docker-pull-fallback.sh"
 API_REPO_DIR="${API_REPO_DIR:-$HOME/Api_Vapp_Manually}"
 API_BRANCH="${API_BRANCH:-main}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker/docker-compose.production.yml}"
@@ -31,7 +33,26 @@ if [[ -d "$API_REPO_DIR/.git" ]]; then
   git pull origin "$API_BRANCH"
 fi
 
-docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d --build --force-recreate api
+BUILD_PULL="${API_BUILD_PULL:-auto}"
+if [[ "$BUILD_PULL" == "auto" ]]; then
+  if docker_api_base_images_cached; then
+    BUILD_PULL="false"
+    echo "NOTE: dotnet base images cached — build با --pull=false (mcr از ایران block است)"
+  else
+    BUILD_PULL="always"
+    docker_pull_api_base_images || true
+    if docker_api_base_images_cached; then
+      BUILD_PULL="false"
+    else
+      echo "ERROR: dotnet base images not on server — build از Mac:" >&2
+      echo "  SERVER=root@185.116.162.233 bash devops/scripts/deploy-api-upload-image.sh" >&2
+      exit 1
+    fi
+  fi
+fi
+
+docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" build --pull="$BUILD_PULL" api
+docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d --force-recreate --no-build api
 
 if [[ "${RELOAD_NGINX:-0}" == "1" ]]; then
   bash "$SCRIPT_DIR/apply-nginx.sh"

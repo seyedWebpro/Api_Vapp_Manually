@@ -39,6 +39,7 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
+    image: vapp-api
     container_name: vapp_api_prod
     depends_on:
       sqlserver:

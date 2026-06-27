@@ -86,6 +86,15 @@
   --- فقط API ---
   bash devops/scripts/deploy-server.sh --api-only
 
+  --- فقط API (یک خط — روی سرور) ---
+  cd ~/Api_Vapp_Manually && git pull origin main && bash devops/scripts/deploy-server.sh --api-only
+
+  --- API وقتی mcr.microsoft.com block است (image کش‌شده روی سرور) ---
+  cd ~/Api_Vapp_Manually && git pull origin main && docker compose -f docker/docker-compose.production.yml --env-file docker/.env build --pull=false api && docker compose -f docker/docker-compose.production.yml --env-file docker/.env up -d --force-recreate --no-build api
+
+  --- API build روی Mac → upload به سرور ---
+  SERVER=root@185.116.162.233 bash devops/scripts/deploy-api-upload-image.sh
+
   --- فقط Admin ---
   bash devops/scripts/deploy-server.sh --front-only --wait
 
