@@ -1,0 +1,787 @@
+using Api_Vapp.DTOs.Common;
+using Api_Vapp.DTOs.UserForm;
+using Api_Vapp.Interfaces;
+using Api_Vapp.Models;
+using Api_Vapp.Utilities;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+
+namespace Api_Vapp.Services
+{
+    /// <summary>
+    /// سرویس مدیریت فرم‌های کاربر (فرم‌ساز)
+    /// </summary>
+    public class UserFormService : IUserFormService
+    {
+        private readonly IUserFormRepository _userFormRepository;
+        private readonly Api_Vapp.Data.Api_Context _context;
+        private readonly FormBuilderOptions _formBuilderOptions;
+        private readonly ILogger<UserFormService> _logger;
+
+        public UserFormService(
+            IUserFormRepository userFormRepository,
+            Api_Vapp.Data.Api_Context context,
+            IOptions<FormBuilderOptions> formBuilderOptions,
+            ILogger<UserFormService> logger)
+        {
+            _userFormRepository = userFormRepository;
+            _context = context;
+            _formBuilderOptions = formBuilderOptions.Value;
+            _logger = logger;
+        }
+
+        public async Task<ApiResponse<UserFormResponseDto>> CreateDraftAsync(int userId, CreateUserFormDto createDto)
+        {
+            try
+            {
+                var validation = await ValidateCreateRequestAsync(userId, createDto);
+                if (validation != null)
+                {
+                    return validation;
+                }
+
+                var form = new UserForm
+                {
+                    UserId = userId,
+                    Title = createDto.Title?.Trim() ?? string.Empty,
+                    Description = NormalizeOptionalText(createDto.Description),
+                    Slug = UserFormSlugHelper.Normalize(createDto.Slug),
+                    TemplateKey = NormalizeOptionalText(createDto.TemplateKey),
+                    Status = UserFormStatus.Draft,
+                    SaveToPhonebook = createDto.SaveToPhonebook,
+                    IsActive = true,
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                foreach (var fieldDto in createDto.Fields.OrderBy(f => f.DisplayOrder))
+                {
+                    form.Fields.Add(MapField(fieldDto));
+                }
+
+                foreach (var notebookId in createDto.NotebookIds.Distinct())
+                {
+                    form.Notebooks.Add(new UserFormNotebook { ContactNotebookId = notebookId });
+                }
+
+                await _context.UserForms.AddAsync(form);
+                await _context.SaveChangesAsync();
+
+                _logger.LogInformation("User form draft created with ID {FormId} for user {UserId}", form.Id, userId);
+
+                return ApiResponse<UserFormResponseDto>.CreateSuccess(
+                    MapToResponseDto(form),
+                    "پیش‌نویس فرم با موفقیت ایجاد شد",
+                    201);
+            }
+            catch (DbUpdateException dbEx)
+            {
+                _logger.LogError(dbEx, "Database error creating user form draft for user {UserId}", userId);
+                return ApiResponse<UserFormResponseDto>.InternalServerError(
+                    ControlledErrorHelper.Database,
+                    ErrorCodes.DatabaseError);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error creating user form draft for user {UserId}", userId);
+                return ApiResponse<UserFormResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
+        public async Task<ApiResponse<UserFormResponseDto>> UpdateAsync(int id, int userId, UpdateUserFormDto updateDto)
+        {
+            try
+            {
+                var form = await _userFormRepository.GetByIdWithDetailsTrackedAsync(id);
+                if (form == null)
+                {
+                    return ApiResponse<UserFormResponseDto>.NotFound("فرم یافت نشد");
+                }
+
+                if (form.UserId != userId)
+                {
+                    return ApiResponse<UserFormResponseDto>.Forbidden(
+                        ControlledErrorHelper.Unauthorized,
+                        ErrorCodes.Forbidden);
+                }
+
+                if (!HasAnyChanges(updateDto))
+                {
+                    return ApiResponse<UserFormResponseDto>.BadRequest(
+                        "هیچ موردی برای به‌روزرسانی ارسال نشده است",
+                        errorCode: ErrorCodes.ValidationFailed);
+                }
+
+                if (updateDto.Fields != null && updateDto.Fields.Count > 0)
+                {
+                    var fieldErrors = ValidateFields(updateDto.Fields);
+                    if (fieldErrors.Count > 0)
+                    {
+                        return ApiResponse<UserFormResponseDto>.BadRequest(
+                            "داده‌های فیلدها نامعتبر است",
+                            fieldErrors,
+                            ErrorCodes.ValidationFailed);
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(updateDto.Slug))
+                {
+                    var slugValidation = await ValidateSlugAsync(updateDto.Slug, id);
+                    if (slugValidation.Error != null)
+                    {
+                        return slugValidation.Error;
+                    }
+
+                    form.Slug = slugValidation.NormalizedSlug;
+                }
+
+                if (updateDto.Title != null)
+                {
+                    form.Title = updateDto.Title.Trim();
+                }
+
+                if (updateDto.Description != null)
+                {
+                    form.Description = NormalizeOptionalText(updateDto.Description);
+                }
+
+                if (updateDto.SaveToPhonebook.HasValue)
+                {
+                    form.SaveToPhonebook = updateDto.SaveToPhonebook.Value;
+                }
+
+                if (updateDto.NotebookIds != null)
+                {
+                    var notebookErrors = await ValidateNotebookIdsAsync(userId, updateDto.NotebookIds);
+                    if (notebookErrors.Count > 0)
+                    {
+                        return ApiResponse<UserFormResponseDto>.BadRequest(
+                            "دفترچه‌های انتخاب‌شده نامعتبر است",
+                            notebookErrors,
+                            ErrorCodes.ValidationFailed);
+                    }
+
+                    await ClearNotebookLinksAsync(form);
+                    foreach (var notebookId in updateDto.NotebookIds.Distinct())
+                    {
+                        form.Notebooks.Add(new UserFormNotebook
+                        {
+                            UserFormId = id,
+                            ContactNotebookId = notebookId
+                        });
+                    }
+                }
+
+                if (updateDto.Fields != null && updateDto.Fields.Count > 0)
+                {
+                    MergeFormFields(form, updateDto.Fields);
+
+                    var mergedFieldErrors = ValidateFields(form.Fields.Select(MapFieldToDto).ToList());
+                    if (mergedFieldErrors.Count > 0)
+                    {
+                        return ApiResponse<UserFormResponseDto>.BadRequest(
+                            "داده‌های فیلدها نامعتبر است",
+                            mergedFieldErrors,
+                            ErrorCodes.ValidationFailed);
+                    }
+                }
+
+                var fieldsForValidation = form.Fields.Select(MapFieldToDto).ToList();
+
+                var notebookIdsForValidation = updateDto.NotebookIds?.Distinct().ToList()
+                    ?? form.Notebooks.Select(n => n.ContactNotebookId).ToList();
+
+                if (form.SaveToPhonebook)
+                {
+                    var phonebookErrors = ValidatePhonebookSettings(
+                        form.SaveToPhonebook,
+                        notebookIdsForValidation,
+                        fieldsForValidation);
+
+                    if (phonebookErrors.Count > 0)
+                    {
+                        return ApiResponse<UserFormResponseDto>.BadRequest(
+                            "تنظیمات دفترچه تلفن نامعتبر است",
+                            phonebookErrors,
+                            ErrorCodes.ValidationFailed);
+                    }
+                }
+
+                form.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+
+                return ApiResponse<UserFormResponseDto>.CreateSuccess(
+                    MapToResponseDto(form),
+                    "فرم با موفقیت به‌روزرسانی شد");
+            }
+            catch (DbUpdateException dbEx)
+            {
+                _logger.LogError(dbEx, "Database error updating user form {FormId} for user {UserId}", id, userId);
+                return ApiResponse<UserFormResponseDto>.InternalServerError(
+                    ControlledErrorHelper.Database,
+                    ErrorCodes.DatabaseError);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating user form {FormId} for user {UserId}", id, userId);
+                return ApiResponse<UserFormResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
+        public async Task<ApiResponse<UserFormResponseDto>> PublishAsync(int id, int userId, PublishUserFormDto? publishDto = null)
+        {
+            try
+            {
+                var form = await _userFormRepository.GetByIdWithDetailsTrackedAsync(id);
+                if (form == null)
+                {
+                    return ApiResponse<UserFormResponseDto>.NotFound("فرم یافت نشد");
+                }
+
+                if (form.UserId != userId)
+                {
+                    return ApiResponse<UserFormResponseDto>.Forbidden(
+                        ControlledErrorHelper.Unauthorized,
+                        ErrorCodes.Forbidden);
+                }
+
+                if (string.IsNullOrWhiteSpace(form.Title))
+                {
+                    return ApiResponse<UserFormResponseDto>.BadRequest(
+                        "عنوان فرم الزامی است",
+                        errorCode: ErrorCodes.ValidationFailed);
+                }
+
+                if (!form.Fields.Any(f => f.IsActive))
+                {
+                    return ApiResponse<UserFormResponseDto>.BadRequest(
+                        "حداقل یک فیلد فعال برای انتشار لازم است",
+                        errorCode: ErrorCodes.ValidationFailed);
+                }
+
+                if (form.SaveToPhonebook)
+                {
+                    var phonebookErrors = ValidatePhonebookSettings(
+                        form.SaveToPhonebook,
+                        form.Notebooks.Select(n => n.ContactNotebookId).ToList(),
+                        form.Fields.Select(MapFieldToDto).ToList());
+
+                    if (phonebookErrors.Count > 0)
+                    {
+                        return ApiResponse<UserFormResponseDto>.BadRequest(
+                            "تنظیمات دفترچه تلفن نامعتبر است",
+                            phonebookErrors,
+                            ErrorCodes.ValidationFailed);
+                    }
+                }
+
+                string slug;
+                if (!string.IsNullOrWhiteSpace(publishDto?.Slug))
+                {
+                    var slugValidation = await ValidateSlugAsync(publishDto.Slug, id);
+                    if (slugValidation.Error != null)
+                    {
+                        return slugValidation.Error;
+                    }
+
+                    slug = slugValidation.NormalizedSlug!;
+                }
+                else if (!string.IsNullOrWhiteSpace(form.Slug))
+                {
+                    slug = form.Slug;
+                }
+                else
+                {
+                    slug = await GenerateUniqueSlugAsync(form.Title, id);
+                }
+
+                form.Slug = slug;
+                form.Status = UserFormStatus.Published;
+                form.IsActive = true;
+                form.PublishedAt = DateTime.UtcNow;
+                form.UpdatedAt = DateTime.UtcNow;
+
+                await _context.SaveChangesAsync();
+
+                _logger.LogInformation("User form {FormId} published with slug {Slug}", id, slug);
+
+                return ApiResponse<UserFormResponseDto>.CreateSuccess(
+                    MapToResponseDto(form),
+                    "فرم با موفقیت منتشر شد");
+            }
+            catch (DbUpdateException dbEx)
+            {
+                _logger.LogError(dbEx, "Database error publishing user form {FormId} for user {UserId}", id, userId);
+                return ApiResponse<UserFormResponseDto>.InternalServerError(
+                    ControlledErrorHelper.Database,
+                    ErrorCodes.DatabaseError);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error publishing user form {FormId} for user {UserId}", id, userId);
+                return ApiResponse<UserFormResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
+        public async Task<ApiResponse<UserFormListResponseDto>> GetFormsAsync(int userId, int pageNumber = 1, int pageSize = 10)
+        {
+            try
+            {
+                if (pageNumber < 1)
+                {
+                    return ApiResponse<UserFormListResponseDto>.BadRequest(
+                        "شماره صفحه باید بزرگتر از صفر باشد",
+                        errorCode: ErrorCodes.InvalidInput);
+                }
+
+                if (pageSize < 1 || pageSize > 100)
+                {
+                    return ApiResponse<UserFormListResponseDto>.BadRequest(
+                        "تعداد در هر صفحه باید بین 1 تا 100 باشد",
+                        errorCode: ErrorCodes.InvalidInput);
+                }
+
+                var (items, totalCount) = await _userFormRepository.GetByUserIdPagedAsync(userId, pageNumber, pageSize);
+
+                var summaries = items.Select(form => new UserFormSummaryDto
+                {
+                    Id = form.Id,
+                    Title = form.Title,
+                    Slug = form.Slug,
+                    Status = form.Status.ToString(),
+                    IsActive = form.IsActive,
+                    PublicUrl = BuildPublicUrl(form.Slug),
+                    CreatedAt = EnsureUtc(form.CreatedAt),
+                    PublishedAt = EnsureUtc(form.PublishedAt)
+                }).ToList();
+
+                return ApiResponse<UserFormListResponseDto>.CreateSuccess(new UserFormListResponseDto
+                {
+                    Forms = PagedResponse<UserFormSummaryDto>.Create(summaries, totalCount, pageNumber, pageSize)
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error listing user forms for user {UserId}", userId);
+                return ApiResponse<UserFormListResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
+        public async Task<ApiResponse<UserFormResponseDto>> GetByIdAsync(int id, int userId)
+        {
+            try
+            {
+                var form = await _userFormRepository.GetByIdWithDetailsReadOnlyAsync(id);
+                if (form == null)
+                {
+                    return ApiResponse<UserFormResponseDto>.NotFound(ControlledErrorHelper.NotFound);
+                }
+
+                if (form.UserId != userId)
+                {
+                    return ApiResponse<UserFormResponseDto>.Forbidden(
+                        ControlledErrorHelper.Unauthorized,
+                        ErrorCodes.Forbidden);
+                }
+
+                return ApiResponse<UserFormResponseDto>.CreateSuccess(MapToResponseDto(form));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting user form {FormId} for user {UserId}", id, userId);
+                return ApiResponse<UserFormResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
+        public async Task<ApiResponse<bool>> DeleteAsync(int id, int userId)
+        {
+            try
+            {
+                var form = await _userFormRepository.GetOwnedFormAsync(id, userId, tracked: true);
+                if (form == null)
+                {
+                    return ApiResponse<bool>.NotFound("فرم یافت نشد");
+                }
+
+                form.IsDeleted = true;
+                form.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+
+                return ApiResponse<bool>.CreateSuccess(true, "فرم با موفقیت حذف شد");
+            }
+            catch (DbUpdateException dbEx)
+            {
+                _logger.LogError(dbEx, "Database error deleting user form {FormId} for user {UserId}", id, userId);
+                return ApiResponse<bool>.InternalServerError(ControlledErrorHelper.Database, ErrorCodes.DatabaseError);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting user form {FormId} for user {UserId}", id, userId);
+                return ApiResponse<bool>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
+        public async Task<ApiResponse<UserFormResponseDto>> ToggleStatusAsync(int id, int userId)
+        {
+            try
+            {
+                var form = await _userFormRepository.GetOwnedFormAsync(id, userId, tracked: true);
+                if (form == null)
+                {
+                    return ApiResponse<UserFormResponseDto>.NotFound("فرم یافت نشد");
+                }
+
+                if (form.Status != UserFormStatus.Published)
+                {
+                    return ApiResponse<UserFormResponseDto>.BadRequest(
+                        "فقط فرم‌های منتشرشده قابل فعال/غیرفعال کردن هستند",
+                        errorCode: ErrorCodes.ValidationFailed);
+                }
+
+                form.IsActive = !form.IsActive;
+                form.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+
+                var refreshed = await _userFormRepository.GetByIdWithDetailsReadOnlyAsync(id);
+
+                return ApiResponse<UserFormResponseDto>.CreateSuccess(
+                    MapToResponseDto(refreshed!),
+                    form.IsActive ? "فرم فعال شد" : "فرم غیرفعال شد");
+            }
+            catch (DbUpdateException dbEx)
+            {
+                _logger.LogError(dbEx, "Database error toggling user form {FormId} for user {UserId}", id, userId);
+                return ApiResponse<UserFormResponseDto>.InternalServerError(
+                    ControlledErrorHelper.Database,
+                    ErrorCodes.DatabaseError);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error toggling user form {FormId} for user {UserId}", id, userId);
+                return ApiResponse<UserFormResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
+        private async Task<ApiResponse<UserFormResponseDto>?> ValidateCreateRequestAsync(int userId, CreateUserFormDto createDto)
+        {
+            var fieldErrors = ValidateFields(createDto.Fields);
+            if (fieldErrors.Count > 0)
+            {
+                return ApiResponse<UserFormResponseDto>.BadRequest(
+                    "داده‌های فیلدها نامعتبر است",
+                    fieldErrors,
+                    ErrorCodes.ValidationFailed);
+            }
+
+            if (!string.IsNullOrWhiteSpace(createDto.Slug))
+            {
+                var slugValidation = await ValidateSlugAsync(createDto.Slug);
+                if (slugValidation.Error != null)
+                {
+                    return slugValidation.Error;
+                }
+            }
+
+            var notebookErrors = await ValidateNotebookIdsAsync(userId, createDto.NotebookIds);
+            if (notebookErrors.Count > 0)
+            {
+                return ApiResponse<UserFormResponseDto>.BadRequest(
+                    "دفترچه‌های انتخاب‌شده نامعتبر است",
+                    notebookErrors,
+                    ErrorCodes.ValidationFailed);
+            }
+
+            if (createDto.SaveToPhonebook)
+            {
+                var phonebookErrors = ValidatePhonebookSettings(
+                    createDto.SaveToPhonebook,
+                    createDto.NotebookIds,
+                    createDto.Fields);
+
+                if (phonebookErrors.Count > 0)
+                {
+                    return ApiResponse<UserFormResponseDto>.BadRequest(
+                        "تنظیمات دفترچه تلفن نامعتبر است",
+                        phonebookErrors,
+                        ErrorCodes.ValidationFailed);
+                }
+            }
+
+            return null;
+        }
+
+        private async Task<(ApiResponse<UserFormResponseDto>? Error, string? NormalizedSlug)> ValidateSlugAsync(
+            string slug,
+            int? excludeFormId = null)
+        {
+            var normalizedSlug = UserFormSlugHelper.Normalize(slug);
+            if (normalizedSlug == null)
+            {
+                return (ApiResponse<UserFormResponseDto>.BadRequest(
+                    "فرمت slug نامعتبر است",
+                    errorCode: ErrorCodes.ValidationFailed), null);
+            }
+
+            if (await _userFormRepository.SlugExistsAsync(normalizedSlug, excludeFormId))
+            {
+                return (ApiResponse<UserFormResponseDto>.BadRequest(
+                    "این slug قبلاً استفاده شده است",
+                    errorCode: ErrorCodes.ValidationFailed), null);
+            }
+
+            return (null, normalizedSlug);
+        }
+
+        private static bool HasAnyChanges(UpdateUserFormDto updateDto)
+        {
+            return updateDto.Title != null
+                || updateDto.Description != null
+                || !string.IsNullOrWhiteSpace(updateDto.Slug)
+                || updateDto.SaveToPhonebook.HasValue
+                || updateDto.NotebookIds != null
+                || (updateDto.Fields != null && updateDto.Fields.Count > 0);
+        }
+
+        private static void MergeFormFields(UserForm form, List<UserFormFieldDto> incomingFields)
+        {
+            foreach (var fieldDto in incomingFields)
+            {
+                var existing = form.Fields.FirstOrDefault(f =>
+                    string.Equals(f.FieldKey, fieldDto.FieldKey, StringComparison.OrdinalIgnoreCase));
+
+                if (existing != null)
+                {
+                    existing.FieldType = fieldDto.FieldType.Trim().ToLowerInvariant();
+                    existing.Label = fieldDto.Label.Trim();
+                    existing.Placeholder = NormalizeOptionalText(fieldDto.Placeholder);
+                    existing.HelpText = NormalizeOptionalText(fieldDto.HelpText);
+                    existing.IsActive = fieldDto.IsActive;
+                    existing.IsRequired = fieldDto.IsRequired;
+                    existing.DisplayOrder = fieldDto.DisplayOrder;
+                    existing.SourceFieldKey = NormalizeOptionalText(fieldDto.SourceFieldKey);
+                }
+                else
+                {
+                    form.Fields.Add(MapField(fieldDto));
+                }
+            }
+        }
+
+        private async Task ClearNotebookLinksAsync(UserForm form)
+        {
+            foreach (var link in form.Notebooks.ToList())
+            {
+                _context.Entry(link).State = EntityState.Detached;
+            }
+
+            form.Notebooks.Clear();
+
+            await _context.UserFormNotebooks
+                .Where(n => n.UserFormId == form.Id)
+                .ExecuteDeleteAsync();
+        }
+
+        private UserFormResponseDto MapToResponseDto(UserForm form)
+        {
+            return new UserFormResponseDto
+            {
+                Id = form.Id,
+                Title = form.Title,
+                Description = form.Description,
+                Slug = form.Slug,
+                TemplateKey = form.TemplateKey,
+                TemplateId = form.TemplateId,
+                Status = form.Status.ToString(),
+                SaveToPhonebook = form.SaveToPhonebook,
+                IsActive = form.IsActive,
+                PublicUrl = BuildPublicUrl(form.Slug),
+                NotebookIds = form.Notebooks.Select(n => n.ContactNotebookId).ToList(),
+                Fields = form.Fields
+                    .OrderBy(f => f.DisplayOrder)
+                    .Select(MapFieldToDto)
+                    .ToList(),
+                CreatedAt = EnsureUtc(form.CreatedAt),
+                UpdatedAt = EnsureUtc(form.UpdatedAt),
+                PublishedAt = EnsureUtc(form.PublishedAt)
+            };
+        }
+
+        private static DateTime EnsureUtc(DateTime value)
+        {
+            return value.Kind switch
+            {
+                DateTimeKind.Utc => value,
+                DateTimeKind.Local => value.ToUniversalTime(),
+                _ => DateTime.SpecifyKind(value, DateTimeKind.Utc)
+            };
+        }
+
+        private static DateTime? EnsureUtc(DateTime? value)
+        {
+            return value.HasValue ? EnsureUtc(value.Value) : null;
+        }
+
+        private static UserFormFieldDto MapFieldToDto(UserFormField field)
+        {
+            return new UserFormFieldDto
+            {
+                FieldKey = field.FieldKey,
+                FieldType = field.FieldType,
+                Label = field.Label,
+                Placeholder = field.Placeholder,
+                HelpText = field.HelpText,
+                IsActive = field.IsActive,
+                IsRequired = field.IsRequired,
+                DisplayOrder = field.DisplayOrder,
+                SourceFieldKey = field.SourceFieldKey
+            };
+        }
+
+        private static UserFormField MapField(UserFormFieldDto dto)
+        {
+            return new UserFormField
+            {
+                FieldKey = dto.FieldKey.Trim(),
+                FieldType = dto.FieldType.Trim().ToLowerInvariant(),
+                Label = dto.Label.Trim(),
+                Placeholder = NormalizeOptionalText(dto.Placeholder),
+                HelpText = NormalizeOptionalText(dto.HelpText),
+                IsActive = dto.IsActive,
+                IsRequired = dto.IsRequired,
+                DisplayOrder = dto.DisplayOrder,
+                SourceFieldKey = NormalizeOptionalText(dto.SourceFieldKey)
+            };
+        }
+
+        private string? BuildPublicUrl(string? slug)
+        {
+            if (string.IsNullOrWhiteSpace(slug) || string.IsNullOrWhiteSpace(_formBuilderOptions.PublicBaseUrl))
+            {
+                return null;
+            }
+
+            return $"{_formBuilderOptions.PublicBaseUrl.TrimEnd('/')}/{slug}";
+        }
+
+        private static List<string> ValidateFields(List<UserFormFieldDto> fields)
+        {
+            var errors = new List<string>();
+
+            if (fields.Count > UserFormConstants.MaxFieldsPerForm)
+            {
+                errors.Add($"حداکثر {UserFormConstants.MaxFieldsPerForm} فیلد برای هر فرم مجاز است");
+                return errors;
+            }
+
+            var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var field in fields)
+            {
+                if (string.IsNullOrWhiteSpace(field.FieldKey))
+                {
+                    errors.Add("fieldKey برای همه فیلدها الزامی است");
+                    continue;
+                }
+
+                if (string.IsNullOrWhiteSpace(field.FieldType))
+                {
+                    errors.Add($"نوع فیلد {field.FieldKey} الزامی است");
+                }
+
+                if (string.IsNullOrWhiteSpace(field.Label))
+                {
+                    errors.Add($"عنوان فیلد {field.FieldKey} الزامی است");
+                }
+
+                if (!keys.Add(field.FieldKey.Trim()))
+                {
+                    errors.Add($"fieldKey تکراری: {field.FieldKey}");
+                }
+            }
+
+            return errors;
+        }
+
+        private static List<string> ValidatePhonebookSettings(
+            bool saveToPhonebook,
+            IReadOnlyList<int> notebookIds,
+            IReadOnlyList<UserFormFieldDto> fields)
+        {
+            var errors = new List<string>();
+
+            if (!saveToPhonebook)
+            {
+                return errors;
+            }
+
+            if (notebookIds.Count == 0)
+            {
+                errors.Add("حداقل یک دفترچه تلفن باید انتخاب شود");
+            }
+
+            var hasMobileField = fields.Any(f =>
+                f.IsActive &&
+                (string.Equals(f.FieldKey, "mobile", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(f.FieldType, "mobile", StringComparison.OrdinalIgnoreCase)));
+
+            if (!hasMobileField)
+            {
+                errors.Add("برای ذخیره در دفترچه، فیلد موبایل فعال الزامی است");
+            }
+
+            return errors;
+        }
+
+        private async Task<List<string>> ValidateNotebookIdsAsync(int userId, List<int> notebookIds)
+        {
+            var errors = new List<string>();
+            var distinctIds = notebookIds.Distinct().ToList();
+
+            if (distinctIds.Count == 0)
+            {
+                return errors;
+            }
+
+            var validIds = await _context.ContactNotebooks
+                .AsNoTracking()
+                .Where(n => distinctIds.Contains(n.Id) && n.UserId == userId && !n.IsDeleted)
+                .Select(n => n.Id)
+                .ToListAsync();
+
+            var validSet = validIds.ToHashSet();
+
+            foreach (var notebookId in distinctIds)
+            {
+                if (!validSet.Contains(notebookId))
+                {
+                    errors.Add($"دفترچه {notebookId} یافت نشد یا متعلق به شما نیست");
+                }
+            }
+
+            return errors;
+        }
+
+        private async Task<string> GenerateUniqueSlugAsync(string title, int excludeFormId)
+        {
+            var baseSlug = UserFormSlugHelper.SlugifyTitle(title);
+            var existingSlugs = (await _userFormRepository.GetExistingSlugsWithPrefixAsync(baseSlug, excludeFormId))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            for (var suffix = 0; suffix <= UserFormConstants.SlugGenerationMaxAttempts; suffix++)
+            {
+                var candidate = UserFormSlugHelper.BuildCandidateSlug(baseSlug, suffix);
+                if (!existingSlugs.Contains(candidate))
+                {
+                    return candidate;
+                }
+            }
+
+            return $"{baseSlug}-{Guid.NewGuid():N}"[..UserFormConstants.MaxSlugLength].Trim('-');
+        }
+
+        private static string? NormalizeOptionalText(string? value)
+        {
+            return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+        }
+    }
+}

@@ -1,0 +1,34 @@
+using System.ComponentModel.DataAnnotations;
+
+namespace Api_Vapp.DTOs.UserForm
+{
+    public class UserFormFieldDto
+    {
+        [Required(ErrorMessage = "fieldKey الزامی است")]
+        [MaxLength(100, ErrorMessage = "fieldKey نمی‌تواند بیشتر از 100 کاراکتر باشد")]
+        public string FieldKey { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "نوع فیلد الزامی است")]
+        [MaxLength(50, ErrorMessage = "نوع فیلد نمی‌تواند بیشتر از 50 کاراکتر باشد")]
+        public string FieldType { get; set; } = "text";
+
+        [Required(ErrorMessage = "عنوان فیلد الزامی است")]
+        [MaxLength(200, ErrorMessage = "عنوان فیلد نمی‌تواند بیشتر از 200 کاراکتر باشد")]
+        public string Label { get; set; } = string.Empty;
+
+        [MaxLength(300, ErrorMessage = "متن پیش‌فرض نمی‌تواند بیشتر از 300 کاراکتر باشد")]
+        public string? Placeholder { get; set; }
+
+        [MaxLength(1000, ErrorMessage = "متن راهنما نمی‌تواند بیشتر از 1000 کاراکتر باشد")]
+        public string? HelpText { get; set; }
+
+        public bool IsActive { get; set; } = true;
+
+        public bool IsRequired { get; set; }
+
+        public int DisplayOrder { get; set; }
+
+        [MaxLength(100, ErrorMessage = "sourceFieldKey نمی‌تواند بیشتر از 100 کاراکتر باشد")]
+        public string? SourceFieldKey { get; set; }
+    }
+}

@@ -46,6 +46,9 @@ namespace Api_Vapp.Data
         public DbSet<TicketMessage> TicketMessages { get; set; }
         public DbSet<EducationalVideo> EducationalVideos { get; set; }
         public DbSet<SmsApprovalRequest> SmsApprovalRequests { get; set; }
+        public DbSet<UserForm> UserForms { get; set; }
+        public DbSet<UserFormField> UserFormFields { get; set; }
+        public DbSet<UserFormNotebook> UserFormNotebooks { get; set; }
 
         public Api_Context(DbContextOptions<Api_Context> options) : base(options)
         {
@@ -1135,6 +1138,74 @@ namespace Api_Vapp.Data
             {
                 entity.Property(c => c.AdminApprovalStatus).HasMaxLength(50).HasDefaultValue("Pending");
                 entity.Property(c => c.AdminRejectionReason).HasMaxLength(1000);
+            });
+
+            // تنظیمات UserForm (فرم‌ساز)
+            modelBuilder.Entity<UserForm>(entity =>
+            {
+                entity.HasKey(f => f.Id);
+                entity.Property(f => f.Id).ValueGeneratedOnAdd();
+                entity.Property(f => f.UserId).IsRequired();
+                entity.Property(f => f.Title).IsRequired().HasMaxLength(200);
+                entity.Property(f => f.Description).HasMaxLength(2000);
+                entity.Property(f => f.Slug).HasMaxLength(100);
+                entity.Property(f => f.TemplateKey).HasMaxLength(100);
+                entity.Property(f => f.Status).IsRequired();
+                entity.Property(f => f.SaveToPhonebook).HasDefaultValue(false);
+                entity.Property(f => f.IsActive).HasDefaultValue(true);
+                entity.Property(f => f.IsDeleted).HasDefaultValue(false);
+                entity.Property(f => f.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+                entity.HasOne(f => f.User)
+                    .WithMany()
+                    .HasForeignKey(f => f.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasIndex(f => f.UserId);
+                entity.HasIndex(f => f.Status);
+                entity.HasIndex(f => f.IsDeleted);
+                entity.HasIndex(f => new { f.UserId, f.IsDeleted, f.CreatedAt });
+                entity.HasIndex(f => f.Slug)
+                    .IsUnique()
+                    .HasFilter("[Slug] IS NOT NULL AND [IsDeleted] = 0");
+            });
+
+            modelBuilder.Entity<UserFormField>(entity =>
+            {
+                entity.HasKey(f => f.Id);
+                entity.Property(f => f.Id).ValueGeneratedOnAdd();
+                entity.Property(f => f.UserFormId).IsRequired();
+                entity.Property(f => f.FieldKey).IsRequired().HasMaxLength(100);
+                entity.Property(f => f.FieldType).IsRequired().HasMaxLength(50);
+                entity.Property(f => f.Label).IsRequired().HasMaxLength(200);
+                entity.Property(f => f.Placeholder).HasMaxLength(300);
+                entity.Property(f => f.HelpText).HasMaxLength(1000);
+                entity.Property(f => f.SourceFieldKey).HasMaxLength(100);
+                entity.Property(f => f.IsActive).HasDefaultValue(true);
+                entity.Property(f => f.IsRequired).HasDefaultValue(false);
+
+                entity.HasOne(f => f.UserForm)
+                    .WithMany(uf => uf.Fields)
+                    .HasForeignKey(f => f.UserFormId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasIndex(f => f.UserFormId);
+                entity.HasIndex(f => new { f.UserFormId, f.FieldKey }).IsUnique();
+            });
+
+            modelBuilder.Entity<UserFormNotebook>(entity =>
+            {
+                entity.HasKey(n => new { n.UserFormId, n.ContactNotebookId });
+
+                entity.HasOne(n => n.UserForm)
+                    .WithMany(f => f.Notebooks)
+                    .HasForeignKey(n => n.UserFormId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(n => n.ContactNotebook)
+                    .WithMany()
+                    .HasForeignKey(n => n.ContactNotebookId)
+                    .OnDelete(DeleteBehavior.NoAction);
             });
         }
     }
