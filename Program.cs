@@ -346,6 +346,9 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.IPaymentRepository, Api_Vapp.Repo
 builder.Services.AddScoped<Api_Vapp.Interfaces.ICashbackRepository, Api_Vapp.Repositories.CashbackRepository>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.ICashbackTransactionRepository, Api_Vapp.Repositories.CashbackTransactionRepository>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.ICashbackDraftRepository, Api_Vapp.Repositories.CashbackDraftRepository>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IReferralProgramRepository, Api_Vapp.Repositories.ReferralProgramRepository>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IReferralProgramDraftRepository, Api_Vapp.Repositories.ReferralProgramDraftRepository>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IReferralUsageRepository, Api_Vapp.Repositories.ReferralUsageRepository>();
 
 // ثبت Repository تنظیمات اعلان‌ها
 builder.Services.AddScoped<Api_Vapp.Interfaces.IUserNotificationSettingsRepository, Api_Vapp.Repositories.UserNotificationSettingsRepository>();
@@ -381,6 +384,7 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.ISpecialOccasionService, Api_Vapp
 builder.Services.AddScoped<Api_Vapp.Interfaces.IWalletService, Api_Vapp.Services.WalletService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IPaymentService, Api_Vapp.Services.PaymentService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.ICashbackService, Api_Vapp.Services.CashbackService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IReferralProgramService, Api_Vapp.Services.ReferralProgramService>();
 
 // ثبت سرویس تنظیمات اعلان‌ها
 builder.Services.AddScoped<Api_Vapp.Interfaces.INotificationSettingsService, Api_Vapp.Services.NotificationSettingsService>();

@@ -49,6 +49,9 @@ namespace Api_Vapp.Data
         public DbSet<UserForm> UserForms { get; set; }
         public DbSet<UserFormField> UserFormFields { get; set; }
         public DbSet<UserFormNotebook> UserFormNotebooks { get; set; }
+        public DbSet<ReferralProgram> ReferralPrograms { get; set; }
+        public DbSet<ReferralProgramDraft> ReferralProgramDrafts { get; set; }
+        public DbSet<ReferralUsage> ReferralUsages { get; set; }
 
         public Api_Context(DbContextOptions<Api_Context> options) : base(options)
         {
@@ -1206,6 +1209,104 @@ namespace Api_Vapp.Data
                     .WithMany()
                     .HasForeignKey(n => n.ContactNotebookId)
                     .OnDelete(DeleteBehavior.NoAction);
+            });
+
+            modelBuilder.Entity<ReferralProgram>(entity =>
+            {
+                entity.HasKey(r => r.Id);
+                entity.Property(r => r.Id).ValueGeneratedOnAdd();
+
+                entity.Property(r => r.UserId).IsRequired();
+                entity.Property(r => r.Title).IsRequired().HasMaxLength(200);
+                entity.Property(r => r.RewardType).IsRequired().HasMaxLength(50).HasDefaultValue("Percentage");
+                entity.Property(r => r.PublicCode).IsRequired().HasMaxLength(20);
+                entity.Property(r => r.TargetAudience).HasMaxLength(50).HasDefaultValue("All");
+                entity.Property(r => r.TargetNotebookIds).HasMaxLength(2000);
+                entity.Property(r => r.TargetContactIds).HasMaxLength(2000);
+                entity.Property(r => r.TargetTagIds).HasMaxLength(1000);
+                entity.Property(r => r.IsActive).HasDefaultValue(true);
+                entity.Property(r => r.IsDeleted).HasDefaultValue(false);
+                entity.Property(r => r.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+                entity.Property(r => r.ReferrerRewardValue).HasPrecision(18, 2);
+                entity.Property(r => r.CustomerRewardValue).HasPrecision(18, 2);
+
+                entity.HasOne(r => r.User)
+                    .WithMany()
+                    .HasForeignKey(r => r.UserId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasIndex(r => r.UserId);
+                entity.HasIndex(r => new { r.UserId, r.PublicCode }).IsUnique();
+                entity.HasIndex(r => r.IsActive);
+                entity.HasIndex(r => r.IsDeleted);
+                entity.HasIndex(r => r.StartDate);
+                entity.HasIndex(r => r.EndDate);
+            });
+
+            modelBuilder.Entity<ReferralProgramDraft>(entity =>
+            {
+                entity.HasKey(d => d.Id);
+                entity.Property(d => d.Id).ValueGeneratedOnAdd();
+
+                entity.Property(d => d.UserId).IsRequired();
+                entity.Property(d => d.DraftId).IsRequired().HasMaxLength(100);
+                entity.Property(d => d.Step1Data).IsRequired();
+                entity.Property(d => d.IsDeleted).HasDefaultValue(false);
+                entity.Property(d => d.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+                entity.HasOne(d => d.User)
+                    .WithMany()
+                    .HasForeignKey(d => d.UserId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasIndex(d => d.UserId);
+                entity.HasIndex(d => d.DraftId).IsUnique();
+                entity.HasIndex(d => d.ExpiresAt);
+                entity.HasIndex(d => d.IsDeleted);
+            });
+
+            modelBuilder.Entity<ReferralUsage>(entity =>
+            {
+                entity.HasKey(u => u.Id);
+                entity.Property(u => u.Id).ValueGeneratedOnAdd();
+
+                entity.Property(u => u.ReferralProgramId).IsRequired();
+                entity.Property(u => u.UserId).IsRequired();
+                entity.Property(u => u.PublicCode).IsRequired().HasMaxLength(20);
+                entity.Property(u => u.Status).IsRequired().HasMaxLength(50).HasDefaultValue("Completed");
+                entity.Property(u => u.Description).HasMaxLength(500);
+                entity.Property(u => u.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+                entity.Property(u => u.PurchaseAmount).HasPrecision(18, 2);
+                entity.Property(u => u.CustomerDiscountAmount).HasPrecision(18, 2);
+                entity.Property(u => u.ReferrerRewardAmount).HasPrecision(18, 2);
+
+                entity.HasOne(u => u.ReferralProgram)
+                    .WithMany()
+                    .HasForeignKey(u => u.ReferralProgramId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(u => u.User)
+                    .WithMany()
+                    .HasForeignKey(u => u.UserId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(u => u.CustomerContact)
+                    .WithMany()
+                    .HasForeignKey(u => u.CustomerContactId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(u => u.ReferrerContact)
+                    .WithMany()
+                    .HasForeignKey(u => u.ReferrerContactId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasIndex(u => u.ReferralProgramId);
+                entity.HasIndex(u => u.UserId);
+                entity.HasIndex(u => u.PublicCode);
+                entity.HasIndex(u => u.Status);
+                entity.HasIndex(u => u.CreatedAt);
             });
         }
     }

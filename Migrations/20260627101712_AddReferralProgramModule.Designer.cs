@@ -4,6 +4,7 @@ using Api_Vapp.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Api_Vapp.Migrations
 {
     [DbContext(typeof(Api_Context))]
-    partial class Api_ContextModelSnapshot : ModelSnapshot
+    [Migration("20260627101712_AddReferralProgramModule")]
+    partial class AddReferralProgramModule
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1599,78 +1602,6 @@ namespace Api_Vapp.Migrations
                     b.ToTable("ReferralProgramDrafts");
                 });
 
-            modelBuilder.Entity("Api_Vapp.Models.ReferralUsage", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime2")
-                        .HasDefaultValueSql("GETUTCDATE()");
-
-                    b.Property<int?>("CustomerContactId")
-                        .HasColumnType("int");
-
-                    b.Property<decimal>("CustomerDiscountAmount")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<string>("Description")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
-
-                    b.Property<string>("PublicCode")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
-
-                    b.Property<decimal?>("PurchaseAmount")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<int>("ReferralProgramId")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("ReferrerContactId")
-                        .HasColumnType("int");
-
-                    b.Property<decimal>("ReferrerRewardAmount")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)")
-                        .HasDefaultValue("Completed");
-
-                    b.Property<int>("UserId")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CreatedAt");
-
-                    b.HasIndex("CustomerContactId");
-
-                    b.HasIndex("PublicCode");
-
-                    b.HasIndex("ReferralProgramId");
-
-                    b.HasIndex("ReferrerContactId");
-
-                    b.HasIndex("Status");
-
-                    b.HasIndex("UserId");
-
-                    b.ToTable("ReferralUsages");
-                });
-
             modelBuilder.Entity("Api_Vapp.Models.RefreshToken", b =>
                 {
                     b.Property<int>("Id")
@@ -3091,39 +3022,6 @@ namespace Api_Vapp.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
-
-                    b.Navigation("User");
-                });
-
-            modelBuilder.Entity("Api_Vapp.Models.ReferralUsage", b =>
-                {
-                    b.HasOne("Api_Vapp.Models.Contact", "CustomerContact")
-                        .WithMany()
-                        .HasForeignKey("CustomerContactId")
-                        .OnDelete(DeleteBehavior.NoAction);
-
-                    b.HasOne("Api_Vapp.Models.ReferralProgram", "ReferralProgram")
-                        .WithMany()
-                        .HasForeignKey("ReferralProgramId")
-                        .OnDelete(DeleteBehavior.NoAction)
-                        .IsRequired();
-
-                    b.HasOne("Api_Vapp.Models.Contact", "ReferrerContact")
-                        .WithMany()
-                        .HasForeignKey("ReferrerContactId")
-                        .OnDelete(DeleteBehavior.NoAction);
-
-                    b.HasOne("Api_Vapp.Models.User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.NoAction)
-                        .IsRequired();
-
-                    b.Navigation("CustomerContact");
-
-                    b.Navigation("ReferralProgram");
-
-                    b.Navigation("ReferrerContact");
 
                     b.Navigation("User");
                 });
