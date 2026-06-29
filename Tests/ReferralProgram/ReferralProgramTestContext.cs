@@ -158,6 +158,7 @@ internal sealed class ReferralProgramTestContext : IDisposable
             new ReferralProgramDraftRepository(context),
             new ReferralUsageRepository(context),
             new FakeSmsService(),
+            new FakeDeliveryTrackingService(),
             NullLogger<ReferralProgramService>.Instance);
     }
 
@@ -245,5 +246,24 @@ internal sealed class ReferralProgramTestContext : IDisposable
 
         public Task<ApiResponse<InfoResponseDto>> GetWalletInfoAsync() =>
             Task.FromResult(ApiResponse<InfoResponseDto>.CreateSuccess(new InfoResponseDto()));
+    }
+
+    private sealed class FakeDeliveryTrackingService : ISmsDeliveryTrackingService
+    {
+        public Task TrackSuccessfulSendAsync(SmsDeliveryTrackRequestDto request) => Task.CompletedTask;
+
+        public Task<ApiResponse<SmsDeliveryRecordDto>> GetByIdAsync(int userId, int id) =>
+            Task.FromResult(ApiResponse<SmsDeliveryRecordDto>.NotFound("not found"));
+
+        public Task<ApiResponse<SmsDeliveryReportListDto>> GetReportAsync(int userId, SmsDeliveryReportFilterDto filter) =>
+            Task.FromResult(ApiResponse<SmsDeliveryReportListDto>.CreateSuccess(new SmsDeliveryReportListDto()));
+
+        public Task<ApiResponse<SmsDeliverySummaryDto>> GetSummaryAsync(int userId, SmsDeliveryReportFilterDto filter) =>
+            Task.FromResult(ApiResponse<SmsDeliverySummaryDto>.CreateSuccess(new SmsDeliverySummaryDto()));
+
+        public Task<ApiResponse<SmsDeliveryRecordDto>> RefreshRecordAsync(int userId, int id) =>
+            Task.FromResult(ApiResponse<SmsDeliveryRecordDto>.NotFound("not found"));
+
+        public Task SyncPendingDeliveriesAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 }

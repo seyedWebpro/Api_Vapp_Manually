@@ -1,3 +1,4 @@
+using Api_Vapp.Constants;
 using Api_Vapp.Data;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.DTOs.ReferralProgram;
@@ -19,6 +20,7 @@ namespace Api_Vapp.Services
         private readonly IReferralProgramDraftRepository _draftRepository;
         private readonly IReferralUsageRepository _usageRepository;
         private readonly ISmsService _smsService;
+        private readonly ISmsDeliveryTrackingService _deliveryTracking;
         private readonly ILogger<ReferralProgramService> _logger;
 
         private const int DraftExpirationHours = 24;
@@ -32,6 +34,7 @@ namespace Api_Vapp.Services
             IReferralProgramDraftRepository draftRepository,
             IReferralUsageRepository usageRepository,
             ISmsService smsService,
+            ISmsDeliveryTrackingService deliveryTracking,
             ILogger<ReferralProgramService> logger)
         {
             _context = context;
@@ -39,6 +42,7 @@ namespace Api_Vapp.Services
             _draftRepository = draftRepository;
             _usageRepository = usageRepository;
             _smsService = smsService;
+            _deliveryTracking = deliveryTracking;
             _logger = logger;
         }
 
@@ -253,7 +257,7 @@ namespace Api_Vapp.Services
 
         public async Task<ApiResponse<ReferralSummaryDto>> GetSummaryAsync(int userId, GetReferralSummaryRequestDto request)
         {
-            var loadResult = await LoadDraftStepsAsync(userId, request.DraftId, request.Step1, request.Step2);
+            var loadResult = await LoadDraftStepsAsync(userId, request.DraftId);
             if (!loadResult.Success)
             {
                 return ApiResponse<ReferralSummaryDto>.BadRequest(loadResult.ErrorMessage!);
@@ -269,7 +273,7 @@ namespace Api_Vapp.Services
 
         public async Task<ApiResponse<ReferralSummaryDto>> SaveStep3SettingsAsync(int userId, SaveReferralStep3RequestDto request)
         {
-            var loadResult = await LoadDraftStepsAsync(userId, request.DraftId, request.Step1, request.Step2);
+            var loadResult = await LoadDraftStepsAsync(userId, request.DraftId);
             if (!loadResult.Success)
             {
                 return ApiResponse<ReferralSummaryDto>.BadRequest(loadResult.ErrorMessage!);
@@ -304,18 +308,10 @@ namespace Api_Vapp.Services
                 }
             }
 
-            if (!string.IsNullOrEmpty(request.DraftId))
-            {
-                var draft = await _draftRepository.GetActiveByDraftIdAsync(request.DraftId, userId);
-                if (draft == null)
-                {
-                    return ApiResponse<ReferralSummaryDto>.BadRequest("پیش‌نویس یافت نشد یا منقضی شده است");
-                }
-
-                draft.Step3Data = JsonSerializer.Serialize(request.Settings);
-                draft.ExpiresAt = DateTime.UtcNow.AddHours(DraftExpirationHours);
-                await _draftRepository.UpdateAsync(draft);
-            }
+            var draft = loadResult.Draft!;
+            draft.Step3Data = JsonSerializer.Serialize(request.Settings);
+            draft.ExpiresAt = DateTime.UtcNow.AddHours(DraftExpirationHours);
+            await _draftRepository.UpdateAsync(draft);
 
             var summary = await BuildSummaryAsync(userId, loadResult.Step1!, loadResult.Step2!, request.Settings);
             return ApiResponse<ReferralSummaryDto>.CreateSuccess(summary, "تنظیمات مرحله 3 ذخیره شد");
@@ -1135,6 +1131,15 @@ namespace Api_Vapp.Services
                     if (isSuccess)
                     {
                         sent++;
+                        await _deliveryTracking.TrackSuccessfulSendAsync(new SmsDeliveryTrackRequestDto
+                        {
+                            UserId = program.UserId,
+                            SourceModule = SmsSourceModules.ReferralProgram,
+                            SourceEntityId = program.Id,
+                            SourceEntityLabel = program.Title ?? $"برنامه پاداش #{program.Id}",
+                            Mobile = contact.MobileNumber,
+                            Sid = smsResult.Data!.Sid
+                        });
                     }
                     else
                     {
@@ -1461,44 +1466,37 @@ namespace Api_Vapp.Services
 
         private async Task<(bool Success, string? ErrorMessage, ReferralProgramDraft? Draft, ReferralStep1Dto? Step1, ReferralStep2Dto? Step2)> LoadDraftStepsAsync(
             int userId,
-            string? draftId,
-            ReferralStep1Dto? step1,
-            ReferralStep2Dto? step2)
+            string draftId)
         {
-            if (!string.IsNullOrEmpty(draftId))
+            if (string.IsNullOrWhiteSpace(draftId))
             {
-                var draft = await _draftRepository.GetActiveByDraftIdAsync(draftId, userId);
-                if (draft == null)
-                {
-                    return (false, "پیش‌نویس یافت نشد یا منقضی شده است", null, null, null);
-                }
-
-                var loadedStep1 = JsonSerializer.Deserialize<ReferralStep1Dto>(draft.Step1Data);
-                if (loadedStep1 == null)
-                {
-                    return (false, "خطا در خواندن مرحله 1", draft, null, null);
-                }
-
-                if (string.IsNullOrEmpty(draft.Step2Data))
-                {
-                    return (false, "مرحله 2 هنوز تکمیل نشده است", draft, loadedStep1, null);
-                }
-
-                var loadedStep2 = JsonSerializer.Deserialize<ReferralStep2Dto>(draft.Step2Data);
-                if (loadedStep2 == null)
-                {
-                    return (false, "خطا در خواندن مرحله 2", draft, loadedStep1, null);
-                }
-
-                return (true, null, draft, loadedStep1, loadedStep2);
+                return (false, "شناسه پیش‌نویس الزامی است", null, null, null);
             }
 
-            if (step1 != null && step2 != null)
+            var draft = await _draftRepository.GetActiveByDraftIdAsync(draftId, userId);
+            if (draft == null)
             {
-                return (true, null, null, step1, step2);
+                return (false, "پیش‌نویس یافت نشد یا منقضی شده است", null, null, null);
             }
 
-            return (false, "شناسه پیش‌نویس یا داده‌های مرحله 1 و 2 الزامی است", null, null, null);
+            var loadedStep1 = JsonSerializer.Deserialize<ReferralStep1Dto>(draft.Step1Data);
+            if (loadedStep1 == null)
+            {
+                return (false, "خطا در خواندن مرحله 1", draft, null, null);
+            }
+
+            if (string.IsNullOrEmpty(draft.Step2Data))
+            {
+                return (false, "مرحله 2 هنوز تکمیل نشده است", draft, loadedStep1, null);
+            }
+
+            var loadedStep2 = JsonSerializer.Deserialize<ReferralStep2Dto>(draft.Step2Data);
+            if (loadedStep2 == null)
+            {
+                return (false, "خطا در خواندن مرحله 2", draft, loadedStep1, null);
+            }
+
+            return (true, null, draft, loadedStep1, loadedStep2);
         }
 
         #endregion

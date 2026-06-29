@@ -1,3 +1,4 @@
+using Api_Vapp.Constants;
 using Api_Vapp.Data;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.DTOs.Cashback;
@@ -25,6 +26,7 @@ namespace Api_Vapp.Services
         private readonly IContactNotebookRepository _notebookRepository;
         private readonly IWalletService _walletService;
         private readonly ISmsService _smsService;
+        private readonly ISmsDeliveryTrackingService _deliveryTracking;
         private readonly ILogger<CashbackService> _logger;
         private const decimal CostPerSms = 160; // هزینه هر پیامک
         private const int DraftExpirationHours = 24; // draft به مدت 24 ساعت معتبر است
@@ -38,6 +40,7 @@ namespace Api_Vapp.Services
             IContactNotebookRepository notebookRepository,
             IWalletService walletService,
             ISmsService smsService,
+            ISmsDeliveryTrackingService deliveryTracking,
             ILogger<CashbackService> logger)
         {
             _context = context;
@@ -48,6 +51,7 @@ namespace Api_Vapp.Services
             _notebookRepository = notebookRepository;
             _walletService = walletService;
             _smsService = smsService;
+            _deliveryTracking = deliveryTracking;
             _logger = logger;
         }
 
@@ -1545,12 +1549,13 @@ namespace Api_Vapp.Services
                             
                             if (isSuccess)
                             {
-                                // به‌روزرسانی وضعیت تراکنش
                                 cashbackTransaction.Status = CashbackTransactionStatuses.Deposited;
                                 cashbackTransaction.DepositedAt = now;
                                 cashbackTransaction.Description = "کش‌بک با موفقیت ارسال شد";
                                 successCount++;
                                 totalCashbackAmount += cashbackAmount;
+
+                                await TrackCashbackSmsAsync(userId, cashback.Id, cashback.Title, contact.MobileNumber, smsResult.Data!.Sid);
                             }
                             else
                             {
@@ -1922,10 +1927,11 @@ namespace Api_Vapp.Services
 
                     if (isSmsSent)
                     {
-                        // به‌روزرسانی وضعیت تراکنش
                         cashbackTransaction.Status = CashbackTransactionStatuses.Deposited;
                         cashbackTransaction.DepositedAt = now;
                         cashbackTransaction.Description = "کش‌بک با موفقیت ارسال شد";
+
+                        await TrackCashbackSmsAsync(userId, cashback.Id, cashback.Title, normalizedMobile, smsResult.Data!.Sid);
 
                         // کسر هزینه ارسال پیامک
                         // غیرفعال شده - دیگر از کیف پول کسر نمی‌شود
@@ -2433,6 +2439,8 @@ namespace Api_Vapp.Services
 
                             if (isSmsSent)
                             {
+                                await TrackCashbackSmsAsync(userId, null, "کش‌بک دستی", contact.MobileNumber, smsResult.Data!.Sid);
+
                                 // TODO: کسر هزینه ارسال پیامک - فعلاً غیرفعال است (موجودی کیف پول کامل نشده)
                                 // var deductResult = await _walletService.DeductBalanceAsync(
                                 //     userId,
@@ -2651,25 +2659,11 @@ namespace Api_Vapp.Services
 
                             if (isSmsSent)
                             {
-                                // TODO: کسر هزینه ارسال پیامک - فعلاً غیرفعال است (موجودی کیف پول کامل نشده)
-                                // var deductResult = await _walletService.DeductBalanceAsync(
-                                //     userId,
-                                //     CostPerSms,
-                                //     "ارسال پیامک برداشت کش‌بک",
-                                //     $"هزینه ارسال پیامک برداشت کش‌بک برای {contact.MobileNumber}");
+                                await TrackCashbackSmsAsync(userId, null, "برداشت کش‌بک", contact.MobileNumber, smsResult.Data!.Sid);
 
-                                // if (deductResult.Success)
-                                // {
-                                    _logger.LogInformation(
-                                        "پیامک برداشت کش‌بک با موفقیت ارسال شد - ContactId: {ContactId}, Mobile: {Mobile}",
-                                        request.ContactId, contact.MobileNumber);
-                                // }
-                                // else
-                                // {
-                                //     _logger.LogWarning(
-                                //         "پیامک ارسال شد اما کسر موجودی ناموفق بود - ContactId: {ContactId}, Error: {Error}",
-                                //         request.ContactId, deductResult.Message);
-                                // }
+                                _logger.LogInformation(
+                                    "پیامک برداشت کش‌بک با موفقیت ارسال شد - ContactId: {ContactId}, Mobile: {Mobile}",
+                                    request.ContactId, contact.MobileNumber);
                             }
                             else
                             {
@@ -2913,6 +2907,17 @@ namespace Api_Vapp.Services
         }
 
         #endregion
+
+        private Task TrackCashbackSmsAsync(int userId, int? cashbackId, string? label, string mobile, long sid, bool scheduled = false) =>
+            _deliveryTracking.TrackSuccessfulSendAsync(new SmsDeliveryTrackRequestDto
+            {
+                UserId = userId,
+                SourceModule = scheduled ? SmsSourceModules.CashbackScheduled : SmsSourceModules.Cashback,
+                SourceEntityId = cashbackId,
+                SourceEntityLabel = label ?? (cashbackId.HasValue ? $"کش‌بک #{cashbackId}" : "کش‌بک"),
+                Mobile = mobile,
+                Sid = sid
+            });
     }
 }
 

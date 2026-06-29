@@ -28,6 +28,7 @@ namespace Api_Vapp.Services
         private readonly IContactNotebookRepository _notebookRepository;
         private readonly IUserRepository _userRepository;
         private readonly ISmsService _smsService;
+        private readonly ISmsDeliveryTrackingService _deliveryTracking;
         private readonly Api_Vapp.Data.Api_Context _context;
         private readonly ILogger<MessageService> _logger;
         private readonly IConfiguration _configuration;
@@ -55,6 +56,7 @@ namespace Api_Vapp.Services
             IContactNotebookRepository notebookRepository,
             IUserRepository userRepository,
             ISmsService smsService,
+            ISmsDeliveryTrackingService deliveryTracking,
             Api_Vapp.Data.Api_Context context,
             ILogger<MessageService> logger,
             IConfiguration configuration,
@@ -69,6 +71,7 @@ namespace Api_Vapp.Services
             _notebookRepository = notebookRepository;
             _userRepository = userRepository;
             _smsService = smsService;
+            _deliveryTracking = deliveryTracking;
             _context = context;
             _logger = logger;
             _configuration = configuration;
@@ -1192,6 +1195,17 @@ namespace Api_Vapp.Services
                             recipient.ErrorMessage = null;
                             sentCount++;
                             actualCost += campaign.CostPerPart * actualPartsCount;
+
+                            await _deliveryTracking.TrackSuccessfulSendAsync(new SmsDeliveryTrackRequestDto
+                            {
+                                UserId = userId,
+                                SourceModule = SmsSourceModules.MessageCampaign,
+                                SourceEntityId = campaignId,
+                                SourceEntityLabel = campaign.Title ?? $"کمپین #{campaignId}",
+                                Mobile = recipient.MobileNumber,
+                                Sid = smsResult.Data.Sid,
+                                SentAt = DateTime.UtcNow
+                            });
                             
                             _logger.LogInformation("SMS sent successfully to {Mobile} - Campaign: {CampaignId}, Sid: {Sid}", 
                                 recipient.MobileNumber, campaignId, smsResult.Data.Sid);
@@ -3784,6 +3798,17 @@ namespace Api_Vapp.Services
                             // ارسال موفق
                             sentCount++;
                             actualCost += _costPerPart * actualPartsCount;
+
+                            await _deliveryTracking.TrackSuccessfulSendAsync(new SmsDeliveryTrackRequestDto
+                            {
+                                UserId = userId,
+                                SourceModule = SmsSourceModules.MessageDirect,
+                                SourceEntityId = messageId,
+                                SourceEntityLabel = message.Title ?? $"پیام #{messageId}",
+                                Mobile = recipient.MobileNumber,
+                                Sid = smsResult.Data!.Sid,
+                                SentAt = smsSendEndTime
+                            });
                             
                             _logger.LogInformation("✅ SMS ارسال شد - گیرنده: {FullName} ({Mobile}), MessageId: {MessageId}, Sid: {Sid}, زمان ارسال (UTC): {SendTime}, مدت زمان: {Duration}ms", 
                                 recipient.FullName ?? "بدون نام", recipient.MobileNumber, messageId, smsResult.Data!.Sid, smsSendEndTime, smsSendDuration);

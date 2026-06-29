@@ -216,9 +216,8 @@ namespace Api_Vapp.DTOs.ReferralProgram
 
     public class SaveReferralStep3RequestDto
     {
-        public string? DraftId { get; set; }
-        public ReferralStep1Dto? Step1 { get; set; }
-        public ReferralStep2Dto? Step2 { get; set; }
+        [Required(ErrorMessage = "شناسه پیش‌نویس الزامی است")]
+        public string DraftId { get; set; } = string.Empty;
 
         [Required]
         public SaveReferralStep3SettingsDto Settings { get; set; } = null!;
@@ -226,9 +225,8 @@ namespace Api_Vapp.DTOs.ReferralProgram
 
     public class GetReferralSummaryRequestDto
     {
-        public string? DraftId { get; set; }
-        public ReferralStep1Dto? Step1 { get; set; }
-        public ReferralStep2Dto? Step2 { get; set; }
+        [Required(ErrorMessage = "شناسه پیش‌نویس الزامی است")]
+        public string DraftId { get; set; } = string.Empty;
     }
 
     public class ConfirmReferralProgramDto

@@ -356,6 +356,8 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.IUserNotificationSettingsReposito
 // ثبت سرویس‌های احراز هویت
 builder.Services.AddScoped<Api_Vapp.Interfaces.IJwtService, Api_Vapp.Services.JwtService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.ISmsService, Api_Vapp.Services.SmsService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.ISmsDeliveryRecordRepository, Api_Vapp.Repositories.SmsDeliveryRecordRepository>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.ISmsDeliveryTrackingService, Api_Vapp.Services.SmsDeliveryTrackingService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IRefreshTokenService, Api_Vapp.Services.RefreshTokenService>();
 builder.Services.AddSingleton<Api_Vapp.Interfaces.ITokenBlacklistService, Api_Vapp.Services.TokenBlacklistService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAuthService, Api_Vapp.Services.AuthService>();
@@ -405,6 +407,7 @@ builder.Services.AddHostedService<Api_Vapp.Services.BackgroundServices.Automated
 builder.Services.AddHostedService<Api_Vapp.Services.BackgroundServices.ScheduledCampaignBackgroundService>();
 builder.Services.AddHostedService<Api_Vapp.Services.BackgroundServices.ScheduledMessageBackgroundService>();
 builder.Services.AddHostedService<Api_Vapp.Services.BackgroundServices.ScheduledCashbackBackgroundService>();
+builder.Services.AddHostedService<Api_Vapp.Services.BackgroundServices.SmsDeliverySyncBackgroundService>();
 
 // use in OTP 
 builder.Services.AddSingleton<IConfiguration>(builder.Configuration);

@@ -147,6 +147,50 @@ namespace Api_Vapp.Services
             };
         }
 
+        private static SendOtpResponseDto CreateSmsFailedOtpResponse()
+        {
+            return new SendOtpResponseDto
+            {
+                StatusCode = 503,
+                Success = false,
+                Message = ControlledErrorHelper.SmsFailed,
+                ExpiresInSeconds = 0
+            };
+        }
+
+        private void ClearOtpRateLimit(string phoneNumber)
+        {
+            _cache.Remove($"OtpRateLimit_{phoneNumber}");
+        }
+
+        private void RollbackFailedOtpSend(string phoneNumber, string otpCacheKey)
+        {
+            _cache.Remove(otpCacheKey);
+            ClearOtpRateLimit(phoneNumber);
+        }
+
+        private async Task<(bool Sent, SendOtpResponseDto? FailureResponse)> SendOtpOrFailAsync(
+            string phoneNumber,
+            string otpCode,
+            string templateType,
+            string otpCacheKey,
+            string purpose,
+            string? ipAddress = null)
+        {
+            var sent = await _smsService.SendOtpAsync(phoneNumber, otpCode, templateType);
+            if (sent)
+            {
+                return (true, null);
+            }
+
+            _logger.LogWarning(
+                "OTP SMS delivery failed for {Purpose} - Phone: {PhoneNumber} from IP {IpAddress}",
+                purpose, phoneNumber, ipAddress);
+
+            RollbackFailedOtpSend(phoneNumber, otpCacheKey);
+            return (false, CreateSmsFailedOtpResponse());
+        }
+
         private async Task<(User? User, SendOtpResponseDto? BlockedResponse)> ResolveLoginUserForOtpAsync(string phoneNumber)
         {
             var user = await _userRepository.GetByPhoneNumberAsync(phoneNumber);
@@ -313,7 +357,17 @@ namespace Api_Vapp.Services
                 var attemptKey = $"OtpAttempt_{registerDto.PhoneNumber}_register";
                 _cache.Remove(attemptKey);
 
-                await _smsService.SendOtpAsync(registerDto.PhoneNumber, otpCode, "Register");
+                var (sent, failureResponse) = await SendOtpOrFailAsync(
+                    registerDto.PhoneNumber,
+                    otpCode,
+                    "Register",
+                    cacheKey,
+                    "Register",
+                    ipAddress);
+                if (!sent)
+                {
+                    return failureResponse!;
+                }
                 
                 _logger.LogInformation("Registration OTP generated for {PhoneNumber} from IP {IpAddress}",
                     registerDto.PhoneNumber, ipAddress);
@@ -552,7 +606,16 @@ namespace Api_Vapp.Services
                 var attemptKey = $"OtpAttempt_{loginDto.PhoneNumber}_register";
                 _cache.Remove(attemptKey);
 
-                await _smsService.SendOtpAsync(loginDto.PhoneNumber, otpCode, "Register");
+                var sent = await _smsService.SendOtpAsync(loginDto.PhoneNumber, otpCode, "Register");
+                if (!sent)
+                {
+                    _logger.LogWarning(
+                        "OTP SMS delivery failed for Register resend - Phone: {PhoneNumber} from IP {IpAddress}",
+                        loginDto.PhoneNumber, ipAddress);
+                    SetCacheData(cacheKey, cachedData, OtpExpirationMinutes);
+                    ClearOtpRateLimit(loginDto.PhoneNumber);
+                    return CreateSmsFailedOtpResponse();
+                }
                 
                 _logger.LogInformation("Registration OTP resent for {PhoneNumber} from IP {IpAddress}",
                     loginDto.PhoneNumber, ipAddress);
@@ -618,7 +681,17 @@ namespace Api_Vapp.Services
                 var attemptKey = $"OtpAttempt_{loginDto.PhoneNumber}_login";
                 _cache.Remove(attemptKey);
 
-                await _smsService.SendOtpAsync(loginDto.PhoneNumber, otpCode, "VerifyOtp");
+                var (sent, failureResponse) = await SendOtpOrFailAsync(
+                    loginDto.PhoneNumber,
+                    otpCode,
+                    "VerifyOtp",
+                    cacheKey,
+                    "Login",
+                    ipAddress);
+                if (!sent)
+                {
+                    return failureResponse!;
+                }
                 
                 _logger.LogInformation("Login OTP generated for {PhoneNumber} from IP {IpAddress}", 
                     loginDto.PhoneNumber, ipAddress);
@@ -828,7 +901,17 @@ namespace Api_Vapp.Services
                 var attemptKey = $"OtpAttempt_{loginDto.PhoneNumber}_login";
                 _cache.Remove(attemptKey);
 
-                await _smsService.SendOtpAsync(loginDto.PhoneNumber, otpCode, "VerifyOtp");
+                var (sent, failureResponse) = await SendOtpOrFailAsync(
+                    loginDto.PhoneNumber,
+                    otpCode,
+                    "VerifyOtp",
+                    cacheKey,
+                    "Login resend",
+                    ipAddress);
+                if (!sent)
+                {
+                    return failureResponse!;
+                }
                 
                 _logger.LogInformation("Login OTP resent for {PhoneNumber} from IP {IpAddress}", 
                     loginDto.PhoneNumber, ipAddress);
@@ -892,7 +975,17 @@ namespace Api_Vapp.Services
                 var attemptKey = $"OtpAttempt_{forgotPasswordDto.PhoneNumber}_forgot";
                 _cache.Remove(attemptKey);
 
-                await _smsService.SendOtpAsync(forgotPasswordDto.PhoneNumber, otpCode, "ResetPassword");
+                var (sent, failureResponse) = await SendOtpOrFailAsync(
+                    forgotPasswordDto.PhoneNumber,
+                    otpCode,
+                    "ResetPassword",
+                    cacheKey,
+                    "ResetPassword",
+                    ipAddress);
+                if (!sent)
+                {
+                    return failureResponse!;
+                }
                 
                 _logger.LogInformation("Forgot password OTP generated for {PhoneNumber} from IP {IpAddress}",
                     forgotPasswordDto.PhoneNumber, ipAddress);
@@ -956,7 +1049,17 @@ namespace Api_Vapp.Services
                 var attemptKey = $"OtpAttempt_{loginDto.PhoneNumber}_forgot";
                 _cache.Remove(attemptKey);
 
-                await _smsService.SendOtpAsync(loginDto.PhoneNumber, otpCode, "ResetPassword");
+                var (sent, failureResponse) = await SendOtpOrFailAsync(
+                    loginDto.PhoneNumber,
+                    otpCode,
+                    "ResetPassword",
+                    cacheKey,
+                    "ResetPassword resend",
+                    ipAddress);
+                if (!sent)
+                {
+                    return failureResponse!;
+                }
                 
                 _logger.LogInformation("Forgot password OTP resent for {PhoneNumber} from IP {IpAddress}",
                     loginDto.PhoneNumber, ipAddress);

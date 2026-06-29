@@ -1,4 +1,6 @@
-# SSH — Mac↔سرور و سرور↔GitHub (عمومی؛ URL repoها را عوض کن)
+# SSH — Mac↔سرور و سرور↔GitHub
+
+> **Mac → سرور (پورت 3031، deploy از Mac):** [`MAC-SERVER.md`](MAC-SERVER.md)
 
 دو نوع کلید لازم است:
 
@@ -11,31 +13,33 @@
 
 ## ۱) Mac → سرور (ورود SSH)
 
+**پورت SSH این سرور: `3031`** (نه 22). Alias: `vapp-prod`
+
 روی **Mac**:
 
 ```bash
 cd ~/path/to/Api_Vapp_Manually
-SERVER=root@185.116.162.233 bash devops/scripts/setup-local-ssh-to-server.sh
+SSH_PORT=3031 bash devops/scripts/setup-local-ssh-to-server.sh
 ```
 
 کلید public را روی سرور بگذارید:
 
 ```bash
-# اگر پسورد SSH دارید:
-ssh-copy-id -i ~/.ssh/id_ed25519_vapp_server.pub root@185.116.162.233
-
-# یا از کنسول VPS (پنل هاست):
-mkdir -p ~/.ssh && chmod 700 ~/.ssh
-nano ~/.ssh/authorized_keys   # خط public key را paste کنید
-chmod 600 ~/.ssh/authorized_keys
+ssh-copy-id -p 3031 -i ~/.ssh/id_ed25519_vapp_server.pub root@185.116.162.233
 ```
 
 تست:
 
 ```bash
-ssh vapp-prod
+ssh vapp-prod 'echo OK'
 # یا
-ssh -i ~/.ssh/id_ed25519_vapp_server root@185.116.162.233
+ssh -p 3031 -i ~/.ssh/id_ed25519_vapp_server root@185.116.162.233 'echo OK'
+```
+
+Deploy API از Mac (پیشنهادی برای سرور ایران):
+
+```bash
+SERVER=vapp-prod bash devops/scripts/deploy-api-upload-image.sh
 ```
 
 ---
@@ -109,7 +113,8 @@ cd ~/Api_Vapp_Manually && git pull origin main && bash devops/scripts/deploy-ser
 
 | خطا | راه‌حل |
 |-----|--------|
-| `Permission denied (publickey)` به سرور | کلید Mac را در `authorized_keys` سرور بگذارید؛ پورت ۲۲ باز باشد |
+| `port 22: Connection refused` | SSH روی **3031** است — `ssh vapp-prod` یا `-p 3031` |
+| `Permission denied (publickey)` به سرور | کلید Mac را در `authorized_keys` سرور بگذارید؛ `ssh-copy-id -p 3031 ...` |
 | `Permission denied (publickey)` به GitHub | کلید سرور را در GitHub SSH keys اضافه کنید؛ `ssh -T git@github.com` |
 | `Host key verification failed` | `ssh-keyscan github.com >> ~/.ssh/known_hosts` روی سرور |
 | HTTPS asks password on pull | `switch-git-remotes-to-ssh.sh` را اجرا کنید |

@@ -1,3 +1,4 @@
+using Api_Vapp.Constants;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.DTOs.Sms;
 using Api_Vapp.Interfaces;
@@ -35,18 +36,34 @@ namespace Api_Vapp.Controller
     public class SmsController : ControllerBase
     {
         private readonly ISmsService _smsService;
+        private readonly ISmsDeliveryTrackingService _deliveryTracking;
         private readonly IConfiguration _configuration;
         private readonly IUserRepository _userRepository;
 
         public SmsController(
             ISmsService smsService,
+            ISmsDeliveryTrackingService deliveryTracking,
             IConfiguration configuration,
             IUserRepository userRepository)
         {
             _smsService = smsService;
+            _deliveryTracking = deliveryTracking;
             _configuration = configuration;
             _userRepository = userRepository;
         }
+
+        private static bool IsSmsSendSuccessful(long sid, int status) => sid > 0 || status > 0;
+
+        private Task TrackManualSendAsync(int userId, string mobile, long sid, string? label = null) =>
+            _deliveryTracking.TrackSuccessfulSendAsync(new SmsDeliveryTrackRequestDto
+            {
+                UserId = userId,
+                SourceModule = SmsSourceModules.Manual,
+                SourceEntityLabel = label ?? "ارسال دستی",
+                Mobile = mobile,
+                Sid = sid,
+                SentAt = DateTime.UtcNow
+            });
 
         /// <summary>
         /// استخراج خطاهای ModelState برای نمایش به کاربر
@@ -119,6 +136,10 @@ namespace Api_Vapp.Controller
             }
 
             var result = await _smsService.SendSmsAsync(request);
+            if (userId.HasValue && result.Success && result.Data != null && IsSmsSendSuccessful(result.Data.Sid, result.Data.Status))
+            {
+                await TrackManualSendAsync(userId.Value, request.Mobile, result.Data.Sid);
+            }
             return StatusCode(result.StatusCode, result);
         }
 
@@ -167,6 +188,13 @@ namespace Api_Vapp.Controller
             }
 
             var result = await _smsService.SendBulkSmsAsync(request);
+            if (userId.HasValue && result.Success && result.Data != null && IsSmsSendSuccessful(result.Data.Sid, result.Data.Status))
+            {
+                foreach (var mobile in request.Mobiles)
+                {
+                    await TrackManualSendAsync(userId.Value, mobile, result.Data.Sid, "ارسال گروهی");
+                }
+            }
             return StatusCode(result.StatusCode, result);
         }
 
@@ -216,6 +244,13 @@ namespace Api_Vapp.Controller
             }
 
             var result = await _smsService.SendArraySmsAsync(request);
+            if (userId.HasValue && result.Success && result.Data != null && IsSmsSendSuccessful(result.Data.Sid, result.Data.Status))
+            {
+                foreach (var mobile in request.Mobiles)
+                {
+                    await TrackManualSendAsync(userId.Value, mobile, result.Data.Sid, "ارسال نظیر به نظیر");
+                }
+            }
             return StatusCode(result.StatusCode, result);
         }
 

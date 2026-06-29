@@ -88,18 +88,21 @@ namespace Api_Vapp.Services
                 _logger.LogInformation("SMS API Result - Status: {Status}, Message: {Message}, Sid: {Sid}, Expected OTP: {ExpectedOtp}", 
                     result.Status, result.Message, result.Sid, otpCode);
                 
-                // بررسی اینکه آیا API کد OTP را در Response برمی‌گرداند
-                if (!string.IsNullOrEmpty(result.Message) && result.Message.Contains(otpCode))
+                if (IsSmsSendSuccessful(result.Sid, result.Status))
                 {
-                    _logger.LogInformation("OTP code confirmed in API response - Phone: {PhoneNumber}, OTP: {OtpCode}", 
-                        normalizedPhone, otpCode);
+                    if (!string.IsNullOrEmpty(result.Message) && result.Message.Contains(otpCode))
+                    {
+                        _logger.LogInformation("OTP code confirmed in API response - Phone: {PhoneNumber}, OTP: {OtpCode}",
+                            normalizedPhone, otpCode);
+                    }
                 }
                 else if (!string.IsNullOrEmpty(result.Message))
                 {
-                    _logger.LogWarning("OTP code mismatch! Expected: {ExpectedOtp}, API Response Message: {ApiMessage}", 
-                        otpCode, result.Message);
+                    _logger.LogWarning(
+                        "SMS provider rejected OTP send - Phone: {PhoneNumber}, Status: {Status}, ProviderMessage: {ProviderMessage}",
+                        normalizedPhone, result.Status, result.Message);
                 }
-                
+
                 if (IsSmsSendSuccessful(result.Sid, result.Status))
                 {
                     _logger.LogInformation("OTP sent successfully - Phone: {PhoneNumber}, OTP: {OtpCode}, Sid: {Sid}, Status: {Status}", 

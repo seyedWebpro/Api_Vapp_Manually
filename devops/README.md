@@ -20,10 +20,14 @@ devops/
   .env.server.example
 ```
 
+## Mac → سرور
+
+راهنمای کامل: **`MAC-SERVER.md`** (SSH پورت 3031، deploy API از Mac)
+
 ## ترتیب معمول
 
 1. `setup-github-deploy-key.sh` — کلید سرور → GitHub  
 2. `bootstrap-first-run.sh` — نصب اولیه (یک‌بار)  
 3. `deploy-server.sh --fast --wait` — آپدیت بعدی  
 
-جزئیات: `server-update-commands.txt` · `GITHUB_SSH.md`
+جزئیات: `server-update-commands.txt` · `MAC-SERVER.md` · `GITHUB_SSH.md`

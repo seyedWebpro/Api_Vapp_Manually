@@ -1,5 +1,7 @@
+using Api_Vapp.Constants;
 using Api_Vapp.Data;
 using Api_Vapp.DTOs.Common;
+using Api_Vapp.DTOs.Sms;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
 using Api_Vapp.Utilities;
@@ -442,6 +444,21 @@ namespace Api_Vapp.Services.BackgroundServices
                     bool isSuccess = smsResult.Success && smsResult.Data != null && 
                         (smsResult.Data.Sid > 0 || smsResult.Data.Status > 0);
                     
+                    if (isSuccess)
+                    {
+                        using var trackScope = _serviceProvider.CreateScope();
+                        var deliveryTracking = trackScope.ServiceProvider.GetRequiredService<ISmsDeliveryTrackingService>();
+                        await deliveryTracking.TrackSuccessfulSendAsync(new SmsDeliveryTrackRequestDto
+                        {
+                            UserId = automatedMessage.UserId,
+                            SourceModule = SmsSourceModules.AutomatedMessage,
+                            SourceEntityId = automatedMessage.Id,
+                            SourceEntityLabel = automatedMessage.Title ?? $"پیام خودکار #{automatedMessage.Id}",
+                            Mobile = contact.MobileNumber,
+                            Sid = smsResult.Data!.Sid
+                        });
+                    }
+
                     string status = isSuccess ? "Success" : "Failed";
                     string? errorMessage = isSuccess ? null : ControlledErrorHelper.SendFailed;
 

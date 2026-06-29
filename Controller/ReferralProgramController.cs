@@ -357,10 +357,12 @@ namespace Api_Vapp.Controller
         /// <summary>
         /// ذخیره تنظیمات مرحله ۳ ویزارد (تاریخ و تگ)
         /// </summary>
-        /// <param name="request">draftId، تنظیمات تاریخ شروع/پایان و فیلتر تگ</param>
+        /// <param name="request">شناسه پیش‌نویس (draftId) و تنظیمات تاریخ شروع/پایان و فیلتر تگ</param>
         /// <returns>پاسخ شامل خلاصه به‌روزشده برنامه</returns>
         /// <remarks>
         /// **مرحله ۳ — تاریخ و تگ:**
+        /// - draftId از مرحله ۱ الزامی است؛ step1 و step2 از پیش‌نویس خوانده می‌شوند
+        /// - فقط settings در body ارسال شود
         /// - StartDate الزامی است
         /// - EndDate اختیاری؛ باید بعد از StartDate باشد
         /// - SendToSpecificTags=true → حداقل یک TargetTagId الزامی است

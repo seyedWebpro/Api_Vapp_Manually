@@ -20,14 +20,40 @@
 
 
 ================================================================================
+  ★ Mac → سرور (SSH پورت 3031 — نه 22)
+================================================================================
+
+  راهنمای کامل: devops/MAC-SERVER.md
+
+  --- یک‌بار: SSH config روی Mac ---
+  SSH_PORT=3031 bash devops/scripts/setup-local-ssh-to-server.sh
+  ssh-copy-id -p 3031 -i ~/.ssh/id_ed25519_vapp_server.pub root@185.116.162.233
+
+  --- تست ---
+  ssh vapp-prod 'echo SSH_OK'
+  nc -zv -w 5 185.116.162.233 3031
+
+  --- Deploy API از Mac (پیشنهادی — سرور ایران) ---
+  cd ~/path/to/Api_Vapp_Manually && git pull origin main
+  SERVER=vapp-prod bash devops/scripts/deploy-api-upload-image.sh
+
+  --- rsync سورس از Mac ---
+  SERVER=vapp-prod bash devops/scripts/sync-to-server.sh
+
+  --- عیب‌یابی Mac ---
+  port 22 refused → از vapp-prod یا -p 3031 استفاده کنید
+  grep ^Port /etc/ssh/sshd_config   # روی سرور → 3031
+
+
+================================================================================
   ★ SSH Key (یک‌بار)
 ================================================================================
 
-  راهنمای کامل: devops/GITHUB_SSH.md
+  راهنمای کامل: devops/GITHUB_SSH.md · devops/MAC-SERVER.md
 
   --- Mac → سرور (ورود SSH) — روی Mac ---
-  SERVER=root@185.116.162.233 bash devops/scripts/setup-local-ssh-to-server.sh
-  ssh-copy-id -i ~/.ssh/id_ed25519_vapp_server.pub root@185.116.162.233
+  SSH_PORT=3031 bash devops/scripts/setup-local-ssh-to-server.sh
+  ssh-copy-id -p 3031 -i ~/.ssh/id_ed25519_vapp_server.pub root@185.116.162.233
   ssh vapp-prod
 
   --- سرور → GitHub (git pull) — روی سرور ---
@@ -92,8 +118,8 @@
   --- API وقتی mcr.microsoft.com block است (image کش‌شده روی سرور) ---
   cd ~/Api_Vapp_Manually && git pull origin main && docker compose -f docker/docker-compose.production.yml --env-file docker/.env build --pull=false api && docker compose -f docker/docker-compose.production.yml --env-file docker/.env up -d --force-recreate --no-build api
 
-  --- API build روی Mac → upload به سرور ---
-  SERVER=root@185.116.162.233 bash devops/scripts/deploy-api-upload-image.sh
+  --- API build روی Mac → upload به سرور (پیشنهادی) ---
+  SERVER=vapp-prod bash devops/scripts/deploy-api-upload-image.sh
 
   --- فقط Admin ---
   bash devops/scripts/deploy-server.sh --front-only --wait
@@ -102,7 +128,7 @@
   bash devops/scripts/apply-nginx.sh
 
   --- sync از Mac ---
-  SERVER=root@185.116.162.233 bash devops/scripts/sync-to-server.sh
+  SERVER=vapp-prod bash devops/scripts/sync-to-server.sh
 
 
 ================================================================================
@@ -116,7 +142,8 @@
   wait-front-deploy.sh   صبر روی لاگ فرانت + health-check
   apply-nginx.sh         نصب/آپدیت nginx
   setup-server.sh        نصب اولیه Docker + Nginx
-  sync-to-server.sh      rsync از Mac
+  deploy-api-upload-image.sh  build Mac → upload API image (SERVER=vapp-prod)
+  sync-to-server.sh      rsync از Mac (SERVER=vapp-prod)
   backup-database.sh     بکاپ DbVapp
 
 
@@ -134,6 +161,7 @@
 ================================================================================
 
   Nginx:   :80  → http://185.116.162.233
+  SSH:     :3031  (Mac: ssh vapp-prod)
   API:     127.0.0.1:8080  (vapp_api_prod)
   SQL:     127.0.0.1:1433  (vapp_sqlserver_prod)
   Admin:   127.0.0.1:3005  (vapp-admin)
@@ -153,7 +181,7 @@
   docker compose -f ~/Api_Vapp_Manually/docker/docker-compose.production.yml logs api --tail 50
 
   API:000 → ۳۰–۶۰ ثانیه صبر (migration SQL Server)
-  SSH refused → پورت ۲۲ را در فایروال VPS باز کنید
+  SSH refused on port 22 → SSH روی 3031 است: ssh vapp-prod یا ssh -p 3031 root@185.116.162.233
 
   npm ci گیر کرده؟ → معمولاً گیر نکرده؛ روی سرور ایران ۱۵–۳۰ دقیقه طول می‌کشد
     ps aux | grep npm          # اگر npm هنوز running است صبر کنید
@@ -176,7 +204,10 @@
   Docker Hub timeout → فرانت با host deploy (بدون pull image):
     bash devops/scripts/deploy-front-host.sh
 
-  build سریع از Mac (اگر SSH از Mac کار می‌کند):
-    SERVER=root@185.116.162.233 bash devops/scripts/deploy-front-upload-dist.sh
+  build سریع API از Mac:
+    SERVER=vapp-prod bash devops/scripts/deploy-api-upload-image.sh
+
+  build سریع Admin از Mac (اگر SSH از Mac کار می‌کند):
+    SERVER=vapp-prod bash devops/scripts/deploy-front-upload-dist.sh
 
   بکاپ DB: devops/backup/README.md

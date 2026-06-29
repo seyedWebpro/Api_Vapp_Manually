@@ -3,10 +3,10 @@
 # reuse: LOCAL_* / REMOTE_* dirs، excludeها (node_modules، bin، …)
 #
 # Usage (روی Mac لوکال — از روت Api_Vapp_Manually):
-#   SERVER=root@185.116.162.233 bash devops/scripts/sync-to-server.sh
+#   SERVER=vapp-prod bash devops/scripts/sync-to-server.sh
 #
 # Env:
-#   SERVER, REMOTE_API_DIR, REMOTE_FRONT_DIR, LOCAL_API_DIR, LOCAL_FRONT_DIR
+#   SERVER (پیش‌فرض vapp-prod — Port 3031 در ~/.ssh/config), REMOTE_* , LOCAL_*
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -20,7 +20,7 @@ if [[ -z "${LOCAL_FRONT_DIR:-}" ]]; then
 fi
 REMOTE_API_DIR="${REMOTE_API_DIR:-/root/Api_Vapp_Manually}"
 REMOTE_FRONT_DIR="${REMOTE_FRONT_DIR:-/root/Admin_Vapp}"
-SERVER="${SERVER:-root@185.116.162.233}"
+SERVER="${SERVER:-vapp-prod}"
 
 echo "=== sync-to-server ==="
 echo "API:   $LOCAL_API_DIR → $SERVER:$REMOTE_API_DIR"

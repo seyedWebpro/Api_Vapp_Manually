@@ -2,13 +2,15 @@
 # Build API Docker image on Mac (mcr.microsoft.com) and load on Iran server
 #
 # Usage (روی Mac — از روت Api_Vapp_Manually):
-#   SERVER=root@185.116.162.233 bash devops/scripts/deploy-api-upload-image.sh
-#   SERVER=root@185.116.162.233 bash devops/scripts/deploy-api-upload-image.sh --no-deploy
+#   SERVER=vapp-prod bash devops/scripts/deploy-api-upload-image.sh
+#   SERVER=vapp-prod bash devops/scripts/deploy-api-upload-image.sh --no-deploy
+#
+# پیش‌نیاز: ~/.ssh/config با Host vapp-prod (Port 3031) — devops/MAC-SERVER.md
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOCAL_API_DIR="${LOCAL_API_DIR:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
-SERVER="${SERVER:-root@185.116.162.233}"
+SERVER="${SERVER:-vapp-prod}"
 REMOTE_API_DIR="${REMOTE_API_DIR:-/root/Api_Vapp_Manually}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker/docker-compose.production.yml}"
 ENV_FILE="${ENV_FILE:-docker/.env}"

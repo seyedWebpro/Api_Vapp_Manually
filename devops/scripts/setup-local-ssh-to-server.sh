@@ -3,13 +3,15 @@
 # reuse: SERVER، KEY_PATH، Host alias در ~/.ssh/config
 #
 # Usage (روی Mac لوکال):
-#   SERVER=root@185.116.162.233 bash devops/scripts/setup-local-ssh-to-server.sh
+#   bash devops/scripts/setup-local-ssh-to-server.sh
+#   SERVER=root@185.116.162.233 SSH_PORT=3031 bash devops/scripts/setup-local-ssh-to-server.sh
 #
 # Env:
-#   SERVER, KEY_PATH
+#   SERVER, KEY_PATH, SSH_PORT (پیش‌فرض Vapp prod: 3031 — نه 22)
 set -euo pipefail
 
 SERVER="${SERVER:-root@185.116.162.233}"
+SSH_PORT="${SSH_PORT:-3031}"
 KEY_PATH="${KEY_PATH:-$HOME/.ssh/id_ed25519_vapp_server}"
 
 mkdir -p "$HOME/.ssh"
@@ -37,6 +39,7 @@ if ! grep -q "$MARKER" "$CONFIG" 2>/dev/null; then
 
 Host $HOST_ALIAS
   HostName $HOST_IP
+  Port $SSH_PORT
   User $HOST_USER
   IdentityFile $KEY_PATH
   IdentitiesOnly yes
@@ -54,7 +57,7 @@ echo "==========================================================================
 echo "$PUB"
 echo ""
 echo "Option A — ssh-copy-id (if password login works):"
-echo "  ssh-copy-id -i ${KEY_PATH}.pub $SERVER"
+echo "  ssh-copy-id -p $SSH_PORT -i ${KEY_PATH}.pub $SERVER"
 echo ""
 echo "Option B — paste manually on server (VPS console):"
 echo "  mkdir -p ~/.ssh && chmod 700 ~/.ssh"
@@ -62,5 +65,8 @@ echo "  echo '$PUB' >> ~/.ssh/authorized_keys"
 echo "  chmod 600 ~/.ssh/authorized_keys"
 echo ""
 echo "Test:"
-echo "  ssh -i $KEY_PATH $SERVER 'echo OK'"
+echo "  ssh -p $SSH_PORT -i $KEY_PATH $SERVER 'echo OK'"
 echo "  ssh $HOST_ALIAS 'echo OK'"
+echo ""
+echo "Deploy API (Mac → server):"
+echo "  SERVER=$HOST_ALIAS bash devops/scripts/deploy-api-upload-image.sh"

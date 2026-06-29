@@ -52,6 +52,7 @@ namespace Api_Vapp.Data
         public DbSet<ReferralProgram> ReferralPrograms { get; set; }
         public DbSet<ReferralProgramDraft> ReferralProgramDrafts { get; set; }
         public DbSet<ReferralUsage> ReferralUsages { get; set; }
+        public DbSet<SmsDeliveryRecord> SmsDeliveryRecords { get; set; }
 
         public Api_Context(DbContextOptions<Api_Context> options) : base(options)
         {
@@ -1307,6 +1308,35 @@ namespace Api_Vapp.Data
                 entity.HasIndex(u => u.PublicCode);
                 entity.HasIndex(u => u.Status);
                 entity.HasIndex(u => u.CreatedAt);
+            });
+
+            modelBuilder.Entity<SmsDeliveryRecord>(entity =>
+            {
+                entity.HasKey(r => r.Id);
+                entity.Property(r => r.Id).ValueGeneratedOnAdd();
+
+                entity.Property(r => r.SourceModule).IsRequired().HasMaxLength(50);
+                entity.Property(r => r.SourceEntityLabel).HasMaxLength(200);
+                entity.Property(r => r.Mobile).IsRequired().HasMaxLength(20);
+                entity.Property(r => r.SendStatus).IsRequired().HasMaxLength(20).HasDefaultValue("Sent");
+                entity.Property(r => r.DeliveryCategory).IsRequired().HasMaxLength(50);
+                entity.Property(r => r.ProviderStatusMessage).HasMaxLength(200);
+                entity.Property(r => r.IsDeleted).HasDefaultValue(false);
+                entity.Property(r => r.IsDeliveryFinal).HasDefaultValue(false);
+                entity.Property(r => r.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+                entity.Property(r => r.SentAt).HasDefaultValueSql("GETUTCDATE()");
+
+                entity.HasOne(r => r.User)
+                    .WithMany()
+                    .HasForeignKey(r => r.UserId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasIndex(r => r.UserId);
+                entity.HasIndex(r => r.Sid);
+                entity.HasIndex(r => new { r.SourceModule, r.SourceEntityId });
+                entity.HasIndex(r => r.DeliveryCategory);
+                entity.HasIndex(r => r.SentAt);
+                entity.HasIndex(r => new { r.IsDeliveryFinal, r.SendStatus, r.SentAt });
             });
         }
     }

@@ -1,3 +1,4 @@
+using Api_Vapp.Constants;
 using Api_Vapp.Data;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.DTOs.Sms;
@@ -87,6 +88,7 @@ namespace Api_Vapp.Services.BackgroundServices
             var context = scope.ServiceProvider.GetRequiredService<Api_Context>();
             var walletService = scope.ServiceProvider.GetRequiredService<IWalletService>();
             var smsService = scope.ServiceProvider.GetRequiredService<ISmsService>();
+            var deliveryTracking = scope.ServiceProvider.GetRequiredService<ISmsDeliveryTrackingService>();
 
             var now = DateTime.UtcNow;
 
@@ -158,7 +160,7 @@ namespace Api_Vapp.Services.BackgroundServices
 
                     // پردازش کش‌بک
                     var result = await ProcessSingleScheduledCashbackAsync(
-                        context, walletService, smsService, cashback, cancellationToken);
+                        context, walletService, smsService, deliveryTracking, cashback, cancellationToken);
 
                     // به‌روزرسانی وضعیت
                     cashback.ScheduleStatus = result.Success 
@@ -218,6 +220,7 @@ namespace Api_Vapp.Services.BackgroundServices
             Api_Context context,
             IWalletService walletService,
             ISmsService smsService,
+            ISmsDeliveryTrackingService deliveryTracking,
             Cashback cashback,
             CancellationToken cancellationToken)
         {
@@ -349,6 +352,16 @@ namespace Api_Vapp.Services.BackgroundServices
                             successCount++;
                             totalCashbackAmount += cashbackAmount;
 
+                            await deliveryTracking.TrackSuccessfulSendAsync(new DTOs.Sms.SmsDeliveryTrackRequestDto
+                            {
+                                UserId = cashback.UserId,
+                                SourceModule = SmsSourceModules.CashbackScheduled,
+                                SourceEntityId = cashback.Id,
+                                SourceEntityLabel = cashback.Title,
+                                Mobile = normalizedMobile,
+                                Sid = smsResult.Data!.Sid
+                            });
+
                             _logger.LogDebug("کش‌بک ارسال شد - ContactId: {ContactId}, Mobile: {Mobile}, Amount: {Amount}",
                                 contact.Id, normalizedMobile, cashbackAmount);
                         }
@@ -417,6 +430,7 @@ namespace Api_Vapp.Services.BackgroundServices
             var context = scope.ServiceProvider.GetRequiredService<Api_Context>();
             var walletService = scope.ServiceProvider.GetRequiredService<IWalletService>();
             var smsService = scope.ServiceProvider.GetRequiredService<ISmsService>();
+            var deliveryTracking = scope.ServiceProvider.GetRequiredService<ISmsDeliveryTrackingService>();
 
             var now = DateTime.UtcNow;
 
@@ -525,15 +539,17 @@ namespace Api_Vapp.Services.BackgroundServices
                         transaction.DepositedAt = DateTime.UtcNow;
                         transaction.Description = "کش‌بک زمان‌بندی شده با موفقیت ارسال شد";
 
-                        // TODO: برای تست غیرفعال شده - بعد از تست باید فعال شود
-                        // کسر هزینه پیامک
-                        // await walletService.DeductBalanceAsync(
-                        //     transaction.Cashback.UserId,
-                        //     CostPerSms,
-                        //     "ارسال کش‌بک زمان‌بندی شده",
-                        //     $"تراکنش {transaction.Id} برای {normalizedMobile}");
+                        await deliveryTracking.TrackSuccessfulSendAsync(new DTOs.Sms.SmsDeliveryTrackRequestDto
+                        {
+                            UserId = transaction.Cashback.UserId,
+                            SourceModule = SmsSourceModules.CashbackScheduled,
+                            SourceEntityId = transaction.CashbackId,
+                            SourceEntityLabel = transaction.Cashback.Title,
+                            Mobile = normalizedMobile,
+                            Sid = smsResult.Data!.Sid
+                        });
 
-                        _logger.LogInformation("تراکنش کش‌بک {TransactionId} با موفقیت پردازش شد - Mobile: {Mobile}", 
+                        _logger.LogInformation("تراکنش کش‌بک {TransactionId} با موفقیت پردازش شد - Mobile: {Mobile}",
                             transaction.Id, normalizedMobile);
                     }
                     else
