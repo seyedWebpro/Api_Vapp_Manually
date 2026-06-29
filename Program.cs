@@ -337,6 +337,7 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.IMessageTemplateRepository, Api_V
 builder.Services.AddScoped<Api_Vapp.Interfaces.IMessageSessionRepository, Api_Vapp.Repositories.MessageSessionRepository>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IQuickActionRepository, Api_Vapp.Repositories.QuickActionRepository>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IUserFormRepository, Api_Vapp.Repositories.UserFormRepository>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.ILuckyWheelRepository, Api_Vapp.Repositories.LuckyWheelRepository>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.ISpecialOccasionRepository, Api_Vapp.Repositories.SpecialOccasionRepository>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAutomatedMessageRepository, Api_Vapp.Repositories.AutomatedMessageRepository>();
 
@@ -376,6 +377,7 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.IContactNotebookService, Api_Vapp
 builder.Services.AddScoped<Api_Vapp.Interfaces.IContactService, Api_Vapp.Services.ContactService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IQuickActionService, Api_Vapp.Services.QuickActionService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IUserFormService, Api_Vapp.Services.UserFormService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.ILuckyWheelService, Api_Vapp.Services.LuckyWheelService>();
 
 // ثبت سرویس‌های مدیریت پیام و اتوماسیون
 builder.Services.AddScoped<Api_Vapp.Interfaces.IMessageService, Api_Vapp.Services.MessageService>();
@@ -416,6 +418,7 @@ builder.Services.AddSingleton<IConfiguration>(builder.Configuration);
 // تنظیمات آپلود فایل
 builder.Services.Configure<Api_Vapp.DTOs.File.FileUploadOptions>(builder.Configuration.GetSection("FileUpload"));
 builder.Services.Configure<Api_Vapp.Utilities.FormBuilderOptions>(builder.Configuration.GetSection(Api_Vapp.Utilities.FormBuilderOptions.SectionName));
+builder.Services.Configure<Api_Vapp.Utilities.LuckyWheelOptions>(builder.Configuration.GetSection(Api_Vapp.Utilities.LuckyWheelOptions.SectionName));
 builder.Services.AddScoped<Api_Vapp.Interfaces.IFileUploadService, Api_Vapp.Services.FileUploadService>();
 #endregion
 

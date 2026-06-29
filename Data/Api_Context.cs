@@ -53,6 +53,9 @@ namespace Api_Vapp.Data
         public DbSet<ReferralProgramDraft> ReferralProgramDrafts { get; set; }
         public DbSet<ReferralUsage> ReferralUsages { get; set; }
         public DbSet<SmsDeliveryRecord> SmsDeliveryRecords { get; set; }
+        public DbSet<LuckyWheel> LuckyWheels { get; set; }
+        public DbSet<LuckyWheelItem> LuckyWheelItems { get; set; }
+        public DbSet<LuckyWheelNotebook> LuckyWheelNotebooks { get; set; }
 
         public Api_Context(DbContextOptions<Api_Context> options) : base(options)
         {
@@ -1204,6 +1207,67 @@ namespace Api_Vapp.Data
                 entity.HasOne(n => n.UserForm)
                     .WithMany(f => f.Notebooks)
                     .HasForeignKey(n => n.UserFormId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(n => n.ContactNotebook)
+                    .WithMany()
+                    .HasForeignKey(n => n.ContactNotebookId)
+                    .OnDelete(DeleteBehavior.NoAction);
+            });
+
+            // تنظیمات LuckyWheel (گردونه شانس)
+            modelBuilder.Entity<LuckyWheel>(entity =>
+            {
+                entity.HasKey(w => w.Id);
+                entity.Property(w => w.Id).ValueGeneratedOnAdd();
+                entity.Property(w => w.UserId).IsRequired();
+                entity.Property(w => w.Title).IsRequired().HasMaxLength(200);
+                entity.Property(w => w.Description).HasMaxLength(2000);
+                entity.Property(w => w.Slug).HasMaxLength(100);
+                entity.Property(w => w.Status).IsRequired();
+                entity.Property(w => w.SaveToPhonebook).HasDefaultValue(false);
+                entity.Property(w => w.IsActive).HasDefaultValue(true);
+                entity.Property(w => w.IsDeleted).HasDefaultValue(false);
+                entity.Property(w => w.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+                entity.HasOne(w => w.User)
+                    .WithMany()
+                    .HasForeignKey(w => w.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasIndex(w => w.UserId);
+                entity.HasIndex(w => w.Status);
+                entity.HasIndex(w => w.IsDeleted);
+                entity.HasIndex(w => new { w.UserId, w.IsDeleted, w.CreatedAt });
+                entity.HasIndex(w => w.Slug)
+                    .IsUnique()
+                    .HasFilter("[Slug] IS NOT NULL AND [IsDeleted] = 0");
+            });
+
+            modelBuilder.Entity<LuckyWheelItem>(entity =>
+            {
+                entity.HasKey(i => i.Id);
+                entity.Property(i => i.Id).ValueGeneratedOnAdd();
+                entity.Property(i => i.LuckyWheelId).IsRequired();
+                entity.Property(i => i.Name).IsRequired().HasMaxLength(200);
+                entity.Property(i => i.Probability).HasPrecision(5, 2);
+                entity.Property(i => i.DisplayOrder).IsRequired();
+
+                entity.HasOne(i => i.LuckyWheel)
+                    .WithMany(w => w.Items)
+                    .HasForeignKey(i => i.LuckyWheelId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasIndex(i => i.LuckyWheelId);
+            });
+
+            modelBuilder.Entity<LuckyWheelNotebook>(entity =>
+            {
+                entity.HasKey(n => new { n.LuckyWheelId, n.ContactNotebookId });
+
+                entity.HasOne(n => n.LuckyWheel)
+                    .WithMany(w => w.Notebooks)
+                    .HasForeignKey(n => n.LuckyWheelId)
                     .OnDelete(DeleteBehavior.Cascade);
 
                 entity.HasOne(n => n.ContactNotebook)

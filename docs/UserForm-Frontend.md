@@ -114,8 +114,9 @@ Content:   application/json
 | فیلد body | رفتار |
 |-----------|--------|
 | `title`, `description`, `slug`, `saveToPhonebook` | فقط اگر ارسال شود |
+| `isActive` | فقط فرم **Published** — مقدار صریح فعال/غیرفعال |
 | `notebookIds` | اگر ارسال شود → جایگزین کامل لیست |
-| `fields` | merge بر اساس `fieldKey` (ویرایش موجود / افزودن جدید) |
+| `fields` | merge جزئی بر اساس `fieldKey` — فقط propertyهای ارسال‌شده عوض می‌شوند |
 
 ```json
 { "title": "عنوان جدید" }
@@ -126,13 +127,25 @@ Content:   application/json
   "fields": [
     {
       "fieldKey": "mobile",
-      "fieldType": "mobile",
-      "label": "شماره تماس",
-      "isActive": true,
-      "isRequired": true,
-      "displayOrder": 2
+      "label": "شماره تماس"
     }
   ]
+}
+```
+
+> فقط `fieldKey` الزامی است. propertyهای ارسال‌نشده (مثل `fieldType`, `isRequired`, `displayOrder`) **بدون تغییر** می‌مانند.
+
+```json
+{ "isActive": false }
+```
+
+```json
+{
+  "title": "درخواست استخدام و همکاری",
+  "description": "لطفا اطلاعات خود را کامل وارد کنید.",
+  "slug": "job-alpha",
+  "saveToPhonebook": true,
+  "notebookIds": [1, 2]
 }
 ```
 
@@ -206,7 +219,7 @@ Query: `pageNumber`, `pageSize` (پیش‌فرض 1 و 10)
 | API | Body | نتیجه |
 |-----|------|--------|
 | `POST /{id}/toggle-status` | — | فقط `Published` — `isActive` برعکس می‌شود |
-| `POST /{id}/delete` | — | soft delete — `data: true` |
+| `POST /{id}/delete` | — | soft delete + حذف فایل‌های آپلودشده فرم از سرور — `data: true` |
 
 ---
 

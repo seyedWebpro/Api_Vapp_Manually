@@ -18,8 +18,13 @@ namespace Api_Vapp.DTOs.UserForm
 
         public bool? SaveToPhonebook { get; set; }
 
+        /// <summary>
+        /// فقط برای فرم‌های منتشرشده — فعال/غیرفعال کردن لینک عمومی
+        /// </summary>
+        public bool? IsActive { get; set; }
+
         public List<int>? NotebookIds { get; set; }
 
-        public List<UserFormFieldDto>? Fields { get; set; }
+        public List<UpdateUserFormFieldDto>? Fields { get; set; }
     }
 }

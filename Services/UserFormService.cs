@@ -1,8 +1,10 @@
 using Api_Vapp.DTOs.Common;
+using Api_Vapp.DTOs.File;
 using Api_Vapp.DTOs.UserForm;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
 using Api_Vapp.Utilities;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -17,17 +19,20 @@ namespace Api_Vapp.Services
         private readonly IUserFormRepository _userFormRepository;
         private readonly Api_Vapp.Data.Api_Context _context;
         private readonly FormBuilderOptions _formBuilderOptions;
+        private readonly IFileUploadService _fileUploadService;
         private readonly ILogger<UserFormService> _logger;
 
         public UserFormService(
             IUserFormRepository userFormRepository,
             Api_Vapp.Data.Api_Context context,
             IOptions<FormBuilderOptions> formBuilderOptions,
+            IFileUploadService fileUploadService,
             ILogger<UserFormService> logger)
         {
             _userFormRepository = userFormRepository;
             _context = context;
             _formBuilderOptions = formBuilderOptions.Value;
+            _fileUploadService = fileUploadService;
             _logger = logger;
         }
 
@@ -76,10 +81,7 @@ namespace Api_Vapp.Services
             }
             catch (DbUpdateException dbEx)
             {
-                _logger.LogError(dbEx, "Database error creating user form draft for user {UserId}", userId);
-                return ApiResponse<UserFormResponseDto>.InternalServerError(
-                    ControlledErrorHelper.Database,
-                    ErrorCodes.DatabaseError);
+                return MapDbUpdateException<UserFormResponseDto>(dbEx, "creating user form draft", userId: userId);
             }
             catch (Exception ex)
             {
@@ -92,6 +94,13 @@ namespace Api_Vapp.Services
         {
             try
             {
+                if (updateDto == null)
+                {
+                    return ApiResponse<UserFormResponseDto>.BadRequest(
+                        "هیچ موردی برای به‌روزرسانی ارسال نشده است",
+                        errorCode: ErrorCodes.ValidationFailed);
+                }
+
                 var form = await _userFormRepository.GetByIdWithDetailsTrackedAsync(id);
                 if (form == null)
                 {
@@ -112,9 +121,12 @@ namespace Api_Vapp.Services
                         errorCode: ErrorCodes.ValidationFailed);
                 }
 
+                Dictionary<string, UserFormField>? fieldLookup = null;
+
                 if (updateDto.Fields != null && updateDto.Fields.Count > 0)
                 {
-                    var fieldErrors = ValidateFields(updateDto.Fields);
+                    fieldLookup = BuildFieldLookup(form);
+                    var fieldErrors = ValidatePartialFieldUpdates(fieldLookup, updateDto.Fields);
                     if (fieldErrors.Count > 0)
                     {
                         return ApiResponse<UserFormResponseDto>.BadRequest(
@@ -137,6 +149,13 @@ namespace Api_Vapp.Services
 
                 if (updateDto.Title != null)
                 {
+                    if (string.IsNullOrWhiteSpace(updateDto.Title))
+                    {
+                        return ApiResponse<UserFormResponseDto>.BadRequest(
+                            "عنوان فرم نمی‌تواند خالی باشد",
+                            errorCode: ErrorCodes.ValidationFailed);
+                    }
+
                     form.Title = updateDto.Title.Trim();
                 }
 
@@ -148,6 +167,23 @@ namespace Api_Vapp.Services
                 if (updateDto.SaveToPhonebook.HasValue)
                 {
                     form.SaveToPhonebook = updateDto.SaveToPhonebook.Value;
+
+                    if (!updateDto.SaveToPhonebook.Value && updateDto.NotebookIds == null)
+                    {
+                        await ClearNotebookLinksAsync(form);
+                    }
+                }
+
+                if (updateDto.IsActive.HasValue)
+                {
+                    if (form.Status != UserFormStatus.Published)
+                    {
+                        return ApiResponse<UserFormResponseDto>.BadRequest(
+                            "فقط فرم‌های منتشرشده قابل فعال/غیرفعال کردن هستند",
+                            errorCode: ErrorCodes.ValidationFailed);
+                    }
+
+                    form.IsActive = updateDto.IsActive.Value;
                 }
 
                 if (updateDto.NotebookIds != null)
@@ -174,7 +210,7 @@ namespace Api_Vapp.Services
 
                 if (updateDto.Fields != null && updateDto.Fields.Count > 0)
                 {
-                    MergeFormFields(form, updateDto.Fields);
+                    MergeFormFields(form, updateDto.Fields, fieldLookup ?? BuildFieldLookup(form));
 
                     var mergedFieldErrors = ValidateFields(form.Fields.Select(MapFieldToDto).ToList());
                     if (mergedFieldErrors.Count > 0)
@@ -216,10 +252,7 @@ namespace Api_Vapp.Services
             }
             catch (DbUpdateException dbEx)
             {
-                _logger.LogError(dbEx, "Database error updating user form {FormId} for user {UserId}", id, userId);
-                return ApiResponse<UserFormResponseDto>.InternalServerError(
-                    ControlledErrorHelper.Database,
-                    ErrorCodes.DatabaseError);
+                return MapDbUpdateException<UserFormResponseDto>(dbEx, "updating user form", id, userId);
             }
             catch (Exception ex)
             {
@@ -243,6 +276,13 @@ namespace Api_Vapp.Services
                     return ApiResponse<UserFormResponseDto>.Forbidden(
                         ControlledErrorHelper.Unauthorized,
                         ErrorCodes.Forbidden);
+                }
+
+                if (form.Status == UserFormStatus.Published)
+                {
+                    return ApiResponse<UserFormResponseDto>.CreateSuccess(
+                        MapToResponseDto(form),
+                        "فرم قبلاً منتشر شده است");
                 }
 
                 if (string.IsNullOrWhiteSpace(form.Title))
@@ -311,10 +351,7 @@ namespace Api_Vapp.Services
             }
             catch (DbUpdateException dbEx)
             {
-                _logger.LogError(dbEx, "Database error publishing user form {FormId} for user {UserId}", id, userId);
-                return ApiResponse<UserFormResponseDto>.InternalServerError(
-                    ControlledErrorHelper.Database,
-                    ErrorCodes.DatabaseError);
+                return MapDbUpdateException<UserFormResponseDto>(dbEx, "publishing user form", id, userId);
             }
             catch (Exception ex)
             {
@@ -374,7 +411,7 @@ namespace Api_Vapp.Services
                 var form = await _userFormRepository.GetByIdWithDetailsReadOnlyAsync(id);
                 if (form == null)
                 {
-                    return ApiResponse<UserFormResponseDto>.NotFound(ControlledErrorHelper.NotFound);
+                    return ApiResponse<UserFormResponseDto>.NotFound("فرم یافت نشد");
                 }
 
                 if (form.UserId != userId)
@@ -404,15 +441,36 @@ namespace Api_Vapp.Services
                 }
 
                 form.IsDeleted = true;
+                form.Slug = null;
                 form.UpdatedAt = DateTime.UtcNow;
                 await _context.SaveChangesAsync();
+
+                try
+                {
+                    var deletedFiles = await _fileUploadService.DeleteAllEntityFilesAsync(
+                        FileUploadConstants.EntityType_UserForm,
+                        id);
+
+                    if (deletedFiles > 0)
+                    {
+                        _logger.LogInformation(
+                            "Deleted {Count} file(s) for user form {FormId}",
+                            deletedFiles,
+                            id);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Error deleting files for user form {FormId}", id);
+                }
+
+                _logger.LogInformation("User form {FormId} soft-deleted for user {UserId}", id, userId);
 
                 return ApiResponse<bool>.CreateSuccess(true, "فرم با موفقیت حذف شد");
             }
             catch (DbUpdateException dbEx)
             {
-                _logger.LogError(dbEx, "Database error deleting user form {FormId} for user {UserId}", id, userId);
-                return ApiResponse<bool>.InternalServerError(ControlledErrorHelper.Database, ErrorCodes.DatabaseError);
+                return MapDbUpdateException<bool>(dbEx, "deleting user form", id, userId);
             }
             catch (Exception ex)
             {
@@ -425,10 +483,17 @@ namespace Api_Vapp.Services
         {
             try
             {
-                var form = await _userFormRepository.GetOwnedFormAsync(id, userId, tracked: true);
+                var form = await _userFormRepository.GetByIdWithDetailsTrackedAsync(id);
                 if (form == null)
                 {
                     return ApiResponse<UserFormResponseDto>.NotFound("فرم یافت نشد");
+                }
+
+                if (form.UserId != userId)
+                {
+                    return ApiResponse<UserFormResponseDto>.Forbidden(
+                        ControlledErrorHelper.Unauthorized,
+                        ErrorCodes.Forbidden);
                 }
 
                 if (form.Status != UserFormStatus.Published)
@@ -442,18 +507,13 @@ namespace Api_Vapp.Services
                 form.UpdatedAt = DateTime.UtcNow;
                 await _context.SaveChangesAsync();
 
-                var refreshed = await _userFormRepository.GetByIdWithDetailsReadOnlyAsync(id);
-
                 return ApiResponse<UserFormResponseDto>.CreateSuccess(
-                    MapToResponseDto(refreshed!),
+                    MapToResponseDto(form),
                     form.IsActive ? "فرم فعال شد" : "فرم غیرفعال شد");
             }
             catch (DbUpdateException dbEx)
             {
-                _logger.LogError(dbEx, "Database error toggling user form {FormId} for user {UserId}", id, userId);
-                return ApiResponse<UserFormResponseDto>.InternalServerError(
-                    ControlledErrorHelper.Database,
-                    ErrorCodes.DatabaseError);
+                return MapDbUpdateException<UserFormResponseDto>(dbEx, "toggling user form status", id, userId);
             }
             catch (Exception ex)
             {
@@ -538,33 +598,95 @@ namespace Api_Vapp.Services
                 || updateDto.Description != null
                 || !string.IsNullOrWhiteSpace(updateDto.Slug)
                 || updateDto.SaveToPhonebook.HasValue
+                || updateDto.IsActive.HasValue
                 || updateDto.NotebookIds != null
                 || (updateDto.Fields != null && updateDto.Fields.Count > 0);
         }
 
-        private static void MergeFormFields(UserForm form, List<UserFormFieldDto> incomingFields)
+        private static Dictionary<string, UserFormField> BuildFieldLookup(UserForm form)
+        {
+            return form.Fields.ToDictionary(f => f.FieldKey, StringComparer.OrdinalIgnoreCase);
+        }
+
+        private static void MergeFormFields(
+            UserForm form,
+            List<UpdateUserFormFieldDto> incomingFields,
+            Dictionary<string, UserFormField> fieldLookup)
         {
             foreach (var fieldDto in incomingFields)
             {
-                var existing = form.Fields.FirstOrDefault(f =>
-                    string.Equals(f.FieldKey, fieldDto.FieldKey, StringComparison.OrdinalIgnoreCase));
+                var fieldKey = fieldDto.FieldKey.Trim();
 
-                if (existing != null)
+                if (fieldLookup.TryGetValue(fieldKey, out var existing))
                 {
-                    existing.FieldType = fieldDto.FieldType.Trim().ToLowerInvariant();
-                    existing.Label = fieldDto.Label.Trim();
-                    existing.Placeholder = NormalizeOptionalText(fieldDto.Placeholder);
-                    existing.HelpText = NormalizeOptionalText(fieldDto.HelpText);
-                    existing.IsActive = fieldDto.IsActive;
-                    existing.IsRequired = fieldDto.IsRequired;
-                    existing.DisplayOrder = fieldDto.DisplayOrder;
-                    existing.SourceFieldKey = NormalizeOptionalText(fieldDto.SourceFieldKey);
+                    ApplyPartialFieldUpdate(existing, fieldDto);
                 }
                 else
                 {
-                    form.Fields.Add(MapField(fieldDto));
+                    var created = MapFieldFromPartial(fieldDto);
+                    form.Fields.Add(created);
+                    fieldLookup[fieldKey] = created;
                 }
             }
+        }
+
+        private static void ApplyPartialFieldUpdate(UserFormField existing, UpdateUserFormFieldDto fieldDto)
+        {
+            if (!string.IsNullOrWhiteSpace(fieldDto.FieldType))
+            {
+                existing.FieldType = fieldDto.FieldType.Trim().ToLowerInvariant();
+            }
+
+            if (fieldDto.Label != null)
+            {
+                existing.Label = fieldDto.Label.Trim();
+            }
+
+            if (fieldDto.Placeholder != null)
+            {
+                existing.Placeholder = NormalizeOptionalText(fieldDto.Placeholder);
+            }
+
+            if (fieldDto.HelpText != null)
+            {
+                existing.HelpText = NormalizeOptionalText(fieldDto.HelpText);
+            }
+
+            if (fieldDto.IsActive.HasValue)
+            {
+                existing.IsActive = fieldDto.IsActive.Value;
+            }
+
+            if (fieldDto.IsRequired.HasValue)
+            {
+                existing.IsRequired = fieldDto.IsRequired.Value;
+            }
+
+            if (fieldDto.DisplayOrder.HasValue)
+            {
+                existing.DisplayOrder = fieldDto.DisplayOrder.Value;
+            }
+
+            if (fieldDto.SourceFieldKey != null)
+            {
+                existing.SourceFieldKey = NormalizeOptionalText(fieldDto.SourceFieldKey);
+            }
+        }
+
+        private static UserFormField MapFieldFromPartial(UpdateUserFormFieldDto dto)
+        {
+            return new UserFormField
+            {
+                FieldKey = dto.FieldKey.Trim(),
+                FieldType = dto.FieldType!.Trim().ToLowerInvariant(),
+                Label = dto.Label!.Trim(),
+                Placeholder = dto.Placeholder != null ? NormalizeOptionalText(dto.Placeholder) : null,
+                HelpText = dto.HelpText != null ? NormalizeOptionalText(dto.HelpText) : null,
+                IsActive = dto.IsActive ?? true,
+                IsRequired = dto.IsRequired ?? false,
+                DisplayOrder = dto.DisplayOrder ?? 0,
+                SourceFieldKey = dto.SourceFieldKey != null ? NormalizeOptionalText(dto.SourceFieldKey) : null
+            };
         }
 
         private async Task ClearNotebookLinksAsync(UserForm form)
@@ -661,6 +783,51 @@ namespace Api_Vapp.Services
             }
 
             return $"{_formBuilderOptions.PublicBaseUrl.TrimEnd('/')}/{slug}";
+        }
+
+        private static List<string> ValidatePartialFieldUpdates(
+            Dictionary<string, UserFormField> fieldLookup,
+            List<UpdateUserFormFieldDto> fields)
+        {
+            var errors = new List<string>();
+            var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var field in fields)
+            {
+                if (string.IsNullOrWhiteSpace(field.FieldKey))
+                {
+                    errors.Add("fieldKey برای همه فیلدها الزامی است");
+                    continue;
+                }
+
+                var fieldKey = field.FieldKey.Trim();
+                if (!keys.Add(fieldKey))
+                {
+                    errors.Add($"fieldKey تکراری: {fieldKey}");
+                    continue;
+                }
+
+                fieldLookup.TryGetValue(fieldKey, out var existing);
+
+                if (existing == null)
+                {
+                    if (string.IsNullOrWhiteSpace(field.FieldType))
+                    {
+                        errors.Add($"نوع فیلد {fieldKey} الزامی است");
+                    }
+
+                    if (string.IsNullOrWhiteSpace(field.Label))
+                    {
+                        errors.Add($"عنوان فیلد {fieldKey} الزامی است");
+                    }
+                }
+                else if (field.Label != null && string.IsNullOrWhiteSpace(field.Label))
+                {
+                    errors.Add($"عنوان فیلد {fieldKey} الزامی است");
+                }
+            }
+
+            return errors;
         }
 
         private static List<string> ValidateFields(List<UserFormFieldDto> fields)
@@ -782,6 +949,49 @@ namespace Api_Vapp.Services
         private static string? NormalizeOptionalText(string? value)
         {
             return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+        }
+
+        private ApiResponse<T> MapDbUpdateException<T>(
+            DbUpdateException dbEx,
+            string operation,
+            int? formId = null,
+            int? userId = null)
+        {
+            if (IsUniqueConstraintViolation(dbEx))
+            {
+                _logger.LogWarning(
+                    dbEx,
+                    "Unique constraint violation while {Operation} — FormId: {FormId}, UserId: {UserId}",
+                    operation,
+                    formId,
+                    userId);
+
+                return ApiResponse<T>.BadRequest(
+                    "اطلاعات ارسالی با داده‌های موجود تداخل دارد",
+                    errorCode: ErrorCodes.ValidationFailed);
+            }
+
+            _logger.LogError(
+                dbEx,
+                "Database error while {Operation} — FormId: {FormId}, UserId: {UserId}",
+                operation,
+                formId,
+                userId);
+
+            return ApiResponse<T>.InternalServerError(ControlledErrorHelper.Database, ErrorCodes.DatabaseError);
+        }
+
+        private static bool IsUniqueConstraintViolation(DbUpdateException ex)
+        {
+            for (var inner = ex.InnerException; inner != null; inner = inner.InnerException)
+            {
+                if (inner is SqlException sqlEx && (sqlEx.Number == 2601 || sqlEx.Number == 2627))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
     }
 }

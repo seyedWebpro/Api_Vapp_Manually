@@ -83,8 +83,15 @@ namespace Api_Vapp.Controller
         [HttpPost("{id}/update")]
         [ProducesResponseType(typeof(ApiResponse<UserFormResponseDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<UserFormResponseDto>), StatusCodes.Status400BadRequest)]
-        public async Task<ActionResult<ApiResponse<UserFormResponseDto>>> Update(int id, [FromBody] UpdateUserFormDto updateDto)
+        public async Task<ActionResult<ApiResponse<UserFormResponseDto>>> Update(int id, [FromBody] UpdateUserFormDto? updateDto)
         {
+            if (updateDto == null)
+            {
+                return StatusCode(400, ApiResponse<UserFormResponseDto>.BadRequest(
+                    "هیچ موردی برای به‌روزرسانی ارسال نشده است",
+                    errorCode: ErrorCodes.ValidationFailed));
+            }
+
             var invalid = InvalidModelStateResponse<UserFormResponseDto>();
             if (invalid != null)
             {

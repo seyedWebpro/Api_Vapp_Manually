@@ -56,8 +56,8 @@ services:
       - PaymentCallback__SuccessUrl=${PUBLIC_FRONTEND_URL:-http://185.116.162.233}/payment/success
       - PaymentCallback__FailureUrl=${PUBLIC_FRONTEND_URL:-http://185.116.162.233}/payment/failed
       - Frontend__PublicBaseUrl=${PUBLIC_FRONTEND_URL:-http://185.116.162.233}
-      - Sms__ApiKey=${Sms__ApiKey:-}
-      - Sms__SenderNumber=${Sms__SenderNumber:-}
+      # Sms__ApiKey / Sms__SenderNumber: only set in docker/.env when overriding appsettings.json.
+      # Do NOT pass empty defaults — ASP.NET Core env vars override appsettings and break OTP/SMS.
       - ConnectionStrings__DockerConnection=Server=sqlserver;Database=DbVapp;User Id=sa;Password=${SA_PASSWORD:-Vapp@Secure2025!};TrustServerCertificate=True;Encrypt=False;MultipleActiveResultSets=true;Max Pool Size=100;Min Pool Size=5;Connection Timeout=30;Pooling=true
       - ConnectionStrings__LocalConnection=Server=sqlserver;Database=DbVapp;User Id=sa;Password=${SA_PASSWORD:-Vapp@Secure2025!};TrustServerCertificate=True;Encrypt=False;MultipleActiveResultSets=true;Max Pool Size=100;Min Pool Size=5;Connection Timeout=30;Pooling=true
       - SA_PASSWORD=${SA_PASSWORD:-Vapp@Secure2025!}

@@ -1,4 +1,5 @@
 using Api_Vapp.DTOs.Common;
+using Api_Vapp.DTOs.File;
 using Api_Vapp.DTOs.UserForm;
 using Api_Vapp.Utilities;
 using Xunit;
@@ -132,14 +133,11 @@ public class UserFormServiceTests : IAsyncLifetime
         {
             Fields =
             [
-                new UserFormFieldDto
+                new UpdateUserFormFieldDto
                 {
                     FieldKey = "mobile",
-                    FieldType = "mobile",
                     Label = "موبایل ویرایش‌شده",
-                    Placeholder = "0912...",
-                    DisplayOrder = 2,
-                    IsActive = true
+                    Placeholder = "0912..."
                 }
             ]
         });
@@ -147,6 +145,8 @@ public class UserFormServiceTests : IAsyncLifetime
         Assert.True(result.Success);
         Assert.Equal(2, result.Data!.Fields.Count);
         Assert.Contains(result.Data.Fields, f => f.FieldKey == "mobile" && f.Label == "موبایل ویرایش‌شده");
+        Assert.Contains(result.Data.Fields, f => f.FieldKey == "mobile" && f.FieldType == "mobile");
+        Assert.Contains(result.Data.Fields, f => f.FieldKey == "mobile" && f.DisplayOrder == 2);
         Assert.Contains(result.Data.Fields, f => f.FieldKey == "full_name");
         AssertNoServerError(result);
     }
@@ -171,7 +171,29 @@ public class UserFormServiceTests : IAsyncLifetime
         var result = await _ctx.Service.UpdateAsync(formId, _ctx.OwnerUserId, new UpdateUserFormDto
         {
             Title = "عنوان جدید",
-            Fields = UserFormTestContext.SampleFields()
+            Fields =
+            [
+                new UpdateUserFormFieldDto
+                {
+                    FieldKey = "full_name",
+                    FieldType = "text",
+                    Label = "نام و نام خانوادگی",
+                    Placeholder = "مثلا علی رضایی",
+                    DisplayOrder = 1,
+                    IsActive = true,
+                    IsRequired = true
+                },
+                new UpdateUserFormFieldDto
+                {
+                    FieldKey = "mobile",
+                    FieldType = "mobile",
+                    Label = "شماره موبایل",
+                    Placeholder = "مثلا 0912...",
+                    DisplayOrder = 2,
+                    IsActive = true,
+                    IsRequired = true
+                }
+            ]
         });
 
         Assert.True(result.Success);
@@ -355,6 +377,213 @@ public class UserFormServiceTests : IAsyncLifetime
         Assert.True(result.Success);
         Assert.Equal(200, result.StatusCode);
         Assert.False(result.Data!.IsActive);
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task Delete_PublishedForm_CleansEntityFiles_Returns200()
+    {
+        var formId = await _ctx.CreatePublishedFormAsync();
+
+        var result = await _ctx.Service.DeleteAsync(formId, _ctx.OwnerUserId);
+
+        Assert.True(result.Success);
+        Assert.Equal(200, result.StatusCode);
+        Assert.Contains(
+            _ctx.FileUploadService.DeletedEntities,
+            e => e.EntityType == FileUploadConstants.EntityType_UserForm && e.EntityId == formId);
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task Delete_AlreadyDeleted_Returns404()
+    {
+        var formId = await _ctx.CreateDraftAsync();
+        await _ctx.Service.DeleteAsync(formId, _ctx.OwnerUserId);
+
+        var result = await _ctx.Service.DeleteAsync(formId, _ctx.OwnerUserId);
+
+        Assert.False(result.Success);
+        Assert.Equal(404, result.StatusCode);
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task Update_MainInfo_OnPublishedForm_Returns200()
+    {
+        var formId = await _ctx.CreatePublishedFormAsync("job-main-info");
+
+        var result = await _ctx.Service.UpdateAsync(formId, _ctx.OwnerUserId, new UpdateUserFormDto
+        {
+            Title = "درخواست استخدام و همکاری",
+            Description = "لطفا اطلاعات خود را کامل وارد کنید.",
+            Slug = "job-updated"
+        });
+
+        Assert.True(result.Success);
+        Assert.Equal(200, result.StatusCode);
+        Assert.Equal("درخواست استخدام و همکاری", result.Data!.Title);
+        Assert.Equal("job-updated", result.Data.Slug);
+        Assert.Equal("https://app.com/form/job-updated", result.Data.PublicUrl);
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task Update_SetIsActiveFalse_OnPublishedForm_Returns200()
+    {
+        var formId = await _ctx.CreatePublishedFormAsync();
+
+        var result = await _ctx.Service.UpdateAsync(formId, _ctx.OwnerUserId, new UpdateUserFormDto
+        {
+            IsActive = false
+        });
+
+        Assert.True(result.Success);
+        Assert.Equal(200, result.StatusCode);
+        Assert.False(result.Data!.IsActive);
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task Update_SetIsActive_OnDraft_Returns400()
+    {
+        var formId = await _ctx.CreateDraftAsync();
+
+        var result = await _ctx.Service.UpdateAsync(formId, _ctx.OwnerUserId, new UpdateUserFormDto
+        {
+            IsActive = false
+        });
+
+        Assert.False(result.Success);
+        Assert.Equal(400, result.StatusCode);
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task Update_SaveToPhonebook_WithValidSettings_Returns200()
+    {
+        var formId = await _ctx.CreatePublishedFormAsync();
+
+        var result = await _ctx.Service.UpdateAsync(formId, _ctx.OwnerUserId, new UpdateUserFormDto
+        {
+            SaveToPhonebook = true,
+            NotebookIds = [_ctx.NotebookId]
+        });
+
+        Assert.True(result.Success);
+        Assert.Equal(200, result.StatusCode);
+        Assert.True(result.Data!.SaveToPhonebook);
+        Assert.Contains(_ctx.NotebookId, result.Data.NotebookIds);
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task Update_SaveToPhonebook_WithoutMobileField_Returns400()
+    {
+        var formId = await _ctx.CreateDraftAsync(d =>
+        {
+            d.Fields = UserFormTestContext.SampleFields(includeMobile: false);
+        });
+        await _ctx.Service.PublishAsync(formId, _ctx.OwnerUserId, new PublishUserFormDto { Slug = "no-mobile" });
+
+        var result = await _ctx.Service.UpdateAsync(formId, _ctx.OwnerUserId, new UpdateUserFormDto
+        {
+            SaveToPhonebook = true,
+            NotebookIds = [_ctx.NotebookId]
+        });
+
+        Assert.False(result.Success);
+        Assert.Equal(400, result.StatusCode);
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task Update_PartialField_OnlyIsRequiredChanges_PreservesOtherValues()
+    {
+        var formId = await _ctx.CreateDraftAsync();
+
+        var result = await _ctx.Service.UpdateAsync(formId, _ctx.OwnerUserId, new UpdateUserFormDto
+        {
+            Fields =
+            [
+                new UpdateUserFormFieldDto
+                {
+                    FieldKey = "full_name",
+                    IsRequired = false
+                }
+            ]
+        });
+
+        Assert.True(result.Success);
+        var field = result.Data!.Fields.Single(f => f.FieldKey == "full_name");
+        Assert.False(field.IsRequired);
+        Assert.Equal("نام و نام خانوادگی", field.Label);
+        Assert.Equal(1, field.DisplayOrder);
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task Update_NewField_WithoutType_Returns400()
+    {
+        var formId = await _ctx.CreateDraftAsync();
+
+        var result = await _ctx.Service.UpdateAsync(formId, _ctx.OwnerUserId, new UpdateUserFormDto
+        {
+            Fields =
+            [
+                new UpdateUserFormFieldDto
+                {
+                    FieldKey = "email",
+                    Label = "ایمیل"
+                }
+            ]
+        });
+
+        Assert.False(result.Success);
+        Assert.Equal(400, result.StatusCode);
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task Update_EmptyTitle_Returns400()
+    {
+        var formId = await _ctx.CreateDraftAsync();
+
+        var result = await _ctx.Service.UpdateAsync(formId, _ctx.OwnerUserId, new UpdateUserFormDto
+        {
+            Title = "   "
+        });
+
+        Assert.False(result.Success);
+        Assert.Equal(400, result.StatusCode);
+        Assert.Equal(ErrorCodes.ValidationFailed, result.ErrorCode);
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task Update_NullDto_Returns400()
+    {
+        var formId = await _ctx.CreateDraftAsync();
+
+        var result = await _ctx.Service.UpdateAsync(formId, _ctx.OwnerUserId, null!);
+
+        Assert.False(result.Success);
+        Assert.Equal(400, result.StatusCode);
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task Publish_AlreadyPublished_Returns200WithoutRepublish()
+    {
+        var formId = await _ctx.CreatePublishedFormAsync("already-live");
+        var firstPublishedAt = (await _ctx.Service.GetByIdAsync(formId, _ctx.OwnerUserId)).Data!.PublishedAt;
+
+        var result = await _ctx.Service.PublishAsync(formId, _ctx.OwnerUserId, null);
+
+        Assert.True(result.Success);
+        Assert.Equal(200, result.StatusCode);
+        Assert.Equal("Published", result.Data!.Status);
+        Assert.Equal(firstPublishedAt, result.Data.PublishedAt);
         AssertNoServerError(result);
     }
 

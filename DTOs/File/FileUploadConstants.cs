@@ -28,6 +28,11 @@ namespace Api_Vapp.DTOs.File
         /// </summary>
         public const string EntityType_Ticket = "ticket";
 
+        /// <summary>
+        /// فرم ساخته‌شده توسط کاربر (فرم‌ساز)
+        /// </summary>
+        public const string EntityType_UserForm = "userform";
+
         #endregion
 
         #region SubFolders (پوشه‌های فرعی)

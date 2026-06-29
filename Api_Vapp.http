@@ -4,3 +4,44 @@ GET {{Api_Vapp_HostAddress}}/weatherforecast/
 Accept: application/json
 
 ###
+
+# --- LuckyWheel (گردونه شانس) — نیاز به JWT یا Development:DisableAuth=true ---
+
+### ایجاد پیش‌نویس (مرحله ۱)
+POST {{Api_Vapp_HostAddress}}/api/LuckyWheel
+Content-Type: application/json
+
+{
+  "title": "گردونه نوروز",
+  "description": "شانس خود را امتحان کنید",
+  "saveToPhonebook": false,
+  "notebookIds": []
+}
+
+### به‌روزرسانی جوایز (مرحله ۲) — wheelId را جایگزین کنید
+POST {{Api_Vapp_HostAddress}}/api/LuckyWheel/1/update
+Content-Type: application/json
+
+{
+  "items": [
+    { "name": "۱۰٪ تخفیف", "probability": 30, "displayOrder": 1 },
+    { "name": "۲۰٪ تخفیف", "probability": 30, "displayOrder": 2 },
+    { "name": "پوچ", "probability": 40, "displayOrder": 3 }
+  ]
+}
+
+### جزئیات گردونه (Preview)
+GET {{Api_Vapp_HostAddress}}/api/LuckyWheel/1
+
+### انتشار و دریافت لینک
+POST {{Api_Vapp_HostAddress}}/api/LuckyWheel/1/publish
+Content-Type: application/json
+
+{
+  "slug": "norooz-wheel"
+}
+
+### لیست گردونه‌ها
+GET {{Api_Vapp_HostAddress}}/api/LuckyWheel?pageNumber=1&pageSize=10
+
+###

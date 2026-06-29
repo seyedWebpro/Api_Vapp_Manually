@@ -1,6 +1,5 @@
 using Api_Vapp.Data;
-using Api_Vapp.DTOs.File;
-using Api_Vapp.DTOs.UserForm;
+using Api_Vapp.DTOs.LuckyWheel;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
 using Api_Vapp.Repositories;
@@ -11,9 +10,9 @@ using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
-namespace Api_Vapp.Tests.UserForm;
+namespace Api_Vapp.Tests.LuckyWheel;
 
-internal sealed class UserFormTestContext : IDisposable
+internal sealed class LuckyWheelTestContext : IDisposable
 {
     private static readonly SemaphoreSlim MigrationLock = new(1, 1);
     private static bool _migrationsApplied;
@@ -21,14 +20,12 @@ internal sealed class UserFormTestContext : IDisposable
     private readonly Api_Context _context;
     private IDbContextTransaction? _transaction;
 
-    private UserFormTestContext(Api_Context context)
+    private LuckyWheelTestContext(Api_Context context)
     {
         _context = context;
     }
 
-    public IUserFormService Service { get; private set; } = null!;
-
-    public FakeFileUploadService FileUploadService { get; private set; } = null!;
+    public ILuckyWheelService Service { get; private set; } = null!;
 
     public int OwnerUserId { get; private set; }
 
@@ -36,11 +33,11 @@ internal sealed class UserFormTestContext : IDisposable
 
     public int NotebookId { get; private set; }
 
-    public static async Task<UserFormTestContext> CreateAsync()
+    public static async Task<LuckyWheelTestContext> CreateAsync()
     {
         var connectionString =
             Environment.GetEnvironmentVariable("VAPP_TEST_CONNECTION")
-            ?? "Server=localhost,1436;Database=DbVapp_UserFormTests;User Id=sa;Password=Vapp@Secure2025!;TrustServerCertificate=True;Encrypt=False;MultipleActiveResultSets=true";
+            ?? "Server=localhost,1436;Database=DbVapp_LuckyWheelTests;User Id=sa;Password=Vapp@Secure2025!;TrustServerCertificate=True;Encrypt=False;MultipleActiveResultSets=true";
 
         var options = new DbContextOptionsBuilder<Api_Context>()
             .UseSqlServer(connectionString)
@@ -62,7 +59,7 @@ internal sealed class UserFormTestContext : IDisposable
             MigrationLock.Release();
         }
 
-        var testContext = new UserFormTestContext(context);
+        var testContext = new LuckyWheelTestContext(context);
         await testContext.InitializeAsync();
         return testContext;
     }
@@ -82,54 +79,29 @@ internal sealed class UserFormTestContext : IDisposable
         }
     }
 
-    public static List<UserFormFieldDto> SampleFields(bool includeMobile = true)
+    public static List<LuckyWheelItemDto> SampleItems(decimal thirdProbability = 40m)
     {
-        var fields = new List<UserFormFieldDto>
-        {
-            new()
-            {
-                FieldKey = "full_name",
-                FieldType = "text",
-                Label = "نام و نام خانوادگی",
-                Placeholder = "مثلا علی رضایی",
-                DisplayOrder = 1,
-                IsActive = true,
-                IsRequired = true
-            }
-        };
-
-        if (includeMobile)
-        {
-            fields.Add(new UserFormFieldDto
-            {
-                FieldKey = "mobile",
-                FieldType = "mobile",
-                Label = "شماره موبایل",
-                Placeholder = "مثلا 0912...",
-                DisplayOrder = 2,
-                IsActive = true,
-                IsRequired = true
-            });
-        }
-
-        return fields;
+        return
+        [
+            new LuckyWheelItemDto { Name = "۱۰٪ تخفیف", Probability = 30, DisplayOrder = 1 },
+            new LuckyWheelItemDto { Name = "۲۰٪ تخفیف", Probability = 30, DisplayOrder = 2 },
+            new LuckyWheelItemDto { Name = "پوچ", Probability = thirdProbability, DisplayOrder = 3 }
+        ];
     }
 
-    public CreateUserFormDto BuildCreateDto(Action<CreateUserFormDto>? configure = null)
+    public CreateLuckyWheelDto BuildCreateDto(Action<CreateLuckyWheelDto>? configure = null)
     {
-        var dto = new CreateUserFormDto
+        var dto = new CreateLuckyWheelDto
         {
-            TemplateKey = "recruitment",
-            Title = "درخواست استخدام",
-            Description = "لطفا اطلاعات را کامل وارد کنید",
-            Fields = SampleFields()
+            Title = "گردونه نوروز",
+            Description = "شانس خود را امتحان کنید"
         };
 
         configure?.Invoke(dto);
         return dto;
     }
 
-    public async Task<int> CreateDraftAsync(Action<CreateUserFormDto>? configure = null)
+    public async Task<int> CreateDraftAsync(Action<CreateLuckyWheelDto>? configure = null)
     {
         var result = await Service.CreateDraftAsync(OwnerUserId, BuildCreateDto(configure));
         if (!result.Success || result.StatusCode != 201 || result.Data == null)
@@ -140,16 +112,20 @@ internal sealed class UserFormTestContext : IDisposable
         return result.Data.Id;
     }
 
-    public async Task<int> CreatePublishedFormAsync(string? slug = "job-alpha")
+    public async Task<int> CreateWheelWithItemsAsync()
     {
-        var formId = await CreateDraftAsync();
-        var publish = await Service.PublishAsync(formId, OwnerUserId, new PublishUserFormDto { Slug = slug });
-        if (!publish.Success)
+        var wheelId = await CreateDraftAsync();
+        var update = await Service.UpdateAsync(wheelId, OwnerUserId, new UpdateLuckyWheelDto
         {
-            throw new InvalidOperationException($"Expected publish success, got {publish.StatusCode}: {publish.Message}");
+            Items = SampleItems()
+        });
+
+        if (!update.Success)
+        {
+            throw new InvalidOperationException($"Expected items update success, got {update.StatusCode}: {update.Message}");
         }
 
-        return formId;
+        return wheelId;
     }
 
     public void Dispose()
@@ -160,25 +136,23 @@ internal sealed class UserFormTestContext : IDisposable
 
     private async Task InitializeAsync()
     {
-        FileUploadService = new FakeFileUploadService();
-        Service = CreateService(_context, FileUploadService);
+        Service = CreateService(_context);
         await SeedAsync();
     }
 
-    private static IUserFormService CreateService(Api_Context context, FakeFileUploadService fileUploadService)
+    private static ILuckyWheelService CreateService(Api_Context context)
     {
-        var repository = new UserFormRepository(context);
-        var options = Options.Create(new FormBuilderOptions
+        var repository = new LuckyWheelRepository(context);
+        var options = Options.Create(new LuckyWheelOptions
         {
-            PublicBaseUrl = "https://app.com/form"
+            PublicBaseUrl = "https://app.com/wheel"
         });
 
-        return new UserFormService(
+        return new LuckyWheelService(
             repository,
             context,
             options,
-            fileUploadService,
-            NullLogger<UserFormService>.Instance);
+            NullLogger<LuckyWheelService>.Instance);
     }
 
     private async Task SeedAsync()
@@ -187,7 +161,7 @@ internal sealed class UserFormTestContext : IDisposable
 
         var owner = new User
         {
-            PhoneNumber = $"0913{suffix[..7]}",
+            PhoneNumber = $"0915{suffix[..7]}",
             PasswordHash = "hash-owner",
             FullName = "کاربر اصلی",
             IsActive = true,
@@ -197,7 +171,7 @@ internal sealed class UserFormTestContext : IDisposable
 
         var other = new User
         {
-            PhoneNumber = $"0914{suffix[..7]}",
+            PhoneNumber = $"0916{suffix[..7]}",
             PasswordHash = "hash-other",
             FullName = "کاربر دیگر",
             IsActive = true,
