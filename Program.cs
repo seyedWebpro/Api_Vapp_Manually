@@ -518,11 +518,14 @@ if (app.Environment.IsProduction() || app.Environment.EnvironmentName == "Docker
         logger.LogInformation("Pending migrations: {PendingCount}", pendingMigrations.Count);
         context.Database.Migrate();
         logger.LogInformation("Migration completed successfully.");
+
+        await DatabaseSeeder.SeedAsync(context, logger);
+        logger.LogInformation("Database seed completed successfully.");
     }
     catch (Exception ex)
     {
         var logger = services.GetRequiredService<ILogger<Program>>();
-        logger.LogError(ex, "An error occurred while migrating the database.");
+        logger.LogError(ex, "An error occurred while migrating or seeding the database.");
     }
 }
 
