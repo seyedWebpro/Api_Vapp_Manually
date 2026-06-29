@@ -42,6 +42,8 @@ namespace Api_Vapp.Data
         public DbSet<SubscriptionFeature> SubscriptionFeatures { get; set; }
         public DbSet<SubscriptionPlanFeature> SubscriptionPlanFeatures { get; set; }
         public DbSet<UserSubscription> UserSubscriptions { get; set; }
+        public DbSet<SubscriptionDiscountCode> SubscriptionDiscountCodes { get; set; }
+        public DbSet<SubscriptionDiscountUsage> SubscriptionDiscountUsages { get; set; }
         public DbSet<SupportTicket> SupportTickets { get; set; }
         public DbSet<TicketMessage> TicketMessages { get; set; }
         public DbSet<EducationalVideo> EducationalVideos { get; set; }
@@ -1061,8 +1063,56 @@ namespace Api_Vapp.Data
                 entity.Property(us => us.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
                 entity.HasOne(us => us.User).WithMany().HasForeignKey(us => us.UserId).OnDelete(DeleteBehavior.NoAction);
                 entity.HasOne(us => us.Plan).WithMany(p => p.UserSubscriptions).HasForeignKey(us => us.SubscriptionPlanId).OnDelete(DeleteBehavior.NoAction);
+                entity.HasOne(us => us.SourcePayment).WithMany().HasForeignKey(us => us.SourcePaymentId).OnDelete(DeleteBehavior.NoAction);
                 entity.HasIndex(us => us.UserId);
+                entity.HasIndex(us => us.SourcePaymentId);
                 entity.HasIndex(us => us.Status);
+            });
+
+            modelBuilder.Entity<SubscriptionDiscountCode>(entity =>
+            {
+                entity.HasKey(d => d.Id);
+                entity.Property(d => d.Id).ValueGeneratedOnAdd();
+                entity.Property(d => d.Code).IsRequired().HasMaxLength(50);
+                entity.Property(d => d.Title).HasMaxLength(200);
+                entity.Property(d => d.DiscountType).IsRequired().HasMaxLength(20);
+                entity.Property(d => d.Value).HasPrecision(18, 2);
+                entity.Property(d => d.MaxDiscountAmount).HasPrecision(18, 2);
+                entity.Property(d => d.MinOrderAmount).HasPrecision(18, 2);
+                entity.Property(d => d.IsActive).HasDefaultValue(true);
+                entity.Property(d => d.IsDeleted).HasDefaultValue(false);
+                entity.Property(d => d.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+                entity.HasIndex(d => d.Code).IsUnique();
+                entity.HasIndex(d => d.IsActive);
+                entity.HasOne(d => d.SubscriptionPlan)
+                    .WithMany()
+                    .HasForeignKey(d => d.SubscriptionPlanId)
+                    .OnDelete(DeleteBehavior.NoAction);
+            });
+
+            modelBuilder.Entity<SubscriptionDiscountUsage>(entity =>
+            {
+                entity.HasKey(u => u.Id);
+                entity.Property(u => u.Id).ValueGeneratedOnAdd();
+                entity.Property(u => u.DiscountAmount).HasPrecision(18, 2);
+                entity.Property(u => u.UsedAt).HasDefaultValueSql("GETUTCDATE()");
+                entity.HasIndex(u => new { u.SubscriptionDiscountCodeId, u.UserId });
+                entity.HasOne(u => u.DiscountCode)
+                    .WithMany(d => d.Usages)
+                    .HasForeignKey(u => u.SubscriptionDiscountCodeId)
+                    .OnDelete(DeleteBehavior.NoAction);
+                entity.HasOne(u => u.User)
+                    .WithMany()
+                    .HasForeignKey(u => u.UserId)
+                    .OnDelete(DeleteBehavior.NoAction);
+                entity.HasOne(u => u.Payment)
+                    .WithMany()
+                    .HasForeignKey(u => u.PaymentId)
+                    .OnDelete(DeleteBehavior.NoAction);
+                entity.HasOne(u => u.UserSubscription)
+                    .WithMany()
+                    .HasForeignKey(u => u.UserSubscriptionId)
+                    .OnDelete(DeleteBehavior.NoAction);
             });
 
             // تنظیمات SupportTicket

@@ -45,3 +45,38 @@ Content-Type: application/json
 GET {{Api_Vapp_HostAddress}}/api/LuckyWheel?pageNumber=1&pageSize=10
 
 ###
+
+# --- UserSubscription (اشتراک) — نیاز به JWT یا Development:DisableAuth=true ---
+# ترتیب تست: ۱) catalog  →  planId پلن Plus/Gold را بردار  →  ۲) preview  →  ۳) purchase
+
+### ۱) کاتالوگ — اشتراک فعلی + لیست پلن‌ها
+GET {{Api_Vapp_HostAddress}}/api/UserSubscription/catalog
+Accept: application/json
+
+### ۲) پیش‌نمایش checkout (بدون کد تخفیف) — planId را از catalog جایگزین کنید
+POST {{Api_Vapp_HostAddress}}/api/UserSubscription/checkout/preview
+Content-Type: application/json
+
+{
+  "planId": 2
+}
+
+### ۲-ب) پیش‌نمایش با کد تخفیف (اختیاری)
+POST {{Api_Vapp_HostAddress}}/api/UserSubscription/checkout/preview
+Content-Type: application/json
+
+{
+  "planId": 2,
+  "discountCode": "YOUR-CODE"
+}
+
+### ۳) شروع خرید — درگاه Behpardakht (شبیه‌سازی شده، redirectUrl برمی‌گردد)
+POST {{Api_Vapp_HostAddress}}/api/UserSubscription/purchase
+Content-Type: application/json
+
+{
+  "planId": 2,
+  "gateway": "Behpardakht"
+}
+
+###

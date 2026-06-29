@@ -1,3 +1,4 @@
+using Api_Vapp.Constants;
 using Api_Vapp.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -24,6 +25,8 @@ namespace Api_Vapp.Data
 
             var adminUser = await EnsureDefaultAdminUserAsync(context, logger);
             await EnsureAdminUserRoleAsync(context, adminUser, adminRole, logger);
+            await SeedSubscriptionFeaturesAsync(context, logger);
+            await SeedSubscriptionPlansAsync(context, logger);
         }
 
         private static async Task<IReadOnlyDictionary<string, Role>> SeedDefaultRolesAsync(
@@ -179,6 +182,126 @@ namespace Api_Vapp.Data
             logger.LogInformation(
                 "Default admin user {PhoneNumber} assigned Admin role.",
                 DefaultAdminPhoneNumber);
+        }
+
+        private static async Task SeedSubscriptionFeaturesAsync(Api_Context context, ILogger logger)
+        {
+            var existingByCode = await context.SubscriptionFeatures
+                .Where(f => !f.IsDeleted)
+                .ToDictionaryAsync(f => f.Code, StringComparer.OrdinalIgnoreCase);
+
+            foreach (var definition in SubscriptionFeatureCatalog.All)
+            {
+                if (existingByCode.TryGetValue(definition.Code, out var feature))
+                {
+                    if (SubscriptionFeatureCodes.IsKnown(feature.Code))
+                    {
+                        feature.Name = definition.Name;
+                        feature.Description = definition.Description;
+                        feature.SortOrder = definition.SortOrder;
+                        feature.UpdatedAt = DateTime.UtcNow;
+                    }
+
+                    continue;
+                }
+
+                var softDeleted = await context.SubscriptionFeatures
+                    .FirstOrDefaultAsync(f => f.Code == definition.Code);
+
+                if (softDeleted != null)
+                {
+                    softDeleted.IsDeleted = false;
+                    softDeleted.IsActive = true;
+                    softDeleted.Name = definition.Name;
+                    softDeleted.Description = definition.Description;
+                    softDeleted.SortOrder = definition.SortOrder;
+                    softDeleted.UpdatedAt = DateTime.UtcNow;
+                    existingByCode[definition.Code] = softDeleted;
+                    continue;
+                }
+
+                context.SubscriptionFeatures.Add(new SubscriptionFeature
+                {
+                    Code = definition.Code,
+                    Name = definition.Name,
+                    Description = definition.Description,
+                    SortOrder = definition.SortOrder,
+                    IsActive = true,
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+
+            await context.SaveChangesAsync();
+            logger.LogInformation("Subscription features seeded.");
+        }
+
+        private static async Task SeedSubscriptionPlansAsync(Api_Context context, ILogger logger)
+        {
+            var featuresByCode = await context.SubscriptionFeatures
+                .Where(f => f.IsActive && !f.IsDeleted)
+                .ToDictionaryAsync(f => f.Code, StringComparer.OrdinalIgnoreCase);
+
+            foreach (var planDefinition in SubscriptionPlanCatalog.DefaultPlans)
+            {
+                var plan = await context.SubscriptionPlans
+                    .Include(p => p.PlanFeatures)
+                    .FirstOrDefaultAsync(p => p.TierCode == planDefinition.TierCode && !p.IsDeleted);
+
+                if (plan == null)
+                {
+                    plan = new SubscriptionPlan
+                    {
+                        Name = planDefinition.Name,
+                        TierCode = planDefinition.TierCode,
+                        Description = planDefinition.Description,
+                        Price = planDefinition.Price,
+                        SortOrder = planDefinition.SortOrder,
+                        DurationDays = 30,
+                        IsActive = true,
+                        CreatedAt = DateTime.UtcNow
+                    };
+
+                    foreach (var featureCode in planDefinition.FeatureCodes)
+                    {
+                        if (!featuresByCode.TryGetValue(featureCode, out var feature))
+                            continue;
+
+                        plan.PlanFeatures.Add(new SubscriptionPlanFeature { Feature = feature });
+                    }
+
+                    SyncLegacyPlanFlags(plan, planDefinition.FeatureCodes);
+                    context.SubscriptionPlans.Add(plan);
+                    continue;
+                }
+
+                if (plan.PlanFeatures.Count == 0)
+                {
+                    foreach (var featureCode in planDefinition.FeatureCodes)
+                    {
+                        if (!featuresByCode.TryGetValue(featureCode, out var feature))
+                            continue;
+
+                        plan.PlanFeatures.Add(new SubscriptionPlanFeature
+                        {
+                            SubscriptionPlanId = plan.Id,
+                            SubscriptionFeatureId = feature.Id
+                        });
+                    }
+
+                    SyncLegacyPlanFlags(plan, planDefinition.FeatureCodes);
+                    plan.UpdatedAt = DateTime.UtcNow;
+                }
+            }
+
+            await context.SaveChangesAsync();
+            logger.LogInformation("Subscription plans seeded.");
+        }
+
+        private static void SyncLegacyPlanFlags(SubscriptionPlan plan, IEnumerable<string> featureCodes)
+        {
+            var codes = featureCodes.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            plan.FreeQuickSendEnabled = codes.Contains(SubscriptionFeatureCodes.FreeQuickSend);
+            plan.BusinessCardEnabled = codes.Contains(SubscriptionFeatureCodes.BusinessCard);
         }
 
         private sealed record DefaultRoleSeed(string Name, string DisplayName, string Description);

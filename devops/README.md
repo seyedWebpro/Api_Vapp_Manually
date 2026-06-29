@@ -22,7 +22,15 @@ devops/
 
 ## Mac → سرور
 
-راهنمای کامل: **`MAC-SERVER.md`** (SSH پورت 3031، deploy API از Mac)
+| سند | موضوع |
+|-----|--------|
+| **`MAC-QUICK-DEPLOY.md`** | چه تغییری → چه دستور (سریع) |
+| **`MAC-SERVER.md`** | SSH پورت 3031، تنظیم اولیه |
+
+```bash
+bash devops/scripts/deploy-from-mac.sh api      # بکند
+bash devops/scripts/deploy-from-mac.sh admin    # پنل ادمین
+```
 
 ## ترتیب معمول
 

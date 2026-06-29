@@ -1,6 +1,9 @@
+using Api_Vapp.Constants;
 using Api_Vapp.Data;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.DTOs.Payment;
+using Api_Vapp.DTOs.Subscription;
+using Api_Vapp.Exceptions;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Utilities;
 using Api_Vapp.Models;
@@ -23,6 +26,8 @@ namespace Api_Vapp.Services
         private readonly IPaymentRepository _paymentRepository;
         private readonly IUserRepository _userRepository;
         private readonly IWalletService _walletService;
+        private readonly ISubscriptionActivationService _subscriptionActivationService;
+        private readonly ISubscriptionEntitlementService _subscriptionEntitlementService;
         private readonly IConfiguration _configuration;
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly ILogger<PaymentService> _logger;
@@ -41,6 +46,8 @@ namespace Api_Vapp.Services
             IPaymentRepository paymentRepository,
             IUserRepository userRepository,
             IWalletService walletService,
+            ISubscriptionActivationService subscriptionActivationService,
+            ISubscriptionEntitlementService subscriptionEntitlementService,
             IConfiguration configuration,
             IHttpClientFactory httpClientFactory,
             ILogger<PaymentService> logger)
@@ -49,6 +56,8 @@ namespace Api_Vapp.Services
             _paymentRepository = paymentRepository;
             _userRepository = userRepository;
             _walletService = walletService;
+            _subscriptionActivationService = subscriptionActivationService;
+            _subscriptionEntitlementService = subscriptionEntitlementService;
             _configuration = configuration;
             _httpClientFactory = httpClientFactory;
             _logger = logger;
@@ -250,6 +259,22 @@ namespace Api_Vapp.Services
                                 null,
                                 payment.ReferenceNumber);
                         }
+                        else if (payment.PaymentType == PaymentTypes.Subscription)
+                        {
+                            try
+                            {
+                                await _subscriptionActivationService.FulfillVerifiedPaymentAsync(payment);
+                            }
+                            catch (AppException)
+                            {
+                                throw;
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogError(ex, "Subscription fulfillment failed for payment {PaymentId}", payment.Id);
+                                throw AppException.Internal(ErrorCodes.PaymentFailed, SubscriptionMessages.ActivationFailed);
+                            }
+                        }
 
                         await transaction.CommitAsync();
 
@@ -257,11 +282,34 @@ namespace Api_Vapp.Services
                         var successResult = new PaymentResultDto
                         {
                             Success = true,
-                            Message = "پرداخت با موفقیت انجام شد",
+                            Message = payment.PaymentType == PaymentTypes.Subscription
+                                ? "اشتراک با موفقیت فعال شد"
+                                : "پرداخت با موفقیت انجام شد",
                             Payment = MapToPaymentDto(payment),
                             NewBalance = user?.WalletBalance,
                             FormattedNewBalance = user != null ? $"{user.WalletBalance:N0} تومان" : null
                         };
+
+                        if (payment.PaymentType == PaymentTypes.Subscription)
+                        {
+                            var active = await _subscriptionEntitlementService.GetActiveSubscriptionAsync(payment.UserId);
+                            if (active?.Plan != null)
+                            {
+                                var remainingDays = Math.Max(0, (int)Math.Ceiling((active.ExpiresAt - DateTime.UtcNow).TotalDays));
+                                successResult.ActivatedSubscription = new DTOs.Subscription.CurrentSubscriptionDto
+                                {
+                                    UserSubscriptionId = active.Id,
+                                    PlanId = active.Plan.Id,
+                                    PlanName = active.Plan.Name,
+                                    TierCode = active.Plan.TierCode,
+                                    StartDate = active.StartDate,
+                                    ExpiresAt = active.ExpiresAt,
+                                    RemainingDays = remainingDays,
+                                    IsActive = true,
+                                    IsFreePlan = false
+                                };
+                            }
+                        }
 
                         _logger.LogInformation("پرداخت {PaymentId} با موفقیت تأیید شد. مبلغ: {Amount}", payment.Id, payment.Amount);
 

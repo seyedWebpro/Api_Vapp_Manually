@@ -20,6 +20,22 @@
 
 
 ================================================================================
+  ★ Deploy از Mac — بر اساس نوع تغییر (سریع)
+================================================================================
+
+  راهنما: devops/MAC-QUICK-DEPLOY.md
+
+  cd ~/Documents/javad_project/vapp/Api_Vapp_Manually
+
+  bash devops/scripts/deploy-from-mac.sh api          # تغییر C# (~۳–۷ min)
+  bash devops/scripts/deploy-from-mac.sh api-restart # image آماده — فقط restart
+  bash devops/scripts/deploy-from-mac.sh admin       # تغییر پنل (~۲–۴ min)
+  bash devops/scripts/deploy-from-mac.sh admin-fast  # dist آماده — فقط upload
+  bash devops/scripts/deploy-from-mac.sh both        # API + Admin
+  bash devops/scripts/deploy-from-mac.sh health
+
+
+================================================================================
   ★ Mac → سرور (SSH پورت 3031 — نه 22)
 ================================================================================
 

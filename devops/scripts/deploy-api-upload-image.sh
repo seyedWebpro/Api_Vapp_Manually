@@ -32,7 +32,7 @@ echo "=== uploading $API_IMAGE to server (چند دقیقه طول می‌کشد
 docker save "$API_IMAGE" | gzip | ssh "$SERVER" 'gunzip | docker load'
 
 if [[ "$DEPLOY_AFTER_LOAD" == "1" ]]; then
-  ssh "$SERVER" "cd $REMOTE_API_DIR && git pull origin main && docker compose -f $COMPOSE_FILE --env-file $ENV_FILE up -d --force-recreate --no-build api"
+  ssh "$SERVER" "cd $REMOTE_API_DIR && (git pull origin main || echo 'WARN: git pull failed — continuing with uploaded image') && docker compose -f $COMPOSE_FILE --env-file $ENV_FILE up -d --force-recreate --no-build api"
   echo "=== health check on server ==="
   ssh "$SERVER" "bash $REMOTE_API_DIR/devops/scripts/health-check.sh" || true
 fi

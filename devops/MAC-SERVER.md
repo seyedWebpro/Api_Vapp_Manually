@@ -110,9 +110,12 @@ bash ~/Api_Vapp_Manually/vapp-iran-update.sh
 |--------|-----|--------|
 | 1. توسعه | Mac | کد + commit |
 | 2. Push | Mac | `git push origin main` |
-| 3. API deploy | Mac | `SERVER=vapp-prod bash devops/scripts/deploy-api-upload-image.sh` |
-| 4. Admin deploy | سرور | `bash vapp-iran-update.sh --front-only` |
-| 5. تأیید | سرور | `bash devops/scripts/health-check.sh` |
+| 3. Deploy | Mac | `bash devops/scripts/deploy-from-mac.sh api` یا `admin` — جدول کامل: **`MAC-QUICK-DEPLOY.md`** |
+| 4. تأیید | Mac | `bash devops/scripts/deploy-from-mac.sh health` |
+
+Deploy قدیمی (همان اسکریپت‌های زیرین):
+- API: `SERVER=vapp-prod bash devops/scripts/deploy-api-upload-image.sh`
+- Admin روی سرور: `bash vapp-iran-update.sh --front-only`
 
 ---
 

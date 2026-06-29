@@ -394,6 +394,11 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.IReferralProgramService, Api_Vapp
 builder.Services.AddScoped<Api_Vapp.Interfaces.INotificationSettingsService, Api_Vapp.Services.NotificationSettingsService>();
 
 // ثبت سرویس‌های پنل ادمین
+builder.Services.AddScoped<Api_Vapp.Interfaces.ISubscriptionEntitlementService, Api_Vapp.Services.SubscriptionEntitlementService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.ISubscriptionDiscountService, Api_Vapp.Services.SubscriptionDiscountService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.ISubscriptionActivationService, Api_Vapp.Services.SubscriptionActivationService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.ISubscriptionPurchaseService, Api_Vapp.Services.SubscriptionPurchaseService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IUserSubscriptionService, Api_Vapp.Services.UserSubscriptionService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminSubscriptionPlanService, Api_Vapp.Services.Admin.AdminSubscriptionPlanService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminSubscriptionFeatureService, Api_Vapp.Services.Admin.AdminSubscriptionFeatureService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminUserSubscriptionService, Api_Vapp.Services.Admin.AdminUserSubscriptionService>();

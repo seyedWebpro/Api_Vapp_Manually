@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using Api_Vapp.Models;
 
 namespace Api_Vapp.DTOs.Admin
 {
@@ -17,6 +18,7 @@ namespace Api_Vapp.DTOs.Admin
         public string? Description { get; set; }
         public int SortOrder { get; set; }
         public bool IsActive { get; set; }
+        public bool IsSystemManaged { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
     }
@@ -38,8 +40,17 @@ namespace Api_Vapp.DTOs.Admin
         public bool IsActive { get; set; } = true;
     }
 
-    public class UpdateSubscriptionFeatureDto : CreateSubscriptionFeatureDto
+    public class UpdateSubscriptionFeatureDto
     {
+        [Required]
+        [MaxLength(200)]
+        public string Name { get; set; } = string.Empty;
+
+        [MaxLength(1000)]
+        public string? Description { get; set; }
+
+        public int SortOrder { get; set; }
+        public bool IsActive { get; set; } = true;
     }
 
     public class SubscriptionPlanResponseDto
@@ -80,8 +91,6 @@ namespace Api_Vapp.DTOs.Admin
         [Range(1, 3650)]
         public int DurationDays { get; set; } = 30;
 
-        public bool FreeQuickSendEnabled { get; set; }
-        public bool BusinessCardEnabled { get; set; }
         public List<int> FeatureIds { get; set; } = new();
         public int? MonthlySmsLimit { get; set; }
         public int SortOrder { get; set; }
@@ -116,5 +125,55 @@ namespace Api_Vapp.DTOs.Admin
         public int SubscriptionPlanId { get; set; }
 
         public DateTime? StartDate { get; set; }
+    }
+
+    public class SubscriptionDiscountCodeResponseDto
+    {
+        public int Id { get; set; }
+        public string Code { get; set; } = string.Empty;
+        public string? Title { get; set; }
+        public string DiscountType { get; set; } = string.Empty;
+        public decimal Value { get; set; }
+        public decimal? MaxDiscountAmount { get; set; }
+        public decimal? MinOrderAmount { get; set; }
+        public int? SubscriptionPlanId { get; set; }
+        public string? SubscriptionPlanName { get; set; }
+        public int? MaxTotalUses { get; set; }
+        public int UsedCount { get; set; }
+        public int? MaxUsesPerUser { get; set; }
+        public DateTime? ValidFrom { get; set; }
+        public DateTime? ValidUntil { get; set; }
+        public bool IsActive { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public DateTime? UpdatedAt { get; set; }
+    }
+
+    public class CreateSubscriptionDiscountCodeDto
+    {
+        [Required]
+        [MaxLength(50)]
+        public string Code { get; set; } = string.Empty;
+
+        [MaxLength(200)]
+        public string? Title { get; set; }
+
+        [Required]
+        public string DiscountType { get; set; } = SubscriptionDiscountTypes.Fixed;
+
+        [Range(0, double.MaxValue)]
+        public decimal Value { get; set; }
+
+        public decimal? MaxDiscountAmount { get; set; }
+        public decimal? MinOrderAmount { get; set; }
+        public int? SubscriptionPlanId { get; set; }
+        public int? MaxTotalUses { get; set; }
+        public int? MaxUsesPerUser { get; set; }
+        public DateTime? ValidFrom { get; set; }
+        public DateTime? ValidUntil { get; set; }
+        public bool IsActive { get; set; } = true;
+    }
+
+    public class UpdateSubscriptionDiscountCodeDto : CreateSubscriptionDiscountCodeDto
+    {
     }
 }

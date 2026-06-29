@@ -1,5 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 
+using Api_Vapp.DTOs.Subscription;
+
 namespace Api_Vapp.DTOs.Payment
 {
     #region Response DTOs
@@ -131,6 +133,11 @@ namespace Api_Vapp.DTOs.Payment
         /// موجودی فرمت شده
         /// </summary>
         public string? FormattedNewBalance { get; set; }
+
+        /// <summary>
+        /// اشتراک فعال‌شده (در خرید اشتراک)
+        /// </summary>
+        public CurrentSubscriptionDto? ActivatedSubscription { get; set; }
     }
 
     /// <summary>

@@ -61,8 +61,8 @@ namespace Api_Vapp.Services.Admin
                 Description = dto.Description?.Trim(),
                 Price = dto.Price,
                 DurationDays = dto.DurationDays,
-                FreeQuickSendEnabled = ResolveLegacyFlag(features, SubscriptionFeatureCodes.FreeQuickSend, dto.FreeQuickSendEnabled),
-                BusinessCardEnabled = ResolveLegacyFlag(features, SubscriptionFeatureCodes.BusinessCard, dto.BusinessCardEnabled),
+                FreeQuickSendEnabled = ResolveLegacyFlag(features, SubscriptionFeatureCodes.FreeQuickSend),
+                BusinessCardEnabled = ResolveLegacyFlag(features, SubscriptionFeatureCodes.BusinessCard),
                 MonthlySmsLimit = dto.MonthlySmsLimit,
                 SortOrder = dto.SortOrder,
                 IsActive = dto.IsActive,
@@ -110,8 +110,8 @@ namespace Api_Vapp.Services.Admin
             plan.Description = dto.Description?.Trim();
             plan.Price = dto.Price;
             plan.DurationDays = dto.DurationDays;
-            plan.FreeQuickSendEnabled = ResolveLegacyFlag(features, SubscriptionFeatureCodes.FreeQuickSend, dto.FreeQuickSendEnabled);
-            plan.BusinessCardEnabled = ResolveLegacyFlag(features, SubscriptionFeatureCodes.BusinessCard, dto.BusinessCardEnabled);
+            plan.FreeQuickSendEnabled = ResolveLegacyFlag(features, SubscriptionFeatureCodes.FreeQuickSend);
+            plan.BusinessCardEnabled = ResolveLegacyFlag(features, SubscriptionFeatureCodes.BusinessCard);
             plan.MonthlySmsLimit = dto.MonthlySmsLimit;
             plan.SortOrder = dto.SortOrder;
             plan.IsActive = dto.IsActive;
@@ -180,10 +180,9 @@ namespace Api_Vapp.Services.Admin
             return (features, null);
         }
 
-        private static bool ResolveLegacyFlag(IEnumerable<SubscriptionFeature> features, string code, bool fallback)
+        private static bool ResolveLegacyFlag(IEnumerable<SubscriptionFeature> features, string code)
         {
-            var hasFeature = features.Any(f => f.Code == code);
-            return hasFeature || (features.Count() == 0 && fallback);
+            return features.Any(f => f.Code == code);
         }
 
         private static SubscriptionPlanResponseDto MapPlan(SubscriptionPlan plan)

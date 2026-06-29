@@ -1,3 +1,4 @@
+using Api_Vapp.Constants;
 using Api_Vapp.Data;
 using Api_Vapp.DTOs.Admin;
 using Api_Vapp.DTOs.Common;
@@ -36,27 +37,9 @@ namespace Api_Vapp.Services.Admin
             return ApiResponse<SubscriptionFeatureResponseDto>.CreateSuccess(Map(feature));
         }
 
-        public async Task<ApiResponse<SubscriptionFeatureResponseDto>> CreateAsync(CreateSubscriptionFeatureDto dto)
-        {
-            var code = dto.Code.Trim().ToLowerInvariant();
-            var exists = await _context.SubscriptionFeatures.AnyAsync(f => f.Code == code && !f.IsDeleted);
-            if (exists)
-                return ApiResponse<SubscriptionFeatureResponseDto>.BadRequest("کد امکان تکراری است");
-
-            var feature = new SubscriptionFeature
-            {
-                Name = dto.Name.Trim(),
-                Code = code,
-                Description = dto.Description?.Trim(),
-                SortOrder = dto.SortOrder,
-                IsActive = dto.IsActive,
-                CreatedAt = DateTime.UtcNow
-            };
-
-            _context.SubscriptionFeatures.Add(feature);
-            await _context.SaveChangesAsync();
-            return ApiResponse<SubscriptionFeatureResponseDto>.CreateSuccess(Map(feature), "امکان اشتراک ایجاد شد", 201);
-        }
+        public Task<ApiResponse<SubscriptionFeatureResponseDto>> CreateAsync(CreateSubscriptionFeatureDto dto) =>
+            Task.FromResult(ApiResponse<SubscriptionFeatureResponseDto>.BadRequest(
+                "امکانات اشتراک از طریق کد سیستم تعریف می‌شوند و قابل ایجاد دستی نیستند."));
 
         public async Task<ApiResponse<SubscriptionFeatureResponseDto>> UpdateAsync(int id, UpdateSubscriptionFeatureDto dto)
         {
@@ -64,13 +47,10 @@ namespace Api_Vapp.Services.Admin
             if (feature == null)
                 return ApiResponse<SubscriptionFeatureResponseDto>.NotFound("امکان اشتراک یافت نشد");
 
-            var code = dto.Code.Trim().ToLowerInvariant();
-            var duplicateCode = await _context.SubscriptionFeatures.AnyAsync(f => f.Code == code && f.Id != id && !f.IsDeleted);
-            if (duplicateCode)
-                return ApiResponse<SubscriptionFeatureResponseDto>.BadRequest("کد امکان تکراری است");
+            if (!SubscriptionFeatureCodes.IsKnown(feature.Code))
+                return ApiResponse<SubscriptionFeatureResponseDto>.BadRequest("این امکان قابل ویرایش نیست");
 
             feature.Name = dto.Name.Trim();
-            feature.Code = code;
             feature.Description = dto.Description?.Trim();
             feature.SortOrder = dto.SortOrder;
             feature.IsActive = dto.IsActive;
@@ -80,22 +60,9 @@ namespace Api_Vapp.Services.Admin
             return ApiResponse<SubscriptionFeatureResponseDto>.CreateSuccess(Map(feature), "امکان اشتراک به‌روزرسانی شد");
         }
 
-        public async Task<ApiResponse<bool>> DeleteAsync(int id)
-        {
-            var feature = await _context.SubscriptionFeatures.FirstOrDefaultAsync(f => f.Id == id && !f.IsDeleted);
-            if (feature == null)
-                return ApiResponse<bool>.NotFound("امکان اشتراک یافت نشد");
-
-            var inUse = await _context.SubscriptionPlanFeatures.AnyAsync(pf => pf.SubscriptionFeatureId == id);
-            if (inUse)
-                return ApiResponse<bool>.BadRequest("این امکان در پلن‌های اشتراک استفاده شده و قابل حذف نیست");
-
-            feature.IsDeleted = true;
-            feature.IsActive = false;
-            feature.UpdatedAt = DateTime.UtcNow;
-            await _context.SaveChangesAsync();
-            return ApiResponse<bool>.CreateSuccess(true, "امکان اشتراک حذف شد");
-        }
+        public Task<ApiResponse<bool>> DeleteAsync(int id) =>
+            Task.FromResult(ApiResponse<bool>.BadRequest(
+                "امکانات اشتراک سیستمی هستند و قابل حذف نیستند. می‌توانید آن‌ها را غیرفعال کنید."));
 
         private static SubscriptionFeatureResponseDto Map(SubscriptionFeature feature) => new()
         {
@@ -105,6 +72,7 @@ namespace Api_Vapp.Services.Admin
             Description = feature.Description,
             SortOrder = feature.SortOrder,
             IsActive = feature.IsActive,
+            IsSystemManaged = SubscriptionFeatureCodes.IsKnown(feature.Code),
             CreatedAt = feature.CreatedAt,
             UpdatedAt = feature.UpdatedAt
         };
