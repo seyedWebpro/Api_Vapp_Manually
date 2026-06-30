@@ -11,9 +11,9 @@ namespace Api_Vapp.DTOs.Message
         [Required(ErrorMessage = "شناسه پیام الزامی است")]
         public int MessageId { get; set; }
 
-        // نوع انتخاب: Notebook, Tag, Individual
+        // نوع انتخاب: MessageSelectionTypes (Notebook, Tag, ContactIds, Individual)
         [Required(ErrorMessage = "نوع انتخاب گیرندگان الزامی است")]
-        public string SelectionType { get; set; } = string.Empty; // Notebook, Tag, Individual
+        public string SelectionType { get; set; } = string.Empty;
 
         // برای انتخاب از دفترچه (فقط در حالت Notebook)
         public List<int>? ContactNotebookIds { get; set; }
@@ -21,9 +21,8 @@ namespace Api_Vapp.DTOs.Message
         // برای انتخاب بر اساس تگ (فقط در حالت Tag)
         public List<int>? TagIds { get; set; }
 
-        // در حالت Notebook: لیست شناسه مخاطبینی که نباید پیام برود (اختیاری)
-        // اگر null باشد، همه مخاطبین دفترچه انتخاب می‌شوند
-        // اگر ارسال شود، آن مخاطبین از لیست حذف می‌شوند (یعنی به آن‌ها پیام نمی‌رود)
+        // در حالت Notebook: لیست شناسه مخاطبینی که نباید پیام برود (اختیاری — exclude)
+        // در حالت ContactIds: لیست شناسه مخاطبین انتخاب‌شده از UI (الزامی — include)
         public List<int>? ContactIds { get; set; }
 
         // برای انتخاب تکی با شماره موبایل مستقیم (فقط در حالت Individual - الزامی)

@@ -37,6 +37,20 @@ namespace Api_Vapp.Interfaces
         /// جستجوی تمام مخاطبین بر اساس نام یا شماره (بدون فیلتر کاربر)
         /// </summary>
         Task<IEnumerable<Contact>> SearchAllContactsAsync(string searchTerm);
+
+        /// <summary>
+        /// دریافت مخاطبین یک کاربر از تمام دفترچه‌ها با pagination
+        /// </summary>
+        Task<(IEnumerable<Contact> Contacts, int TotalCount)> GetByUserIdPagedAsync(
+            int userId,
+            int pageNumber,
+            int pageSize,
+            string? searchTerm = null);
+
+        /// <summary>
+        /// دریافت مخاطبین بر اساس شناسه — فقط اگر متعلق به دفترچه‌های کاربر باشند
+        /// </summary>
+        Task<List<Contact>> GetByIdsForUserAsync(int userId, IEnumerable<int> contactIds);
     }
 }
 

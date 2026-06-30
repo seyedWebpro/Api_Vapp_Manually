@@ -3108,7 +3108,39 @@ namespace Api_Vapp.Services
                         }
                     }
                 }
-                else if (selectDto.SelectionType == "Individual")
+                else if (selectDto.SelectionType == MessageSelectionTypes.ContactIds)
+                {
+                    if (selectDto.ContactIds == null || !selectDto.ContactIds.Any(id => id > 0))
+                    {
+                        return ApiResponse<RecipientListResponseDto>.BadRequest(
+                            "در حالت انتخاب دستی مخاطبین، باید حداقل یک شناسه مخاطب ارسال شود",
+                            errorCode: ErrorCodes.ValidationFailed);
+                    }
+
+                    var selectedContactIds = selectDto.ContactIds
+                        .Where(id => id > 0)
+                        .Distinct()
+                        .ToList();
+
+                    var validContacts = await _contactRepository.GetByIdsForUserAsync(userId, selectedContactIds);
+
+                    if (validContacts.Count != selectedContactIds.Count)
+                    {
+                        var foundIds = validContacts.Select(c => c.Id).ToHashSet();
+                        var invalidIds = selectedContactIds.Where(id => !foundIds.Contains(id)).ToList();
+                        return ApiResponse<RecipientListResponseDto>.BadRequest(
+                            $"برخی مخاطبین انتخاب‌شده نامعتبر هستند یا متعلق به شما نیستند: [{string.Join(", ", invalidIds)}]",
+                            errorCode: ErrorCodes.InvalidInput);
+                    }
+
+                    recipients.AddRange(validContacts.Select(c => new RecipientItemDto
+                    {
+                        ContactId = c.Id,
+                        MobileNumber = c.MobileNumber,
+                        FullName = c.FullName
+                    }));
+                }
+                else if (selectDto.SelectionType == MessageSelectionTypes.Individual)
                 {
                     // در حالت Individual، باید شماره موبایل وارد شود
                     if (selectDto.MobileNumbers == null || !selectDto.MobileNumbers.Any())
@@ -3315,6 +3347,14 @@ namespace Api_Vapp.Services
                         MobileNumber = c.MobileNumber,
                         FullName = c.FullName
                     }));
+                }
+
+                if (!recipients.Any())
+                {
+                    await transaction.RollbackAsync();
+                    return ApiResponse<RecipientListResponseDto>.BadRequest(
+                        "هیچ گیرنده‌ای انتخاب نشد. نوع انتخاب یا پارامترهای ورودی را بررسی کنید",
+                        errorCode: ErrorCodes.ValidationFailed);
                 }
 
                 // حذف تکراری‌ها بر اساس شماره موبایل

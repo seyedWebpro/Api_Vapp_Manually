@@ -513,6 +513,48 @@ namespace Api_Vapp.Services
             }
         }
 
+        public async Task<ApiResponse<ContactListResponseDto>> GetMyContactsAsync(
+            int userId,
+            int pageNumber = 1,
+            int pageSize = 10,
+            string? searchTerm = null)
+        {
+            try
+            {
+                if (pageNumber < 1) pageNumber = 1;
+                if (pageSize < 1 || pageSize > 100) pageSize = 10;
+
+                var (contacts, totalCount) = await _contactRepository.GetByUserIdPagedAsync(
+                    userId, pageNumber, pageSize, searchTerm);
+
+                var totalPages = totalCount == 0 ? 0 : (int)Math.Ceiling(totalCount / (double)pageSize);
+
+                var contactDtos = new List<ContactResponseDto>();
+                foreach (var contact in contacts)
+                {
+                    contactDtos.Add(await MapToContactResponseDtoAsync(contact));
+                }
+
+                var response = new ContactListResponseDto
+                {
+                    Contacts = contactDtos,
+                    TotalCount = totalCount,
+                    PageNumber = pageNumber,
+                    PageSize = pageSize,
+                    TotalPages = totalPages,
+                    LastUpdatedAt = DateTime.UtcNow,
+                    ImportedFileCount = 0
+                };
+
+                return ApiResponse<ContactListResponseDto>.CreateSuccess(response);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting contacts list for user: {UserId}", userId);
+                throw;
+            }
+        }
+
         public async Task<ApiResponse<ContactResponseDto>> UpdateContactAsync(int id, int userId, UpdateContactDto updateDto)
         {
             try

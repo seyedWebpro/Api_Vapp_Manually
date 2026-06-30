@@ -80,3 +80,20 @@ Content-Type: application/json
 }
 
 ###
+
+# --- Contact / Message — انتخاب دستی گیرندگان پیامک ---
+
+### لیست مخاطبین کاربر (برای UI چک‌باکس)
+GET {{Api_Vapp_HostAddress}}/api/Contact/mine?pageNumber=1&pageSize=20&searchTerm=
+
+### انتخاب گیرندگان — ContactIds (انتخاب دستی)
+POST {{Api_Vapp_HostAddress}}/api/Message/recipients/select
+Content-Type: application/json
+
+{
+  "messageId": 1,
+  "selectionType": "ContactIds",
+  "contactIds": [1, 2]
+}
+
+###

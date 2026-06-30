@@ -34,6 +34,15 @@ namespace Api_Vapp.Interfaces
         /// دریافت لیست تمام مخاطبین (بدون نیاز به احراز هویت)
         /// </summary>
         Task<ApiResponse<ContactListResponseDto>> GetAllContactsAsync(int pageNumber = 1, int pageSize = 10, string? searchTerm = null);
+
+        /// <summary>
+        /// دریافت لیست مخاطبین کاربر جاری از تمام دفترچه‌ها (برای انتخاب دستی گیرندگان پیامک)
+        /// </summary>
+        Task<ApiResponse<ContactListResponseDto>> GetMyContactsAsync(
+            int userId,
+            int pageNumber = 1,
+            int pageSize = 10,
+            string? searchTerm = null);
         
         /// <summary>
         /// اختصاص تگ‌ها به مخاطب

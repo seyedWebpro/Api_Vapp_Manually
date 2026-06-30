@@ -128,6 +128,36 @@ namespace Api_Vapp.Controller
         }
 
         /// <summary>
+        /// دریافت لیست مخاطبین کاربر جاری (همه دفترچه‌ها) — برای انتخاب دستی گیرندگان پیامک
+        /// </summary>
+        /// <param name="pageNumber">شماره صفحه (پیش‌فرض: 1)</param>
+        /// <param name="pageSize">تعداد آیتم در هر صفحه (پیش‌فرض: 10، حداکثر: 100)</param>
+        /// <param name="searchTerm">جستجو بر اساس نام یا شماره موبایل (اختیاری)</param>
+        /// <returns>لیست مخاطبین با pagination</returns>
+        /// <remarks>
+        /// این endpoint برای UI «انتخاب دستی مخاطبین» در فلوی ارسال پیامک استفاده می‌شود.
+        /// فقط مخاطبین دفترچه‌های متعلق به کاربر لاگین‌شده برگردانده می‌شوند.
+        /// </remarks>
+        /// <response code="200">لیست مخاطبین با موفقیت برگردانده شد</response>
+        /// <response code="400">پارامترهای ورودی نامعتبر است</response>
+        /// <response code="401">عدم احراز هویت</response>
+        /// <response code="500">خطای سرور</response>
+        [HttpGet("mine")]
+        [ProducesResponseType(typeof(ApiResponse<ContactListResponseDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<ContactListResponseDto>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(ApiResponse<ContactListResponseDto>), StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(typeof(ApiResponse<ContactListResponseDto>), StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<ApiResponse<ContactListResponseDto>>> GetMyContacts(
+            [FromQuery] int pageNumber = 1,
+            [FromQuery] int pageSize = 10,
+            [FromQuery] string? searchTerm = null)
+        {
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _contactService.GetMyContactsAsync(userId, pageNumber, pageSize, searchTerm);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        /// <summary>
         /// دریافت لیست مخاطبین یک دفترچه با pagination و جستجو
         /// </summary>
         /// <param name="notebookId">شناسه دفترچه تلفن</param>

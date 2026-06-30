@@ -102,6 +102,59 @@ namespace Api_Vapp.Repositories
                 .OrderByDescending(c => c.CreatedAt)
                 .ToListAsync();
         }
+
+        public async Task<(IEnumerable<Contact> Contacts, int TotalCount)> GetByUserIdPagedAsync(
+            int userId,
+            int pageNumber,
+            int pageSize,
+            string? searchTerm = null)
+        {
+            var query = _dbSet
+                .AsNoTracking()
+                .Include(c => c.AdditionalInfo)
+                .Include(c => c.ContactTags)
+                    .ThenInclude(ct => ct.Tag)
+                .Include(c => c.ContactNotebook)
+                .Where(c => !c.IsDeleted
+                    && c.ContactNotebook != null
+                    && c.ContactNotebook.UserId == userId
+                    && !c.ContactNotebook.IsDeleted);
+
+            if (!string.IsNullOrWhiteSpace(searchTerm))
+            {
+                var term = searchTerm.ToLower().Trim();
+                query = query.Where(c => c.MobileNumber.Contains(term)
+                    || (c.FullName != null && c.FullName.ToLower().Contains(term)));
+            }
+
+            var totalCount = await query.CountAsync();
+
+            var contacts = await query
+                .OrderByDescending(c => c.CreatedAt)
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+
+            return (contacts, totalCount);
+        }
+
+        public async Task<List<Contact>> GetByIdsForUserAsync(int userId, IEnumerable<int> contactIds)
+        {
+            var idList = contactIds.Where(id => id > 0).Distinct().ToList();
+            if (!idList.Any())
+            {
+                return new List<Contact>();
+            }
+
+            return await _dbSet
+                .AsNoTracking()
+                .Where(c => idList.Contains(c.Id)
+                    && !c.IsDeleted
+                    && c.ContactNotebook != null
+                    && c.ContactNotebook.UserId == userId
+                    && !c.ContactNotebook.IsDeleted)
+                .ToListAsync();
+        }
     }
 }
 
