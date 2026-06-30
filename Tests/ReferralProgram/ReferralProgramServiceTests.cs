@@ -59,6 +59,31 @@ public class ReferralProgramServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task SaveStep3Settings_ReturnsTotalAndFilteredContactCounts()
+    {
+        var step1 = _ctx.BuildStep1Dto();
+        var step1Result = await _ctx.Service.ValidateStep1Async(_ctx.OwnerUserId, step1);
+        var draftId = step1Result.Data!.DraftId!;
+
+        await _ctx.Service.ValidateStep2Async(_ctx.OwnerUserId, new ReferralStep2Dto
+        {
+            DraftId = draftId,
+            TargetAudience = ReferralTargetAudience.All
+        });
+
+        var result = await _ctx.Service.SaveStep3SettingsAsync(_ctx.OwnerUserId, new SaveReferralStep3RequestDto
+        {
+            DraftId = draftId,
+            Settings = _ctx.BuildStep3Settings()
+        });
+
+        Assert.True(result.Success);
+        Assert.Equal(1, result.Data!.TotalContactsCount);
+        Assert.Equal(1, result.Data.ContactsCount);
+        AssertNoServerError(result);
+    }
+
+    [Fact]
     public async Task Confirm_FullWizard_Returns201()
     {
         var (programId, publicCode) = await _ctx.CreateConfirmedProgramAsync();

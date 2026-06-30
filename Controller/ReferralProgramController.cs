@@ -363,6 +363,7 @@ namespace Api_Vapp.Controller
         /// **مرحله ۳ — تاریخ و تگ:**
         /// - draftId از مرحله ۱ الزامی است؛ step1 و step2 از پیش‌نویس خوانده می‌شوند
         /// - فقط settings در body ارسال شود
+        /// - پاسخ شامل totalContactsCount (بدون تگ) و contactsCount (بعد از فیلتر تگ) است
         /// - StartDate الزامی است
         /// - EndDate اختیاری؛ باید بعد از StartDate باشد
         /// - SendToSpecificTags=true → حداقل یک TargetTagId الزامی است

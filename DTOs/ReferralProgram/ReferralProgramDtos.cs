@@ -86,6 +86,15 @@ namespace Api_Vapp.DTOs.ReferralProgram
         public string StartDate { get; set; } = string.Empty;
         public string EndDate { get; set; } = string.Empty;
         public string Audience { get; set; } = string.Empty;
+
+        /// <summary>
+        /// تعداد مخاطبین انتخاب‌شده در مرحله ۲ (بدون فیلتر تگ)
+        /// </summary>
+        public int TotalContactsCount { get; set; }
+
+        /// <summary>
+        /// تعداد نهایی گیرنده SMS (بعد از اعمال فیلتر تگ در مرحله ۳)
+        /// </summary>
         public int ContactsCount { get; set; }
     }
 

@@ -4,6 +4,7 @@ using Api_Vapp.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Api_Vapp.Migrations
 {
     [DbContext(typeof(Api_Context))]
-    partial class Api_ContextModelSnapshot : ModelSnapshot
+    [Migration("20260630172023_AddBookingSystemModule")]
+    partial class AddBookingSystemModule
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -164,84 +167,6 @@ namespace Api_Vapp.Migrations
                     b.HasIndex("ExecutedAt");
 
                     b.ToTable("AutomationExecutions");
-                });
-
-            modelBuilder.Entity("Api_Vapp.Models.BookingAppointment", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("BookingServiceItemId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("BookingSystemId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("CancellationReason")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
-
-                    b.Property<DateTime?>("CancelledAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int?>("ContactId")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime2")
-                        .HasDefaultValueSql("GETUTCDATE()");
-
-                    b.Property<string>("CustomerFullName")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.Property<string>("CustomerMobile")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
-
-                    b.Property<DateTime>("EndUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<bool>("IsDeleted")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bit")
-                        .HasDefaultValue(false);
-
-                    b.Property<DateTime?>("ReminderSentAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<DateTime>("StartUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("BookingServiceItemId");
-
-                    b.HasIndex("BookingSystemId");
-
-                    b.HasIndex("ContactId");
-
-                    b.HasIndex("BookingServiceItemId", "StartUtc")
-                        .IsUnique()
-                        .HasFilter("[IsDeleted] = 0 AND [Status] = 'Confirmed'");
-
-                    b.HasIndex("Status", "StartUtc", "ReminderSentAt");
-
-                    b.ToTable("BookingAppointments");
                 });
 
             modelBuilder.Entity("Api_Vapp.Models.BookingScheduleException", b =>
@@ -3498,32 +3423,6 @@ namespace Api_Vapp.Migrations
                         .OnDelete(DeleteBehavior.NoAction);
 
                     b.Navigation("AutomatedMessage");
-
-                    b.Navigation("Contact");
-                });
-
-            modelBuilder.Entity("Api_Vapp.Models.BookingAppointment", b =>
-                {
-                    b.HasOne("Api_Vapp.Models.BookingServiceItem", "BookingServiceItem")
-                        .WithMany()
-                        .HasForeignKey("BookingServiceItemId")
-                        .OnDelete(DeleteBehavior.NoAction)
-                        .IsRequired();
-
-                    b.HasOne("Api_Vapp.Models.BookingSystem", "BookingSystem")
-                        .WithMany()
-                        .HasForeignKey("BookingSystemId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Api_Vapp.Models.Contact", "Contact")
-                        .WithMany()
-                        .HasForeignKey("ContactId")
-                        .OnDelete(DeleteBehavior.NoAction);
-
-                    b.Navigation("BookingServiceItem");
-
-                    b.Navigation("BookingSystem");
 
                     b.Navigation("Contact");
                 });

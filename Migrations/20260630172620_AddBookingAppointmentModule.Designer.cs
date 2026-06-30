@@ -4,6 +4,7 @@ using Api_Vapp.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Api_Vapp.Migrations
 {
     [DbContext(typeof(Api_Context))]
-    partial class Api_ContextModelSnapshot : ModelSnapshot
+    [Migration("20260630172620_AddBookingAppointmentModule")]
+    partial class AddBookingAppointmentModule
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -235,9 +238,7 @@ namespace Api_Vapp.Migrations
 
                     b.HasIndex("ContactId");
 
-                    b.HasIndex("BookingServiceItemId", "StartUtc")
-                        .IsUnique()
-                        .HasFilter("[IsDeleted] = 0 AND [Status] = 'Confirmed'");
+                    b.HasIndex("BookingServiceItemId", "StartUtc");
 
                     b.HasIndex("Status", "StartUtc", "ReminderSentAt");
 

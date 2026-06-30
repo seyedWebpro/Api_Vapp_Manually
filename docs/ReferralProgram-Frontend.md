@@ -116,6 +116,21 @@ confirm         →  draftId  →  برنامه + PublicCode
 }
 ```
 
+**پاسخ — تعداد مخاطب:**
+```json
+{
+  "data": {
+    "totalContactsCount": 150,
+    "contactsCount": 150
+  }
+}
+```
+
+- `totalContactsCount` = مخاطب step2 (بدون تگ)
+- `contactsCount` = گیرنده SMS (بعد از فیلتر تگ؛ اگر تگ نباشد برابر totalContactsCount)
+
+`GET /summary?draftId=` همان فیلدها را برمی‌گرداند.
+
 ### تأیید — `POST /confirm`
 
 ```json

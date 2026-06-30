@@ -58,6 +58,13 @@ namespace Api_Vapp.Data
         public DbSet<LuckyWheel> LuckyWheels { get; set; }
         public DbSet<LuckyWheelItem> LuckyWheelItems { get; set; }
         public DbSet<LuckyWheelNotebook> LuckyWheelNotebooks { get; set; }
+        public DbSet<BookingSystem> BookingSystems { get; set; }
+        public DbSet<BookingSystemNotebook> BookingSystemNotebooks { get; set; }
+        public DbSet<BookingSystemDraft> BookingSystemDrafts { get; set; }
+        public DbSet<BookingServiceItem> BookingServiceItems { get; set; }
+        public DbSet<BookingServiceDaySchedule> BookingServiceDaySchedules { get; set; }
+        public DbSet<BookingScheduleException> BookingScheduleExceptions { get; set; }
+        public DbSet<BookingAppointment> BookingAppointments { get; set; }
 
         public Api_Context(DbContextOptions<Api_Context> options) : base(options)
         {
@@ -1422,6 +1429,161 @@ namespace Api_Vapp.Data
                 entity.HasIndex(u => u.PublicCode);
                 entity.HasIndex(u => u.Status);
                 entity.HasIndex(u => u.CreatedAt);
+            });
+
+            // تنظیمات BookingSystem (رزرو نوبت)
+            modelBuilder.Entity<BookingSystem>(entity =>
+            {
+                entity.HasKey(b => b.Id);
+                entity.Property(b => b.Id).ValueGeneratedOnAdd();
+                entity.Property(b => b.UserId).IsRequired();
+                entity.Property(b => b.Title).IsRequired().HasMaxLength(200);
+                entity.Property(b => b.ActivityType).IsRequired().HasMaxLength(50);
+                entity.Property(b => b.Description).HasMaxLength(2000);
+                entity.Property(b => b.Slug).IsRequired().HasMaxLength(100);
+                entity.Property(b => b.Status).IsRequired();
+                entity.Property(b => b.SaveToPhonebook).HasDefaultValue(false);
+                entity.Property(b => b.IsActive).HasDefaultValue(true);
+                entity.Property(b => b.IsDeleted).HasDefaultValue(false);
+                entity.Property(b => b.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+                entity.HasOne(b => b.User)
+                    .WithMany()
+                    .HasForeignKey(b => b.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasIndex(b => b.UserId);
+                entity.HasIndex(b => b.IsDeleted);
+                entity.HasIndex(b => new { b.UserId, b.IsDeleted, b.CreatedAt });
+                entity.HasIndex(b => b.Slug)
+                    .IsUnique()
+                    .HasFilter("[IsDeleted] = 0");
+            });
+
+            modelBuilder.Entity<BookingSystemNotebook>(entity =>
+            {
+                entity.HasKey(n => new { n.BookingSystemId, n.ContactNotebookId });
+
+                entity.HasOne(n => n.BookingSystem)
+                    .WithMany(b => b.Notebooks)
+                    .HasForeignKey(n => n.BookingSystemId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(n => n.ContactNotebook)
+                    .WithMany()
+                    .HasForeignKey(n => n.ContactNotebookId)
+                    .OnDelete(DeleteBehavior.NoAction);
+            });
+
+            modelBuilder.Entity<BookingSystemDraft>(entity =>
+            {
+                entity.HasKey(d => d.Id);
+                entity.Property(d => d.Id).ValueGeneratedOnAdd();
+                entity.Property(d => d.UserId).IsRequired();
+                entity.Property(d => d.DraftId).IsRequired().HasMaxLength(100);
+                entity.Property(d => d.Step1Data).IsRequired();
+                entity.Property(d => d.IsDeleted).HasDefaultValue(false);
+                entity.Property(d => d.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+                entity.HasOne(d => d.User)
+                    .WithMany()
+                    .HasForeignKey(d => d.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasIndex(d => new { d.DraftId, d.UserId });
+                entity.HasIndex(d => d.ExpiresAt);
+            });
+
+            modelBuilder.Entity<BookingServiceItem>(entity =>
+            {
+                entity.HasKey(s => s.Id);
+                entity.Property(s => s.Id).ValueGeneratedOnAdd();
+                entity.Property(s => s.BookingSystemId).IsRequired();
+                entity.Property(s => s.Title).IsRequired().HasMaxLength(200);
+                entity.Property(s => s.DurationMinutes).IsRequired();
+                entity.Property(s => s.Price).HasColumnType("decimal(18,2)");
+                entity.Property(s => s.ServiceCost).HasColumnType("decimal(18,2)");
+                entity.Property(s => s.DepositAmount).HasColumnType("decimal(18,2)");
+                entity.Property(s => s.IsDeleted).HasDefaultValue(false);
+                entity.Property(s => s.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+                entity.HasOne(s => s.BookingSystem)
+                    .WithMany(b => b.Services)
+                    .HasForeignKey(s => s.BookingSystemId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasIndex(s => s.BookingSystemId);
+                entity.HasIndex(s => new { s.BookingSystemId, s.IsDeleted });
+            });
+
+            modelBuilder.Entity<BookingServiceDaySchedule>(entity =>
+            {
+                entity.HasKey(d => d.Id);
+                entity.Property(d => d.Id).ValueGeneratedOnAdd();
+                entity.Property(d => d.BookingServiceItemId).IsRequired();
+                entity.Property(d => d.DayOfWeek).IsRequired();
+
+                entity.HasOne(d => d.BookingServiceItem)
+                    .WithMany(s => s.DaySchedules)
+                    .HasForeignKey(d => d.BookingServiceItemId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasIndex(d => d.BookingServiceItemId);
+                entity.HasIndex(d => new { d.BookingServiceItemId, d.DayOfWeek }).IsUnique();
+            });
+
+            modelBuilder.Entity<BookingScheduleException>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).ValueGeneratedOnAdd();
+                entity.Property(e => e.BookingServiceItemId).IsRequired();
+                entity.Property(e => e.Type).IsRequired().HasMaxLength(20);
+                entity.Property(e => e.Label).HasMaxLength(200);
+                entity.Property(e => e.IsDeleted).HasDefaultValue(false);
+                entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+                entity.HasOne(e => e.BookingServiceItem)
+                    .WithMany(s => s.ScheduleExceptions)
+                    .HasForeignKey(e => e.BookingServiceItemId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasIndex(e => e.BookingServiceItemId);
+                entity.HasIndex(e => new { e.BookingServiceItemId, e.ExceptionDateUtc });
+            });
+
+            modelBuilder.Entity<BookingAppointment>(entity =>
+            {
+                entity.HasKey(a => a.Id);
+                entity.Property(a => a.Id).ValueGeneratedOnAdd();
+                entity.Property(a => a.CustomerFullName).IsRequired().HasMaxLength(200);
+                entity.Property(a => a.CustomerMobile).IsRequired().HasMaxLength(20);
+                entity.Property(a => a.Status).IsRequired().HasMaxLength(20);
+                entity.Property(a => a.CancellationReason).HasMaxLength(500);
+                entity.Property(a => a.IsDeleted).HasDefaultValue(false);
+                entity.Property(a => a.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+                entity.HasOne(a => a.BookingSystem)
+                    .WithMany()
+                    .HasForeignKey(a => a.BookingSystemId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(a => a.BookingServiceItem)
+                    .WithMany()
+                    .HasForeignKey(a => a.BookingServiceItemId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(a => a.Contact)
+                    .WithMany()
+                    .HasForeignKey(a => a.ContactId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasIndex(a => a.BookingSystemId);
+                entity.HasIndex(a => a.BookingServiceItemId);
+                entity.HasIndex(a => new { a.BookingServiceItemId, a.StartUtc });
+                entity.HasIndex(a => new { a.Status, a.StartUtc, a.ReminderSentAt });
+                entity.HasIndex(a => new { a.BookingServiceItemId, a.StartUtc })
+                    .IsUnique()
+                    .HasFilter("[IsDeleted] = 0 AND [Status] = 'Confirmed'");
             });
 
             modelBuilder.Entity<SmsDeliveryRecord>(entity =>

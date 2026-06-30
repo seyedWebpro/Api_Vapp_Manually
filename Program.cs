@@ -350,6 +350,9 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.ICashbackDraftRepository, Api_Vap
 builder.Services.AddScoped<Api_Vapp.Interfaces.IReferralProgramRepository, Api_Vapp.Repositories.ReferralProgramRepository>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IReferralProgramDraftRepository, Api_Vapp.Repositories.ReferralProgramDraftRepository>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IReferralUsageRepository, Api_Vapp.Repositories.ReferralUsageRepository>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IBookingSystemRepository, Api_Vapp.Repositories.BookingSystemRepository>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IBookingSystemDraftRepository, Api_Vapp.Repositories.BookingSystemDraftRepository>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IBookingAppointmentRepository, Api_Vapp.Repositories.BookingAppointmentRepository>();
 
 // ثبت Repository تنظیمات اعلان‌ها
 builder.Services.AddScoped<Api_Vapp.Interfaces.IUserNotificationSettingsRepository, Api_Vapp.Repositories.UserNotificationSettingsRepository>();
@@ -389,6 +392,8 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.IWalletService, Api_Vapp.Services
 builder.Services.AddScoped<Api_Vapp.Interfaces.IPaymentService, Api_Vapp.Services.PaymentService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.ICashbackService, Api_Vapp.Services.CashbackService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IReferralProgramService, Api_Vapp.Services.ReferralProgramService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IBookingSystemService, Api_Vapp.Services.BookingSystemService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IBookingAppointmentService, Api_Vapp.Services.BookingAppointmentService>();
 
 // ثبت سرویس تنظیمات اعلان‌ها
 builder.Services.AddScoped<Api_Vapp.Interfaces.INotificationSettingsService, Api_Vapp.Services.NotificationSettingsService>();
@@ -415,6 +420,7 @@ builder.Services.AddHostedService<Api_Vapp.Services.BackgroundServices.Scheduled
 builder.Services.AddHostedService<Api_Vapp.Services.BackgroundServices.ScheduledMessageBackgroundService>();
 builder.Services.AddHostedService<Api_Vapp.Services.BackgroundServices.ScheduledCashbackBackgroundService>();
 builder.Services.AddHostedService<Api_Vapp.Services.BackgroundServices.SmsDeliverySyncBackgroundService>();
+builder.Services.AddHostedService<Api_Vapp.Services.BackgroundServices.BookingReminderBackgroundService>();
 
 // use in OTP 
 builder.Services.AddSingleton<IConfiguration>(builder.Configuration);
@@ -424,6 +430,7 @@ builder.Services.AddSingleton<IConfiguration>(builder.Configuration);
 builder.Services.Configure<Api_Vapp.DTOs.File.FileUploadOptions>(builder.Configuration.GetSection("FileUpload"));
 builder.Services.Configure<Api_Vapp.Utilities.FormBuilderOptions>(builder.Configuration.GetSection(Api_Vapp.Utilities.FormBuilderOptions.SectionName));
 builder.Services.Configure<Api_Vapp.Utilities.LuckyWheelOptions>(builder.Configuration.GetSection(Api_Vapp.Utilities.LuckyWheelOptions.SectionName));
+builder.Services.Configure<Api_Vapp.Utilities.BookingSystemOptions>(builder.Configuration.GetSection(Api_Vapp.Utilities.BookingSystemOptions.SectionName));
 builder.Services.AddScoped<Api_Vapp.Interfaces.IFileUploadService, Api_Vapp.Services.FileUploadService>();
 #endregion
 

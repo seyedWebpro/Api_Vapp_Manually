@@ -1049,7 +1049,9 @@ namespace Api_Vapp.Services
             SaveReferralStep3SettingsDto? step3)
         {
             List<int>? tagIds = step3?.SendToSpecificTags == true ? step3.TargetTagIds : null;
-            var contactIds = await GetContactIdsAsync(userId, step2, tagIds, step3?.SendToSpecificTags ?? false);
+            var baseContactIds = await GetContactIdsAsync(userId, step2, null, false);
+            var filteredContactIds = await GetContactIdsAsync(
+                userId, step2, tagIds, step3?.SendToSpecificTags ?? false);
 
             var rewardTypeLabel = step1.RewardType == ReferralRewardTypes.Percentage ? "درصدی" : "مبلغ ثابت";
             var referrerReward = FormatRewardValue(step1.RewardType, step1.ReferrerRewardValue);
@@ -1074,7 +1076,8 @@ namespace Api_Vapp.Services
                     ? FormatPersianDate(NormalizeIncomingUtc(step3.EndDate.Value))
                     : "بدون پایان",
                 Audience = audience,
-                ContactsCount = contactIds.Count
+                TotalContactsCount = baseContactIds.Count,
+                ContactsCount = filteredContactIds.Count
             };
         }
 

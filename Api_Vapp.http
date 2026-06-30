@@ -97,3 +97,36 @@ Content-Type: application/json
 }
 
 ###
+
+# --- BookingSystem (رزرو نوبت) ---
+
+### عمومی — اطلاعات صفحه رزرو (بدون Auth)
+GET {{Api_Vapp_HostAddress}}/api/BookingPublic/beauty-salon
+
+### عمومی — اسلات‌های خالی
+GET {{Api_Vapp_HostAddress}}/api/BookingPublic/beauty-salon/services/1/slots?date=2026-07-15
+
+### عمومی — ثبت نوبت
+POST {{Api_Vapp_HostAddress}}/api/BookingPublic/beauty-salon/book
+Content-Type: application/json
+
+{
+  "serviceId": 1,
+  "startUtc": "2026-07-15T05:30:00Z",
+  "customerFullName": "علی تست",
+  "customerMobile": "09121234567"
+}
+
+### ویزارد — مرحله ۱ (نیاز به JWT + online_booking)
+POST {{Api_Vapp_HostAddress}}/api/BookingSystem/validate-step1
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "title": "سالن زیبایی",
+  "activityType": "beauty_salon",
+  "saveToPhonebook": false,
+  "notebookIds": []
+}
+
+###

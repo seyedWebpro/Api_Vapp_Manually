@@ -11,6 +11,7 @@ namespace Api_Vapp.Constants
         public const string CashbackScheduled = "CashbackScheduled";
         public const string ReferralProgram = "ReferralProgram";
         public const string AutomatedMessage = "AutomatedMessage";
+        public const string BookingReminder = "BookingReminder";
         public const string Manual = "Manual";
 
         public static readonly IReadOnlyDictionary<string, string> PersianLabels = new Dictionary<string, string>
@@ -21,6 +22,7 @@ namespace Api_Vapp.Constants
             [CashbackScheduled] = "کش‌بک زمان‌بندی‌شده",
             [ReferralProgram] = "برنامه پاداش",
             [AutomatedMessage] = "پیام خودکار",
+            [BookingReminder] = "یادآوری نوبت",
             [Manual] = "ارسال دستی"
         };
 
