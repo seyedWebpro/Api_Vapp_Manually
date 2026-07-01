@@ -59,17 +59,37 @@ public class ReferralProgramServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task SaveStep3Settings_ReturnsTotalAndFilteredContactCounts()
+    public async Task ValidateStep2_TagEnabledWithoutIds_Returns400()
+    {
+        var step1Result = await _ctx.Service.ValidateStep1Async(_ctx.OwnerUserId, _ctx.BuildStep1Dto());
+        var draftId = step1Result.Data!.DraftId!;
+
+        var result = await _ctx.Service.ValidateStep2Async(_ctx.OwnerUserId, new ReferralStep2Dto
+        {
+            DraftId = draftId,
+            TargetAudience = ReferralTargetAudience.All,
+            SendToSpecificTags = true,
+            TargetTagIds = null
+        });
+
+        Assert.False(result.Success);
+        Assert.Equal(400, result.StatusCode);
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task SaveStep3Settings_ReturnsContactsCountFromStep2()
     {
         var step1 = _ctx.BuildStep1Dto();
         var step1Result = await _ctx.Service.ValidateStep1Async(_ctx.OwnerUserId, step1);
         var draftId = step1Result.Data!.DraftId!;
 
-        await _ctx.Service.ValidateStep2Async(_ctx.OwnerUserId, new ReferralStep2Dto
+        var step2Result = await _ctx.Service.ValidateStep2Async(_ctx.OwnerUserId, new ReferralStep2Dto
         {
             DraftId = draftId,
             TargetAudience = ReferralTargetAudience.All
         });
+        Assert.Equal(1, step2Result.Data!.TotalContactsCount);
 
         var result = await _ctx.Service.SaveStep3SettingsAsync(_ctx.OwnerUserId, new SaveReferralStep3RequestDto
         {
@@ -78,8 +98,7 @@ public class ReferralProgramServiceTests : IAsyncLifetime
         });
 
         Assert.True(result.Success);
-        Assert.Equal(1, result.Data!.TotalContactsCount);
-        Assert.Equal(1, result.Data.ContactsCount);
+        Assert.Equal(1, result.Data!.ContactsCount);
         AssertNoServerError(result);
     }
 

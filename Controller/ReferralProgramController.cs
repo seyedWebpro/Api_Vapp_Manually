@@ -13,7 +13,7 @@ namespace Api_Vapp.Controller
     /// این کنترلر شامل endpoint های مربوط به ایجاد، مدیریت و مصرف برنامه‌های پاداش/معرف است.
     ///
     /// **قابلیت‌های اصلی:**
-    /// - ویزارد سه‌مرحله‌ای ایجاد برنامه (اطلاعات پاداش، مخاطبین، تاریخ و تگ)
+    /// - ویزارد سه‌مرحله‌ای ایجاد برنامه (اطلاعات پاداش، مخاطبین + تگ، تاریخ)
     /// - مدیریت برنامه‌ها (لیست، جزئیات، ویرایش، فعال/غیرفعال، حذف)
     /// - آمار داشبورد و تاریخچه مصرف کد
     /// - استعلام کد در فروشگاه (inquire) و ثبت مصرف (redeem)
@@ -297,7 +297,8 @@ namespace Api_Vapp.Controller
         /// **مرحله ۲ — مخاطبین:**
         /// - draftId از مرحله ۱ الزامی است
         /// - TargetAudience: All | SpecificNotebooks | Individual
-        /// - حداقل یک مخاطب باید یافت شود
+        /// - فیلتر تگ (SendToSpecificTags / TargetTagIds) در همین مرحله اعمال می‌شود
+        /// - totalContactsCount = تعداد نهایی گیرنده SMS (بعد از تگ)
         /// </remarks>
         /// <response code="200">اطلاعات مرحله ۲ معتبر است</response>
         /// <response code="400">draftId نامعتبر، مخاطبین نامعتبر یا خالی</response>
@@ -360,13 +361,10 @@ namespace Api_Vapp.Controller
         /// <param name="request">شناسه پیش‌نویس (draftId) و تنظیمات تاریخ شروع/پایان و فیلتر تگ</param>
         /// <returns>پاسخ شامل خلاصه به‌روزشده برنامه</returns>
         /// <remarks>
-        /// **مرحله ۳ — تاریخ و تگ:**
-        /// - draftId از مرحله ۱ الزامی است؛ step1 و step2 از پیش‌نویس خوانده می‌شوند
-        /// - فقط settings در body ارسال شود
-        /// - پاسخ شامل totalContactsCount (بدون تگ) و contactsCount (بعد از فیلتر تگ) است
-        /// - StartDate الزامی است
-        /// - EndDate اختیاری؛ باید بعد از StartDate باشد
-        /// - SendToSpecificTags=true → حداقل یک TargetTagId الزامی است
+        /// **مرحله ۳ — تاریخ:**
+        /// - draftId از مرحله ۱ الزامی است
+        /// - فقط startDate و endDate ذخیره می‌شود (تگ در مرحله ۲ است)
+        /// - پاسخ شامل خلاصه و contactsCount (از مرحله ۲) است
         /// </remarks>
         /// <response code="200">تنظیمات مرحله ۳ ذخیره شد</response>
         /// <response code="400">تاریخ نامعتبر، تگ نامعتبر یا draftId نامعتبر</response>

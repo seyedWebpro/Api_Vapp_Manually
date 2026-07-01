@@ -220,8 +220,33 @@ namespace Api_Vapp.Services
             {
                 var audienceResult = await ValidateAndCountAudienceAsync(userId, step2Dto);
                 errors.AddRange(audienceResult.Errors);
-                totalContactsCount = audienceResult.TotalContactsCount;
                 audienceDescription = audienceResult.Description;
+            }
+
+            if (errors.Count == 0)
+            {
+                errors.AddRange(await ValidateStep2TagFieldsAsync(userId, step2Dto));
+            }
+
+            if (errors.Count == 0)
+            {
+                var contactIds = await GetContactIdsAsync(
+                    userId,
+                    step2Dto,
+                    step2Dto.SendToSpecificTags ? step2Dto.TargetTagIds : null,
+                    step2Dto.SendToSpecificTags);
+                totalContactsCount = contactIds.Count;
+
+                if (totalContactsCount == 0)
+                {
+                    errors.Add("پس از اعمال فیلتر مخاطبین، هیچ گیرنده‌ای یافت نشد");
+                }
+                else if (step2Dto.SendToSpecificTags &&
+                         step2Dto.TargetTagIds != null &&
+                         step2Dto.TargetTagIds.Any())
+                {
+                    audienceDescription += $" + {step2Dto.TargetTagIds.Count} تگ";
+                }
             }
 
             var response = new ReferralStep2ValidationResponseDto
@@ -290,24 +315,6 @@ namespace Api_Vapp.Services
                 return ApiResponse<ReferralSummaryDto>.BadRequest("خطا در اعتبارسنجی", step3Errors);
             }
 
-            if (request.Settings.SendToSpecificTags &&
-                (request.Settings.TargetTagIds == null || !request.Settings.TargetTagIds.Any()))
-            {
-                return ApiResponse<ReferralSummaryDto>.BadRequest("حداقل یک تگ باید انتخاب شود");
-            }
-
-            if (request.Settings.SendToSpecificTags && request.Settings.TargetTagIds != null)
-            {
-                var validTags = await _context.MessageTags
-                    .Where(t => request.Settings.TargetTagIds.Contains(t.Id) && t.UserId == userId && !t.IsDeleted && t.IsActive)
-                    .CountAsync();
-
-                if (validTags != request.Settings.TargetTagIds.Count)
-                {
-                    return ApiResponse<ReferralSummaryDto>.BadRequest("برخی تگ‌های انتخاب‌شده نامعتبر هستند");
-                }
-            }
-
             var draft = loadResult.Draft!;
             draft.Step3Data = JsonSerializer.Serialize(request.Settings);
             draft.ExpiresAt = DateTime.UtcNow.AddHours(DraftExpirationHours);
@@ -356,11 +363,17 @@ namespace Api_Vapp.Services
                 return ApiResponse<ConfirmReferralProgramResponseDto>.BadRequest("خطا در مخاطبین", audienceResult.Errors);
             }
 
+            var step2TagErrors = await ValidateStep2TagFieldsAsync(userId, step2);
+            if (step2TagErrors.Any())
+            {
+                return ApiResponse<ConfirmReferralProgramResponseDto>.BadRequest("خطا در فیلتر تگ", step2TagErrors);
+            }
+
             var contactIds = await GetContactIdsAsync(
                 userId,
                 step2,
-                step3.SendToSpecificTags ? step3.TargetTagIds : null,
-                step3.SendToSpecificTags);
+                step2.SendToSpecificTags ? step2.TargetTagIds : null,
+                step2.SendToSpecificTags);
 
             if (!contactIds.Any())
             {
@@ -394,9 +407,9 @@ namespace Api_Vapp.Services
                 TargetAudience = step2.TargetAudience,
                 TargetNotebookIds = step2.TargetNotebookIds != null ? JsonSerializer.Serialize(step2.TargetNotebookIds) : null,
                 TargetContactIds = step2.TargetContactIds != null ? JsonSerializer.Serialize(step2.TargetContactIds) : null,
-                SendToSpecificTags = step3.SendToSpecificTags,
-                TargetTagIds = step3.SendToSpecificTags && step3.TargetTagIds != null
-                    ? JsonSerializer.Serialize(step3.TargetTagIds)
+                SendToSpecificTags = step2.SendToSpecificTags,
+                TargetTagIds = step2.SendToSpecificTags && step2.TargetTagIds != null
+                    ? JsonSerializer.Serialize(step2.TargetTagIds)
                     : null,
                 StartDate = startDate,
                 EndDate = endDate,
@@ -886,6 +899,33 @@ namespace Api_Vapp.Services
             return errors;
         }
 
+        private async Task<List<string>> ValidateStep2TagFieldsAsync(int userId, ReferralStep2Dto step2Dto)
+        {
+            var errors = new List<string>();
+
+            if (!step2Dto.SendToSpecificTags)
+            {
+                return errors;
+            }
+
+            if (step2Dto.TargetTagIds == null || !step2Dto.TargetTagIds.Any())
+            {
+                errors.Add("حداقل یک تگ باید انتخاب شود");
+                return errors;
+            }
+
+            var validTags = await _context.MessageTags
+                .Where(t => step2Dto.TargetTagIds.Contains(t.Id) && t.UserId == userId && !t.IsDeleted && t.IsActive)
+                .CountAsync();
+
+            if (validTags != step2Dto.TargetTagIds.Count)
+            {
+                errors.Add("برخی تگ‌های انتخاب‌شده نامعتبر هستند");
+            }
+
+            return errors;
+        }
+
         private static List<string> ValidateStep3Fields(SaveReferralStep3SettingsDto settings)
         {
             var errors = new List<string>();
@@ -1048,10 +1088,11 @@ namespace Api_Vapp.Services
             ReferralStep2Dto step2,
             SaveReferralStep3SettingsDto? step3)
         {
-            List<int>? tagIds = step3?.SendToSpecificTags == true ? step3.TargetTagIds : null;
-            var baseContactIds = await GetContactIdsAsync(userId, step2, null, false);
-            var filteredContactIds = await GetContactIdsAsync(
-                userId, step2, tagIds, step3?.SendToSpecificTags ?? false);
+            var contactIds = await GetContactIdsAsync(
+                userId,
+                step2,
+                step2.SendToSpecificTags ? step2.TargetTagIds : null,
+                step2.SendToSpecificTags);
 
             var rewardTypeLabel = step1.RewardType == ReferralRewardTypes.Percentage ? "درصدی" : "مبلغ ثابت";
             var referrerReward = FormatRewardValue(step1.RewardType, step1.ReferrerRewardValue);
@@ -1060,9 +1101,9 @@ namespace Api_Vapp.Services
                 : "غیرفعال";
 
             var audience = GetAudienceDescription(step2);
-            if (step3?.SendToSpecificTags == true && step3.TargetTagIds != null && step3.TargetTagIds.Any())
+            if (step2.SendToSpecificTags && step2.TargetTagIds != null && step2.TargetTagIds.Any())
             {
-                audience += $" + {step3.TargetTagIds.Count} تگ";
+                audience += $" + {step2.TargetTagIds.Count} تگ";
             }
 
             return new ReferralSummaryDto
@@ -1076,8 +1117,7 @@ namespace Api_Vapp.Services
                     ? FormatPersianDate(NormalizeIncomingUtc(step3.EndDate.Value))
                     : "بدون پایان",
                 Audience = audience,
-                TotalContactsCount = baseContactIds.Count,
-                ContactsCount = filteredContactIds.Count
+                ContactsCount = contactIds.Count
             };
         }
 

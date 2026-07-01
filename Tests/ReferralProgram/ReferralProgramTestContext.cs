@@ -88,8 +88,7 @@ internal sealed class ReferralProgramTestContext : IDisposable
         var dto = new SaveReferralStep3SettingsDto
         {
             StartDate = DateTime.UtcNow.AddDays(-1),
-            EndDate = DateTime.UtcNow.AddDays(30),
-            SendToSpecificTags = false
+            EndDate = DateTime.UtcNow.AddDays(30)
         };
 
         configure?.Invoke(dto);

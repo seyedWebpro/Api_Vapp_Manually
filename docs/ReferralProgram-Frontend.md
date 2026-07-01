@@ -1,6 +1,6 @@
 # ReferralProgram — راهنمای اتصال فرانت
 
-> برای Cursor / توسعه‌دهنده کلاینت. Backend فاز فعلی **آماده اتصال** است.
+> برای Cursor / توسعه‌دهنده کلاینت. Backend **آماده اتصال** است.
 
 ## پیش‌نیاز
 
@@ -23,9 +23,21 @@ Content:   application/json
 }
 ```
 
-- `success=false` → پیام را به کاربر نشان بده (`message` + در صورت وجود `errors[]`)
+- `success=false` → `message` (+ در صورت وجود `errors[]`) را به کاربر نشان بده
 - `statusCode` HTTP واقعی است (200, 201, 400, 404, 500)
-- تاریخ‌ها UTC هستند
+- تاریخ‌ها **UTC** هستند
+
+---
+
+## تغییر مهم (آخرین نسخه)
+
+**فیلتر تگ از مرحله ۳ به مرحله ۲ منتقل شد.**
+
+| قبل | الان |
+|-----|------|
+| تگ در `settings/save` | تگ در `validate-step2` |
+| تعداد با تگ از step3 | تعداد با تگ از step2 → `totalContactsCount` |
+| step3 = تاریخ + تگ + save | step3 = **فقط تاریخ** + save |
 
 ---
 
@@ -33,9 +45,10 @@ Content:   application/json
 
 - هر **برنامه** = **یک کد عمومی** (`PublicCode` مثل `REF482931`) برای همه
 - **کی کد آورده مهم نیست** — inquire/redeem مخاطب را چک نمی‌کند
-- **مرحله ۲ ویزارد** فقط تعیین می‌کند **به چه کسانی SMS** برود
+- **مرحله ۲** = مخاطب + **فیلتر تگ** + تعداد نهایی SMS
+- **مرحله ۳** = فقط تاریخ شروع/پایان + نمایش خلاصه
 - **inquire** = فقط بررسی (منقضی؟ مبلغ تخفیف؟) — چیزی ثبت نمی‌شود
-- **redeem** = ثبت مصرف در تاریخچه (+ واریز اختیاری به کش‌بک مخاطب)
+- **redeem** = ثبت مصرف در تاریخچه
 
 ---
 
@@ -50,29 +63,42 @@ Content:   application/json
 | حذف | `POST /{id}/delete` |
 | ویرایش | `POST /{id}/update` |
 | تاریخچه مصرف | `GET /{id}/history?pageNumber=1&pageSize=10` |
-| ویزارد — مرحله ۱ | `POST /validate-step1` |
-| ویزارد — مرحله ۲ (دفترچه‌ها) | `GET /notebooks` + `POST /validate-step2` |
-| ویزارد — مرحله ۳ | `POST /settings/save` |
-| ویزارد — خلاصه | `GET /summary?draftId=` |
+| ویزارد — مرحله ۱ (پاداش) | `POST /validate-step1` |
+| ویزارد — مرحله ۲ (مخاطب + تگ) | `GET /notebooks` + `POST /validate-step2` |
+| ویزارد — مرحله ۳ (تاریخ + خلاصه) | `POST /settings/save` |
+| خواندن خلاصه (اختیاری) | `GET /summary?draftId=` |
 | ویزارد — تأیید نهایی | `POST /confirm` |
 | فروشگاه — استعلام کد | `POST /inquire` |
 | فروشگاه — ثبت مصرف | `POST /redeem` |
 
 ---
 
-## ویزارد (ترتیب اجباری)
+## فلو ویزارد (ترتیب اجباری)
 
 ```
-validate-step1  →  draftId
-validate-step2  →  draftId + TargetAudience
-settings/save   →  draftId + Settings (تاریخ)
-summary         →  draftId (اختیاری قبل از confirm)
-confirm         →  draftId  →  برنامه + PublicCode
+step1  validate-step1   →  draftId
+step2  validate-step2   →  مخاطب + تگ + totalContactsCount
+step3  settings/save    →  تاریخ فقط (خلاصه + contactsCount)
+       confirm           →  ساخت برنامه + PublicCode + SMS
 ```
 
-**draftId** را در state اپ نگه دار. اعتبار پیش‌نویس: **۲۴ ساعت**.
+`draftId` را در state نگه دار. اعتبار draft: **۲۴ ساعت**.
 
-### مرحله ۱ — `POST /validate-step1`
+---
+
+## ❌ اشتباهات رایج فرانت
+
+| اشتباه | درست |
+|--------|------|
+| `settings/save` = آخرین API | **`confirm`** آخرین API است |
+| تگ در body مرحله ۳ | تگ فقط در **`validate-step2`** |
+| `settings/save` برای آپدیت تگ | تگ عوض شد → **`validate-step2`** دوباره |
+| بستن ویزارد بعد از `settings/save` | فقط بعد از **`confirm`** ببند |
+| `sendToSpecificTags` در settings | **حذف شده** از step3 |
+
+---
+
+## مرحله ۱ — `POST /validate-step1`
 
 ```json
 {
@@ -87,57 +113,118 @@ confirm         →  draftId  →  برنامه + PublicCode
 
 `rewardType`: `"Percentage"` | `"FixedAmount"`
 
-پاسخ مهم: `data.draftId`, `data.draftExpiresAt`
+**پاسخ:**
+```json
+{
+  "data": {
+    "draftId": "42_abc123",
+    "draftExpiresAt": "2026-06-30T12:00:00Z"
+  }
+}
+```
 
-### مرحله ۲ — `POST /validate-step2`
+---
+
+## مرحله ۲ — `POST /validate-step2` (مخاطب + تگ)
+
+**لیست دفترچه (اختیاری):** `GET /notebooks`
 
 ```json
 {
-  "draftId": "123_uuid",
+  "draftId": "42_abc123",
   "targetAudience": "All",
   "targetNotebookIds": null,
-  "targetContactIds": null
+  "targetContactIds": null,
+  "sendToSpecificTags": true,
+  "targetTagIds": [1, 3]
 }
 ```
 
 `targetAudience`: `"All"` | `"SpecificNotebooks"` | `"Individual"`
 
-### مرحله ۳ — `POST /settings/save`
+- `SpecificNotebooks` → `targetNotebookIds` الزامی
+- `Individual` → `targetContactIds` الزامی
+- `sendToSpecificTags: true` → `targetTagIds` حداقل ۱ عدد
 
-```json
-{
-  "draftId": "123_uuid",
-  "settings": {
-    "startDate": "2026-06-27T00:00:00Z",
-    "endDate": "2026-07-27T00:00:00Z",
-    "sendToSpecificTags": false,
-    "targetTagIds": null
-  }
-}
-```
-
-**پاسخ — تعداد مخاطب:**
+**پاسخ:**
 ```json
 {
   "data": {
-    "totalContactsCount": 150,
-    "contactsCount": 150
+    "totalContactsCount": 45,
+    "targetAudienceDescription": "همه مخاطبین + 2 تگ"
   }
 }
 ```
 
-- `totalContactsCount` = مخاطب step2 (بدون تگ)
-- `contactsCount` = گیرنده SMS (بعد از فیلتر تگ؛ اگر تگ نباشد برابر totalContactsCount)
+### تعداد مخاطب — UI
 
-`GET /summary?draftId=` همان فیلدها را برمی‌گرداند.
+- **همیشه `totalContactsCount` را نشان بده**
+- تگ / مخاطب عوض شد → **دوباره `validate-step2`** (debounce 500ms)
+- **`settings/save` برای تگ نزن**
 
-### تأیید — `POST /confirm`
+---
+
+## مرحله ۳ — `POST /settings/save` (فقط تاریخ)
 
 ```json
-{ "draftId": "123_uuid" }
+{
+  "draftId": "42_abc123",
+  "settings": {
+    "startDate": "2026-06-29T00:00:00Z",
+    "endDate": "2026-07-29T00:00:00Z"
+  }
+}
 ```
 
-پاسخ: `data.program.publicCode`, `data.smsSentCount`
+❌ `sendToSpecificTags` / `targetTagIds` اینجا **نیست**
+
+**پاسخ (خلاصه کامل):**
+```json
+{
+  "data": {
+    "programTitle": "پاداش نوروز",
+    "rewardType": "مبلغ ثابت",
+    "referrerReward": "50,000 تومان",
+    "customerReward": "10,000 تومان",
+    "startDate": "1404/04/08",
+    "endDate": "1404/05/08",
+    "audience": "همه مخاطبین + 2 تگ",
+    "contactsCount": 45
+  }
+}
+```
+
+- `contactsCount` = همان `totalContactsCount` از step2 (بعد از تگ)
+- این API **صفحه را نمی‌بندد** — فقط تاریخ save + خلاصه
+
+**اختیاری:** `GET /summary?draftId=42_abc123` — همان خلاصه بدون save مجدد
+
+---
+
+## تأیید نهایی — `POST /confirm`
+
+```json
+{
+  "draftId": "42_abc123"
+}
+```
+
+**پاسخ:**
+```json
+{
+  "statusCode": 201,
+  "data": {
+    "program": {
+      "id": 5,
+      "publicCode": "REF482931"
+    },
+    "smsSentCount": 45,
+    "smsFailedCount": 0
+  }
+}
+```
+
+→ **بعد از این** ویزارد تمام — برو صفحه بعد
 
 ---
 
@@ -152,45 +239,36 @@ confirm         →  draftId  →  برنامه + PublicCode
 }
 ```
 
-| فیلد پاسخ | UI |
-|-----------|-----|
+| فیلد | UI |
+|------|-----|
 | `isValid` | کد قابل استفاده |
 | `isExpired` | منقضی |
 | `isNotStarted` | هنوز شروع نشده |
-| `customerDiscountAmount` | مبلغ تخفیف (برای درصدی → `purchaseAmount` بفرست) |
-| `formattedCustomerDiscount` | متن آماده نمایش |
+| `customerDiscountAmount` | مبلغ تخفیف |
 
-کد اشتباه → `success=true` ولی `isValid=false` (404 نیست).
+کد اشتباه → `success=true` ولی `isValid=false`
 
 ### ثبت مصرف — `POST /redeem`
 
 ```json
 {
   "code": "REF482931",
-  "purchaseAmount": 500000,
-  "customerContactId": null,
-  "referrerContactId": null,
-  "description": "فروش فاکتور ۱۲۳"
+  "purchaseAmount": 500000
 }
 ```
 
-- `purchaseAmount` برای `Percentage` **الزامی**
-- `customerContactId` / `referrerContactId` **اختیاری** — فقط برای واریز کش‌بک
+- `Percentage` → `purchaseAmount` الزامی
 - موفق → `statusCode: 201`
 
 ---
 
-## ویرایش جزئی — `POST /{id}/update`
+## ویرایش — `POST /{id}/update`
 
-فقط فیلدهای ارسالی عوض می‌شوند. body خالی → 400.
+Partial update — body خالی → 400
 
 ```json
 {
   "title": "نام جدید",
-  "isActive": true,
-  "referrerRewardValue": 60000,
-  "isCustomerRewardActive": true,
-  "customerRewardValue": 15000,
   "endDate": "2026-08-01T00:00:00Z"
 }
 ```
@@ -213,23 +291,14 @@ confirm         →  draftId  →  برنامه + PublicCode
 
 ## خطاهای رایج
 
-| statusCode | معنی | اقدام UI |
-|------------|------|----------|
-| 400 | validation | `errors[]` یا `message` |
-| 404 | برنامه/کد (در redeem) | پیام مناسب |
-| 500 | سرور | پیام عمومی — retry |
-
----
-
-## چیزهایی که عمداً نیست
-
-- کد جدا per مخاطب ❌
-- محدودیت «فقط مخاطبین لیست SMS» در inquire/redeem ❌
-- SMS بعد از redeem ❌ (فعلاً)
-- job خودکار انقضا ❌ (تاریخ در query چک می‌شود)
+| statusCode | معنی |
+|------------|------|
+| 400 | validation — `errors[]` |
+| 404 | برنامه/کد (redeem) |
+| 500 | retry |
 
 ---
 
 ## Swagger
 
-بعد از run پروژه: `/swagger` → `ReferralProgram`
+`/swagger` → `ReferralProgram`

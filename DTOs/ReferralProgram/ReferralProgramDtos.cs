@@ -88,12 +88,7 @@ namespace Api_Vapp.DTOs.ReferralProgram
         public string Audience { get; set; } = string.Empty;
 
         /// <summary>
-        /// تعداد مخاطبین انتخاب‌شده در مرحله ۲ (بدون فیلتر تگ)
-        /// </summary>
-        public int TotalContactsCount { get; set; }
-
-        /// <summary>
-        /// تعداد نهایی گیرنده SMS (بعد از اعمال فیلتر تگ در مرحله ۳)
+        /// تعداد نهایی گیرنده SMS (با اعمال فیلتر تگ در مرحله ۲)
         /// </summary>
         public int ContactsCount { get; set; }
     }
@@ -209,6 +204,10 @@ namespace Api_Vapp.DTOs.ReferralProgram
         public List<int>? TargetNotebookIds { get; set; }
 
         public List<int>? TargetContactIds { get; set; }
+
+        public bool SendToSpecificTags { get; set; }
+
+        public List<int>? TargetTagIds { get; set; }
     }
 
     public class SaveReferralStep3SettingsDto
@@ -217,10 +216,6 @@ namespace Api_Vapp.DTOs.ReferralProgram
         public DateTime StartDate { get; set; }
 
         public DateTime? EndDate { get; set; }
-
-        public bool SendToSpecificTags { get; set; }
-
-        public List<int>? TargetTagIds { get; set; }
     }
 
     public class SaveReferralStep3RequestDto
