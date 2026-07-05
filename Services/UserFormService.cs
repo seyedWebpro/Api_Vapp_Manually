@@ -90,7 +90,7 @@ namespace Api_Vapp.Services
             }
         }
 
-        public async Task<ApiResponse<UserFormResponseDto>> UpdateAsync(int id, int userId, UpdateUserFormDto updateDto)
+        public async Task<ApiResponse<UserFormResponseDto>> UpdateInfoAsync(int id, int userId, UpdateUserFormInfoDto? updateDto)
         {
             try
             {
@@ -101,40 +101,20 @@ namespace Api_Vapp.Services
                         errorCode: ErrorCodes.ValidationFailed);
                 }
 
-                var form = await _userFormRepository.GetByIdWithDetailsTrackedAsync(id);
-                if (form == null)
-                {
-                    return ApiResponse<UserFormResponseDto>.NotFound("فرم یافت نشد");
-                }
-
-                if (form.UserId != userId)
-                {
-                    return ApiResponse<UserFormResponseDto>.Forbidden(
-                        ControlledErrorHelper.Unauthorized,
-                        ErrorCodes.Forbidden);
-                }
-
-                if (!HasAnyChanges(updateDto))
+                if (!HasAnyInfoChanges(updateDto))
                 {
                     return ApiResponse<UserFormResponseDto>.BadRequest(
                         "هیچ موردی برای به‌روزرسانی ارسال نشده است",
                         errorCode: ErrorCodes.ValidationFailed);
                 }
 
-                Dictionary<string, UserFormField>? fieldLookup = null;
-
-                if (updateDto.Fields != null && updateDto.Fields.Count > 0)
+                var formResult = await GetTrackedFormForUserAsync(id, userId);
+                if (formResult.Error != null)
                 {
-                    fieldLookup = BuildFieldLookup(form);
-                    var fieldErrors = ValidatePartialFieldUpdates(fieldLookup, updateDto.Fields);
-                    if (fieldErrors.Count > 0)
-                    {
-                        return ApiResponse<UserFormResponseDto>.BadRequest(
-                            "داده‌های فیلدها نامعتبر است",
-                            fieldErrors,
-                            ErrorCodes.ValidationFailed);
-                    }
+                    return formResult.Error;
                 }
+
+                var form = formResult.Form!;
 
                 if (!string.IsNullOrWhiteSpace(updateDto.Slug))
                 {
@@ -186,9 +166,13 @@ namespace Api_Vapp.Services
                     form.IsActive = updateDto.IsActive.Value;
                 }
 
+                List<int>? notebookIdsForValidation = null;
                 if (updateDto.NotebookIds != null)
                 {
-                    var notebookErrors = await ValidateNotebookIdsAsync(userId, updateDto.NotebookIds);
+                    var distinctNotebookIds = updateDto.NotebookIds.Distinct().ToList();
+                    notebookIdsForValidation = distinctNotebookIds;
+
+                    var notebookErrors = await ValidateNotebookIdsAsync(userId, distinctNotebookIds);
                     if (notebookErrors.Count > 0)
                     {
                         return ApiResponse<UserFormResponseDto>.BadRequest(
@@ -198,7 +182,7 @@ namespace Api_Vapp.Services
                     }
 
                     await ClearNotebookLinksAsync(form);
-                    foreach (var notebookId in updateDto.NotebookIds.Distinct())
+                    foreach (var notebookId in distinctNotebookIds)
                     {
                         form.Notebooks.Add(new UserFormNotebook
                         {
@@ -208,55 +192,75 @@ namespace Api_Vapp.Services
                     }
                 }
 
-                if (updateDto.Fields != null && updateDto.Fields.Count > 0)
-                {
-                    MergeFormFields(form, updateDto.Fields, fieldLookup ?? BuildFieldLookup(form));
-
-                    var mergedFieldErrors = ValidateFields(form.Fields.Select(MapFieldToDto).ToList());
-                    if (mergedFieldErrors.Count > 0)
-                    {
-                        return ApiResponse<UserFormResponseDto>.BadRequest(
-                            "داده‌های فیلدها نامعتبر است",
-                            mergedFieldErrors,
-                            ErrorCodes.ValidationFailed);
-                    }
-                }
-
-                var fieldsForValidation = form.Fields.Select(MapFieldToDto).ToList();
-
-                var notebookIdsForValidation = updateDto.NotebookIds?.Distinct().ToList()
-                    ?? form.Notebooks.Select(n => n.ContactNotebookId).ToList();
-
-                if (form.SaveToPhonebook)
-                {
-                    var phonebookErrors = ValidatePhonebookSettings(
-                        form.SaveToPhonebook,
-                        notebookIdsForValidation,
-                        fieldsForValidation);
-
-                    if (phonebookErrors.Count > 0)
-                    {
-                        return ApiResponse<UserFormResponseDto>.BadRequest(
-                            "تنظیمات دفترچه تلفن نامعتبر است",
-                            phonebookErrors,
-                            ErrorCodes.ValidationFailed);
-                    }
-                }
-
-                form.UpdatedAt = DateTime.UtcNow;
-                await _context.SaveChangesAsync();
-
-                return ApiResponse<UserFormResponseDto>.CreateSuccess(
-                    MapToResponseDto(form),
+                return await SaveFormWithPhonebookValidationAsync(
+                    form,
+                    notebookIdsForValidation,
                     "فرم با موفقیت به‌روزرسانی شد");
             }
             catch (DbUpdateException dbEx)
             {
-                return MapDbUpdateException<UserFormResponseDto>(dbEx, "updating user form", id, userId);
+                return MapDbUpdateException<UserFormResponseDto>(dbEx, "updating user form info", id, userId);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error updating user form {FormId} for user {UserId}", id, userId);
+                _logger.LogError(ex, "Error updating user form info {FormId} for user {UserId}", id, userId);
+                return ApiResponse<UserFormResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
+        public async Task<ApiResponse<UserFormResponseDto>> UpdateFieldsAsync(int id, int userId, UpdateUserFormFieldsDto? updateDto)
+        {
+            try
+            {
+                if (updateDto == null || updateDto.Fields.Count == 0)
+                {
+                    return ApiResponse<UserFormResponseDto>.BadRequest(
+                        "حداقل یک فیلد برای به‌روزرسانی الزامی است",
+                        errorCode: ErrorCodes.ValidationFailed);
+                }
+
+                var formResult = await GetTrackedFormForUserAsync(id, userId);
+                if (formResult.Error != null)
+                {
+                    return formResult.Error;
+                }
+
+                var form = formResult.Form!;
+                var fieldLookup = BuildFieldLookup(form);
+                var fieldErrors = ValidatePartialFieldUpdates(fieldLookup, updateDto.Fields);
+                if (fieldErrors.Count > 0)
+                {
+                    return ApiResponse<UserFormResponseDto>.BadRequest(
+                        "داده‌های فیلدها نامعتبر است",
+                        fieldErrors,
+                        ErrorCodes.ValidationFailed);
+                }
+
+                MergeFormFields(form, updateDto.Fields, fieldLookup);
+
+                var mergedFieldDtos = form.Fields.Select(MapFieldToDto).ToList();
+                var mergedFieldErrors = ValidateFields(mergedFieldDtos);
+                if (mergedFieldErrors.Count > 0)
+                {
+                    return ApiResponse<UserFormResponseDto>.BadRequest(
+                        "داده‌های فیلدها نامعتبر است",
+                        mergedFieldErrors,
+                        ErrorCodes.ValidationFailed);
+                }
+
+                return await SaveFormWithPhonebookValidationAsync(
+                    form,
+                    notebookIdsOverride: null,
+                    "فیلدهای فرم با موفقیت به‌روزرسانی شد",
+                    mergedFieldDtos);
+            }
+            catch (DbUpdateException dbEx)
+            {
+                return MapDbUpdateException<UserFormResponseDto>(dbEx, "updating user form fields", id, userId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating user form fields {FormId} for user {UserId}", id, userId);
                 return ApiResponse<UserFormResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
@@ -592,15 +596,67 @@ namespace Api_Vapp.Services
             return (null, normalizedSlug);
         }
 
-        private static bool HasAnyChanges(UpdateUserFormDto updateDto)
+        private static bool HasAnyInfoChanges(UpdateUserFormInfoDto updateDto)
         {
             return updateDto.Title != null
                 || updateDto.Description != null
                 || !string.IsNullOrWhiteSpace(updateDto.Slug)
                 || updateDto.SaveToPhonebook.HasValue
                 || updateDto.IsActive.HasValue
-                || updateDto.NotebookIds != null
-                || (updateDto.Fields != null && updateDto.Fields.Count > 0);
+                || updateDto.NotebookIds != null;
+        }
+
+        private async Task<(UserForm? Form, ApiResponse<UserFormResponseDto>? Error)> GetTrackedFormForUserAsync(int id, int userId)
+        {
+            var form = await _userFormRepository.GetByIdWithDetailsTrackedForUserAsync(id, userId);
+            if (form != null)
+            {
+                return (form, null);
+            }
+
+            var exists = await _userFormRepository.GetByIdAsync(id);
+            if (exists == null)
+            {
+                return (null, ApiResponse<UserFormResponseDto>.NotFound("فرم یافت نشد"));
+            }
+
+            return (null, ApiResponse<UserFormResponseDto>.Forbidden(
+                ControlledErrorHelper.Unauthorized,
+                ErrorCodes.Forbidden));
+        }
+
+        private async Task<ApiResponse<UserFormResponseDto>> SaveFormWithPhonebookValidationAsync(
+            UserForm form,
+            List<int>? notebookIdsOverride,
+            string successMessage,
+            List<UserFormFieldDto>? fieldsForValidation = null)
+        {
+            fieldsForValidation ??= form.Fields.Select(MapFieldToDto).ToList();
+            var notebookIdsForValidation = notebookIdsOverride
+                ?? form.Notebooks.Select(n => n.ContactNotebookId).ToList();
+
+            if (form.SaveToPhonebook)
+            {
+                var phonebookErrors = ValidatePhonebookSettings(
+                    form.SaveToPhonebook,
+                    notebookIdsForValidation,
+                    fieldsForValidation);
+
+                if (phonebookErrors.Count > 0)
+                {
+                    return ApiResponse<UserFormResponseDto>.BadRequest(
+                        "تنظیمات دفترچه تلفن نامعتبر است",
+                        phonebookErrors,
+                        ErrorCodes.ValidationFailed);
+                }
+            }
+
+            form.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            return ApiResponse<UserFormResponseDto>.CreateSuccess(
+                MapToResponseDto(form),
+                successMessage);
         }
 
         private static Dictionary<string, UserFormField> BuildFieldLookup(UserForm form)

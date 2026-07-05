@@ -3,9 +3,9 @@ using System.ComponentModel.DataAnnotations;
 namespace Api_Vapp.DTOs.UserForm
 {
     /// <summary>
-    /// به‌روزرسانی جزئی فرم — فقط فیلدهای ارسال‌شده تغییر می‌کنند.
+    /// به‌روزرسانی اطلاعات اصلی فرم — فقط فیلدهای ارسال‌شده تغییر می‌کنند.
     /// </summary>
-    public class UpdateUserFormDto
+    public class UpdateUserFormInfoDto
     {
         [MaxLength(200, ErrorMessage = "عنوان فرم نمی‌تواند بیشتر از 200 کاراکتر باشد")]
         public string? Title { get; set; }
@@ -24,7 +24,5 @@ namespace Api_Vapp.DTOs.UserForm
         public bool? IsActive { get; set; }
 
         public List<int>? NotebookIds { get; set; }
-
-        public List<UpdateUserFormFieldDto>? Fields { get; set; }
     }
 }

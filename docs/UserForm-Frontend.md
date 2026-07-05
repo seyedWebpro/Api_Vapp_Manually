@@ -47,7 +47,8 @@ Content:   application/json
 | لیست فرم‌ها | `GET /?pageNumber=1&pageSize=10` |
 | جزئیات / ویرایش | `GET /{id}` |
 | ساخت پیش‌نویس (انتخاب قالب) | `POST /` |
-| ذخیره تغییرات | `POST /{id}/update` |
+| ذخیره اطلاعات اصلی | `POST /{id}/update-info` |
+| ذخیره فیلدها | `POST /{id}/update-fields` |
 | انتشار + لینک | `POST /{id}/publish` |
 | فعال/غیرفعال (فقط Published) | `POST /{id}/toggle-status` |
 | حذف | `POST /{id}/delete` |
@@ -59,12 +60,17 @@ Content:   application/json
 
 ```
 انتخاب قالب (local)  →  POST /  →  formId
-ویرایش مرحله‌ای       →  POST /{id}/update  (فقط فیلدهای تغییرکرده)
+ویرایش اطلاعات اصلی   →  POST /{id}/update-info
+ویرایش فیلدها         →  POST /{id}/update-fields
 پیش‌نمایش             →  local state (بدون API)
 انتشار                →  POST /{id}/publish  →  publicUrl
 ```
 
 `formId` را در state ویزارد/ویرایش نگه دار.
+
+> **تغییر API (breaking):** `POST /{id}/update` حذف شد. به‌جای آن دو endpoint جدا استفاده کنید:
+> - `update-info` → عنوان، توضیحات، slug، دفترچه، `isActive`
+> - `update-fields` → آرایه `fields`
 
 ---
 
@@ -107,7 +113,7 @@ Content:   application/json
 
 ---
 
-## `POST /{id}/update` — به‌روزرسانی جزئی
+## `POST /{id}/update-info` — اطلاعات اصلی
 
 **همه فیلدها اختیاری.** فقط چیزی که می‌فرستی عوض می‌شود.
 
@@ -116,24 +122,10 @@ Content:   application/json
 | `title`, `description`, `slug`, `saveToPhonebook` | فقط اگر ارسال شود |
 | `isActive` | فقط فرم **Published** — مقدار صریح فعال/غیرفعال |
 | `notebookIds` | اگر ارسال شود → جایگزین کامل لیست |
-| `fields` | merge جزئی بر اساس `fieldKey` — فقط propertyهای ارسال‌شده عوض می‌شوند |
 
 ```json
 { "title": "عنوان جدید" }
 ```
-
-```json
-{
-  "fields": [
-    {
-      "fieldKey": "mobile",
-      "label": "شماره تماس"
-    }
-  ]
-}
-```
-
-> فقط `fieldKey` الزامی است. propertyهای ارسال‌نشده (مثل `fieldType`, `isRequired`, `displayOrder`) **بدون تغییر** می‌مانند.
 
 ```json
 { "isActive": false }
@@ -149,9 +141,55 @@ Content:   application/json
 }
 ```
 
-- body خالی → `400` («هیچ موردی برای به‌روزرسانی ارسال نشده است»)
+- body خالی `{}` یا بدون هیچ property → `400` + `VALIDATION_FAILED` («هیچ موردی برای به‌روزرسانی ارسال نشده است»)
+- `title` خالی (`"   "`) → `400`
+- `saveToPhonebook=true` بدون `notebookIds` معتبر یا بدون فیلد **mobile** فعال → `400` + `errors[]`
 
 ---
+
+## `POST /{id}/update-fields` — فیلدهای فرم
+
+`fields` **الزامی** — حداقل ۱ آیتم. merge جزئی بر اساس `fieldKey` (فقط propertyهای ارسال‌شده عوض می‌شوند).
+
+| فیلد body | روتینگ |
+|-----------|--------|
+| `fields[].fieldKey` | الزامی — شناسه merge |
+| `fields[].fieldType` | برای فیلد **جدید** الزامی |
+| `fields[].label` | برای فیلد **جدید** الزامی |
+| بقیه propertyها | اختیاری — partial update |
+
+```json
+{
+  "fields": [
+    {
+      "fieldKey": "mobile",
+      "fieldType": "mobile",
+      "label": "شماره تماس",
+      "isActive": true,
+      "isRequired": true,
+      "displayOrder": 1
+    }
+  ]
+}
+```
+
+```json
+{
+  "fields": [
+    {
+      "fieldKey": "full_name",
+      "isRequired": false
+    }
+  ]
+}
+```
+
+- body خالی / `fields: []` / null → `400` + `VALIDATION_FAILED` («حداقل یک فیلد برای به‌روزرسانی الزامی است»)
+- فیلد جدید بدون `fieldType` → `400`
+- `fieldKey` تکراری در همان request → `400`
+- اگر فرم `saveToPhonebook=true` دارد و بعد از merge فیلد mobile فعال نباشد → `400`
+
+> **نکته phonebook:** برای ذخیره در دفترچه باید `fieldKey: "mobile"` یا `fieldType: "mobile"` باشد — `phone` / `Phone` قبول نمی‌شود.
 
 ## `POST /{id}/publish`
 
@@ -232,7 +270,23 @@ Query: `pageNumber`, `pageSize` (پیش‌فرض 1 و 10)
 | 404 | فرم نیست | برگشت به لیست |
 | 500 | سرور | پیام عمومی — retry |
 
-پیام‌های validation نمونه: slug تکراری، دفترچه نامعتبر، بدون فیلد mobile برای phonebook، بدون فیلد فعال برای publish.
+پیام‌های validation نمونه: slug تکراری، دفترچه نامعتبر، بدون فیلد mobile برای phonebook، بدون فیلد فعال برای publish، body خالی در `update-info`، `fields` خالی در `update-fields`.
+
+---
+
+## چک‌لیست تست سریع (فرانت)
+
+| # | سناریو | API | انتظار |
+|---|--------|-----|--------|
+| 1 | ساخت پیش‌نویس | `POST /` | `201` + `Draft` |
+| 2 | فقط عنوان | `POST /{id}/update-info` `{ "title": "..." }` | `200` |
+| 3 | body خالی info | `POST /{id}/update-info` `{}` | `400` |
+| 4 | merge فیلد | `POST /{id}/update-fields` | `200` |
+| 5 | `fields: []` | `POST /{id}/update-fields` | `400` |
+| 6 | `saveToPhonebook=true` + `notebookIds` + mobile | `update-info` | `200` |
+| 7 | `saveToPhonebook=true` بدون mobile | create یا update-fields | `400` |
+| 8 | انتشار | `POST /{id}/publish` | `200` + `publicUrl` |
+| 9 | فرم کاربر دیگر | هر update | `403` |
 
 ---
 

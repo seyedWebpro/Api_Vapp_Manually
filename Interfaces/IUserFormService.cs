@@ -7,7 +7,9 @@ namespace Api_Vapp.Interfaces
     {
         Task<ApiResponse<UserFormResponseDto>> CreateDraftAsync(int userId, CreateUserFormDto createDto);
 
-        Task<ApiResponse<UserFormResponseDto>> UpdateAsync(int id, int userId, UpdateUserFormDto updateDto);
+        Task<ApiResponse<UserFormResponseDto>> UpdateInfoAsync(int id, int userId, UpdateUserFormInfoDto? updateDto);
+
+        Task<ApiResponse<UserFormResponseDto>> UpdateFieldsAsync(int id, int userId, UpdateUserFormFieldsDto? updateDto);
 
         Task<ApiResponse<UserFormResponseDto>> PublishAsync(int id, int userId, PublishUserFormDto? publishDto = null);
 

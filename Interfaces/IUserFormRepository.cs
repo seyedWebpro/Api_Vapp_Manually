@@ -9,6 +9,8 @@ namespace Api_Vapp.Interfaces
 
         Task<UserForm?> GetByIdWithDetailsTrackedAsync(int id);
 
+        Task<UserForm?> GetByIdWithDetailsTrackedForUserAsync(int id, int userId);
+
         Task<UserForm?> GetOwnedFormAsync(int id, int userId, bool tracked = false);
 
         Task<UserForm?> GetBySlugReadOnlyAsync(string slug);

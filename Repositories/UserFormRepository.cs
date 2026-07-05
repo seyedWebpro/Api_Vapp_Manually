@@ -38,6 +38,18 @@ namespace Api_Vapp.Repositories
                 .FirstOrDefaultAsync(f => f.Id == id && !f.IsDeleted);
         }
 
+        public async Task<UserForm?> GetByIdWithDetailsTrackedForUserAsync(int id, int userId)
+        {
+            return await _dbSet
+                .AsSplitQuery()
+                .Include(f => f.Fields.OrderBy(field => field.DisplayOrder))
+                .Include(f => f.Notebooks)
+                .FirstOrDefaultAsync(f =>
+                    f.Id == id &&
+                    f.UserId == userId &&
+                    !f.IsDeleted);
+        }
+
         public async Task<UserForm?> GetOwnedFormAsync(int id, int userId, bool tracked = false)
         {
             var query = tracked ? _dbSet.AsQueryable() : _dbSet.AsNoTracking();

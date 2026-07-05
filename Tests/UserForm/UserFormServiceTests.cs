@@ -113,7 +113,7 @@ public class UserFormServiceTests : IAsyncLifetime
     {
         var formId = await _ctx.CreateDraftAsync();
 
-        var result = await _ctx.Service.UpdateAsync(formId, _ctx.OwnerUserId, new UpdateUserFormDto
+        var result = await _ctx.Service.UpdateInfoAsync(formId, _ctx.OwnerUserId, new UpdateUserFormInfoDto
         {
             Title = "فقط عنوان عوض شد"
         });
@@ -129,7 +129,7 @@ public class UserFormServiceTests : IAsyncLifetime
     {
         var formId = await _ctx.CreateDraftAsync();
 
-        var result = await _ctx.Service.UpdateAsync(formId, _ctx.OwnerUserId, new UpdateUserFormDto
+        var result = await _ctx.Service.UpdateFieldsAsync(formId, _ctx.OwnerUserId, new UpdateUserFormFieldsDto
         {
             Fields =
             [
@@ -156,7 +156,7 @@ public class UserFormServiceTests : IAsyncLifetime
     {
         var formId = await _ctx.CreateDraftAsync();
 
-        var result = await _ctx.Service.UpdateAsync(formId, _ctx.OwnerUserId, new UpdateUserFormDto());
+        var result = await _ctx.Service.UpdateInfoAsync(formId, _ctx.OwnerUserId, new UpdateUserFormInfoDto());
 
         Assert.False(result.Success);
         Assert.Equal(400, result.StatusCode);
@@ -168,9 +168,13 @@ public class UserFormServiceTests : IAsyncLifetime
     {
         var formId = await _ctx.CreateDraftAsync();
 
-        var result = await _ctx.Service.UpdateAsync(formId, _ctx.OwnerUserId, new UpdateUserFormDto
+        var infoResult = await _ctx.Service.UpdateInfoAsync(formId, _ctx.OwnerUserId, new UpdateUserFormInfoDto
         {
-            Title = "عنوان جدید",
+            Title = "عنوان جدید"
+        });
+
+        var result = await _ctx.Service.UpdateFieldsAsync(formId, _ctx.OwnerUserId, new UpdateUserFormFieldsDto
+        {
             Fields =
             [
                 new UpdateUserFormFieldDto
@@ -196,6 +200,8 @@ public class UserFormServiceTests : IAsyncLifetime
             ]
         });
 
+        Assert.True(infoResult.Success);
+
         Assert.True(result.Success);
         Assert.Equal(200, result.StatusCode);
         Assert.Equal("عنوان جدید", result.Data!.Title);
@@ -205,7 +211,7 @@ public class UserFormServiceTests : IAsyncLifetime
     [Fact]
     public async Task Update_NotFound_Returns404()
     {
-        var result = await _ctx.Service.UpdateAsync(99999999, _ctx.OwnerUserId, new UpdateUserFormDto
+        var result = await _ctx.Service.UpdateInfoAsync(99999999, _ctx.OwnerUserId, new UpdateUserFormInfoDto
         {
             Title = "test"
         });
@@ -220,7 +226,7 @@ public class UserFormServiceTests : IAsyncLifetime
     {
         var formId = await _ctx.CreateDraftAsync();
 
-        var result = await _ctx.Service.UpdateAsync(formId, _ctx.OtherUserId, new UpdateUserFormDto
+        var result = await _ctx.Service.UpdateInfoAsync(formId, _ctx.OtherUserId, new UpdateUserFormInfoDto
         {
             Title = "نباید مجاز باشد"
         });
@@ -413,7 +419,7 @@ public class UserFormServiceTests : IAsyncLifetime
     {
         var formId = await _ctx.CreatePublishedFormAsync("job-main-info");
 
-        var result = await _ctx.Service.UpdateAsync(formId, _ctx.OwnerUserId, new UpdateUserFormDto
+        var result = await _ctx.Service.UpdateInfoAsync(formId, _ctx.OwnerUserId, new UpdateUserFormInfoDto
         {
             Title = "درخواست استخدام و همکاری",
             Description = "لطفا اطلاعات خود را کامل وارد کنید.",
@@ -433,7 +439,7 @@ public class UserFormServiceTests : IAsyncLifetime
     {
         var formId = await _ctx.CreatePublishedFormAsync();
 
-        var result = await _ctx.Service.UpdateAsync(formId, _ctx.OwnerUserId, new UpdateUserFormDto
+        var result = await _ctx.Service.UpdateInfoAsync(formId, _ctx.OwnerUserId, new UpdateUserFormInfoDto
         {
             IsActive = false
         });
@@ -449,7 +455,7 @@ public class UserFormServiceTests : IAsyncLifetime
     {
         var formId = await _ctx.CreateDraftAsync();
 
-        var result = await _ctx.Service.UpdateAsync(formId, _ctx.OwnerUserId, new UpdateUserFormDto
+        var result = await _ctx.Service.UpdateInfoAsync(formId, _ctx.OwnerUserId, new UpdateUserFormInfoDto
         {
             IsActive = false
         });
@@ -464,7 +470,7 @@ public class UserFormServiceTests : IAsyncLifetime
     {
         var formId = await _ctx.CreatePublishedFormAsync();
 
-        var result = await _ctx.Service.UpdateAsync(formId, _ctx.OwnerUserId, new UpdateUserFormDto
+        var result = await _ctx.Service.UpdateInfoAsync(formId, _ctx.OwnerUserId, new UpdateUserFormInfoDto
         {
             SaveToPhonebook = true,
             NotebookIds = [_ctx.NotebookId]
@@ -486,7 +492,7 @@ public class UserFormServiceTests : IAsyncLifetime
         });
         await _ctx.Service.PublishAsync(formId, _ctx.OwnerUserId, new PublishUserFormDto { Slug = "no-mobile" });
 
-        var result = await _ctx.Service.UpdateAsync(formId, _ctx.OwnerUserId, new UpdateUserFormDto
+        var result = await _ctx.Service.UpdateInfoAsync(formId, _ctx.OwnerUserId, new UpdateUserFormInfoDto
         {
             SaveToPhonebook = true,
             NotebookIds = [_ctx.NotebookId]
@@ -502,7 +508,7 @@ public class UserFormServiceTests : IAsyncLifetime
     {
         var formId = await _ctx.CreateDraftAsync();
 
-        var result = await _ctx.Service.UpdateAsync(formId, _ctx.OwnerUserId, new UpdateUserFormDto
+        var result = await _ctx.Service.UpdateFieldsAsync(formId, _ctx.OwnerUserId, new UpdateUserFormFieldsDto
         {
             Fields =
             [
@@ -527,7 +533,7 @@ public class UserFormServiceTests : IAsyncLifetime
     {
         var formId = await _ctx.CreateDraftAsync();
 
-        var result = await _ctx.Service.UpdateAsync(formId, _ctx.OwnerUserId, new UpdateUserFormDto
+        var result = await _ctx.Service.UpdateFieldsAsync(formId, _ctx.OwnerUserId, new UpdateUserFormFieldsDto
         {
             Fields =
             [
@@ -549,7 +555,7 @@ public class UserFormServiceTests : IAsyncLifetime
     {
         var formId = await _ctx.CreateDraftAsync();
 
-        var result = await _ctx.Service.UpdateAsync(formId, _ctx.OwnerUserId, new UpdateUserFormDto
+        var result = await _ctx.Service.UpdateInfoAsync(formId, _ctx.OwnerUserId, new UpdateUserFormInfoDto
         {
             Title = "   "
         });
@@ -561,11 +567,23 @@ public class UserFormServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Update_NullDto_Returns400()
+    public async Task UpdateInfo_NullDto_Returns400()
     {
         var formId = await _ctx.CreateDraftAsync();
 
-        var result = await _ctx.Service.UpdateAsync(formId, _ctx.OwnerUserId, null!);
+        var result = await _ctx.Service.UpdateInfoAsync(formId, _ctx.OwnerUserId, null!);
+
+        Assert.False(result.Success);
+        Assert.Equal(400, result.StatusCode);
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task UpdateFields_EmptyFields_Returns400()
+    {
+        var formId = await _ctx.CreateDraftAsync();
+
+        var result = await _ctx.Service.UpdateFieldsAsync(formId, _ctx.OwnerUserId, new UpdateUserFormFieldsDto());
 
         Assert.False(result.Success);
         Assert.Equal(400, result.StatusCode);

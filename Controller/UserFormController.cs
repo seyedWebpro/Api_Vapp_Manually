@@ -78,12 +78,12 @@ namespace Api_Vapp.Controller
         }
 
         /// <summary>
-        /// به‌روزرسانی فرم (اطلاعات اصلی، فیلدها، دفترچه)
+        /// به‌روزرسانی اطلاعات اصلی فرم (عنوان، توضیحات، slug، دفترچه تلفن)
         /// </summary>
-        [HttpPost("{id}/update")]
+        [HttpPost("{id}/update-info")]
         [ProducesResponseType(typeof(ApiResponse<UserFormResponseDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<UserFormResponseDto>), StatusCodes.Status400BadRequest)]
-        public async Task<ActionResult<ApiResponse<UserFormResponseDto>>> Update(int id, [FromBody] UpdateUserFormDto? updateDto)
+        public async Task<ActionResult<ApiResponse<UserFormResponseDto>>> UpdateInfo(int id, [FromBody] UpdateUserFormInfoDto? updateDto)
         {
             if (updateDto == null)
             {
@@ -99,7 +99,33 @@ namespace Api_Vapp.Controller
             }
 
             var userId = await GetCurrentUserIdAsync();
-            var result = await _userFormService.UpdateAsync(id, userId, updateDto);
+            var result = await _userFormService.UpdateInfoAsync(id, userId, updateDto);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        /// <summary>
+        /// به‌روزرسانی فیلدهای فرم
+        /// </summary>
+        [HttpPost("{id}/update-fields")]
+        [ProducesResponseType(typeof(ApiResponse<UserFormResponseDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<UserFormResponseDto>), StatusCodes.Status400BadRequest)]
+        public async Task<ActionResult<ApiResponse<UserFormResponseDto>>> UpdateFields(int id, [FromBody] UpdateUserFormFieldsDto? updateDto)
+        {
+            if (updateDto == null)
+            {
+                return StatusCode(400, ApiResponse<UserFormResponseDto>.BadRequest(
+                    "حداقل یک فیلد برای به‌روزرسانی الزامی است",
+                    errorCode: ErrorCodes.ValidationFailed));
+            }
+
+            var invalid = InvalidModelStateResponse<UserFormResponseDto>();
+            if (invalid != null)
+            {
+                return invalid;
+            }
+
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _userFormService.UpdateFieldsAsync(id, userId, updateDto);
             return StatusCode(result.StatusCode, result);
         }
 
