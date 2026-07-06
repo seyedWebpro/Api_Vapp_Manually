@@ -1,5 +1,6 @@
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.DTOs.LuckyWheel;
+using Api_Vapp.DTOs.User;
 using Api_Vapp.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -122,14 +123,23 @@ namespace Api_Vapp.Controller
         }
 
         /// <summary>
-        /// فعال/غیرفعال کردن گردونه منتشرشده
+        /// فعال/غیرفعال کردن گردونه منتشرشده (صفحه تنظیمات)
         /// </summary>
-        [HttpPost("{id}/toggle-status")]
+        [HttpPost("{id}/toggle-active")]
         [ProducesResponseType(typeof(ApiResponse<LuckyWheelResponseDto>), StatusCodes.Status200OK)]
-        public async Task<ActionResult<ApiResponse<LuckyWheelResponseDto>>> ToggleStatus(int id)
+        [ProducesResponseType(typeof(ApiResponse<LuckyWheelResponseDto>), StatusCodes.Status400BadRequest)]
+        public async Task<ActionResult<ApiResponse<LuckyWheelResponseDto>>> SetActiveStatus(
+            int id,
+            [FromBody] ToggleActiveDto toggleActiveDto)
         {
+            var invalid = InvalidModelStateResponse<LuckyWheelResponseDto>();
+            if (invalid != null)
+            {
+                return invalid;
+            }
+
             var userId = await GetCurrentUserIdAsync();
-            var result = await _luckyWheelService.ToggleStatusAsync(id, userId);
+            var result = await _luckyWheelService.SetActiveStatusAsync(id, userId, toggleActiveDto.IsActive);
             return StatusCode(result.StatusCode, result);
         }
     }

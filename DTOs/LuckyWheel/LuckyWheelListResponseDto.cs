@@ -22,6 +22,11 @@ namespace Api_Vapp.DTOs.LuckyWheel
 
         public string? PublicUrl { get; set; }
 
+        /// <summary>
+        /// تعداد شرکت‌کنندگان — فاز ۲ (چرخش عمومی) پر می‌شود؛ فعلاً ۰
+        /// </summary>
+        public int ParticipantCount { get; set; }
+
         public DateTime CreatedAt { get; set; }
 
         public DateTime? PublishedAt { get; set; }

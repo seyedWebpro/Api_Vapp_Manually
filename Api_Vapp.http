@@ -44,6 +44,29 @@ Content-Type: application/json
 ### لیست گردونه‌ها
 GET {{Api_Vapp_HostAddress}}/api/LuckyWheel?pageNumber=1&pageSize=10
 
+### ویرایش اطلاعات اصلی (تنظیمات)
+POST {{Api_Vapp_HostAddress}}/api/LuckyWheel/1/update
+Content-Type: application/json
+
+{
+  "title": "گردونه جشن تابستانه",
+  "description": "توضیح جدید",
+  "slug": "summer-festival",
+  "saveToPhonebook": true,
+  "notebookIds": [1]
+}
+
+### فعال/غیرفعال (تنظیمات)
+POST {{Api_Vapp_HostAddress}}/api/LuckyWheel/1/toggle-active
+Content-Type: application/json
+
+{
+  "isActive": false
+}
+
+### حذف گردونه
+POST {{Api_Vapp_HostAddress}}/api/LuckyWheel/1/delete
+
 ###
 
 # --- UserSubscription (اشتراک) — نیاز به JWT یا Development:DisableAuth=true ---

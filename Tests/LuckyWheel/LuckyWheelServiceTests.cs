@@ -124,6 +124,93 @@ public class LuckyWheelServiceTests : IAsyncLifetime
         AssertNoServerError(result);
     }
 
+    [Fact]
+    public async Task Update_OnlyTitle_KeepsItems()
+    {
+        var wheelId = await _ctx.CreateWheelWithItemsAsync();
+
+        var result = await _ctx.Service.UpdateAsync(wheelId, _ctx.OwnerUserId, new UpdateLuckyWheelDto
+        {
+            Title = "فقط عنوان عوض شد"
+        });
+
+        Assert.True(result.Success);
+        Assert.Equal("فقط عنوان عوض شد", result.Data!.Title);
+        Assert.Equal(3, result.Data.Items.Count);
+        Assert.Equal(100m, result.Data.Items.Sum(i => i.Probability));
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task Update_EmptyTitle_Returns400()
+    {
+        var wheelId = await _ctx.CreateDraftAsync();
+
+        var result = await _ctx.Service.UpdateAsync(wheelId, _ctx.OwnerUserId, new UpdateLuckyWheelDto
+        {
+            Title = "   "
+        });
+
+        Assert.False(result.Success);
+        Assert.Equal(400, result.StatusCode);
+        Assert.Equal(ErrorCodes.ValidationFailed, result.ErrorCode);
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task Update_MainInfo_Returns200()
+    {
+        var wheelId = await _ctx.CreateDraftAsync();
+
+        var result = await _ctx.Service.UpdateAsync(wheelId, _ctx.OwnerUserId, new UpdateLuckyWheelDto
+        {
+            Title = "گردونه جشن تابستانه",
+            Description = "توضیح جدید",
+            Slug = "summer-festival",
+            SaveToPhonebook = true,
+            NotebookIds = [_ctx.NotebookId]
+        });
+
+        Assert.True(result.Success);
+        Assert.Equal("گردونه جشن تابستانه", result.Data!.Title);
+        Assert.Equal("summer-festival", result.Data.Slug);
+        Assert.True(result.Data.SaveToPhonebook);
+        Assert.Contains(_ctx.NotebookId, result.Data.NotebookIds);
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task SetActiveStatus_PublishedWheel_Returns200()
+    {
+        var wheelId = await _ctx.CreateWheelWithItemsAsync();
+        await _ctx.Service.PublishAsync(wheelId, _ctx.OwnerUserId, new PublishLuckyWheelDto
+        {
+            Slug = $"active-{Guid.NewGuid():N}"[..12]
+        });
+
+        var result = await _ctx.Service.SetActiveStatusAsync(wheelId, _ctx.OwnerUserId, false);
+
+        Assert.True(result.Success);
+        Assert.False(result.Data!.IsActive);
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task Delete_ValidWheel_Returns200AndClearsSlug()
+    {
+        var wheelId = await _ctx.CreateWheelWithItemsAsync();
+        var slug = $"del-{Guid.NewGuid():N}"[..10];
+        await _ctx.Service.PublishAsync(wheelId, _ctx.OwnerUserId, new PublishLuckyWheelDto { Slug = slug });
+
+        var delete = await _ctx.Service.DeleteAsync(wheelId, _ctx.OwnerUserId);
+        Assert.True(delete.Success);
+
+        var get = await _ctx.Service.GetByIdAsync(wheelId, _ctx.OwnerUserId);
+        Assert.False(get.Success);
+        Assert.Equal(404, get.StatusCode);
+        AssertNoServerError(delete);
+    }
+
     private static void AssertNoServerError<T>(ApiResponse<T> result)
     {
         Assert.NotEqual(500, result.StatusCode);

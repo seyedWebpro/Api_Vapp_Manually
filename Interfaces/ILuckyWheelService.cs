@@ -17,6 +17,6 @@ namespace Api_Vapp.Interfaces
 
         Task<ApiResponse<bool>> DeleteAsync(int id, int userId);
 
-        Task<ApiResponse<LuckyWheelResponseDto>> ToggleStatusAsync(int id, int userId);
+        Task<ApiResponse<LuckyWheelResponseDto>> SetActiveStatusAsync(int id, int userId, bool isActive);
     }
 }

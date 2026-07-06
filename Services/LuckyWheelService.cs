@@ -1,4 +1,5 @@
 using Api_Vapp.DTOs.Common;
+using Api_Vapp.DTOs.File;
 using Api_Vapp.DTOs.LuckyWheel;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
@@ -17,17 +18,20 @@ namespace Api_Vapp.Services
         private readonly ILuckyWheelRepository _luckyWheelRepository;
         private readonly Api_Vapp.Data.Api_Context _context;
         private readonly LuckyWheelOptions _luckyWheelOptions;
+        private readonly IFileUploadService _fileUploadService;
         private readonly ILogger<LuckyWheelService> _logger;
 
         public LuckyWheelService(
             ILuckyWheelRepository luckyWheelRepository,
             Api_Vapp.Data.Api_Context context,
             IOptions<LuckyWheelOptions> luckyWheelOptions,
+            IFileUploadService fileUploadService,
             ILogger<LuckyWheelService> logger)
         {
             _luckyWheelRepository = luckyWheelRepository;
             _context = context;
             _luckyWheelOptions = luckyWheelOptions.Value;
+            _fileUploadService = fileUploadService;
             _logger = logger;
         }
 
@@ -135,6 +139,13 @@ namespace Api_Vapp.Services
 
                 if (updateDto.Title != null)
                 {
+                    if (string.IsNullOrWhiteSpace(updateDto.Title))
+                    {
+                        return ApiResponse<LuckyWheelResponseDto>.BadRequest(
+                            "عنوان گردونه نمی‌تواند خالی باشد",
+                            errorCode: ErrorCodes.ValidationFailed);
+                    }
+
                     wheel.Title = updateDto.Title.Trim();
                 }
 
@@ -343,6 +354,7 @@ namespace Api_Vapp.Services
                     Status = wheel.Status.ToString(),
                     IsActive = wheel.IsActive,
                     PublicUrl = BuildPublicUrl(wheel.Slug),
+                    ParticipantCount = 0,
                     CreatedAt = EnsureUtc(wheel.CreatedAt),
                     PublishedAt = EnsureUtc(wheel.PublishedAt)
                 }).ToList();
@@ -387,6 +399,8 @@ namespace Api_Vapp.Services
 
         public async Task<ApiResponse<bool>> DeleteAsync(int id, int userId)
         {
+            _logger.LogInformation("Deleting lucky wheel {WheelId} for user {UserId}", id, userId);
+
             try
             {
                 var wheel = await _luckyWheelRepository.GetOwnedWheelAsync(id, userId, tracked: true);
@@ -396,8 +410,30 @@ namespace Api_Vapp.Services
                 }
 
                 wheel.IsDeleted = true;
+                wheel.Slug = null;
                 wheel.UpdatedAt = DateTime.UtcNow;
                 await _context.SaveChangesAsync();
+
+                try
+                {
+                    var deletedFiles = await _fileUploadService.DeleteAllEntityFilesAsync(
+                        FileUploadConstants.EntityType_LuckyWheel,
+                        id);
+
+                    if (deletedFiles > 0)
+                    {
+                        _logger.LogInformation(
+                            "Deleted {Count} file(s) for lucky wheel {WheelId}",
+                            deletedFiles,
+                            id);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Error deleting files for lucky wheel {WheelId}", id);
+                }
+
+                _logger.LogInformation("Lucky wheel {WheelId} soft-deleted for user {UserId}", id, userId);
 
                 return ApiResponse<bool>.CreateSuccess(true, "گردونه با موفقیت حذف شد");
             }
@@ -413,8 +449,14 @@ namespace Api_Vapp.Services
             }
         }
 
-        public async Task<ApiResponse<LuckyWheelResponseDto>> ToggleStatusAsync(int id, int userId)
+        public async Task<ApiResponse<LuckyWheelResponseDto>> SetActiveStatusAsync(int id, int userId, bool isActive)
         {
+            _logger.LogInformation(
+                "Setting lucky wheel {WheelId} active status to {IsActive} for user {UserId}",
+                id,
+                isActive,
+                userId);
+
             try
             {
                 var wheel = await _luckyWheelRepository.GetOwnedWheelAsync(id, userId, tracked: true);
@@ -430,7 +472,15 @@ namespace Api_Vapp.Services
                         errorCode: ErrorCodes.ValidationFailed);
                 }
 
-                wheel.IsActive = !wheel.IsActive;
+                if (wheel.IsActive == isActive)
+                {
+                    var current = await _luckyWheelRepository.GetByIdWithDetailsReadOnlyAsync(id);
+                    return ApiResponse<LuckyWheelResponseDto>.CreateSuccess(
+                        MapToResponseDto(current!),
+                        isActive ? "گردونه از قبل فعال است" : "گردونه از قبل غیرفعال است");
+                }
+
+                wheel.IsActive = isActive;
                 wheel.UpdatedAt = DateTime.UtcNow;
                 await _context.SaveChangesAsync();
 
@@ -438,18 +488,18 @@ namespace Api_Vapp.Services
 
                 return ApiResponse<LuckyWheelResponseDto>.CreateSuccess(
                     MapToResponseDto(refreshed!),
-                    wheel.IsActive ? "گردونه فعال شد" : "گردونه غیرفعال شد");
+                    isActive ? "گردونه فعال شد" : "گردونه غیرفعال شد");
             }
             catch (DbUpdateException dbEx)
             {
-                _logger.LogError(dbEx, "Database error toggling lucky wheel {WheelId} for user {UserId}", id, userId);
+                _logger.LogError(dbEx, "Database error setting active status for lucky wheel {WheelId} for user {UserId}", id, userId);
                 return ApiResponse<LuckyWheelResponseDto>.InternalServerError(
                     ControlledErrorHelper.Database,
                     ErrorCodes.DatabaseError);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error toggling lucky wheel {WheelId} for user {UserId}", id, userId);
+                _logger.LogError(ex, "Error setting active status for lucky wheel {WheelId} for user {UserId}", id, userId);
                 return ApiResponse<LuckyWheelResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }

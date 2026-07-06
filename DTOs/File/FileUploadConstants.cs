@@ -33,6 +33,11 @@ namespace Api_Vapp.DTOs.File
         /// </summary>
         public const string EntityType_UserForm = "userform";
 
+        /// <summary>
+        /// گردونه شانس
+        /// </summary>
+        public const string EntityType_LuckyWheel = "luckywheel";
+
         #endregion
 
         #region SubFolders (پوشه‌های فرعی)
