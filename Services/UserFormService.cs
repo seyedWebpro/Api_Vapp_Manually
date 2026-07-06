@@ -154,18 +154,6 @@ namespace Api_Vapp.Services
                     }
                 }
 
-                if (updateDto.IsActive.HasValue)
-                {
-                    if (form.Status != UserFormStatus.Published)
-                    {
-                        return ApiResponse<UserFormResponseDto>.BadRequest(
-                            "فقط فرم‌های منتشرشده قابل فعال/غیرفعال کردن هستند",
-                            errorCode: ErrorCodes.ValidationFailed);
-                    }
-
-                    form.IsActive = updateDto.IsActive.Value;
-                }
-
                 List<int>? notebookIdsForValidation = null;
                 if (updateDto.NotebookIds != null)
                 {
@@ -289,65 +277,15 @@ namespace Api_Vapp.Services
                         "فرم قبلاً منتشر شده است");
                 }
 
-                if (string.IsNullOrWhiteSpace(form.Title))
+                var publishError = await ValidateAndApplyPublishAsync(form, id, publishDto);
+                if (publishError != null)
                 {
-                    return ApiResponse<UserFormResponseDto>.BadRequest(
-                        "عنوان فرم الزامی است",
-                        errorCode: ErrorCodes.ValidationFailed);
+                    return publishError;
                 }
-
-                if (!form.Fields.Any(f => f.IsActive))
-                {
-                    return ApiResponse<UserFormResponseDto>.BadRequest(
-                        "حداقل یک فیلد فعال برای انتشار لازم است",
-                        errorCode: ErrorCodes.ValidationFailed);
-                }
-
-                if (form.SaveToPhonebook)
-                {
-                    var phonebookErrors = ValidatePhonebookSettings(
-                        form.SaveToPhonebook,
-                        form.Notebooks.Select(n => n.ContactNotebookId).ToList(),
-                        form.Fields.Select(MapFieldToDto).ToList());
-
-                    if (phonebookErrors.Count > 0)
-                    {
-                        return ApiResponse<UserFormResponseDto>.BadRequest(
-                            "تنظیمات دفترچه تلفن نامعتبر است",
-                            phonebookErrors,
-                            ErrorCodes.ValidationFailed);
-                    }
-                }
-
-                string slug;
-                if (!string.IsNullOrWhiteSpace(publishDto?.Slug))
-                {
-                    var slugValidation = await ValidateSlugAsync(publishDto.Slug, id);
-                    if (slugValidation.Error != null)
-                    {
-                        return slugValidation.Error;
-                    }
-
-                    slug = slugValidation.NormalizedSlug!;
-                }
-                else if (!string.IsNullOrWhiteSpace(form.Slug))
-                {
-                    slug = form.Slug;
-                }
-                else
-                {
-                    slug = await GenerateUniqueSlugAsync(form.Title, id);
-                }
-
-                form.Slug = slug;
-                form.Status = UserFormStatus.Published;
-                form.IsActive = true;
-                form.PublishedAt = DateTime.UtcNow;
-                form.UpdatedAt = DateTime.UtcNow;
 
                 await _context.SaveChangesAsync();
 
-                _logger.LogInformation("User form {FormId} published with slug {Slug}", id, slug);
+                _logger.LogInformation("User form {FormId} published with slug {Slug}", id, form.Slug);
 
                 return ApiResponse<UserFormResponseDto>.CreateSuccess(
                     MapToResponseDto(form),
@@ -390,7 +328,7 @@ namespace Api_Vapp.Services
                     Title = form.Title,
                     Slug = form.Slug,
                     Status = form.Status.ToString(),
-                    IsActive = form.IsActive,
+                    IsActive = GetEffectiveIsActive(form),
                     PublicUrl = BuildPublicUrl(form.Slug),
                     CreatedAt = EnsureUtc(form.CreatedAt),
                     PublishedAt = EnsureUtc(form.PublishedAt)
@@ -483,7 +421,7 @@ namespace Api_Vapp.Services
             }
         }
 
-        public async Task<ApiResponse<UserFormResponseDto>> ToggleStatusAsync(int id, int userId)
+        public async Task<ApiResponse<UserFormResponseDto>> SetActiveStatusAsync(int id, int userId, bool isActive)
         {
             try
             {
@@ -500,30 +438,128 @@ namespace Api_Vapp.Services
                         ErrorCodes.Forbidden);
                 }
 
-                if (form.Status != UserFormStatus.Published)
+                var currentEffective = GetEffectiveIsActive(form);
+                if (currentEffective == isActive)
                 {
-                    return ApiResponse<UserFormResponseDto>.BadRequest(
-                        "فقط فرم‌های منتشرشده قابل فعال/غیرفعال کردن هستند",
-                        errorCode: ErrorCodes.ValidationFailed);
+                    return ApiResponse<UserFormResponseDto>.CreateSuccess(
+                        MapToResponseDto(form),
+                        isActive ? "فرم از قبل فعال است" : "فرم از قبل غیرفعال است");
                 }
 
-                form.IsActive = !form.IsActive;
+                if (isActive)
+                {
+                    if (form.Status == UserFormStatus.Draft)
+                    {
+                        var publishError = await ValidateAndApplyPublishAsync(form, id, publishDto: null);
+                        if (publishError != null)
+                        {
+                            return publishError;
+                        }
+
+                        await _context.SaveChangesAsync();
+
+                        _logger.LogInformation("User form {FormId} activated via publish", id);
+
+                        return ApiResponse<UserFormResponseDto>.CreateSuccess(
+                            MapToResponseDto(form),
+                            "فرم فعال شد");
+                    }
+
+                    form.IsActive = true;
+                    form.UpdatedAt = DateTime.UtcNow;
+                    await _context.SaveChangesAsync();
+
+                    return ApiResponse<UserFormResponseDto>.CreateSuccess(
+                        MapToResponseDto(form),
+                        "فرم فعال شد");
+                }
+
+                form.IsActive = false;
                 form.UpdatedAt = DateTime.UtcNow;
                 await _context.SaveChangesAsync();
 
                 return ApiResponse<UserFormResponseDto>.CreateSuccess(
                     MapToResponseDto(form),
-                    form.IsActive ? "فرم فعال شد" : "فرم غیرفعال شد");
+                    "فرم غیرفعال شد");
             }
             catch (DbUpdateException dbEx)
             {
-                return MapDbUpdateException<UserFormResponseDto>(dbEx, "toggling user form status", id, userId);
+                return MapDbUpdateException<UserFormResponseDto>(dbEx, "setting user form active status", id, userId);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error toggling user form {FormId} for user {UserId}", id, userId);
+                _logger.LogError(ex, "Error setting active status for user form {FormId} for user {UserId}", id, userId);
                 return ApiResponse<UserFormResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
+        }
+
+        private async Task<ApiResponse<UserFormResponseDto>?> ValidateAndApplyPublishAsync(
+            UserForm form,
+            int formId,
+            PublishUserFormDto? publishDto)
+        {
+            if (string.IsNullOrWhiteSpace(form.Title))
+            {
+                return ApiResponse<UserFormResponseDto>.BadRequest(
+                    "عنوان فرم الزامی است",
+                    errorCode: ErrorCodes.ValidationFailed);
+            }
+
+            if (!form.Fields.Any(f => f.IsActive))
+            {
+                return ApiResponse<UserFormResponseDto>.BadRequest(
+                    "حداقل یک فیلد فعال برای انتشار لازم است",
+                    errorCode: ErrorCodes.ValidationFailed);
+            }
+
+            if (form.SaveToPhonebook)
+            {
+                var phonebookErrors = ValidatePhonebookSettings(
+                    form.SaveToPhonebook,
+                    form.Notebooks.Select(n => n.ContactNotebookId).ToList(),
+                    form.Fields.Select(MapFieldToDto).ToList());
+
+                if (phonebookErrors.Count > 0)
+                {
+                    return ApiResponse<UserFormResponseDto>.BadRequest(
+                        "تنظیمات دفترچه تلفن نامعتبر است",
+                        phonebookErrors,
+                        ErrorCodes.ValidationFailed);
+                }
+            }
+
+            string slug;
+            if (!string.IsNullOrWhiteSpace(publishDto?.Slug))
+            {
+                var slugValidation = await ValidateSlugAsync(publishDto.Slug, formId);
+                if (slugValidation.Error != null)
+                {
+                    return slugValidation.Error;
+                }
+
+                slug = slugValidation.NormalizedSlug!;
+            }
+            else if (!string.IsNullOrWhiteSpace(form.Slug))
+            {
+                slug = form.Slug;
+            }
+            else
+            {
+                slug = await GenerateUniqueSlugAsync(form.Title, formId);
+            }
+
+            form.Slug = slug;
+            form.Status = UserFormStatus.Published;
+            form.IsActive = true;
+            form.PublishedAt = DateTime.UtcNow;
+            form.UpdatedAt = DateTime.UtcNow;
+
+            return null;
+        }
+
+        private static bool GetEffectiveIsActive(UserForm form)
+        {
+            return form.Status == UserFormStatus.Published && form.IsActive;
         }
 
         private async Task<ApiResponse<UserFormResponseDto>?> ValidateCreateRequestAsync(int userId, CreateUserFormDto createDto)
@@ -602,7 +638,6 @@ namespace Api_Vapp.Services
                 || updateDto.Description != null
                 || !string.IsNullOrWhiteSpace(updateDto.Slug)
                 || updateDto.SaveToPhonebook.HasValue
-                || updateDto.IsActive.HasValue
                 || updateDto.NotebookIds != null;
         }
 
@@ -771,7 +806,7 @@ namespace Api_Vapp.Services
                 TemplateId = form.TemplateId,
                 Status = form.Status.ToString(),
                 SaveToPhonebook = form.SaveToPhonebook,
-                IsActive = form.IsActive,
+                IsActive = GetEffectiveIsActive(form),
                 PublicUrl = BuildPublicUrl(form.Slug),
                 NotebookIds = form.Notebooks.Select(n => n.ContactNotebookId).ToList(),
                 Fields = form.Fields

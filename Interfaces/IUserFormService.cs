@@ -19,6 +19,6 @@ namespace Api_Vapp.Interfaces
 
         Task<ApiResponse<bool>> DeleteAsync(int id, int userId);
 
-        Task<ApiResponse<UserFormResponseDto>> ToggleStatusAsync(int id, int userId);
+        Task<ApiResponse<UserFormResponseDto>> SetActiveStatusAsync(int id, int userId, bool isActive);
     }
 }

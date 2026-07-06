@@ -31,6 +31,7 @@ public class UserFormServiceTests : IAsyncLifetime
         Assert.Equal(201, result.StatusCode);
         Assert.NotNull(result.Data);
         Assert.Equal("Draft", result.Data!.Status);
+        Assert.False(result.Data.IsActive);
         Assert.Equal(2, result.Data.Fields.Count);
         AssertNoServerError(result);
     }
@@ -361,24 +362,39 @@ public class UserFormServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task ToggleStatus_OnDraft_Returns400()
+    public async Task SetActiveStatus_SetTrue_OnDraft_PublishesAndReturns200()
     {
         var formId = await _ctx.CreateDraftAsync();
 
-        var result = await _ctx.Service.ToggleStatusAsync(formId, _ctx.OwnerUserId);
+        var result = await _ctx.Service.SetActiveStatusAsync(formId, _ctx.OwnerUserId, isActive: true);
 
-        Assert.False(result.Success);
-        Assert.Equal(400, result.StatusCode);
+        Assert.True(result.Success);
+        Assert.Equal(200, result.StatusCode);
+        Assert.Equal("Published", result.Data!.Status);
+        Assert.True(result.Data.IsActive);
         AssertNoServerError(result);
     }
 
     [Fact]
-    public async Task ToggleStatus_OnPublishedForm_Returns200()
+    public async Task SetActiveStatus_SetFalse_OnPublishedForm_Returns200()
     {
         var slug = $"toggle-{Guid.NewGuid():N}"[..12];
         var formId = await _ctx.CreatePublishedFormAsync(slug);
 
-        var result = await _ctx.Service.ToggleStatusAsync(formId, _ctx.OwnerUserId);
+        var result = await _ctx.Service.SetActiveStatusAsync(formId, _ctx.OwnerUserId, isActive: false);
+
+        Assert.True(result.Success);
+        Assert.Equal(200, result.StatusCode);
+        Assert.False(result.Data!.IsActive);
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task SetActiveStatus_SetFalse_OnDraft_Returns200AlreadyInactive()
+    {
+        var formId = await _ctx.CreateDraftAsync();
+
+        var result = await _ctx.Service.SetActiveStatusAsync(formId, _ctx.OwnerUserId, isActive: false);
 
         Assert.True(result.Success);
         Assert.Equal(200, result.StatusCode);
@@ -435,33 +451,18 @@ public class UserFormServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Update_SetIsActiveFalse_OnPublishedForm_Returns200()
-    {
-        var formId = await _ctx.CreatePublishedFormAsync();
-
-        var result = await _ctx.Service.UpdateInfoAsync(formId, _ctx.OwnerUserId, new UpdateUserFormInfoDto
-        {
-            IsActive = false
-        });
-
-        Assert.True(result.Success);
-        Assert.Equal(200, result.StatusCode);
-        Assert.False(result.Data!.IsActive);
-        AssertNoServerError(result);
-    }
-
-    [Fact]
-    public async Task Update_SetIsActive_OnDraft_Returns400()
+    public async Task UpdateInfo_OnDraft_IgnoresIsActiveInBody_Returns200()
     {
         var formId = await _ctx.CreateDraftAsync();
 
         var result = await _ctx.Service.UpdateInfoAsync(formId, _ctx.OwnerUserId, new UpdateUserFormInfoDto
         {
-            IsActive = false
+            Title = "عنوان جدید"
         });
 
-        Assert.False(result.Success);
-        Assert.Equal(400, result.StatusCode);
+        Assert.True(result.Success);
+        Assert.Equal(200, result.StatusCode);
+        Assert.False(result.Data!.IsActive);
         AssertNoServerError(result);
     }
 

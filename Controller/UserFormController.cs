@@ -1,4 +1,5 @@
 using Api_Vapp.DTOs.Common;
+using Api_Vapp.DTOs.User;
 using Api_Vapp.DTOs.UserForm;
 using Api_Vapp.Interfaces;
 using Microsoft.AspNetCore.Authorization;
@@ -155,14 +156,30 @@ namespace Api_Vapp.Controller
         }
 
         /// <summary>
-        /// فعال/غیرفعال کردن فرم منتشرشده
+        /// فعال/غیرفعال کردن فرم (سوئیچ تنظیمات — true = انتشار/فعال، false = غیرفعال)
         /// </summary>
         [HttpPost("{id}/toggle-status")]
         [ProducesResponseType(typeof(ApiResponse<UserFormResponseDto>), StatusCodes.Status200OK)]
-        public async Task<ActionResult<ApiResponse<UserFormResponseDto>>> ToggleStatus(int id)
+        [ProducesResponseType(typeof(ApiResponse<UserFormResponseDto>), StatusCodes.Status400BadRequest)]
+        public async Task<ActionResult<ApiResponse<UserFormResponseDto>>> SetActiveStatus(
+            int id,
+            [FromBody] ToggleActiveDto? statusDto)
         {
+            if (statusDto == null)
+            {
+                return StatusCode(400, ApiResponse<UserFormResponseDto>.BadRequest(
+                    "مقدار isActive الزامی است",
+                    errorCode: ErrorCodes.ValidationFailed));
+            }
+
+            var invalid = InvalidModelStateResponse<UserFormResponseDto>();
+            if (invalid != null)
+            {
+                return invalid;
+            }
+
             var userId = await GetCurrentUserIdAsync();
-            var result = await _userFormService.ToggleStatusAsync(id, userId);
+            var result = await _userFormService.SetActiveStatusAsync(id, userId, statusDto.IsActive);
             return StatusCode(result.StatusCode, result);
         }
     }
