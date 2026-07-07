@@ -98,6 +98,25 @@ namespace Api_Vapp.Controller
         }
 
         /// <summary>
+        /// افزودن یک آیتم جایزه جدید به گردونه (صفحه ویرایش جوایز)
+        /// </summary>
+        [HttpPost("{id}/items/add")]
+        [ProducesResponseType(typeof(ApiResponse<LuckyWheelResponseDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<LuckyWheelResponseDto>), StatusCodes.Status400BadRequest)]
+        public async Task<ActionResult<ApiResponse<LuckyWheelResponseDto>>> AddItem(int id, [FromBody] LuckyWheelItemDto itemDto)
+        {
+            var invalid = InvalidModelStateResponse<LuckyWheelResponseDto>();
+            if (invalid != null)
+            {
+                return invalid;
+            }
+
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _luckyWheelService.AddItemAsync(id, userId, itemDto);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        /// <summary>
         /// انتشار گردونه و دریافت لینک عمومی
         /// </summary>
         [HttpPost("{id}/publish")]

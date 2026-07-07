@@ -11,7 +11,7 @@ namespace Api_Vapp.DTOs.LuckyWheel
         [Range(0.01, 100, ErrorMessage = "درصد شانس باید بین 0.01 تا 100 باشد")]
         public decimal Probability { get; set; }
 
-        [Range(1, 8, ErrorMessage = "ترتیب نمایش باید بین 1 تا 8 باشد")]
+        [Range(1, 20, ErrorMessage = "ترتیب نمایش باید بین 1 تا 20 باشد")]
         public int DisplayOrder { get; set; }
     }
 }

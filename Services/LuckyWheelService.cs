@@ -116,7 +116,9 @@ namespace Api_Vapp.Services
 
                 if (updateDto.Items != null)
                 {
-                    var itemErrors = ValidateItems(updateDto.Items);
+                    var itemErrors = wheel.Status == LuckyWheelStatus.Published
+                        ? ValidateItemsForPublish(updateDto.Items)
+                        : ValidateItemsForEditing(updateDto.Items);
                     if (itemErrors.Count > 0)
                     {
                         return ApiResponse<LuckyWheelResponseDto>.BadRequest(
@@ -222,6 +224,63 @@ namespace Api_Vapp.Services
             }
         }
 
+        public async Task<ApiResponse<LuckyWheelResponseDto>> AddItemAsync(int id, int userId, LuckyWheelItemDto itemDto)
+        {
+            _logger.LogInformation("Adding item to lucky wheel {WheelId} for user {UserId}", id, userId);
+
+            try
+            {
+                var wheel = await _luckyWheelRepository.GetByIdWithDetailsTrackedAsync(id);
+                if (wheel == null)
+                {
+                    return ApiResponse<LuckyWheelResponseDto>.NotFound("گردونه یافت نشد");
+                }
+
+                if (wheel.UserId != userId)
+                {
+                    return ApiResponse<LuckyWheelResponseDto>.Forbidden(
+                        ControlledErrorHelper.Unauthorized,
+                        ErrorCodes.Forbidden);
+                }
+
+                var mergedItems = wheel.Items
+                    .Select(MapItemToDto)
+                    .ToList();
+                mergedItems.Add(itemDto);
+
+                var itemErrors = wheel.Status == LuckyWheelStatus.Published
+                    ? ValidateItemsForPublish(mergedItems)
+                    : ValidateItemsForEditing(mergedItems);
+                if (itemErrors.Count > 0)
+                {
+                    return ApiResponse<LuckyWheelResponseDto>.BadRequest(
+                        "داده‌های جوایز نامعتبر است",
+                        itemErrors,
+                        ErrorCodes.ValidationFailed);
+                }
+
+                wheel.Items.Add(MapItem(itemDto));
+                wheel.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+
+                return ApiResponse<LuckyWheelResponseDto>.CreateSuccess(
+                    MapToResponseDto(wheel),
+                    "آیتم جایزه با موفقیت اضافه شد");
+            }
+            catch (DbUpdateException dbEx)
+            {
+                _logger.LogError(dbEx, "Database error adding item to lucky wheel {WheelId} for user {UserId}", id, userId);
+                return ApiResponse<LuckyWheelResponseDto>.InternalServerError(
+                    ControlledErrorHelper.Database,
+                    ErrorCodes.DatabaseError);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error adding item to lucky wheel {WheelId} for user {UserId}", id, userId);
+                return ApiResponse<LuckyWheelResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
         public async Task<ApiResponse<LuckyWheelResponseDto>> PublishAsync(int id, int userId, PublishLuckyWheelDto? publishDto = null)
         {
             _logger.LogInformation("Publishing lucky wheel {WheelId} for user {UserId}", id, userId);
@@ -248,7 +307,7 @@ namespace Api_Vapp.Services
                         errorCode: ErrorCodes.ValidationFailed);
                 }
 
-                var itemErrors = ValidateItems(wheel.Items.Select(MapItemToDto).ToList());
+                var itemErrors = ValidateItemsForPublish(wheel.Items.Select(MapItemToDto).ToList());
                 if (itemErrors.Count > 0)
                 {
                     return ApiResponse<LuckyWheelResponseDto>.BadRequest(
@@ -606,6 +665,7 @@ namespace Api_Vapp.Services
 
         private LuckyWheelResponseDto MapToResponseDto(LuckyWheel wheel)
         {
+            var publishValidationErrors = GetPublishReadinessErrors(wheel);
             return new LuckyWheelResponseDto
             {
                 Id = wheel.Id,
@@ -616,6 +676,8 @@ namespace Api_Vapp.Services
                 SaveToPhonebook = wheel.SaveToPhonebook,
                 IsActive = wheel.IsActive,
                 PublicUrl = BuildPublicUrl(wheel.Slug),
+                IsReadyToPublish = publishValidationErrors.Count == 0,
+                PublishValidationErrors = publishValidationErrors,
                 NotebookIds = wheel.Notebooks.Select(n => n.ContactNotebookId).ToList(),
                 Items = wheel.Items
                     .OrderBy(i => i.DisplayOrder)
@@ -657,15 +719,9 @@ namespace Api_Vapp.Services
             return $"{_luckyWheelOptions.PublicBaseUrl.TrimEnd('/')}/{slug}";
         }
 
-        private static List<string> ValidateItems(List<LuckyWheelItemDto> items)
+        private static List<string> ValidateItemsForEditing(List<LuckyWheelItemDto> items)
         {
             var errors = new List<string>();
-
-            if (items.Count < LuckyWheelConstants.MinItems)
-            {
-                errors.Add($"حداقل {LuckyWheelConstants.MinItems} جایزه برای گردونه لازم است");
-                return errors;
-            }
 
             if (items.Count > LuckyWheelConstants.MaxItems)
             {
@@ -693,6 +749,23 @@ namespace Api_Vapp.Services
                 }
             }
 
+            return errors;
+        }
+
+        private static List<string> ValidateItemsForPublish(List<LuckyWheelItemDto> items)
+        {
+            var errors = ValidateItemsForEditing(items);
+            if (errors.Count > 0)
+            {
+                return errors;
+            }
+
+            if (items.Count < LuckyWheelConstants.MinItems)
+            {
+                errors.Add($"حداقل {LuckyWheelConstants.MinItems} جایزه برای گردونه لازم است");
+                return errors;
+            }
+
             var totalProbability = items.Sum(i => Math.Round(i.Probability, 2, MidpointRounding.AwayFromZero));
             if (totalProbability != LuckyWheelConstants.RequiredProbabilityTotal)
             {
@@ -700,6 +773,27 @@ namespace Api_Vapp.Services
             }
 
             return errors;
+        }
+
+        private List<string> GetPublishReadinessErrors(LuckyWheel wheel)
+        {
+            var errors = new List<string>();
+
+            if (string.IsNullOrWhiteSpace(wheel.Title))
+            {
+                errors.Add("عنوان گردونه الزامی است");
+            }
+
+            errors.AddRange(ValidateItemsForPublish(wheel.Items.Select(MapItemToDto).ToList()));
+
+            if (wheel.SaveToPhonebook)
+            {
+                errors.AddRange(ValidatePhonebookSettings(
+                    wheel.SaveToPhonebook,
+                    wheel.Notebooks.Select(n => n.ContactNotebookId).ToList()));
+            }
+
+            return errors.Distinct().ToList();
         }
 
         private static List<string> ValidatePhonebookSettings(bool saveToPhonebook, IReadOnlyList<int> notebookIds)

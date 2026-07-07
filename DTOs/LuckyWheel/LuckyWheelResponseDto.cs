@@ -18,6 +18,10 @@ namespace Api_Vapp.DTOs.LuckyWheel
 
         public string? PublicUrl { get; set; }
 
+        public bool IsReadyToPublish { get; set; }
+
+        public List<string> PublishValidationErrors { get; set; } = new();
+
         public List<int> NotebookIds { get; set; } = new();
 
         public List<LuckyWheelItemDto> Items { get; set; } = new();

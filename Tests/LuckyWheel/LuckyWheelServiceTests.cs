@@ -49,7 +49,7 @@ public class LuckyWheelServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Update_ItemsProbabilityNot100_Returns400()
+    public async Task Update_ItemsProbabilityNot100InDraft_Returns200AndNotReady()
     {
         var wheelId = await _ctx.CreateDraftAsync();
 
@@ -58,8 +58,9 @@ public class LuckyWheelServiceTests : IAsyncLifetime
             Items = LuckyWheelTestContext.SampleItems(thirdProbability: 30m)
         });
 
-        Assert.False(result.Success);
-        Assert.Equal(400, result.StatusCode);
+        Assert.True(result.Success);
+        Assert.False(result.Data!.IsReadyToPublish);
+        Assert.Contains(result.Data.PublishValidationErrors, e => e.Contains("مجموع درصد"));
         AssertNoServerError(result);
     }
 
@@ -88,6 +89,17 @@ public class LuckyWheelServiceTests : IAsyncLifetime
 
         Assert.False(result.Success);
         Assert.Equal(400, result.StatusCode);
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task CreateDraft_WithoutItems_ReturnsNotReadyToPublish()
+    {
+        var result = await _ctx.Service.CreateDraftAsync(_ctx.OwnerUserId, _ctx.BuildCreateDto());
+
+        Assert.True(result.Success);
+        Assert.False(result.Data!.IsReadyToPublish);
+        Assert.NotEmpty(result.Data.PublishValidationErrors);
         AssertNoServerError(result);
     }
 

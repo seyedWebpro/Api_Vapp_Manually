@@ -2,6 +2,8 @@
 
 > برای Cursor / توسعه‌دهنده Flutter. **فاز ۱ backend آماده است** (ساخت، مدیریت، انتشار، لینک).
 
+**آخرین تغییرات:** `maxItems=20`، endpoint افزودن آیتم (`items/add`)، و وضعیت آمادگی انتشار (`isReadyToPublish`).
+
 ## پیش‌نیاز
 
 ```
@@ -51,14 +53,15 @@ GET /api/ContactNotebook?pageNumber=1&pageSize=100&isActive=true
 
 | قانون | مقدار |
 |--------|--------|
-| جوایز | حداقل **۲**، حداکثر **۸** |
+| جوایز | حداقل **۲**، حداکثر **۲۰** |
 | مجموع `probability` | دقیقاً **۱۰۰** |
-| `displayOrder` | ۱ تا ۸، **بدون تکرار** |
+| `displayOrder` | ۱ تا ۲۰، **بدون تکرار** |
 | `saveToPhonebook=true` | حداقل **۱** `notebookId` معتبر |
 | `slug` | اختیاری؛ فقط `a-z`، `0-9`، `-` |
 | `publicUrl` | `{LuckyWheel:PublicBaseUrl}/{slug}` |
 | Preview | فقط کلاینت — از `GET /{id}` |
 | `participantCount` | فعلاً **۰** (فاز ۲) |
+| وضعیت آمادگی انتشار | `isReadyToPublish` + `publishValidationErrors` |
 
 ---
 
@@ -85,6 +88,7 @@ GET /api/ContactNotebook?pageNumber=1&pageSize=100&isActive=true
 | توگل فعال/غیرفعال | `POST /{id}/toggle-active` |
 | اطلاعات اصلی | `POST /{id}/update` (بدون `items`) |
 | ویرایش جوایز | `POST /{id}/update` (فقط `items`) |
+| افزودن یک جایزه جدید (دکمه +) | `POST /{id}/items/add` |
 | مشاهده نتایج | فاز ۲ ❌ |
 
 ---
@@ -174,6 +178,10 @@ GET /api/ContactNotebook?pageNumber=1&pageSize=100&isActive=true
     "saveToPhonebook": true,
     "isActive": true,
     "publicUrl": "https://app.com/wheel/norooz-wheel",
+    "isReadyToPublish": false,
+    "publishValidationErrors": [
+      "مجموع درصد شانس‌ها باید دقیقاً 100 باشد (فعلی: 60)"
+    ],
     "notebookIds": [1],
     "items": [
       { "name": "۱۰٪ تخفیف", "probability": 30, "displayOrder": 1 }
@@ -195,7 +203,24 @@ GET /api/ContactNotebook?pageNumber=1&pageSize=100&isActive=true
 
 یا `{}` — slug از پیش‌نویس یا auto از title.
 
-پیش‌نیاز: `title` غیرخالی + `items` معتبر (۲–۸ آیتم، جمع ۱۰۰).
+پیش‌نیاز: `title` غیرخالی + `items` معتبر (۲–۲۰ آیتم، جمع ۱۰۰).
+
+---
+
+### `POST /{id}/items/add` — افزودن یک آیتم (دکمه +)
+
+برای افزودن یک جایزه جدید بدون ارسال کل لیست.
+
+```json
+{
+  "name": "۳۰٪ تخفیف",
+  "probability": 20,
+  "displayOrder": 4
+}
+```
+
+نکته: در حالت Draft می‌توانید آیتم‌ها را مرحله‌ای اضافه کنید (حتی اگر مجموع هنوز ۱۰۰ نشده باشد).  
+اعتبارسنجی سخت‌گیرانه (حداقل ۲ آیتم + مجموع ۱۰۰) فقط در `publish` اجباری است.
 
 ---
 
@@ -272,7 +297,7 @@ GET /?pageNumber=1&pageSize=10
 | پیام | علت |
 |------|-----|
 | حداقل ۲ جایزه… | کمتر از ۲ آیتم |
-| حداکثر ۸ جایزه… | بیش از ۸ آیتم |
+| حداکثر ۲۰ جایزه… | بیش از ۲۰ آیتم |
 | مجموع درصد… باید ۱۰۰ باشد | جمع ≠ 100 |
 | حداقل یک دفترچه… | toggle روشن بدون دفترچه |
 | این slug قبلاً استفاده شده | slug تکراری |
@@ -287,6 +312,7 @@ GET /?pageNumber=1&pageSize=10
 ```
 POST / → wheelId
 POST /{id}/update (items)
+POST /{id}/items/add (اختیاری برای دکمه +)
 GET /{id} → preview
 POST /{id}/publish → publicUrl
 ```
