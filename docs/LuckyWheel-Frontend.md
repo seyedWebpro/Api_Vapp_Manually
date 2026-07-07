@@ -2,7 +2,7 @@
 
 > برای Cursor / توسعه‌دهنده Flutter. **فاز ۱ backend آماده است** (ساخت، مدیریت، انتشار، لینک).
 
-**آخرین تغییرات:** `maxItems=20`، endpoint افزودن آیتم (`items/add`)، و وضعیت آمادگی انتشار (`isReadyToPublish`).
+**آخرین تغییرات:** `maxItems=20`، endpoint افزودن آیتم‌ها (`items/add` با لیست)، و وضعیت آمادگی انتشار (`isReadyToPublish`).
 
 ## پیش‌نیاز
 
@@ -88,7 +88,7 @@ GET /api/ContactNotebook?pageNumber=1&pageSize=100&isActive=true
 | توگل فعال/غیرفعال | `POST /{id}/toggle-active` |
 | اطلاعات اصلی | `POST /{id}/update` (بدون `items`) |
 | ویرایش جوایز | `POST /{id}/update` (فقط `items`) |
-| افزودن یک جایزه جدید (دکمه +) | `POST /{id}/items/add` |
+| افزودن جایزه جدید (دکمه +) | `POST /{id}/items/add` (لیست `items`) |
 | مشاهده نتایج | فاز ۲ ❌ |
 
 ---
@@ -207,15 +207,24 @@ GET /api/ContactNotebook?pageNumber=1&pageSize=100&isActive=true
 
 ---
 
-### `POST /{id}/items/add` — افزودن یک آیتم (دکمه +)
+### `POST /{id}/items/add` — افزودن یک یا چند آیتم (دکمه +)
 
-برای افزودن یک جایزه جدید بدون ارسال کل لیست.
+برای افزودن جایزه‌های جدید بدون ارسال کل لیست. حتی یک آیتم هم باید داخل آرایه `items` ارسال شود.
 
 ```json
 {
-  "name": "۳۰٪ تخفیف",
-  "probability": 20,
-  "displayOrder": 4
+  "items": [
+    {
+      "name": "۳۰٪ تخفیف",
+      "probability": 20,
+      "displayOrder": 4
+    },
+    {
+      "name": "پوچ",
+      "probability": 10,
+      "displayOrder": 5
+    }
+  ]
 }
 ```
 

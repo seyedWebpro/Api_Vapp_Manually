@@ -98,12 +98,12 @@ namespace Api_Vapp.Controller
         }
 
         /// <summary>
-        /// افزودن یک آیتم جایزه جدید به گردونه (صفحه ویرایش جوایز)
+        /// افزودن یک یا چند آیتم جایزه به گردونه (صفحه ویرایش جوایز — دکمه +)
         /// </summary>
         [HttpPost("{id}/items/add")]
         [ProducesResponseType(typeof(ApiResponse<LuckyWheelResponseDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<LuckyWheelResponseDto>), StatusCodes.Status400BadRequest)]
-        public async Task<ActionResult<ApiResponse<LuckyWheelResponseDto>>> AddItem(int id, [FromBody] LuckyWheelItemDto itemDto)
+        public async Task<ActionResult<ApiResponse<LuckyWheelResponseDto>>> AddItems(int id, [FromBody] AddLuckyWheelItemsDto addDto)
         {
             var invalid = InvalidModelStateResponse<LuckyWheelResponseDto>();
             if (invalid != null)
@@ -112,7 +112,7 @@ namespace Api_Vapp.Controller
             }
 
             var userId = await GetCurrentUserIdAsync();
-            var result = await _luckyWheelService.AddItemAsync(id, userId, itemDto);
+            var result = await _luckyWheelService.AddItemsAsync(id, userId, addDto);
             return StatusCode(result.StatusCode, result);
         }
 

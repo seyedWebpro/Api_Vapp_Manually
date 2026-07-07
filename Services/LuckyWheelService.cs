@@ -224,9 +224,13 @@ namespace Api_Vapp.Services
             }
         }
 
-        public async Task<ApiResponse<LuckyWheelResponseDto>> AddItemAsync(int id, int userId, LuckyWheelItemDto itemDto)
+        public async Task<ApiResponse<LuckyWheelResponseDto>> AddItemsAsync(int id, int userId, AddLuckyWheelItemsDto addDto)
         {
-            _logger.LogInformation("Adding item to lucky wheel {WheelId} for user {UserId}", id, userId);
+            _logger.LogInformation(
+                "Adding {Count} item(s) to lucky wheel {WheelId} for user {UserId}",
+                addDto.Items.Count,
+                id,
+                userId);
 
             try
             {
@@ -246,7 +250,7 @@ namespace Api_Vapp.Services
                 var mergedItems = wheel.Items
                     .Select(MapItemToDto)
                     .ToList();
-                mergedItems.Add(itemDto);
+                mergedItems.AddRange(addDto.Items);
 
                 var itemErrors = wheel.Status == LuckyWheelStatus.Published
                     ? ValidateItemsForPublish(mergedItems)
@@ -259,24 +263,32 @@ namespace Api_Vapp.Services
                         ErrorCodes.ValidationFailed);
                 }
 
-                wheel.Items.Add(MapItem(itemDto));
+                foreach (var itemDto in addDto.Items)
+                {
+                    wheel.Items.Add(MapItem(itemDto));
+                }
+
                 wheel.UpdatedAt = DateTime.UtcNow;
                 await _context.SaveChangesAsync();
 
+                var message = addDto.Items.Count == 1
+                    ? "آیتم جایزه با موفقیت اضافه شد"
+                    : "آیتم‌های جایزه با موفقیت اضافه شدند";
+
                 return ApiResponse<LuckyWheelResponseDto>.CreateSuccess(
                     MapToResponseDto(wheel),
-                    "آیتم جایزه با موفقیت اضافه شد");
+                    message);
             }
             catch (DbUpdateException dbEx)
             {
-                _logger.LogError(dbEx, "Database error adding item to lucky wheel {WheelId} for user {UserId}", id, userId);
+                _logger.LogError(dbEx, "Database error adding items to lucky wheel {WheelId} for user {UserId}", id, userId);
                 return ApiResponse<LuckyWheelResponseDto>.InternalServerError(
                     ControlledErrorHelper.Database,
                     ErrorCodes.DatabaseError);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error adding item to lucky wheel {WheelId} for user {UserId}", id, userId);
+                _logger.LogError(ex, "Error adding items to lucky wheel {WheelId} for user {UserId}", id, userId);
                 return ApiResponse<LuckyWheelResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }

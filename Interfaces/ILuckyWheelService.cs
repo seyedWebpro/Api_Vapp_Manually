@@ -8,7 +8,7 @@ namespace Api_Vapp.Interfaces
         Task<ApiResponse<LuckyWheelResponseDto>> CreateDraftAsync(int userId, CreateLuckyWheelDto createDto);
 
         Task<ApiResponse<LuckyWheelResponseDto>> UpdateAsync(int id, int userId, UpdateLuckyWheelDto updateDto);
-        Task<ApiResponse<LuckyWheelResponseDto>> AddItemAsync(int id, int userId, LuckyWheelItemDto itemDto);
+        Task<ApiResponse<LuckyWheelResponseDto>> AddItemsAsync(int id, int userId, AddLuckyWheelItemsDto addDto);
 
         Task<ApiResponse<LuckyWheelResponseDto>> PublishAsync(int id, int userId, PublishLuckyWheelDto? publishDto = null);
 

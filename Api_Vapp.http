@@ -30,14 +30,18 @@ Content-Type: application/json
   ]
 }
 
-### افزودن یک آیتم جدید (دکمه +)
+### افزودن یک یا چند آیتم جدید (دکمه +)
 POST {{Api_Vapp_HostAddress}}/api/LuckyWheel/1/items/add
 Content-Type: application/json
 
 {
-  "name": "۳۰٪ تخفیف",
-  "probability": 20,
-  "displayOrder": 4
+  "items": [
+    {
+      "name": "۳۰٪ تخفیف",
+      "probability": 20,
+      "displayOrder": 4
+    }
+  ]
 }
 
 ### جزئیات گردونه (Preview)
