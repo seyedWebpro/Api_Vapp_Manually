@@ -3,10 +3,10 @@
 #
 # Usage (از روت Api_Vapp_Manually):
 #   bash devops/scripts/deploy-from-mac.sh api
-#   bash devops/scripts/deploy-from-mac.sh api-restart
 #   bash devops/scripts/deploy-from-mac.sh admin
-#   bash devops/scripts/deploy-from-mac.sh admin-fast
-#   bash devops/scripts/deploy-from-mac.sh both
+#   bash devops/scripts/deploy-from-mac.sh public
+#   bash devops/scripts/deploy-from-mac.sh public-fast
+#   bash devops/scripts/deploy-from-mac.sh all-fronts
 #   bash devops/scripts/deploy-from-mac.sh health
 #
 # Env: SERVER (پیش‌فرض vapp-prod)
@@ -27,10 +27,14 @@ Deploy از Mac — انتخاب بر اساس تغییر
   api-restart  image از قبل روی سرور است — فقط restart container (~۱ دقیقه)
   admin        تغییر React / پنل — build + upload dist (~۲–۴ دقیقه)
   admin-fast   dist از قبل build شده — فقط upload (~۳۰ ثانیه)
+  public       تغییر Public_Vapp (فرم/گردونه SMS) — build + upload (~۲–۴ دقیقه)
+  public-fast  dist Public از قبل build شده — فقط upload (~۳۰ ثانیه)
+  all-fronts   Admin + Public هر دو
   both         API + Admin (پشت‌سرهم)
+  all          API + Admin + Public
   health       چک سلامت روی سرور
 
-راهنما: devops/MAC-QUICK-DEPLOY.md
+راهنما: devops/MAC-QUICK-DEPLOY.md · devops/PUBLIC-VAPP.md
 
 مثال:
   bash devops/scripts/deploy-from-mac.sh api
@@ -49,7 +53,7 @@ deploy_api() {
 
 deploy_api_restart() {
   echo "=== API: restart only (بدون build) ==="
-  ssh "$SERVER" "cd $REMOTE_API_DIR && docker compose -f $COMPOSE_FILE --env-file $ENV_FILE up -d --force-recreate --no-build api"
+  ssh "$SERVER" "cd $REMOTE_API_DIR && docker compose -f $COMPOSE_FILE --env-file $ENV_FILE up -d --no-deps --force-recreate --no-build api"
   sleep 45
   run_health
 }
@@ -62,6 +66,21 @@ deploy_admin() {
 deploy_admin_fast() {
   echo "=== Admin: upload dist (بدون build) ==="
   SKIP_BUILD=1 SERVER="$SERVER" bash "$SCRIPT_DIR/deploy-front-upload-dist.sh"
+}
+
+deploy_public() {
+  echo "=== Public: build + upload dist ==="
+  SERVER="$SERVER" bash "$SCRIPT_DIR/deploy-public-front-upload-dist.sh"
+}
+
+deploy_public_fast() {
+  echo "=== Public: upload dist (بدون build) ==="
+  SKIP_BUILD=1 SERVER="$SERVER" bash "$SCRIPT_DIR/deploy-public-front-upload-dist.sh"
+}
+
+deploy_all_fronts() {
+  deploy_admin
+  deploy_public
 }
 
 MODE="${1:-}"
@@ -87,8 +106,21 @@ case "$MODE" in
   admin-fast)
     deploy_admin_fast
     ;;
+  public)
+    deploy_public
+    ;;
+  public-fast)
+    deploy_public_fast
+    ;;
+  all-fronts)
+    deploy_all_fronts
+    ;;
   both)
     deploy_admin
+    deploy_api
+    ;;
+  all)
+    deploy_all_fronts
     deploy_api
     ;;
   health)

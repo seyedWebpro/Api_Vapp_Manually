@@ -36,6 +36,8 @@ internal sealed class UserFormTestContext : IDisposable
 
     public int NotebookId { get; private set; }
 
+    public Api_Context Context => _context;
+
     public static async Task<UserFormTestContext> CreateAsync()
     {
         var connectionString =

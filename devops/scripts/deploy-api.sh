@@ -52,7 +52,7 @@ if [[ "$BUILD_PULL" == "auto" ]]; then
 fi
 
 docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" build --pull="$BUILD_PULL" api
-docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d --force-recreate --no-build api
+docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d --no-deps --force-recreate --no-build api
 
 if [[ "${RELOAD_NGINX:-0}" == "1" ]]; then
   bash "$SCRIPT_DIR/apply-nginx.sh"

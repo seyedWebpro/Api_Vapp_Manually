@@ -1,0 +1,146 @@
+# ===========================================
+# Vapp + Number Scraper — Docker Integration
+# اجرا از پوشه docker:
+#   cd Api_Vapp_Manually/docker
+#   docker compose -f docker-compose.integration.yml up -d --build
+#
+# Vapp API:      http://127.0.0.1:5054/swagger
+# Scraper API:   http://127.0.0.1:8000/docs  (فقط شبکه داخلی — از بیرون برای dev)
+# Vapp SQL:      localhost:1436
+# Scraper SQL:   localhost:1437
+# ===========================================
+
+name: vapp-integration
+
+services:
+  vapp_sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    platform: linux/amd64
+    container_name: vapp_sqlserver
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: Vapp@Secure2025!
+      MSSQL_PID: Developer
+    ports:
+      - "127.0.0.1:1436:1433"
+    volumes:
+      - vapp_sqlserver_data:/var/opt/mssql
+    networks:
+      - integration_network
+    healthcheck:
+      test: ["CMD-SHELL", "exit 0"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 50s
+    restart: unless-stopped
+
+  scraper_sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    platform: linux/amd64
+    container_name: phonescraper_sqlserver
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: PhoneScraper@Secure2025!
+      MSSQL_PID: Developer
+      SA_PASSWORD: PhoneScraper@Secure2025!
+    ports:
+      - "127.0.0.1:1437:1433"
+    volumes:
+      - phonescraper_sqlserver_data:/var/opt/mssql
+    networks:
+      - integration_network
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$SA_PASSWORD\" -C -Q 'SELECT 1' -b -o /dev/null || exit 1",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    restart: unless-stopped
+
+  phonescraper_api:
+    build:
+      context: ../../scraping_Number_Vapp
+      dockerfile: Dockerfile
+    container_name: phonescraper_api
+    depends_on:
+      scraper_sqlserver:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      DB_SERVER: scraper_sqlserver
+      DB_NAME: PhoneScraperDB
+      DB_USER: sa
+      DB_PASS: PhoneScraper@Secure2025!
+      SA_PASSWORD: PhoneScraper@Secure2025!
+      DB_DRIVER: ODBC Driver 18 for SQL Server
+      API_HOST: 0.0.0.0
+      API_PORT: "8000"
+      API_KEY: integration-secret-key
+      API_KEY_REQUIRED: "true"
+      DOTNET_WEBHOOK_ENABLED: "true"
+      DOTNET_WEBHOOK_URL: http://vapp_api:8080/api/NumberSeeker/internal/webhook/task-completed
+      DOTNET_WEBHOOK_API_KEY: integration-secret-key
+      SCRAPER_HEADLESS: "true"
+      DOCKER_WAIT_FOR_SQL: "true"
+      DOCKER_INIT_DB: "true"
+      PLATFORM_TOKENS_FILE: /app/data/platform_tokens.json
+    volumes:
+      - ../../scraping_Number_Vapp/data:/app/data
+      - ../../scraping_Number_Vapp/logs:/app/logs
+    networks:
+      - integration_network
+    shm_size: "1gb"
+    restart: unless-stopped
+
+  vapp_api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: vapp_api
+    depends_on:
+      vapp_sqlserver:
+        condition: service_healthy
+      phonescraper_api:
+        condition: service_started
+    ports:
+      - "127.0.0.1:5054:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      DOTNET_RUNNING_IN_CONTAINER: "true"
+      DatabaseProvider: Docker
+      ConnectionStrings__DockerConnection: Server=vapp_sqlserver;Database=DbVapp;User Id=sa;Password=Vapp@Secure2025!;TrustServerCertificate=True;Encrypt=False;MultipleActiveResultSets=true;Max Pool Size=100;Min Pool Size=5;Connection Timeout=60;Pooling=true
+      NumberScraperApi__Enabled: "true"
+      NumberScraperApi__BaseUrl: http://phonescraper_api:8000
+      NumberScraperApi__ApiKey: integration-secret-key
+      NumberScraperApi__TimeoutSeconds: "120"
+      NumberSeeker__MaxScrapesPerHour: "20"
+      NumberSeeker__MaxImportsPerHour: "40"
+    volumes:
+      - ../wwwroot/uploads:/app/wwwroot/uploads
+      - ../log:/app/log
+    networks:
+      - integration_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+
+volumes:
+  vapp_sqlserver_data:
+    driver: local
+  phonescraper_sqlserver_data:
+    driver: local
+
+networks:
+  integration_network:
+    driver: bridge

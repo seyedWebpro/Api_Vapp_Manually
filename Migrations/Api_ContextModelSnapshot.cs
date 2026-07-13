@@ -1213,6 +1213,56 @@ namespace Api_Vapp.Migrations
                     b.ToTable("LuckyWheelNotebooks");
                 });
 
+            modelBuilder.Entity("Api_Vapp.Models.LuckyWheelParticipant", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int?>("ContactId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<int>("LuckyWheelId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ParticipantFullName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("ParticipantMobile")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<int>("WonLuckyWheelItemId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ContactId");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("LuckyWheelId");
+
+                    b.HasIndex("ParticipantMobile");
+
+                    b.HasIndex("WonLuckyWheelItemId");
+
+                    b.HasIndex("LuckyWheelId", "ParticipantMobile")
+                        .IsUnique();
+
+                    b.ToTable("LuckyWheelParticipants");
+                });
+
             modelBuilder.Entity("Api_Vapp.Models.ManualCashbackTransaction", b =>
                 {
                     b.Property<int>("Id")
@@ -1741,6 +1791,85 @@ namespace Api_Vapp.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("MessageTemplates");
+                });
+
+            modelBuilder.Entity("Api_Vapp.Models.NumberSeekerTask", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("City")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("CurrentCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ImportedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("ImportedCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
+                    b.Property<int?>("ImportedNotebookId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Message")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("ResultCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ScraperTaskId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<int>("TargetCount")
+                        .HasColumnType("int");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ScraperTaskId")
+                        .IsUnique();
+
+                    b.HasIndex("Status");
+
+                    b.HasIndex("UserId", "CreatedAt");
+
+                    b.ToTable("NumberSeekerTasks");
                 });
 
             modelBuilder.Entity("Api_Vapp.Models.Payment", b =>
@@ -3188,6 +3317,36 @@ namespace Api_Vapp.Migrations
                     b.ToTable("UserFormFields");
                 });
 
+            modelBuilder.Entity("Api_Vapp.Models.UserFormFieldValue", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("FieldKey")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int>("UserFormSubmissionId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Value")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserFormSubmissionId");
+
+                    b.HasIndex("UserFormSubmissionId", "FieldKey")
+                        .IsUnique();
+
+                    b.ToTable("UserFormFieldValues");
+                });
+
             modelBuilder.Entity("Api_Vapp.Models.UserFormNotebook", b =>
                 {
                     b.Property<int>("UserFormId")
@@ -3201,6 +3360,48 @@ namespace Api_Vapp.Migrations
                     b.HasIndex("ContactNotebookId");
 
                     b.ToTable("UserFormNotebooks");
+                });
+
+            modelBuilder.Entity("Api_Vapp.Models.UserFormSubmission", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int?>("ContactId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<string>("ParticipantFullName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("ParticipantMobile")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<int>("UserFormId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ContactId");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("ParticipantMobile");
+
+                    b.HasIndex("UserFormId");
+
+                    b.ToTable("UserFormSubmissions");
                 });
 
             modelBuilder.Entity("Api_Vapp.Models.UserNotificationSettings", b =>
@@ -3766,6 +3967,32 @@ namespace Api_Vapp.Migrations
                     b.Navigation("LuckyWheel");
                 });
 
+            modelBuilder.Entity("Api_Vapp.Models.LuckyWheelParticipant", b =>
+                {
+                    b.HasOne("Api_Vapp.Models.Contact", "Contact")
+                        .WithMany()
+                        .HasForeignKey("ContactId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Api_Vapp.Models.LuckyWheel", "LuckyWheel")
+                        .WithMany()
+                        .HasForeignKey("LuckyWheelId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Api_Vapp.Models.LuckyWheelItem", "WonItem")
+                        .WithMany()
+                        .HasForeignKey("WonLuckyWheelItemId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.Navigation("Contact");
+
+                    b.Navigation("LuckyWheel");
+
+                    b.Navigation("WonItem");
+                });
+
             modelBuilder.Entity("Api_Vapp.Models.ManualCashbackTransaction", b =>
                 {
                     b.HasOne("Api_Vapp.Models.Contact", "Contact")
@@ -3891,6 +4118,17 @@ namespace Api_Vapp.Migrations
                         .IsRequired();
 
                     b.Navigation("Group");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Api_Vapp.Models.NumberSeekerTask", b =>
+                {
+                    b.HasOne("Api_Vapp.Models.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
                     b.Navigation("User");
                 });
@@ -4187,6 +4425,17 @@ namespace Api_Vapp.Migrations
                     b.Navigation("UserForm");
                 });
 
+            modelBuilder.Entity("Api_Vapp.Models.UserFormFieldValue", b =>
+                {
+                    b.HasOne("Api_Vapp.Models.UserFormSubmission", "Submission")
+                        .WithMany("FieldValues")
+                        .HasForeignKey("UserFormSubmissionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Submission");
+                });
+
             modelBuilder.Entity("Api_Vapp.Models.UserFormNotebook", b =>
                 {
                     b.HasOne("Api_Vapp.Models.ContactNotebook", "ContactNotebook")
@@ -4202,6 +4451,24 @@ namespace Api_Vapp.Migrations
                         .IsRequired();
 
                     b.Navigation("ContactNotebook");
+
+                    b.Navigation("UserForm");
+                });
+
+            modelBuilder.Entity("Api_Vapp.Models.UserFormSubmission", b =>
+                {
+                    b.HasOne("Api_Vapp.Models.Contact", "Contact")
+                        .WithMany()
+                        .HasForeignKey("ContactId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Api_Vapp.Models.UserForm", "UserForm")
+                        .WithMany()
+                        .HasForeignKey("UserFormId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Contact");
 
                     b.Navigation("UserForm");
                 });
@@ -4410,6 +4677,11 @@ namespace Api_Vapp.Migrations
                     b.Navigation("Fields");
 
                     b.Navigation("Notebooks");
+                });
+
+            modelBuilder.Entity("Api_Vapp.Models.UserFormSubmission", b =>
+                {
+                    b.Navigation("FieldValues");
                 });
 #pragma warning restore 612, 618
         }

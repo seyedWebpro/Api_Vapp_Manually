@@ -27,5 +27,12 @@ namespace Api_Vapp.Interfaces
         Task<IReadOnlyList<UserFormField>> GetFieldsReadOnlyAsync(int userFormId);
 
         Task<IReadOnlyList<int>> GetNotebookIdsAsync(int userFormId);
+
+        Task AddSubmissionAsync(UserFormSubmission submission);
+
+        Task<(IReadOnlyList<UserFormSubmission> Items, int TotalCount)> GetSubmissionsPagedAsync(
+            int userFormId,
+            int pageNumber,
+            int pageSize);
     }
 }

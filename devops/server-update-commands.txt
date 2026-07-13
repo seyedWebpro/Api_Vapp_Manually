@@ -12,6 +12,8 @@
 
   • API + Admin با نوار پیشرفت 0–100% (مثل vamyab)
   • فقط Admin: bash devops/scripts/deploy-server-visible.sh --front-only
+  • فقط Public (فرم/گردونه): bash devops/scripts/deploy-server.sh --public-only
+  • راهنمای Public: devops/PUBLIC-VAPP.md
   • SSH وسط build قطع شود OK — بعد:
       tail -f $(cat ~/.vapp-last-front-deploy.log)
 
@@ -31,7 +33,10 @@
   bash devops/scripts/deploy-from-mac.sh api-restart # image آماده — فقط restart
   bash devops/scripts/deploy-from-mac.sh admin       # تغییر پنل (~۲–۴ min)
   bash devops/scripts/deploy-from-mac.sh admin-fast  # dist آماده — فقط upload
-  bash devops/scripts/deploy-from-mac.sh both        # API + Admin
+  bash devops/scripts/deploy-from-mac.sh public       # Public_Vapp (فرم/گردونه SMS)
+  bash devops/scripts/deploy-from-mac.sh public-fast
+  bash devops/scripts/deploy-from-mac.sh all-fronts   # Admin + Public
+  bash devops/scripts/deploy-from-mac.sh all          # API + Admin + Public
   bash devops/scripts/deploy-from-mac.sh health
 
 
@@ -80,6 +85,7 @@
   --- clone با SSH ---
   git clone git@github.com:seyedWebpro/Api_Vapp_Manually.git ~/Api_Vapp_Manually
   git clone git@github.com:seyedWebpro/Admin_Pannel_Vapp.git ~/Admin_Vapp
+  git clone git@github.com:seyedWebpro/Public_Vapp.git ~/Public_Vapp
 
   --- HTTPS → SSH (اگر قبلاً clone کرده‌اید) ---
   bash ~/Api_Vapp_Manually/devops/scripts/switch-git-remotes-to-ssh.sh
@@ -95,6 +101,7 @@
   # 2) clone (بعد از GitHub deploy key)
   git clone git@github.com:seyedWebpro/Api_Vapp_Manually.git ~/Api_Vapp_Manually
   git clone git@github.com:seyedWebpro/Admin_Pannel_Vapp.git ~/Admin_Vapp
+  git clone git@github.com:seyedWebpro/Public_Vapp.git ~/Public_Vapp
 
   # 3) نصب Docker + Nginx
   sudo bash ~/Api_Vapp_Manually/devops/scripts/setup-server.sh
@@ -132,13 +139,19 @@
   cd ~/Api_Vapp_Manually && git pull origin main && bash devops/scripts/deploy-server.sh --api-only
 
   --- API وقتی mcr.microsoft.com block است (image کش‌شده روی سرور) ---
-  cd ~/Api_Vapp_Manually && git pull origin main && docker compose -f docker/docker-compose.production.yml --env-file docker/.env build --pull=false api && docker compose -f docker/docker-compose.production.yml --env-file docker/.env up -d --force-recreate --no-build api
+  cd ~/Api_Vapp_Manually && git pull origin main && docker compose -f docker/docker-compose.production.yml --env-file docker/.env build --pull=false api && docker compose -f docker/docker-compose.production.yml --env-file docker/.env up -d --no-deps --force-recreate --no-build api
 
   --- API build روی Mac → upload به سرور (پیشنهادی) ---
   SERVER=vapp-prod bash devops/scripts/deploy-api-upload-image.sh
 
   --- فقط Admin ---
   bash devops/scripts/deploy-server.sh --front-only --wait
+
+  --- فقط Public (فرم/گردونه SMS) ---
+  cd ~/Api_Vapp_Manually && git pull origin main && bash devops/scripts/deploy-server.sh --public-only
+
+  --- فقط Public (یک خط — سورس Public از قبل روی سرور) ---
+  bash ~/Api_Vapp_Manually/devops/scripts/deploy-public-front-host.sh
 
   --- nginx ---
   bash devops/scripts/apply-nginx.sh
@@ -151,9 +164,13 @@
   اسکریپت‌ها
 ================================================================================
 
-  deploy-server.sh       --fast | --full | --front-only | --api-only | --wait
+  deploy-server.sh       --fast | --full | --front-only | --public-only | --api-only | --wait
   deploy-api.sh          API + migration
   deploy-front.sh        Admin build + run (--background)
+  deploy-front-host.sh   Admin build static روی سرور
+  deploy-public-front-host.sh   Public build + static (/form, /wheel)
+  deploy-public-front-upload-dist.sh  build Public روی Mac → upload
+  deploy-public-front.sh        Public docker (:3006)
   health-check.sh        API + Front + Nginx
   wait-front-deploy.sh   صبر روی لاگ فرانت + health-check
   apply-nginx.sh         نصب/آپدیت nginx
@@ -169,21 +186,46 @@
 
   API:     ~/Api_Vapp_Manually          main
   Admin:   ~/Admin_Vapp                 main
+  Public:  ~/Public_Vapp                main
+  Scraper: ~/scraping_Number_Vapp       main
   DevOps:  ~/Api_Vapp_Manually/devops/
+
+
+================================================================================
+  دامنه ok-sms.ir (یک‌خطی)
+================================================================================
+
+  # سوئیچ nginx + .env به دامنه (HTTP — قبل از SSL)
+  ssh vapp-prod 'cd ~/Api_Vapp_Manually && bash devops/scripts/switch-to-domain.sh --http-only'
+
+  # بعد از DNS درست (A → 185.116.162.233) + SSL
+  ssh vapp-prod 'cd ~/Api_Vapp_Manually && bash devops/scripts/switch-to-domain.sh --certbot'
+
+  # برگشت به IP
+  ssh vapp-prod 'cd ~/Api_Vapp_Manually && bash devops/scripts/switch-to-domain.sh --ip-only'
+
+  راهنما: devops/domain/README.md · devops/domain/CLOUDFLARE.md
+
+  dig ok-sms.ir +short   # باید: 185.116.162.233
 
 
 ================================================================================
   پورت‌ها
 ================================================================================
 
-  Nginx:   :80  → http://185.116.162.233
+  Nginx:   :80 / :443  → https://ok-sms.ir (یا IP موقت)
   SSH:     :3031  (Mac: ssh vapp-prod)
+  Scraper API:  8000 (phonescraper_api_prod) — داخلی؛ Nginx باز نکنید
+  Scraper SQL:  127.0.0.1:1437  (phonescraper_sqlserver_prod) — اختیاری
   API:     127.0.0.1:8080  (vapp_api_prod)
   SQL:     127.0.0.1:1433  (vapp_sqlserver_prod)
   Admin:   127.0.0.1:3005  (vapp-admin)
+  Public:  static /var/www/vapp-public (/form, /wheel)
 
-  Admin:   http://185.116.162.233/admin
-  Swagger: http://185.116.162.233/swagger
+  Admin:   https://ok-sms.ir/auth
+  Form:    https://ok-sms.ir/form/{slug}
+  Wheel:   https://ok-sms.ir/wheel/{slug}
+  Swagger: https://ok-sms.ir/swagger
 
 
 ================================================================================
@@ -227,3 +269,62 @@
     SERVER=vapp-prod bash devops/scripts/deploy-front-upload-dist.sh
 
   بکاپ DB: devops/backup/README.md
+
+
+================================================================================
+  ★ Number Scraper (ربات شماره‌جو) — همان سرور
+================================================================================
+
+  راهنمای کامل: devops/NUMBER-SCRAPER.md
+
+  معماری: موبایل → Vapp .NET → ربات Python (:8000 داخلی)
+
+  Repo:     ~/scraping_Number_Vapp
+  DevOps:   ~/scraping_Number_Vapp/devops/
+  GitHub:   git@github.com:seyedWebpro/scraping_Number_Vapp.git
+
+  --- env Vapp (docker/.env) — یک‌بار ---
+  SCRAPER_API_KEY=...                              # همان API_KEY ربات
+  NumberScraperApi__Enabled=true
+  NumberScraperApi__BaseUrl=http://host.docker.internal:8000
+  NumberScraperApi__ApiKey=${SCRAPER_API_KEY}
+
+  --- env ربات (~/scraping_Number_Vapp/.env) ---
+  API_KEY=...                                      # همان SCRAPER_API_KEY
+  API_PORT_MAPPING=8000:8000                       # مهم — نه 127.0.0.1
+  DOTNET_WEBHOOK_ENABLED=true
+  DOTNET_WEBHOOK_URL=http://host.docker.internal:8080/api/NumberSeeker/internal/webhook/task-completed
+
+  --- نصب اولیه (یک‌بار) ---
+  git clone git@github.com:seyedWebpro/scraping_Number_Vapp.git ~/scraping_Number_Vapp
+  bash ~/scraping_Number_Vapp/devops/scripts/bootstrap-scraper-on-server.sh
+
+  --- deploy ربات از Mac ---
+  cd ~/Documents/javad_project/vapp/scraping_Number_Vapp
+  bash devops/scripts/deploy-from-mac.sh api
+
+  --- upload قطع شد (resume) ---
+  bash devops/scripts/deploy-api-upload-rsync.sh
+
+  --- build روی سرور (بدون upload از Mac) ---
+  cd ~/scraping_Number_Vapp && docker compose -f docker-compose.production.yml --env-file .env build api && docker compose -f docker-compose.production.yml --env-file .env up -d --force-recreate --no-build
+
+  --- آپدیت ربات — یک خط (بعد از upload/build) ---
+  cd ~/scraping_Number_Vapp && git pull origin main && docker compose -f docker-compose.production.yml --env-file .env up -d --no-deps --force-recreate --no-build api
+
+  --- sync توکن پلتفرم (divar/sheypoor) ---
+  cd ~/Documents/javad_project/vapp/scraping_Number_Vapp
+  bash devops/scripts/deploy-from-mac.sh sync-data
+
+  --- health و تست ---
+  curl -s http://127.0.0.1:8000/health
+  docker exec vapp_api_prod curl -s http://host.docker.internal:8000/health
+  bash ~/scraping_Number_Vapp/devops/scripts/health-check.sh
+
+  --- restart Vapp بعد از تغییر SCRAPER_API_KEY ---
+  cd ~/Api_Vapp_Manually && docker compose -f docker/docker-compose.production.yml --env-file docker/.env up -d --no-deps --force-recreate --no-build api
+
+  --- عیب‌یابی ---
+  docker logs --tail 50 phonescraper_api_prod
+  docker logs --tail 50 vapp_api_prod | grep -i NumberScraper
+  git config --global --add safe.directory /root/scraping_Number_Vapp

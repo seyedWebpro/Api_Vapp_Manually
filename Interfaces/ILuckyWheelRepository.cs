@@ -19,5 +19,18 @@ namespace Api_Vapp.Interfaces
             int userId,
             int pageNumber,
             int pageSize);
+
+        Task<LuckyWheel?> GetBySlugReadOnlyAsync(string slug);
+
+        Task<int> GetParticipantCountAsync(int luckyWheelId);
+
+        Task<bool> HasParticipantWithMobileAsync(int luckyWheelId, string mobile);
+
+        Task AddParticipantAsync(LuckyWheelParticipant participant);
+
+        Task<(IReadOnlyList<LuckyWheelParticipant> Items, int TotalCount)> GetParticipantsPagedAsync(
+            int luckyWheelId,
+            int pageNumber,
+            int pageSize);
     }
 }

@@ -48,7 +48,7 @@ log "Uploading dist → $SERVER:$FRONT_STATIC_ROOT"
 ssh "$SERVER" "mkdir -p $FRONT_STATIC_ROOT"
 rsync -avz --delete dist/ "$SERVER:$FRONT_STATIC_ROOT/"
 
-log "Applying nginx..."
-ssh "$SERVER" "FRONT_STATIC_ROOT=$FRONT_STATIC_ROOT SERVER_IP=${SERVER#*@} bash $REMOTE_API_DIR/devops/scripts/apply-nginx.sh"
+log "Applying nginx (Admin + Public)..."
+ssh "$SERVER" "FRONT_STATIC_ROOT=$FRONT_STATIC_ROOT PUBLIC_STATIC_ROOT=${PUBLIC_STATIC_ROOT:-/var/www/vapp-public} SERVER_IP=${SERVER#*@} bash $REMOTE_API_DIR/devops/scripts/apply-nginx.sh"
 
 log "Done: http://${SERVER#*@}/auth"

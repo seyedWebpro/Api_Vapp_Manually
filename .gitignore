@@ -401,6 +401,7 @@ Thumbs.db
 # Environment files
 .env
 .env.local
+INTEGRATION.local.env
 .env.development.local
 .env.test.local
 .env.production.local

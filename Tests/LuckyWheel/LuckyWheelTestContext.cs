@@ -34,6 +34,8 @@ internal sealed class LuckyWheelTestContext : IDisposable
 
     public int NotebookId { get; private set; }
 
+    public Api_Context Context => _context;
+
     public static async Task<LuckyWheelTestContext> CreateAsync()
     {
         var connectionString =

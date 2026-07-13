@@ -58,6 +58,9 @@ namespace Api_Vapp.Data
         public DbSet<LuckyWheel> LuckyWheels { get; set; }
         public DbSet<LuckyWheelItem> LuckyWheelItems { get; set; }
         public DbSet<LuckyWheelNotebook> LuckyWheelNotebooks { get; set; }
+        public DbSet<LuckyWheelParticipant> LuckyWheelParticipants { get; set; }
+        public DbSet<UserFormSubmission> UserFormSubmissions { get; set; }
+        public DbSet<UserFormFieldValue> UserFormFieldValues { get; set; }
         public DbSet<BookingSystem> BookingSystems { get; set; }
         public DbSet<BookingSystemNotebook> BookingSystemNotebooks { get; set; }
         public DbSet<BookingSystemDraft> BookingSystemDrafts { get; set; }
@@ -65,6 +68,7 @@ namespace Api_Vapp.Data
         public DbSet<BookingServiceDaySchedule> BookingServiceDaySchedules { get; set; }
         public DbSet<BookingScheduleException> BookingScheduleExceptions { get; set; }
         public DbSet<BookingAppointment> BookingAppointments { get; set; }
+        public DbSet<NumberSeekerTask> NumberSeekerTasks { get; set; }
 
         public Api_Context(DbContextOptions<Api_Context> options) : base(options)
         {
@@ -1333,6 +1337,78 @@ namespace Api_Vapp.Data
                     .OnDelete(DeleteBehavior.NoAction);
             });
 
+            modelBuilder.Entity<UserFormSubmission>(entity =>
+            {
+                entity.HasKey(s => s.Id);
+                entity.Property(s => s.Id).ValueGeneratedOnAdd();
+                entity.Property(s => s.UserFormId).IsRequired();
+                entity.Property(s => s.ParticipantFullName).IsRequired().HasMaxLength(200);
+                entity.Property(s => s.ParticipantMobile).IsRequired().HasMaxLength(20);
+                entity.Property(s => s.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+                entity.HasOne(s => s.UserForm)
+                    .WithMany()
+                    .HasForeignKey(s => s.UserFormId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(s => s.Contact)
+                    .WithMany()
+                    .HasForeignKey(s => s.ContactId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasIndex(s => s.UserFormId);
+                entity.HasIndex(s => s.ParticipantMobile);
+                entity.HasIndex(s => s.CreatedAt);
+            });
+
+            modelBuilder.Entity<UserFormFieldValue>(entity =>
+            {
+                entity.HasKey(v => v.Id);
+                entity.Property(v => v.Id).ValueGeneratedOnAdd();
+                entity.Property(v => v.UserFormSubmissionId).IsRequired();
+                entity.Property(v => v.FieldKey).IsRequired().HasMaxLength(100);
+                entity.Property(v => v.Value).HasMaxLength(4000);
+
+                entity.HasOne(v => v.Submission)
+                    .WithMany(s => s.FieldValues)
+                    .HasForeignKey(v => v.UserFormSubmissionId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasIndex(v => v.UserFormSubmissionId);
+                entity.HasIndex(v => new { v.UserFormSubmissionId, v.FieldKey }).IsUnique();
+            });
+
+            modelBuilder.Entity<LuckyWheelParticipant>(entity =>
+            {
+                entity.HasKey(p => p.Id);
+                entity.Property(p => p.Id).ValueGeneratedOnAdd();
+                entity.Property(p => p.LuckyWheelId).IsRequired();
+                entity.Property(p => p.ParticipantFullName).IsRequired().HasMaxLength(200);
+                entity.Property(p => p.ParticipantMobile).IsRequired().HasMaxLength(20);
+                entity.Property(p => p.WonLuckyWheelItemId).IsRequired();
+                entity.Property(p => p.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+                entity.HasOne(p => p.LuckyWheel)
+                    .WithMany()
+                    .HasForeignKey(p => p.LuckyWheelId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(p => p.WonItem)
+                    .WithMany()
+                    .HasForeignKey(p => p.WonLuckyWheelItemId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(p => p.Contact)
+                    .WithMany()
+                    .HasForeignKey(p => p.ContactId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasIndex(p => p.LuckyWheelId);
+                entity.HasIndex(p => p.ParticipantMobile);
+                entity.HasIndex(p => p.CreatedAt);
+                entity.HasIndex(p => new { p.LuckyWheelId, p.ParticipantMobile }).IsUnique();
+            });
+
             modelBuilder.Entity<ReferralProgram>(entity =>
             {
                 entity.HasKey(r => r.Id);
@@ -1613,6 +1689,49 @@ namespace Api_Vapp.Data
                 entity.HasIndex(r => r.DeliveryCategory);
                 entity.HasIndex(r => r.SentAt);
                 entity.HasIndex(r => new { r.IsDeliveryFinal, r.SendStatus, r.SentAt });
+            });
+
+            modelBuilder.Entity<NumberSeekerTask>(entity =>
+            {
+                entity.HasKey(t => t.Id);
+
+                entity.Property(t => t.ScraperTaskId)
+                    .IsRequired()
+                    .HasMaxLength(64);
+
+                entity.Property(t => t.Source)
+                    .IsRequired()
+                    .HasMaxLength(32);
+
+                entity.Property(t => t.City)
+                    .IsRequired()
+                    .HasMaxLength(100);
+
+                entity.Property(t => t.Category)
+                    .IsRequired()
+                    .HasMaxLength(200);
+
+                entity.Property(t => t.Status)
+                    .IsRequired()
+                    .HasMaxLength(32);
+
+                entity.Property(t => t.ResultCode)
+                    .HasMaxLength(64);
+
+                entity.Property(t => t.Message)
+                    .HasMaxLength(500);
+
+                entity.Property(t => t.ImportedCount)
+                    .HasDefaultValue(0);
+
+                entity.HasOne(t => t.User)
+                    .WithMany()
+                    .HasForeignKey(t => t.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasIndex(t => t.ScraperTaskId).IsUnique();
+                entity.HasIndex(t => new { t.UserId, t.CreatedAt });
+                entity.HasIndex(t => t.Status);
             });
         }
     }

@@ -417,18 +417,22 @@ namespace Api_Vapp.Services
 
                 var (items, totalCount) = await _luckyWheelRepository.GetByUserIdPagedAsync(userId, pageNumber, pageSize);
 
-                var summaries = items.Select(wheel => new LuckyWheelSummaryDto
+                var summaries = new List<LuckyWheelSummaryDto>();
+                foreach (var wheel in items)
                 {
-                    Id = wheel.Id,
-                    Title = wheel.Title,
-                    Slug = wheel.Slug,
-                    Status = wheel.Status.ToString(),
-                    IsActive = wheel.IsActive,
-                    PublicUrl = BuildPublicUrl(wheel.Slug),
-                    ParticipantCount = 0,
-                    CreatedAt = EnsureUtc(wheel.CreatedAt),
-                    PublishedAt = EnsureUtc(wheel.PublishedAt)
-                }).ToList();
+                    summaries.Add(new LuckyWheelSummaryDto
+                    {
+                        Id = wheel.Id,
+                        Title = wheel.Title,
+                        Slug = wheel.Slug,
+                        Status = wheel.Status.ToString(),
+                        IsActive = wheel.IsActive,
+                        PublicUrl = BuildPublicUrl(wheel.Slug),
+                        ParticipantCount = await _luckyWheelRepository.GetParticipantCountAsync(wheel.Id),
+                        CreatedAt = EnsureUtc(wheel.CreatedAt),
+                        PublishedAt = EnsureUtc(wheel.PublishedAt)
+                    });
+                }
 
                 return ApiResponse<LuckyWheelListResponseDto>.CreateSuccess(new LuckyWheelListResponseDto
                 {

@@ -8,6 +8,7 @@
 #   bash deploy-server.sh --full
 #   bash deploy-server.sh --api-only
 #   bash deploy-server.sh --front-only
+#   bash deploy-server.sh --public-only
 #   bash deploy-server.sh --front-only --foreground   # progress زنده در همان SSH
 #   bash deploy-server.sh --pull-only
 #
@@ -22,6 +23,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 API_REPO_DIR="${API_REPO_DIR:-$HOME/Api_Vapp_Manually}"
 FRONT_DIR="${FRONT_DIR:-$HOME/Admin_Vapp}"
+PUBLIC_DIR="${PUBLIC_DIR:-$HOME/Public_Vapp}"
 LAST_FRONT_LOG="${LAST_FRONT_DEPLOY_LOG:-$HOME/.vapp-last-front-deploy.log}"
 
 usage() {
@@ -64,11 +66,33 @@ run_front() {
   fi
 }
 
+run_public() {
+  if [[ "${PUBLIC_DEPLOY_MODE:-host}" == "host" ]]; then
+    bash "$SCRIPT_DIR/deploy-public-front-host.sh"
+  else
+    bash "$SCRIPT_DIR/deploy-public-front.sh" --foreground
+  fi
+}
+
+apply_nginx_all() {
+  local env_args=()
+  if [[ "${FRONT_DEPLOY_MODE:-host}" == "host" ]]; then
+    env_args+=(FRONT_STATIC_ROOT="${FRONT_STATIC_ROOT:-/var/www/vapp-admin}")
+  fi
+  if [[ "${PUBLIC_DEPLOY_MODE:-host}" == "host" ]]; then
+    env_args+=(PUBLIC_STATIC_ROOT="${PUBLIC_STATIC_ROOT:-/var/www/vapp-public}")
+  fi
+  env "${env_args[@]}" bash "$SCRIPT_DIR/apply-nginx.sh" || echo "WARN: apply-nginx failed" >&2
+}
+
 case "$MODE" in
   --pull-only)
     cd "$API_REPO_DIR" && git pull origin "${API_BRANCH:-main}"
     cd "$FRONT_DIR" && git pull origin "${FRONT_BRANCH:-main}"
-    echo "OK: git pull done for API + front"
+    if [[ -d "$PUBLIC_DIR/.git" ]]; then
+      cd "$PUBLIC_DIR" && git pull origin "${PUBLIC_BRANCH:-main}"
+    fi
+    echo "OK: git pull done for API + Admin + Public"
     ;;
   --api-only)
     run_api 0 0
@@ -76,13 +100,18 @@ case "$MODE" in
   --front-only)
     run_front
     ;;
+  --public-only)
+    run_public
+    ;;
   --fast)
     run_api 0 1
     run_front
+    run_public
     ;;
   --full)
     run_api 1 1
     run_front
+    run_public
     ;;
   *)
     echo "ERROR: unknown mode: $MODE" >&2
@@ -90,7 +119,7 @@ case "$MODE" in
     ;;
 esac
 
-if [[ "$MODE" == "--fast" || "$MODE" == "--full" || "$MODE" == "--front-only" ]]; then
+if [[ "$MODE" == "--fast" || "$MODE" == "--full" || "$MODE" == "--front-only" || "$MODE" == "--public-only" ]]; then
   log_hint=""
   [[ -f "$LAST_FRONT_LOG" ]] && log_hint="$(cat "$LAST_FRONT_LOG")"
   echo ""
@@ -99,23 +128,15 @@ if [[ "$MODE" == "--fast" || "$MODE" == "--full" || "$MODE" == "--front-only" ]]
   else
     echo "Front log: tail -f /root/vapp-front-deploy-*.log"
   fi
-  if [[ "$FRONT_BG" == "1" ]]; then
+  if [[ "$FRONT_BG" == "1" && "$MODE" != "--public-only" ]]; then
     echo "When done: bash $SCRIPT_DIR/health-check.sh"
   fi
-fi
-
-if [[ "$MODE" == "--fast" || "$MODE" == "--full" || "$MODE" == "--front-only" ]]; then
-  if [[ "${FRONT_DEPLOY_MODE:-host}" == "host" ]]; then
-    FRONT_STATIC_ROOT="${FRONT_STATIC_ROOT:-/var/www/vapp-admin}" \
-      bash "$SCRIPT_DIR/apply-nginx.sh" || echo "WARN: apply-nginx failed" >&2
-  else
-    bash "$SCRIPT_DIR/apply-nginx.sh" || echo "WARN: apply-nginx failed" >&2
-  fi
+  apply_nginx_all
 fi
 
 if [[ "$WAIT_FOR_FRONT" == "1" && "$FRONT_BG" == "1" ]]; then
   bash "$SCRIPT_DIR/wait-front-deploy.sh" || true
-elif [[ "$MODE" != "--fast" && "$MODE" != "--full" && "$MODE" != "--front-only" ]]; then
+elif [[ "$MODE" == "--public-only" || ( "$MODE" != "--fast" && "$MODE" != "--full" && "$MODE" != "--front-only" ) ]]; then
   bash "$SCRIPT_DIR/health-check.sh" || true
 fi
 

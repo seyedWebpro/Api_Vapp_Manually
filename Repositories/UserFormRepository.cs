@@ -153,5 +153,32 @@ namespace Api_Vapp.Repositories
                 .Select(n => n.ContactNotebookId)
                 .ToListAsync();
         }
+
+        public async Task AddSubmissionAsync(UserFormSubmission submission)
+        {
+            await _context.UserFormSubmissions.AddAsync(submission);
+            await _context.SaveChangesAsync();
+        }
+
+        public async Task<(IReadOnlyList<UserFormSubmission> Items, int TotalCount)> GetSubmissionsPagedAsync(
+            int userFormId,
+            int pageNumber,
+            int pageSize)
+        {
+            var query = _context.UserFormSubmissions
+                .AsNoTracking()
+                .Where(s => s.UserFormId == userFormId);
+
+            var totalCount = await query.CountAsync();
+
+            var items = await query
+                .OrderByDescending(s => s.CreatedAt)
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
+                .Include(s => s.FieldValues)
+                .ToListAsync();
+
+            return (items, totalCount);
+        }
     }
 }

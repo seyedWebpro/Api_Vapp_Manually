@@ -83,6 +83,42 @@ POST {{Api_Vapp_HostAddress}}/api/LuckyWheel/1/delete
 
 ###
 
+# --- FormPublic (فرم عمومی) — بدون Auth ---
+
+### دریافت schema فرم منتشرشده
+GET {{Api_Vapp_HostAddress}}/api/FormPublic/contact-form
+
+### ثبت پاسخ فرم
+POST {{Api_Vapp_HostAddress}}/api/FormPublic/contact-form/submit
+Content-Type: application/json
+
+{
+  "participantFullName": "علی رضایی",
+  "participantMobile": "09121112233",
+  "values": {
+    "full_name": "علی رضایی",
+    "mobile": "09121112233"
+  }
+}
+
+###
+
+# --- LuckyWheelPublic (گردونه عمومی) — بدون Auth ---
+
+### دریافت اطلاعات گردونه
+GET {{Api_Vapp_HostAddress}}/api/LuckyWheelPublic/norooz-wheel
+
+### چرخش گردونه
+POST {{Api_Vapp_HostAddress}}/api/LuckyWheelPublic/norooz-wheel/spin
+Content-Type: application/json
+
+{
+  "participantFullName": "سارا محمدی",
+  "participantMobile": "09123334455"
+}
+
+###
+
 # --- UserSubscription (اشتراک) — نیاز به JWT یا Development:DisableAuth=true ---
 # ترتیب تست: ۱) catalog  →  planId پلن Plus/Gold را بردار  →  ۲) preview  →  ۳) purchase
 
@@ -164,6 +200,53 @@ Authorization: Bearer {{token}}
   "activityType": "beauty_salon",
   "saveToPhonebook": false,
   "notebookIds": []
+}
+
+###
+
+# --- NumberSeeker (شماره‌جو) — JWT + number_seeker + Python scraper روی :8000 ---
+
+### سلامت سرویس اسکرپ
+GET {{Api_Vapp_HostAddress}}/api/NumberSeeker/health
+Authorization: Bearer {{token}}
+
+### لیست پلتفرم‌ها
+GET {{Api_Vapp_HostAddress}}/api/NumberSeeker/sources
+Authorization: Bearer {{token}}
+
+### شروع اسکرپ
+POST {{Api_Vapp_HostAddress}}/api/NumberSeeker/scrape
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "source": "sheypoor",
+  "city": "تهران",
+  "category": "رستوران",
+  "maxPhones": 10
+}
+
+### Poll وضعیت — taskId را جایگزین کنید
+GET {{Api_Vapp_HostAddress}}/api/NumberSeeker/task/{{taskId}}
+Authorization: Bearer {{token}}
+
+### تاریخچه تسک‌ها
+GET {{Api_Vapp_HostAddress}}/api/NumberSeeker/tasks?limit=20
+Authorization: Bearer {{token}}
+
+### لغو تسک
+POST {{Api_Vapp_HostAddress}}/api/NumberSeeker/task/{{taskId}}/cancel
+Authorization: Bearer {{token}}
+
+### Import شماره‌ها به دفترچه
+POST {{Api_Vapp_HostAddress}}/api/NumberSeeker/task/{{taskId}}/import
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "contactNotebookId": 1,
+  "contactNamePrefix": "رستوران",
+  "force": false
 }
 
 ###

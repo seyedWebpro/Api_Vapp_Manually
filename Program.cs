@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Data.SqlClient;
@@ -15,6 +16,7 @@ using System.Security.Claims;
 using System.Text;
 using Api_Vapp.Configuration;
 using Api_Vapp.Data;
+using Api_Vapp.Extensions;
 using Api_Vapp.Filters;
 using Api_Vapp.Utilities;
 using Serilog;
@@ -115,6 +117,7 @@ builder.Services.AddCors(options =>
 
 // HttpClient
 builder.Services.AddHttpClient();
+builder.Services.AddNumberScraperIntegration(builder.Configuration);
 
 
 
@@ -381,6 +384,9 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.IContactService, Api_Vapp.Service
 builder.Services.AddScoped<Api_Vapp.Interfaces.IQuickActionService, Api_Vapp.Services.QuickActionService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IUserFormService, Api_Vapp.Services.UserFormService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.ILuckyWheelService, Api_Vapp.Services.LuckyWheelService>();
+builder.Services.AddScoped<Api_Vapp.Services.PublicPhonebookService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IUserFormPublicService, Api_Vapp.Services.UserFormPublicService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.ILuckyWheelPublicService, Api_Vapp.Services.LuckyWheelPublicService>();
 
 // ثبت سرویس‌های مدیریت پیام و اتوماسیون
 builder.Services.AddScoped<Api_Vapp.Interfaces.IMessageService, Api_Vapp.Services.MessageService>();
@@ -394,6 +400,12 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.ICashbackService, Api_Vapp.Servic
 builder.Services.AddScoped<Api_Vapp.Interfaces.IReferralProgramService, Api_Vapp.Services.ReferralProgramService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IBookingSystemService, Api_Vapp.Services.BookingSystemService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IBookingAppointmentService, Api_Vapp.Services.BookingAppointmentService>();
+
+// شماره‌جو — اتصال به Python Number Scraper
+builder.Services.Configure<NumberSeekerOptions>(builder.Configuration.GetSection(NumberSeekerOptions.SectionName));
+builder.Services.AddScoped<Api_Vapp.Interfaces.INumberSeekerTaskRepository, Api_Vapp.Repositories.NumberSeekerTaskRepository>();
+builder.Services.AddSingleton<Api_Vapp.Interfaces.INumberSeekerRateLimiter, Api_Vapp.Services.NumberSeekerRateLimiter>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.INumberSeekerService, Api_Vapp.Services.NumberSeekerService>();
 
 // ثبت سرویس تنظیمات اعلان‌ها
 builder.Services.AddScoped<Api_Vapp.Interfaces.INotificationSettingsService, Api_Vapp.Services.NotificationSettingsService>();
@@ -494,6 +506,14 @@ builder.Services.AddMemoryCache(options =>
 
 // Register Rate Limit Service
 //builder.Services.AddSingleton<IRateLimitService, RateLimitService>();
+
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.ForwardLimit = 2;
+    options.KnownNetworks.Clear();
+    options.KnownProxies.Clear();
+});
 #endregion
 
 
@@ -542,6 +562,8 @@ if (app.Environment.IsProduction() || app.Environment.EnvironmentName == "Docker
 }
 
 // Configure the HTTP request pipeline.
+app.UseForwardedHeaders();
+
 app.UseSwagger();
 app.UseSwaggerUI(c =>
 {

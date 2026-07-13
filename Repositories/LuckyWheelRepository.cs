@@ -110,5 +110,62 @@ namespace Api_Vapp.Repositories
 
             return (items, totalCount);
         }
+
+        public async Task<LuckyWheel?> GetBySlugReadOnlyAsync(string slug)
+        {
+            return await _dbSet
+                .AsNoTracking()
+                .AsSplitQuery()
+                .Include(w => w.Items.OrderBy(item => item.DisplayOrder))
+                .Include(w => w.Notebooks)
+                .FirstOrDefaultAsync(w =>
+                    w.Slug == slug &&
+                    !w.IsDeleted &&
+                    w.Status == LuckyWheelStatus.Published &&
+                    w.IsActive);
+        }
+
+        public async Task<int> GetParticipantCountAsync(int luckyWheelId)
+        {
+            return await _context.LuckyWheelParticipants
+                .AsNoTracking()
+                .CountAsync(p => p.LuckyWheelId == luckyWheelId);
+        }
+
+        public async Task<bool> HasParticipantWithMobileAsync(int luckyWheelId, string mobile)
+        {
+            return await _context.LuckyWheelParticipants
+                .AsNoTracking()
+                .AnyAsync(p =>
+                    p.LuckyWheelId == luckyWheelId &&
+                    p.ParticipantMobile == mobile);
+        }
+
+        public async Task AddParticipantAsync(LuckyWheelParticipant participant)
+        {
+            await _context.LuckyWheelParticipants.AddAsync(participant);
+            await _context.SaveChangesAsync();
+        }
+
+        public async Task<(IReadOnlyList<LuckyWheelParticipant> Items, int TotalCount)> GetParticipantsPagedAsync(
+            int luckyWheelId,
+            int pageNumber,
+            int pageSize)
+        {
+            var query = _context.LuckyWheelParticipants
+                .AsNoTracking()
+                .Where(p => p.LuckyWheelId == luckyWheelId);
+
+            var totalCount = await query.CountAsync();
+
+            var items = await query
+                .OrderByDescending(p => p.CreatedAt)
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
+                .Include(p => p.WonItem)
+                .ToListAsync();
+
+            return (items, totalCount);
+        }
     }
 }
