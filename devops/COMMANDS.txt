@@ -1,0 +1,160 @@
+# Vapp — Deploy & Operations Commands
+# Last updated: 2026-07-20
+#
+# Run all commands from: ~/Documents/javad_project/vapp/Api_Vapp_Manually
+# SSH alias used below: vapp-prod (Port 3031, see MAC-SERVER.md)
+#
+# ============================================================
+# 1. MAC — ONE-SHOT DEPLOY (recommended)
+# ============================================================
+
+bash devops/scripts/deploy-from-mac.sh api            # .NET API: build Docker on Mac + upload + restart (~3-7 min)
+bash devops/scripts/deploy-from-mac.sh api-restart    # API: restart container only, image already on server (~1 min)
+bash devops/scripts/deploy-from-mac.sh admin          # Admin_Vapp: build + upload dist (~2-4 min)
+bash devops/scripts/deploy-from-mac.sh admin-fast     # Admin_Vapp: upload existing dist only (~30 sec)
+bash devops/scripts/deploy-from-mac.sh public         # Public_Vapp: build + upload dist (~2-4 min)
+bash devops/scripts/deploy-from-mac.sh public-fast    # Public_Vapp: upload existing dist only (~30 sec)
+bash devops/scripts/deploy-from-mac.sh all-fronts     # Admin + Public together
+bash devops/scripts/deploy-from-mac.sh both           # API + Admin
+bash devops/scripts/deploy-from-mac.sh all            # API + Admin + Public
+bash devops/scripts/deploy-from-mac.sh health         # Run health check on server
+
+# ============================================================
+# 2. MAC — LOW-LEVEL SCRIPTS
+# ============================================================
+
+SERVER=vapp-prod bash devops/scripts/deploy-api-upload-image.sh
+SERVER=vapp-prod bash devops/scripts/deploy-front-upload-dist.sh
+SERVER=vapp-prod bash devops/scripts/deploy-public-front-upload-dist.sh
+SERVER=vapp-prod bash devops/scripts/sync-to-server.sh
+
+# With options:
+SKIP_BUILD=1 SERVER=vapp-prod bash devops/scripts/deploy-front-upload-dist.sh
+SKIP_BUILD=1 SERVER=vapp-prod bash devops/scripts/deploy-public-front-upload-dist.sh
+
+# ============================================================
+# 3. SERVER — ORCHESTRATED DEPLOY
+# ============================================================
+
+# Run these after SSH to vapp-prod:
+ssh vapp-prod
+
+bash ~/Api_Vapp_Manually/devops/scripts/deploy-server.sh --fast        # API + Admin + Public (fast, allows slow API start)
+bash ~/Api_Vapp_Manually/devops/scripts/deploy-server.sh --full        # API + Admin + Public + reload nginx
+bash ~/Api_Vapp_Manually/devops/scripts/deploy-server.sh --api-only    # API only
+bash ~/Api_Vapp_Manually/devops/scripts/deploy-server.sh --front-only  # Admin only
+bash ~/Api_Vapp_Manually/devops/scripts/deploy-server.sh --public-only # Public only
+bash ~/Api_Vapp_Manually/devops/scripts/deploy-server.sh --pull-only   # git pull API + Admin + Public
+
+# Wait for background front build to finish:
+bash ~/Api_Vapp_Manually/devops/scripts/wait-front-deploy.sh
+
+# ============================================================
+# 4. SERVER — INDIVIDUAL SERVICE DEPLOY
+# ============================================================
+
+# API
+cd ~/Api_Vapp_Manually && bash devops/scripts/deploy-api.sh
+RELOAD_NGINX=1 bash devops/scripts/deploy-api.sh
+ALLOW_SLOW_START=1 bash devops/scripts/deploy-api.sh
+
+# Admin (host/static)
+bash ~/Api_Vapp_Manually/devops/scripts/deploy-front-host.sh
+SKIP_NPM_CI=1 bash ~/Api_Vapp_Manually/devops/scripts/deploy-front-host.sh
+
+# Admin (Docker, usually not used)
+bash ~/Api_Vapp_Manually/devops/scripts/deploy-front.sh --foreground
+FRONT_DEPLOY_MODE=host bash ~/Api_Vapp_Manually/devops/scripts/deploy-front.sh
+
+# Public (host/static)
+bash ~/Api_Vapp_Manually/devops/scripts/deploy-public-front-host.sh
+SKIP_NPM_CI=1 bash ~/Api_Vapp_Manually/devops/scripts/deploy-public-front-host.sh
+
+# Public (Docker, usually not used)
+bash ~/Api_Vapp_Manually/devops/scripts/deploy-public-front.sh --foreground
+
+# ============================================================
+# 5. HEALTH CHECKS
+# ============================================================
+
+bash ~/Api_Vapp_Manually/devops/scripts/health-check.sh
+bash ~/Api_Vapp_Manually/devops/scripts/health-check.sh --with-domain
+
+# Manual checks:
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/health
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/swagger/index.html
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1/
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1/form/test-slug
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1/wheel/test-slug
+
+# ============================================================
+# 6. GIT — FIX CONFLICTS ON SERVER
+# ============================================================
+
+# If git pull fails because of local changes:
+ssh vapp-prod 'cd ~/Api_Vapp_Manually && git stash push -m server-local && git pull origin main'
+
+# After deploy, if everything is OK, you can drop the stash:
+ssh vapp-prod 'cd ~/Api_Vapp_Manually && git stash drop stash@{0}'
+
+# Or keep changes and pull with autostash (use with care):
+ssh vapp-prod 'cd ~/Api_Vapp_Manually && git pull --rebase --autostash origin main'
+
+# ============================================================
+# 7. NGINX
+# ============================================================
+
+bash ~/Api_Vapp_Manually/devops/scripts/apply-nginx.sh
+FRONT_STATIC_ROOT=/var/www/vapp-admin PUBLIC_STATIC_ROOT=/var/www/vapp-public SERVER_IP=185.116.162.233 bash ~/Api_Vapp_Manually/devops/scripts/apply-nginx.sh
+
+# Test nginx config:
+ssh vapp-prod 'sudo nginx -t && sudo nginx -s reload'
+
+# ============================================================
+# 8. DOCKER — USEFUL COMMANDS
+# ============================================================
+
+ssh vapp-prod
+
+docker ps
+docker logs -f vapp_api_prod
+docker logs -f vapp-admin
+docker logs -f vapp-public
+
+docker exec vapp_api_prod printenv | grep PublicBaseUrl
+
+docker compose -f docker/docker-compose.production.yml --env-file docker/.env down api
+docker compose -f docker/docker-compose.production.yml --env-file docker/.env up -d --no-deps --force-recreate --no-build api
+
+# ============================================================
+# 9. NUMBER SCRAPER (separate repo)
+# ============================================================
+
+cd ~/Documents/javad_project/vapp/scraping_Number_Vapp
+bash devops/scripts/deploy-from-mac.sh api
+bash devops/scripts/deploy-from-mac.sh api-restart
+bash devops/scripts/deploy-from-mac.sh sync-data
+
+# ============================================================
+# 10. PATHS REFERENCE
+# ============================================================
+
+# Local (Mac):
+#   API:    ~/Documents/javad_project/vapp/Api_Vapp_Manually
+#   Admin:  ~/Documents/javad_project/vapp/Admin_Vapp
+#   Public: ~/Documents/javad_project/vapp/Public_Vapp
+
+# Server:
+#   API:    ~/Api_Vapp_Manually
+#   Admin:  ~/Admin_Vapp
+#   Public: ~/Public_Vapp
+#   Admin static:  /var/www/vapp-admin
+#   Public static: /var/www/vapp-public
+
+# Docs:
+#   devops/MAC-QUICK-DEPLOY.md
+#   devops/PUBLIC-VAPP.md
+#   devops/NUMBER-SCRAPER.md
+#   devops/MAC-SERVER.md
+#   devops/README.md
+#   devops/COMMANDS.txt      <- this file

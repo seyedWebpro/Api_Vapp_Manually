@@ -22,7 +22,8 @@ namespace Api_Vapp.Services
         public async Task<UserSubscriptionEntitlementSnapshot> GetEntitlementSnapshotAsync(int userId)
         {
             var active = await GetActiveSubscriptionAsync(userId);
-            if (active?.Plan is { IsActive: true, IsDeleted: false })
+            // IsActive فقط فروش/کاتالوگ را کنترل می‌کند؛ اشتراک فعال کاربر قطع نمی‌شود.
+            if (active?.Plan is { IsDeleted: false })
             {
                 return new UserSubscriptionEntitlementSnapshot
                 {
@@ -83,11 +84,11 @@ namespace Api_Vapp.Services
                     us.UserId == userId
                     && !us.IsDeleted
                     && us.Status == "Active"
-                    && us.ExpiresAt > now)
+                    && us.ExpiresAt > now
+                    && !us.Plan.IsDeleted)
                 .SelectMany(us => us.Plan.PlanFeatures)
                 .AnyAsync(pf =>
                     pf.Feature!.Code == normalizedCode
-                    && pf.Feature.IsActive
                     && !pf.Feature.IsDeleted);
 
             if (hasViaActiveSubscription)
@@ -102,7 +103,6 @@ namespace Api_Vapp.Services
                 .SelectMany(p => p.PlanFeatures)
                 .AnyAsync(pf =>
                     pf.Feature!.Code == normalizedCode
-                    && pf.Feature.IsActive
                     && !pf.Feature.IsDeleted);
         }
 
@@ -124,7 +124,7 @@ namespace Api_Vapp.Services
 
         private static IReadOnlyList<string> ExtractFeatureCodes(SubscriptionPlan plan) =>
             plan.PlanFeatures
-                .Where(pf => pf.Feature is { IsActive: true, IsDeleted: false })
+                .Where(pf => pf.Feature is { IsDeleted: false })
                 .Select(pf => pf.Feature!.Code)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();

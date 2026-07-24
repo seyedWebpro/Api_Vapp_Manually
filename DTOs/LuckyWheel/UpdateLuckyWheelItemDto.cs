@@ -2,9 +2,10 @@ using System.ComponentModel.DataAnnotations;
 
 namespace Api_Vapp.DTOs.LuckyWheel
 {
-    public class LuckyWheelItemDto
+    public class UpdateLuckyWheelItemDto
     {
-        public int Id { get; set; }
+        [Range(1, int.MaxValue, ErrorMessage = "شناسه آیتم نامعتبر است")]
+        public int? Id { get; set; }
 
         [Required(ErrorMessage = "نام جایزه الزامی است")]
         [MaxLength(200, ErrorMessage = "نام جایزه نمی‌تواند بیشتر از 200 کاراکتر باشد")]

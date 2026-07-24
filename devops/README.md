@@ -1,83 +1,81 @@
 # DevOps — Vapp
 
-اسکریپت‌های deploy روی سرور لینوکس. **قابل کپی برای پروژه‌های دیگر**؛ قبل از استفاده این‌ها را با stack خودت هماهنگ کن:
+Overview, structure and links.  
+**For the actual command list see [`COMMANDS.txt`](COMMANDS.txt).**
 
-| مورد | Vapp (فعلی) | پروژه جدید |
-|------|-------------|------------|
-| API | .NET 8 + Docker | مسیر repo، `docker-compose`، Dockerfile |
-| Front | Vite/React + Docker | repo جدا، پورت، `VITE_*` یا معادل framework |
-| Public | Vite/React — `/form` `/wheel` | `Public_Vapp`، static یا docker :3006 |
-| DB | SQL Server در Docker | نوع DB، container name، connection string |
-| Proxy | Nginx | `location`ها، پورت upstream، دامنه/IP |
+---
 
-## ساختار
+## Quick start
+
+```bash
+# Mac — from Api_Vapp_Manually
+bash devops/scripts/deploy-from-mac.sh api     # .NET API
+bash devops/scripts/deploy-from-mac.sh admin   # Admin panel
+bash devops/scripts/deploy-from-mac.sh public  # Public form/wheel
+bash devops/scripts/deploy-from-mac.sh health  # Check services
+```
+
+All commands, options and server-side commands are in [`COMMANDS.txt`](COMMANDS.txt).
+
+---
+
+## What's where
 
 ```
 devops/
-  NUMBER-SCRAPER.md     ربات شماره‌جو — deploy و اتصال به Vapp
-  scripts/              deploy، bootstrap، backup، SSH
-  deploy/               nginx example
-  backup/               بکاپ DB
-  domain/               دامنه ok-sms.ir — راهنمای کامل
-  .env.server.example
+  COMMANDS.txt          ← all deploy/ops commands (cheat sheet)
+  MAC-QUICK-DEPLOY.md   ← Mac deploy guide by change type
+  PUBLIC-VAPP.md        ← public form/wheel details
+  NUMBER-SCRAPER.md     ← number-scraper robot
+  MAC-SERVER.md         ← SSH / first-time setup
+  GITHUB_SSH.md         ← deploy key setup
+  scripts/              ← deploy, bootstrap, backup, health-check scripts
+  deploy/               ← nginx example config
+  backup/               ← DB backup scripts
+  domain/               ← domain / Cloudflare guide
 ```
 
-## ترتیب معمول
+---
 
-1. `setup-github-deploy-key.sh` — کلید سرور → GitHub  
-2. `bootstrap-first-run.sh` — نصب اولیه Vapp (یک‌بار)  
-3. `bootstrap-scraper-on-server.sh` — نصب ربات (یک‌بار) — در repo ربات  
-4. `deploy-server.sh --fast --wait` — آپدیت بعدی  
+## Stack mapping (copy template)
 
-جزئیات: `server-update-commands.txt` · `MAC-SERVER.md` · `GITHUB_SSH.md` · `NUMBER-SCRAPER.md`
+| Layer | Vapp | Replace for a new project |
+|-------|------|---------------------------|
+| API | .NET 8 + Docker | repo path, `docker-compose`, Dockerfile |
+| Admin | Vite/React + static nginx | repo path, port, `VITE_*` vars |
+| Public | Vite/React — `/form` `/wheel` | `Public_Vapp`, static or docker :3006 |
+| DB | SQL Server in Docker | DB type, container name, connection string |
+| Proxy | Nginx | locations, upstream port, domain/IP |
 
-## Mac → سرور
+---
 
-| سند | موضوع |
-|-----|--------|
-| **`NUMBER-SCRAPER.md`** | **ربات شماره‌جو — deploy، env، تست، عیب‌یابی** |
-| **`PUBLIC-VAPP.md`** | Deploy فرم/گردونه عمومی (لینک SMS) |
-| **`domain/README.md`** | سوئیچ به دامنه `ok-sms.ir` |
-| **`MAC-QUICK-DEPLOY.md`** | چه تغییری → چه دستور (سریع) |
-| **`MAC-SERVER.md`** | SSH پورت 3031، تنظیم اولیه |
+## First-time setup
 
-```bash
-bash devops/scripts/deploy-from-mac.sh api      # بکند .NET
-bash devops/scripts/deploy-from-mac.sh admin    # پنل ادمین
-bash devops/scripts/deploy-from-mac.sh public   # فرم/گردونه عمومی
-```
+1. `scripts/setup-github-deploy-key.sh` — server key → GitHub
+2. `scripts/bootstrap-first-run.sh` — install Vapp once
+3. `scripts/bootstrap-scraper-on-server.sh` — install scraper robot (in its own repo)
+4. For daily updates: `deploy-from-mac.sh` or `deploy-server.sh --fast --wait`
 
-## Number Scraper (شماره‌جو)
+---
+
+## Repositories
 
 ```
 vapp/
-  Api_Vapp_Manually/     بکند .NET
-  Admin_Vapp/            پنل ادمین
-  Public_Vapp/           فرم/گردونه
-  scraping_Number_Vapp/  ربات شماره‌جو
+  Api_Vapp_Manually/    # .NET API + DevOps scripts
+  Admin_Vapp/           # React admin panel
+  Public_Vapp/          # Public form / lucky wheel
+  scraping_Number_Vapp/ # Number scraper robot
 ```
 
-```
-موبایل → Vapp .NET → ربات Python (:8000 داخلی)
-```
+Mobile → Vapp .NET API → Number Scraper (:8000 internally)
 
-| مورد | مسیر |
-|------|------|
-| راهنمای کامل | **`devops/NUMBER-SCRAPER.md`** |
-| Repo ربات | `../scraping_Number_Vapp` (کنار Api_Vapp_Manually) |
-| DevOps ربات | `~/scraping_Number_Vapp/devops/` |
-| env Vapp | `SCRAPER_API_KEY` + `NumberScraperApi__*` در `docker/.env` |
-| اتصال | `NumberScraperApi__BaseUrl=http://host.docker.internal:8000` |
+---
 
-```bash
-# deploy ربات از Mac
-cd ~/Documents/javad_project/vapp/scraping_Number_Vapp
-bash devops/scripts/deploy-from-mac.sh api          # build + upload
-bash devops/scripts/deploy-from-mac.sh sync-data    # توکن پلتفرم‌ها
-bash devops/scripts/deploy-api-upload-rsync.sh      # upload با resume (اگر قطع شد)
+## See also
 
-# build روی سرور (وقتی upload از Mac مشکل دارد)
-ssh vapp-prod 'cd ~/scraping_Number_Vapp && docker compose -f docker-compose.production.yml --env-file .env build api && docker compose -f docker-compose.production.yml --env-file .env up -d --force-recreate --no-build'
-```
-
-جزئیات: [`NUMBER-SCRAPER.md`](NUMBER-SCRAPER.md) · [`server-update-commands.txt`](server-update-commands.txt)
+- [`COMMANDS.txt`](COMMANDS.txt) — **all commands in one place**
+- [`MAC-QUICK-DEPLOY.md`](MAC-QUICK-DEPLOY.md) — which mode to pick
+- [`PUBLIC-VAPP.md`](PUBLIC-VAPP.md) — public form/wheel deploy
+- [`NUMBER-SCRAPER.md`](NUMBER-SCRAPER.md) — scraper deploy, env, test
+- [`MAC-SERVER.md`](MAC-SERVER.md) — SSH port 3031 and first setup

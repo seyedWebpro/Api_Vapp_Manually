@@ -1,7 +1,5 @@
 using Api_Vapp.Constants;
 using Api_Vapp.Data;
-using Api_Vapp.DTOs.Common;
-using Api_Vapp.DTOs.Sms;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
 using Api_Vapp.Utilities;
@@ -10,7 +8,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using System;
-using System.Text.Json;
 
 namespace Api_Vapp.Services.BackgroundServices
 {
@@ -211,51 +208,48 @@ namespace Api_Vapp.Services.BackgroundServices
                     contact.AdditionalInfo?.DateOfBirth?.ToString("yyyy-MM-dd"), automatedMessage.Id);
             }
 
-            int sentCount = 0;
+            int queuedCount = 0;
             int failedCount = 0;
             int skippedCount = 0;
 
-            foreach (var contact in eligibleContacts)
+            var todayStart = today.Date;
+            var todayEnd = todayStart.AddDays(1);
+
+            // یک کوئری به‌جای N+1 برای چک تکراری امروز
+            var handledContactIds = await context.AutomationExecutions
+                .AsNoTracking()
+                .Where(ae => ae.AutomatedMessageId == automatedMessage.Id
+                    && ae.ContactId.HasValue
+                    && ae.ExecutedAt >= todayStart
+                    && ae.ExecutedAt < todayEnd)
+                .Select(ae => ae.ContactId!.Value)
+                .ToHashSetAsync(cancellationToken);
+
+            var contactsToQueue = eligibleContacts
+                .Where(c => !handledContactIds.Contains(c.Id))
+                .ToList();
+
+            skippedCount = eligibleContacts.Count - contactsToQueue.Count;
+
+            if (contactsToQueue.Count > 0)
             {
                 try
                 {
-                    // چک کردن جلوگیری از ارسال تکراری - آیا امروز برای این مخاطب و این پیام خودکار ارسال شده؟
-                    // چک می‌کنیم برای همین AutomatedMessageId و ContactId (نه فقط Success) تا از ارسال تکراری جلوگیری کنیم
-                    var todayStart = today.Date; // شروع روز جاری در UTC
-                    var todayEnd = todayStart.AddDays(1); // پایان روز جاری در UTC
-
-                    var alreadySentToday = await context.AutomationExecutions
-                        .AnyAsync(ae => ae.AutomatedMessageId == automatedMessage.Id
-                            && ae.ContactId == contact.Id
-                            && ae.ExecutedAt >= todayStart
-                            && ae.ExecutedAt < todayEnd,
-                            cancellationToken);
-
-                    if (alreadySentToday)
-                    {
-                        skippedCount++;
-                        _logger.LogInformation("Birthday message skipped for contact {ContactId} ({Name}) - {MobileNumber} (already sent today {Date}) for automation {Id}",
-                            contact.Id, contact.FullName, contact.MobileNumber, today.ToString("yyyy-MM-dd"), automatedMessage.Id);
-                        continue;
-                    }
-
-                    // ارسال پیام تولد
-                    await SendAutomatedMessageAsync(context, automatedMessage, contact, cancellationToken);
-
-                    sentCount++;
-                    _logger.LogInformation("Birthday message sent successfully to contact {ContactId} ({Name}) - {MobileNumber} for automation {Id}",
-                        contact.Id, contact.FullName, contact.MobileNumber, automatedMessage.Id);
+                    queuedCount = await EnqueueAutomatedBatchForAdminApprovalAsync(
+                        context, automatedMessage, contactsToQueue, cancellationToken);
+                    _logger.LogInformation(
+                        "Birthday automation {Id} queued {Count} recipients for admin approval",
+                        automatedMessage.Id, queuedCount);
                 }
                 catch (Exception ex)
                 {
-                    failedCount++;
-                    _logger.LogError(ex, "Failed to send birthday message to contact {ContactId} ({Name}) - {MobileNumber} for automation {Id}: {Error}",
-                        contact.Id, contact.FullName, contact.MobileNumber, automatedMessage.Id, ex.Message);
+                    failedCount = contactsToQueue.Count;
+                    _logger.LogError(ex, "Failed to queue birthday automation {Id} for admin approval", automatedMessage.Id);
                 }
             }
 
-            _logger.LogInformation("Birthday automation {Id} completed: {SentCount} sent, {FailedCount} failed, {SkippedCount} skipped (already sent today), {TotalEligible} eligible contacts processed for {Date} (UTC)",
-                automatedMessage.Id, sentCount, failedCount, skippedCount, eligibleContacts.Count, today.ToString("yyyy-MM-dd"));
+            _logger.LogInformation("Birthday automation {Id} completed: {QueuedCount} queued for approval, {FailedCount} failed, {SkippedCount} skipped (already handled today), {TotalEligible} eligible contacts processed for {Date} (UTC)",
+                automatedMessage.Id, queuedCount, failedCount, skippedCount, eligibleContacts.Count, today.ToString("yyyy-MM-dd"));
         }
 
         private Task ProcessCashbackExpiryAutomationAsync(
@@ -348,31 +342,31 @@ namespace Api_Vapp.Services.BackgroundServices
             var todayStart = today.Date;
             var todayEnd = todayStart.AddDays(1);
 
-            int sentCount = 0;
-            int skippedCount = 0;
+            // یک کوئری به‌جای N+1
+            var handledContactIds = await context.AutomationExecutions
+                .AsNoTracking()
+                .Where(ae => ae.AutomatedMessageId == automatedMessage.Id
+                    && ae.ContactId.HasValue
+                    && ae.ExecutedAt >= todayStart
+                    && ae.ExecutedAt < todayEnd)
+                .Select(ae => ae.ContactId!.Value)
+                .ToHashSetAsync(cancellationToken);
 
-            foreach (var contact in contacts)
+            var contactsToQueue = contacts
+                .Where(c => !handledContactIds.Contains(c.Id))
+                .ToList();
+
+            var skippedCount = contacts.Count - contactsToQueue.Count;
+            var queuedCount = 0;
+
+            if (contactsToQueue.Count > 0)
             {
-                // چک تکراری: آیا امروز برای این مخاطب و این پیام خودکار ارسال شده؟
-                var alreadySentToday = await context.AutomationExecutions
-                    .AnyAsync(ae => ae.AutomatedMessageId == automatedMessage.Id
-                        && ae.ContactId == contact.Id
-                        && ae.ExecutedAt >= todayStart
-                        && ae.ExecutedAt < todayEnd,
-                        cancellationToken);
-
-                if (alreadySentToday)
-                {
-                    skippedCount++;
-                    continue;
-                }
-
-                await SendAutomatedMessageAsync(context, automatedMessage, contact, cancellationToken);
-                sentCount++;
+                queuedCount = await EnqueueAutomatedBatchForAdminApprovalAsync(
+                    context, automatedMessage, contactsToQueue, cancellationToken);
             }
 
-            _logger.LogInformation("SpecialOccasion automation {Id} completed: {SentCount} sent, {SkippedCount} skipped", 
-                automatedMessage.Id, sentCount, skippedCount);
+            _logger.LogInformation("SpecialOccasion automation {Id} completed: {QueuedCount} queued for approval, {SkippedCount} skipped", 
+                automatedMessage.Id, queuedCount, skippedCount);
         }
 
         private Task ProcessCustomAutomationAsync(
@@ -387,351 +381,194 @@ namespace Api_Vapp.Services.BackgroundServices
             return Task.CompletedTask;
         }
 
-        private async Task SendAutomatedMessageAsync(
+        /// <summary>
+        /// به‌جای ارسال مستقیم SMS، کمپین PendingApproval می‌سازد/به‌روز می‌کند تا از صف تأیید ادمین رد شود.
+        /// شخصی‌سازی در ConfirmAndSend انجام می‌شود (IsPersonalized=true) تا از N+1 جلوگیری شود.
+        /// </summary>
+        /// <returns>تعداد گیرندگانی که به صف اضافه شدند</returns>
+        private async Task<int> EnqueueAutomatedBatchForAdminApprovalAsync(
             Api_Context context,
             AutomatedMessage automatedMessage,
-            Contact contact,
+            List<Contact> contacts,
             CancellationToken cancellationToken)
         {
+            if (contacts.Count == 0)
+                return 0;
+
+            await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
             try
             {
-                // دریافت محتوای پیام
+                var todayStart = DateTime.UtcNow.Date;
+
+                // کمپین بازِ امروز برای همین اتوماسیون (در صورت وجود، گیرندگان جدید را به همان اضافه کن)
+                var existingCampaign = await context.MessageCampaigns
+                    .Include(c => c.Recipients)
+                    .FirstOrDefaultAsync(c => c.AutomatedMessageId == automatedMessage.Id
+                        && !c.IsDeleted
+                        && c.CreatedAt >= todayStart
+                        && c.Status == "PendingApproval"
+                        && c.AdminApprovalStatus == AdminApprovalStatuses.Pending,
+                        cancellationToken);
+
                 string messageContent = automatedMessage.MessageContent ?? string.Empty;
+                Message? message = null;
 
                 if (automatedMessage.MessageId.HasValue)
                 {
-                    var message = await context.Messages
-                        .AsNoTracking()
-                        .Where(m => m.Id == automatedMessage.MessageId.Value)
-                        .Select(m => new { m.Id, m.Content })
-                        .FirstOrDefaultAsync(cancellationToken);
-                    
+                    message = await context.Messages
+                        .FirstOrDefaultAsync(m => m.Id == automatedMessage.MessageId.Value && !m.IsDeleted, cancellationToken);
+
                     if (message != null)
-                    {
                         messageContent = message.Content;
-                        
-                        // شخصی‌سازی پیام با اطلاعات مخاطب
-                        messageContent = await PersonalizeMessageAsync(messageContent, contact, context);
-                    }
                 }
-                else if (string.IsNullOrEmpty(messageContent))
+
+                if (string.IsNullOrWhiteSpace(messageContent))
                 {
                     _logger.LogWarning("No message content found for automated message {Id}", automatedMessage.Id);
-                    return;
+                    await transaction.RollbackAsync(cancellationToken);
+                    return 0;
                 }
 
-                // اضافه کردن 'لغو11' در انتهای پیامک (الزام API)
-                if (!messageContent.TrimEnd().EndsWith("لغو11"))
+                if (message == null)
                 {
-                    messageContent = $"{messageContent.TrimEnd()}\nلغو11";
-                    _logger.LogDebug("متن 'لغو11' به پیام خودکار اضافه شد برای {Mobile}", contact.MobileNumber);
-                }
-
-                // ارسال پیام از طریق SMS Service (مشابه سیستم ارسال پیام زمان‌بندی شده)
-                try
-                {
-                    var smsRequest = new DTOs.Sms.SendSmsRequestDto
+                    int partsCount;
+                    try
                     {
-                        Mobile = contact.MobileNumber,
-                        Message = messageContent
-                    };
-
-                    var smsResult = await SendSmsWithRetryAsync(smsRequest, cancellationToken);
-
-                    // بررسی موفقیت: Sid > 0 یعنی پیام ارسال شده (حتی اگر Status = 0 باشد)
-                    // Status > 0 هم یعنی موفقیت
-                    // Status < 0 یعنی خطا
-                    bool isSuccess = smsResult.Success && smsResult.Data != null && 
-                        (smsResult.Data.Sid > 0 || smsResult.Data.Status > 0);
-                    
-                    if (isSuccess)
+                        partsCount = SmsPartsCalculator.CalculateParts(messageContent);
+                    }
+                    catch (ArgumentException)
                     {
-                        using var trackScope = _serviceProvider.CreateScope();
-                        var deliveryTracking = trackScope.ServiceProvider.GetRequiredService<ISmsDeliveryTrackingService>();
-                        await deliveryTracking.TrackSuccessfulSendAsync(new SmsDeliveryTrackRequestDto
-                        {
-                            UserId = automatedMessage.UserId,
-                            SourceModule = SmsSourceModules.AutomatedMessage,
-                            SourceEntityId = automatedMessage.Id,
-                            SourceEntityLabel = automatedMessage.Title ?? $"پیام خودکار #{automatedMessage.Id}",
-                            Mobile = contact.MobileNumber,
-                            Sid = smsResult.Data!.Sid
-                        });
+                        partsCount = 10;
                     }
 
-                    string status = isSuccess ? "Success" : "Failed";
-                    string? errorMessage = isSuccess ? null : ControlledErrorHelper.SendFailed;
-
-                    _logger.LogInformation(
-                        "Sending automated message {AutomationId} to contact {ContactId} ({MobileNumber}). Content: {Content}, Status: {Status}",
-                        automatedMessage.Id, contact.Id, contact.MobileNumber, messageContent, status);
-
-                    // ثبت اجرا
-                    var now = DateTime.UtcNow;
-                    var execution = new AutomationExecution
+                    message = new Message
                     {
-                        AutomatedMessageId = automatedMessage.Id,
-                        ContactId = contact.Id,
-                        ExecutedAt = now,
-                        Status = status,
-                        MessageContent = messageContent,
-                        SentCount = isSuccess ? 1 : 0,
-                        ErrorMessage = errorMessage
+                        UserId = automatedMessage.UserId,
+                        Title = automatedMessage.Title ?? $"پیام خودکار #{automatedMessage.Id}",
+                        Content = messageContent,
+                        CharacterCount = messageContent.Length,
+                        PartsCount = partsCount,
+                        IsPersonalized = true,
+                        Status = "Ready",
+                        CreatedAt = DateTime.UtcNow
                     };
-
-                    await context.AutomationExecutions.AddAsync(execution, cancellationToken);
-
-                    // به‌روزرسانی LastExecutedAt
-                    automatedMessage.LastExecutedAt = now;
-
+                    await context.Messages.AddAsync(message, cancellationToken);
                     await context.SaveChangesAsync(cancellationToken);
+                    automatedMessage.MessageId = message.Id;
                 }
-                catch (Exception smsEx)
+                else if (!message.IsPersonalized)
                 {
-                    _logger.LogError(smsEx, "Error sending SMS for automated message {AutomationId} to contact {ContactId}", automatedMessage.Id, contact.Id);
+                    message.IsPersonalized = true;
+                    message.UpdatedAt = DateTime.UtcNow;
+                }
 
-                    // ثبت اجرا با خطا
-                    var now = DateTime.UtcNow;
-                    var execution = new AutomationExecution
+                var now = DateTime.UtcNow;
+                var previewContent = messageContent.Length > 4000 ? messageContent[..4000] : messageContent;
+
+                MessageCampaign campaign;
+                if (existingCampaign != null)
+                {
+                    campaign = existingCampaign;
+                    var alreadyQueued = campaign.Recipients
+                        .Where(r => r.ContactId.HasValue)
+                        .Select(r => r.ContactId!.Value)
+                        .ToHashSet();
+                    contacts = contacts.Where(c => !alreadyQueued.Contains(c.Id)).ToList();
+                    if (contacts.Count == 0)
+                    {
+                        await transaction.CommitAsync(cancellationToken);
+                        return 0;
+                    }
+                }
+                else
+                {
+                    campaign = new MessageCampaign
+                    {
+                        MessageId = message.Id,
+                        UserId = automatedMessage.UserId,
+                        Title = automatedMessage.Title ?? $"خودکار — {automatedMessage.AutomationType} #{automatedMessage.Id}",
+                        SendType = "Automated",
+                        AutomatedMessageId = automatedMessage.Id,
+                        RecipientsCount = 0,
+                        PartsCount = message.PartsCount,
+                        Status = "PendingApproval",
+                        AdminApprovalStatus = AdminApprovalStatuses.Pending,
+                        IsActive = true,
+                        CreatedAt = now
+                    };
+                    await context.MessageCampaigns.AddAsync(campaign, cancellationToken);
+                }
+
+                foreach (var contact in contacts)
+                {
+                    campaign.Recipients.Add(new MessageRecipient
+                    {
+                        ContactId = contact.Id,
+                        MobileNumber = contact.MobileNumber,
+                        FullName = contact.FullName,
+                        Status = "Pending",
+                        CreatedAt = now
+                    });
+
+                    await context.AutomationExecutions.AddAsync(new AutomationExecution
                     {
                         AutomatedMessageId = automatedMessage.Id,
                         ContactId = contact.Id,
                         ExecutedAt = now,
-                        Status = "Failed",
-                        MessageContent = messageContent,
-                        SentCount = 0,
-                        ErrorMessage = ControlledErrorHelper.SendFailed
-                    };
-
-                    await context.AutomationExecutions.AddAsync(execution, cancellationToken);
-                    await context.SaveChangesAsync(cancellationToken);
+                        Status = "PendingApproval",
+                        MessageContent = previewContent,
+                        SentCount = 0
+                    }, cancellationToken);
                 }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error sending automated message {AutomationId} to contact {ContactId}", 
-                    automatedMessage.Id, contact.Id);
-            }
-        }
 
-        private async Task<string> PersonalizeMessageAsync(string messageContent, Contact contact, Api_Context context)
-        {
-            string result = messageContent;
+                campaign.RecipientsCount = campaign.Recipients.Count;
+                campaign.UpdatedAt = now;
+                automatedMessage.LastExecutedAt = now;
+                await context.SaveChangesAsync(cancellationToken);
 
-            // دریافت نام کامل (FullName)
-            var fullName = contact.FullName ?? "";
+                var approvalRequest = await context.SmsApprovalRequests
+                    .FirstOrDefaultAsync(r => r.MessageCampaignId == campaign.Id
+                        && r.Status == AdminApprovalStatuses.Pending
+                        && !r.IsDeleted,
+                        cancellationToken);
 
-            // دریافت مبلغ کش بک (مجموع مبلغ‌های واریز شده) - فقط خواندنی
-            var totalCashback = await context.CashbackTransactions
-                .AsNoTracking()
-                .Where(ct => ct.ContactId == contact.Id && ct.Status == "Deposited")
-                .SumAsync(ct => (decimal?)ct.Amount) ?? 0;
+                if (approvalRequest != null)
+                {
+                    approvalRequest.ContentPreview = previewContent;
+                    approvalRequest.TitlePreview = campaign.Title;
+                    approvalRequest.RecipientsCount = campaign.RecipientsCount;
+                    approvalRequest.UpdatedAt = now;
+                }
+                else
+                {
+                    await context.SmsApprovalRequests.AddAsync(new SmsApprovalRequest
+                    {
+                        UserId = automatedMessage.UserId,
+                        RequestType = SmsApprovalRequestTypes.Campaign,
+                        MessageCampaignId = campaign.Id,
+                        MessageId = message.Id,
+                        ContentPreview = previewContent,
+                        TitlePreview = campaign.Title,
+                        RecipientsCount = campaign.RecipientsCount,
+                        Status = AdminApprovalStatuses.Pending,
+                        CreatedAt = now
+                    }, cancellationToken);
+                }
 
-            // دریافت آخرین تاریخ خرید (آخرین تراکنش کش بک) - فقط خواندنی
-            var lastPurchaseDate = await context.CashbackTransactions
-                .AsNoTracking()
-                .Where(ct => ct.ContactId == contact.Id)
-                .OrderByDescending(ct => ct.CreatedAt)
-                .Select(ct => (DateTime?)ct.CreatedAt)
-                .FirstOrDefaultAsync();
+                await context.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
 
-            // دریافت نام برند
-            var brandName = contact.Brand ?? "";
+                _logger.LogInformation(
+                    "Queued automated message {AutomationId} as campaign {CampaignId} (+{Added} recipients, total {Total}) for admin approval",
+                    automatedMessage.Id, campaign.Id, contacts.Count, campaign.RecipientsCount);
 
-            // تاریخ عضویت (تاریخ ایجاد مخاطب)
-            var membershipDate = contact.CreatedAt;
-
-            // جایگزینی placeholder ها با استفاده از Regex
-            
-            // {{نام}} — نام کامل مخاطب
-            result = ReplacePlaceholder(result, "{{نام}}", fullName);
-            result = ReplacePlaceholder(result, "{{name}}", fullName, StringComparison.OrdinalIgnoreCase);
-            
-            // {{مبلغ کش بک}} — مجموع مبلغ‌های کش‌بک
-            result = ReplacePlaceholder(result, "{{مبلغ کش بک}}", FormatAmount(totalCashback));
-            result = ReplacePlaceholder(result, "{{cashback amount}}", FormatAmount(totalCashback), StringComparison.OrdinalIgnoreCase);
-            result = ReplacePlaceholder(result, "{{cashbackamount}}", FormatAmount(totalCashback), StringComparison.OrdinalIgnoreCase);
-            
-            // {{نام برند}} — نام برند
-            result = ReplacePlaceholder(result, "{{نام برند}}", brandName);
-            result = ReplacePlaceholder(result, "{{brand name}}", brandName, StringComparison.OrdinalIgnoreCase);
-            result = ReplacePlaceholder(result, "{{brandname}}", brandName, StringComparison.OrdinalIgnoreCase);
-            
-            // {{تاریخ عضویت}} — تاریخ عضویت مخاطب
-            result = ReplacePlaceholder(result, "{{تاریخ عضویت}}", FormatPersianDate(membershipDate));
-            result = ReplacePlaceholder(result, "{{membership date}}", FormatPersianDate(membershipDate), StringComparison.OrdinalIgnoreCase);
-            result = ReplacePlaceholder(result, "{{membershipdate}}", FormatPersianDate(membershipDate), StringComparison.OrdinalIgnoreCase);
-            
-            // {{تاریخ خرید}} — تاریخ آخرین خرید
-            result = ReplacePlaceholder(result, "{{تاریخ خرید}}", lastPurchaseDate.HasValue ? FormatPersianDate(lastPurchaseDate.Value) : "");
-            result = ReplacePlaceholder(result, "{{purchase date}}", lastPurchaseDate.HasValue ? FormatPersianDate(lastPurchaseDate.Value) : "", StringComparison.OrdinalIgnoreCase);
-            result = ReplacePlaceholder(result, "{{purchasedate}}", lastPurchaseDate.HasValue ? FormatPersianDate(lastPurchaseDate.Value) : "", StringComparison.OrdinalIgnoreCase);
-
-            // پشتیبانی از فرمت قدیمی با یک آکولاد
-            result = ReplacePlaceholder(result, "{نام}", fullName);
-            result = ReplacePlaceholder(result, "{مبلغ کش بک}", FormatAmount(totalCashback));
-            result = ReplacePlaceholder(result, "{نام برند}", brandName);
-            result = ReplacePlaceholder(result, "{تاریخ عضویت}", FormatPersianDate(membershipDate));
-            result = ReplacePlaceholder(result, "{تاریخ خرید}", lastPurchaseDate.HasValue ? FormatPersianDate(lastPurchaseDate.Value) : "");
-
-            // پشتیبانی از فرمت‌های قدیمی (برای سازگاری با کد قبلی)
-            result = result.Replace("{{FirstName}}", fullName);
-            result = result.Replace("{{LastName}}", "");
-            result = result.Replace("{{FullName}}", fullName);
-            result = result.Replace("{{Brand}}", brandName);
-            result = result.Replace("{{MobileNumber}}", contact.MobileNumber);
-
-            return result;
-        }
-
-        private string ReplacePlaceholder(string text, string placeholder, string value, StringComparison comparison = StringComparison.Ordinal)
-        {
-            // Escape کردن کاراکترهای خاص در placeholder برای استفاده در Regex
-            var escapedPlaceholder = System.Text.RegularExpressions.Regex.Escape(placeholder);
-            var escapedValue = value;
-            
-            // جایگزینی با Regex برای جایگزینی همه موارد
-            var pattern = escapedPlaceholder;
-            return System.Text.RegularExpressions.Regex.Replace(text, pattern, escapedValue, System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
-        }
-
-        private string FormatAmount(decimal amount)
-        {
-            return $"{amount:N0} تومان";
-        }
-
-        private string FormatPersianDate(DateTime date)
-        {
-            try
-            {
-                var persianCalendar = new System.Globalization.PersianCalendar();
-                var year = persianCalendar.GetYear(date);
-                var month = persianCalendar.GetMonth(date);
-                var day = persianCalendar.GetDayOfMonth(date);
-
-                var monthNames = new[] { "", "فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور", "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند" };
-
-                return $"{day} {monthNames[month]} {year}";
+                return contacts.Count;
             }
             catch
             {
-                // در صورت خطا، تاریخ میلادی را برمی‌گرداند
-                return date.ToString("yyyy/MM/dd");
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
             }
-        }
-
-        /// <summary>
-        /// ارسال SMS با Retry Mechanism و Exponential Backoff
-        /// </summary>
-        private async Task<ApiResponse<DTOs.Sms.SendSmsResponseDto>> SendSmsWithRetryAsync(
-            DTOs.Sms.SendSmsRequestDto request,
-            CancellationToken cancellationToken,
-            int maxRetries = 3,
-            int initialDelayMs = 1000)
-        {
-            var lastException = (Exception?)null;
-            var lastResult = (ApiResponse<DTOs.Sms.SendSmsResponseDto>?)null;
-
-            for (int attempt = 0; attempt <= maxRetries; attempt++)
-            {
-                try
-                {
-                    if (attempt > 0)
-                    {
-                        // Exponential Backoff: delay = initialDelay * 2^(attempt-1)
-                        var delayMs = initialDelayMs * (int)Math.Pow(2, attempt - 1);
-                        _logger.LogInformation("Retrying SMS send - Attempt: {Attempt}/{MaxRetries}, Delay: {Delay}ms, Mobile: {Mobile}",
-                            attempt + 1, maxRetries + 1, delayMs, request.Mobile);
-                        await Task.Delay(delayMs, cancellationToken);
-                    }
-
-                    // Resolve SMS service from scoped container
-                    using var scope = _serviceProvider.CreateScope();
-                    var smsService = scope.ServiceProvider.GetRequiredService<ISmsService>();
-
-                    var result = await smsService.SendSmsAsync(request);
-
-                    // اگر ارسال موفق بود، نتیجه را برمی‌گردانیم
-                    // Sid > 0 یعنی پیام ارسال شده (حتی اگر Status = 0 باشد)
-                    // Status > 0 هم یعنی موفقیت
-                    bool isSuccess = result.Success && result.Data != null && 
-                        (result.Data.Sid > 0 || result.Data.Status > 0);
-                    
-                    if (isSuccess)
-                    {
-                        if (attempt > 0)
-                        {
-                            _logger.LogInformation("SMS sent successfully after {Attempt} retries - Mobile: {Mobile}",
-                                attempt + 1, request.Mobile);
-                        }
-                        return result;
-                    }
-
-                    // بررسی خطاهای غیرقابل Retry
-                    if (result.Data != null)
-                    {
-                        var status = result.Data.Status;
-                        var message = result.Data.Message ?? "";
-
-                        // خطاهای غیرقابل Retry:
-                        // 1. Status < 0 (خطاهای API)
-                        // 2. Status = 0 با پیام‌های خاص (مثل "پیام تکراری")
-                        // 3. Status = 0 با پیام‌های خطای مشخص
-                        bool isNonRetryable = false;
-
-                        if (status < 0)
-                        {
-                            isNonRetryable = true;
-                        }
-                        else if (status == 0)
-                        {
-                            // بررسی پیام‌های خطای غیرقابل Retry
-                            var lowerMessage = message.ToLower();
-                            if (lowerMessage.Contains("تکراری") ||
-                                lowerMessage.Contains("duplicate") ||
-                                lowerMessage.Contains("مجاز به ارسال پیام تکراری") ||
-                                lowerMessage.Contains("شماره نامعتبر") ||
-                                lowerMessage.Contains("invalid") ||
-                                lowerMessage.Contains("blacklist") ||
-                                lowerMessage.Contains("مشترک در لیست سیاه"))
-                            {
-                                isNonRetryable = true;
-                            }
-                        }
-
-                        if (isNonRetryable)
-                        {
-                            _logger.LogWarning("SMS send failed with non-retryable error - Mobile: {Mobile}, Status: {Status}, Message: {Message}",
-                                request.Mobile, status, message);
-                            return result;
-                        }
-                    }
-
-                    lastResult = result;
-                }
-                catch (Exception ex)
-                {
-                    lastException = ex;
-                    _logger.LogWarning(ex, "SMS send attempt {Attempt} failed - Mobile: {Mobile}", attempt + 1, request.Mobile);
-
-                    // Check if cancellation was requested
-                    cancellationToken.ThrowIfCancellationRequested();
-                }
-            }
-
-            // اگر همه تلاش‌ها ناموفق بود
-            if (lastResult != null)
-            {
-                return lastResult;
-            }
-
-            // اگر Exception داشتیم
-            if (lastException != null)
-            {
-                return ApiResponse<DTOs.Sms.SendSmsResponseDto>.InternalServerError(ControlledErrorHelper.SmsFailed);
-            }
-
-            return ApiResponse<DTOs.Sms.SendSmsResponseDto>.InternalServerError("خطای ناشناخته در ارسال SMS");
         }
     }
 }

@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# Deploy front — docker (پیش‌فرض، مثل vamyab) یا host
-# reuse: FRONT_DIR، FRONT_DEPLOY_MODE=host|docker
+# Deploy front — docker (default) or host
 #
-# Usage (روی سرور):
+# Usage (on server):
 #   bash ~/Api_Vapp_Manually/devops/scripts/deploy-front.sh
 #   bash deploy-front.sh --foreground
 #   FRONT_DEPLOY_MODE=host bash deploy-front.sh --foreground
@@ -12,6 +11,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/docker-pull-fallback.sh
 source "$SCRIPT_DIR/lib/docker-pull-fallback.sh"
+# shellcheck source=lib/deploy-progress.sh
+source "$SCRIPT_DIR/lib/deploy-progress.sh"
+
 FRONT_DIR="${FRONT_DIR:-$HOME/Admin_Vapp}"
 FRONT_BRANCH="${FRONT_BRANCH:-main}"
 FRONT_CONTAINER="${FRONT_CONTAINER:-vapp-admin}"
@@ -20,40 +22,41 @@ FRONT_PORT_BIND="${FRONT_PORT_BIND:-127.0.0.1:3005:80}"
 VITE_API_URL="${VITE_API_URL:-}"
 DEPLOY_LOG="${DEPLOY_LOG:-}"
 FRONT_DEPLOY_MODE="${FRONT_DEPLOY_MODE:-docker}"
+DEPLOY_STEP_TOTAL=6
 
 run_deploy() {
-  echo "=== deploy-front started $(date '+%Y-%m-%dT%H:%M:%S') ==="
-  echo "FRONT_DIR=$FRONT_DIR branch=$FRONT_BRANCH mode=$FRONT_DEPLOY_MODE"
+  deploy_log "=== deploy-front started ==="
+  deploy_log "FRONT_DIR=$FRONT_DIR branch=$FRONT_BRANCH mode=$FRONT_DEPLOY_MODE"
 
   if [[ "$FRONT_DEPLOY_MODE" == "host" ]]; then
     exec bash "$SCRIPT_DIR/deploy-front-host.sh"
   fi
 
   if [[ ! -d "$FRONT_DIR" ]]; then
-    echo "ERROR: front directory not found: $FRONT_DIR" >&2
+    deploy_log "ERROR: front directory not found: $FRONT_DIR" >&2
     exit 1
   fi
 
   cd "$FRONT_DIR"
+
+  deploy_step "git pull ($FRONT_BRANCH)"
   if [[ -d "$FRONT_DIR/.git" ]]; then
     git pull origin "$FRONT_BRANCH"
   fi
 
+  deploy_step "Docker pull base images"
+  docker_pull_front_base_images
+
+  deploy_step "Docker build front"
   local build_args=(--build-arg "VITE_API_URL=$VITE_API_URL")
   if [[ "${DOCKER_BUILD_NO_CACHE:-0}" == "1" ]]; then
     build_args=(--no-cache "${build_args[@]}")
-    echo "WARN: DOCKER_BUILD_NO_CACHE=1 — build will take longer."
+    deploy_log "WARN: DOCKER_BUILD_NO_CACHE=1 — build will take longer."
   fi
-
-  echo "=== docker pull base images $(date '+%Y-%m-%dT%H:%M:%S') ==="
-  docker_pull_front_base_images
-
-  echo "=== docker build started $(date '+%Y-%m-%dT%H:%M:%S') ==="
-  echo "NOTE: npm install + vite build داخل Docker — معمولاً ۵–۱۵ دقیقه"
-  echo "      npm: iranserver → npmjs (داخل Dockerfile)"
+  deploy_log "NOTE: npm install + vite build inside Docker — usually 5–15 min"
   docker build --progress=plain "${build_args[@]}" -t "$FRONT_IMAGE" .
 
-  echo "=== docker run started $(date '+%Y-%m-%dT%H:%M:%S') ==="
+  deploy_step "Docker run front"
   docker rm -f "$FRONT_CONTAINER" 2>/dev/null || true
   docker run -d \
     --name "$FRONT_CONTAINER" \
@@ -61,21 +64,21 @@ run_deploy() {
     --restart unless-stopped \
     "$FRONT_IMAGE"
 
-  local front_code attempt
-  front_code="000"
+  deploy_step "Health check"
+  local front_code="000"
   for attempt in 1 2 3 4 5 6; do
     sleep 5
     front_code="$(curl -sS -m 15 -o /dev/null -w '%{http_code}' http://127.0.0.1:3005/ 2>/dev/null || echo "000")"
-    echo "FRONT health attempt $attempt/6: $front_code"
+    deploy_log "FRONT health attempt $attempt/6: $front_code"
     [[ "$front_code" == "200" ]] && break
   done
 
-  echo "FRONT:$front_code"
+  deploy_log "FRONT:$front_code"
   docker ps --filter "name=$FRONT_CONTAINER" --format 'table {{.Names}}\t{{.Status}}'
-  echo "=== deploy-front done $(date '+%Y-%m-%dT%H:%M:%S') ==="
+  deploy_log "=== deploy-front done ==="
 
   if [[ "$front_code" != "200" ]]; then
-    echo "WARN: front health returned $front_code (container may still be starting)." >&2
+    deploy_log "WARN: front health returned $front_code (container may still be starting)." >&2
   fi
 }
 

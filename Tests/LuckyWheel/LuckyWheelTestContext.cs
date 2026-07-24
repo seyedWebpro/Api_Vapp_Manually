@@ -118,14 +118,14 @@ internal sealed class LuckyWheelTestContext : IDisposable
     public async Task<int> CreateWheelWithItemsAsync()
     {
         var wheelId = await CreateDraftAsync();
-        var update = await Service.UpdateAsync(wheelId, OwnerUserId, new UpdateLuckyWheelDto
+        var add = await Service.AddItemsAsync(wheelId, OwnerUserId, new AddLuckyWheelItemsDto
         {
             Items = SampleItems()
         });
 
-        if (!update.Success)
+        if (!add.Success)
         {
-            throw new InvalidOperationException($"Expected items update success, got {update.StatusCode}: {update.Message}");
+            throw new InvalidOperationException($"Expected items add success, got {add.StatusCode}: {add.Message}");
         }
 
         return wheelId;

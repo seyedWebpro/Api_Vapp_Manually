@@ -79,12 +79,12 @@ namespace Api_Vapp.Controller
         }
 
         /// <summary>
-        /// به‌روزرسانی گردونه (اطلاعات اصلی، دفترچه، جوایز)
+        /// به‌روزرسانی اطلاعات اصلی گردونه (عنوان، توضیحات، slug، دفترچه) — جوایز ویرایش نمی‌شوند
         /// </summary>
-        [HttpPost("{id}/update")]
+        [HttpPost("{id}/update-info")]
         [ProducesResponseType(typeof(ApiResponse<LuckyWheelResponseDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<LuckyWheelResponseDto>), StatusCodes.Status400BadRequest)]
-        public async Task<ActionResult<ApiResponse<LuckyWheelResponseDto>>> Update(int id, [FromBody] UpdateLuckyWheelDto updateDto)
+        public async Task<ActionResult<ApiResponse<LuckyWheelResponseDto>>> UpdateInfo(int id, [FromBody] UpdateLuckyWheelDto updateDto)
         {
             var invalid = InvalidModelStateResponse<LuckyWheelResponseDto>();
             if (invalid != null)
@@ -113,6 +113,25 @@ namespace Api_Vapp.Controller
 
             var userId = await GetCurrentUserIdAsync();
             var result = await _luckyWheelService.AddItemsAsync(id, userId, addDto);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        /// <summary>
+        /// به‌روزرسانی جزئی آیتم‌های جایزه — فقط آیتم‌های ارسال‌شده تغییر می‌کنند
+        /// </summary>
+        [HttpPost("{id}/items/update")]
+        [ProducesResponseType(typeof(ApiResponse<LuckyWheelResponseDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<LuckyWheelResponseDto>), StatusCodes.Status400BadRequest)]
+        public async Task<ActionResult<ApiResponse<LuckyWheelResponseDto>>> UpdateItems(int id, [FromBody] UpdateLuckyWheelItemsDto updateDto)
+        {
+            var invalid = InvalidModelStateResponse<LuckyWheelResponseDto>();
+            if (invalid != null)
+            {
+                return invalid;
+            }
+
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _luckyWheelService.UpdateItemsAsync(id, userId, updateDto);
             return StatusCode(result.StatusCode, result);
         }
 

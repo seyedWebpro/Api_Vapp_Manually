@@ -3,7 +3,8 @@ using System.ComponentModel.DataAnnotations;
 namespace Api_Vapp.DTOs.LuckyWheel
 {
     /// <summary>
-    /// به‌روزرسانی جزئی گردونه — فقط فیلدهای ارسال‌شده تغییر می‌کنند.
+    /// به‌روزرسانی اطلاعات اصلی گردونه — فقط فیلدهای ارسال‌شده تغییر می‌کنند.
+    /// برای ویرایش جوایز از <see cref="AddLuckyWheelItemsDto"/> استفاده کنید.
     /// </summary>
     public class UpdateLuckyWheelDto
     {
@@ -19,7 +20,5 @@ namespace Api_Vapp.DTOs.LuckyWheel
         public bool? SaveToPhonebook { get; set; }
 
         public List<int>? NotebookIds { get; set; }
-
-        public List<LuckyWheelItemDto>? Items { get; set; }
     }
 }

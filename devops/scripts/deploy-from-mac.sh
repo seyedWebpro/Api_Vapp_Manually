@@ -1,42 +1,44 @@
 #!/usr/bin/env bash
-# Deploy از Mac — بر اساس نوع تغییر، سریع‌ترین مسیر را انتخاب می‌کند.
+# Deploy from Mac — choose fastest path based on change type.
 #
-# Usage (از روت Api_Vapp_Manually):
+# Usage (from Api_Vapp_Manually root):
 #   bash devops/scripts/deploy-from-mac.sh api
 #   bash devops/scripts/deploy-from-mac.sh admin
 #   bash devops/scripts/deploy-from-mac.sh public
 #   bash devops/scripts/deploy-from-mac.sh public-fast
 #   bash devops/scripts/deploy-from-mac.sh all-fronts
-#   bash devops/scripts/deploy-from-mac.sh health
 #
-# Env: SERVER (پیش‌فرض vapp-prod)
+# Env: SERVER (default vapp-prod)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/deploy-progress.sh
+source "$SCRIPT_DIR/lib/deploy-progress.sh"
+
 API_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 SERVER="${SERVER:-vapp-prod}"
 REMOTE_API_DIR="${REMOTE_API_DIR:-/root/Api_Vapp_Manually}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker/docker-compose.production.yml}"
 ENV_FILE="${ENV_FILE:-docker/.env}"
+DEPLOY_STEP_TOTAL=1
+START=$SECONDS
 
 usage() {
   cat <<'EOF'
-Deploy از Mac — انتخاب بر اساس تغییر
+Deploy from Mac — choose path based on change
 
-  api          تغییر C# / API — build Docker روی Mac + upload (~۳–۷ دقیقه با cache)
-  api-restart  image از قبل روی سرور است — فقط restart container (~۱ دقیقه)
-  admin        تغییر React / پنل — build + upload dist (~۲–۴ دقیقه)
-  admin-fast   dist از قبل build شده — فقط upload (~۳۰ ثانیه)
-  public       تغییر Public_Vapp (فرم/گردونه SMS) — build + upload (~۲–۴ دقیقه)
-  public-fast  dist Public از قبل build شده — فقط upload (~۳۰ ثانیه)
-  all-fronts   Admin + Public هر دو
-  both         API + Admin (پشت‌سرهم)
+  api          C# / API change — build Docker on Mac + upload (~3–7 min with cache)
+  api-restart  image already on server — restart container only (~1 min)
+  admin        React / admin panel — build + upload dist (~2–4 min)
+  admin-fast   dist already built — upload only (~30 sec)
+  public       Public_Vapp (SMS form/wheel) — build + upload (~2–4 min)
+  public-fast  Public dist already built — upload only (~30 sec)
+  all-fronts   Admin + Public both
+  both         API + Admin
   all          API + Admin + Public
-  health       چک سلامت روی سرور
+  health       health check on server
 
-راهنما: devops/MAC-QUICK-DEPLOY.md · devops/PUBLIC-VAPP.md
-
-مثال:
+Example:
   bash devops/scripts/deploy-from-mac.sh api
   bash devops/scripts/deploy-from-mac.sh admin-fast
 EOF
@@ -47,34 +49,34 @@ run_health() {
 }
 
 deploy_api() {
-  echo "=== API: build + upload + restart ==="
+  deploy_log "=== API: build + upload + restart ==="
   SERVER="$SERVER" bash "$SCRIPT_DIR/deploy-api-upload-image.sh"
 }
 
 deploy_api_restart() {
-  echo "=== API: restart only (بدون build) ==="
+  deploy_log "=== API: restart only (no build) ==="
   ssh "$SERVER" "cd $REMOTE_API_DIR && docker compose -f $COMPOSE_FILE --env-file $ENV_FILE up -d --no-deps --force-recreate --no-build api"
   sleep 45
   run_health
 }
 
 deploy_admin() {
-  echo "=== Admin: build + upload dist ==="
+  deploy_log "=== Admin: build + upload dist ==="
   SERVER="$SERVER" bash "$SCRIPT_DIR/deploy-front-upload-dist.sh"
 }
 
 deploy_admin_fast() {
-  echo "=== Admin: upload dist (بدون build) ==="
+  deploy_log "=== Admin: upload dist (no build) ==="
   SKIP_BUILD=1 SERVER="$SERVER" bash "$SCRIPT_DIR/deploy-front-upload-dist.sh"
 }
 
 deploy_public() {
-  echo "=== Public: build + upload dist ==="
+  deploy_log "=== Public: build + upload dist ==="
   SERVER="$SERVER" bash "$SCRIPT_DIR/deploy-public-front-upload-dist.sh"
 }
 
 deploy_public_fast() {
-  echo "=== Public: upload dist (بدون build) ==="
+  deploy_log "=== Public: upload dist (no build) ==="
   SKIP_BUILD=1 SERVER="$SERVER" bash "$SCRIPT_DIR/deploy-public-front-upload-dist.sh"
 }
 
@@ -127,8 +129,10 @@ case "$MODE" in
     run_health
     ;;
   *)
-    echo "ERROR: unknown mode: $MODE" >&2
+    deploy_log "ERROR: unknown mode: $MODE" >&2
     usage
     exit 1
     ;;
 esac
+
+deploy_log "✓ deploy-from-mac mode=$MODE finished in $(_deploy_elapsed "$START")"

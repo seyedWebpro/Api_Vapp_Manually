@@ -44,7 +44,11 @@ namespace Api_Vapp.Services.Admin
 
         public async Task<ApiResponse<SubscriptionPlanResponseDto>> CreateAsync(CreateSubscriptionPlanDto dto)
         {
-            var exists = await _context.SubscriptionPlans.AnyAsync(p => p.TierCode == dto.TierCode && !p.IsDeleted);
+            var tierCode = SubscriptionPlanTierCodes.Normalize(dto.TierCode);
+            if (string.IsNullOrEmpty(tierCode))
+                return ApiResponse<SubscriptionPlanResponseDto>.BadRequest("کد سطح اشتراک الزامی است");
+
+            var exists = await _context.SubscriptionPlans.AnyAsync(p => p.TierCode == tierCode && !p.IsDeleted);
             if (exists)
                 return ApiResponse<SubscriptionPlanResponseDto>.BadRequest("کد سطح اشتراک تکراری است");
 
@@ -57,7 +61,7 @@ namespace Api_Vapp.Services.Admin
             var plan = new SubscriptionPlan
             {
                 Name = dto.Name.Trim(),
-                TierCode = dto.TierCode.Trim(),
+                TierCode = tierCode,
                 Description = dto.Description?.Trim(),
                 Price = dto.Price,
                 DurationDays = dto.DurationDays,
@@ -95,9 +99,35 @@ namespace Api_Vapp.Services.Admin
             if (plan == null)
                 return ApiResponse<SubscriptionPlanResponseDto>.NotFound("پلن اشتراک یافت نشد");
 
-            var duplicateCode = await _context.SubscriptionPlans.AnyAsync(p => p.TierCode == dto.TierCode && p.Id != id && !p.IsDeleted);
-            if (duplicateCode)
-                return ApiResponse<SubscriptionPlanResponseDto>.BadRequest("کد سطح اشتراک تکراری است");
+            var requestedTierCode = SubscriptionPlanTierCodes.Normalize(dto.TierCode);
+            if (string.IsNullOrEmpty(requestedTierCode))
+                return ApiResponse<SubscriptionPlanResponseDto>.BadRequest("کد سطح اشتراک الزامی است");
+
+            var isSystemTier = SubscriptionPlanTierCodes.IsSystemTier(plan.TierCode);
+            if (isSystemTier)
+            {
+                if (!string.Equals(
+                        SubscriptionPlanTierCodes.Normalize(plan.TierCode),
+                        requestedTierCode,
+                        StringComparison.Ordinal))
+                {
+                    return ApiResponse<SubscriptionPlanResponseDto>.BadRequest(
+                        "کد سطح پلن‌های سیستمی قابل تغییر نیست");
+                }
+            }
+            else
+            {
+                var duplicateCode = await _context.SubscriptionPlans.AnyAsync(p =>
+                    p.TierCode == requestedTierCode && p.Id != id && !p.IsDeleted);
+                if (duplicateCode)
+                    return ApiResponse<SubscriptionPlanResponseDto>.BadRequest("کد سطح اشتراک تکراری است");
+            }
+
+            if (SubscriptionPlanTierCodes.IsFree(plan.TierCode) && !dto.IsActive)
+            {
+                return ApiResponse<SubscriptionPlanResponseDto>.BadRequest(
+                    "پلن رایگان سیستمی را نمی‌توان غیرفعال کرد");
+            }
 
             var featureIds = dto.FeatureIds?.Distinct().ToList() ?? new List<int>();
             var featuresResult = await ValidateAndLoadFeaturesAsync(featureIds);
@@ -106,7 +136,8 @@ namespace Api_Vapp.Services.Admin
 
             var features = featuresResult.Features!;
             plan.Name = dto.Name.Trim();
-            plan.TierCode = dto.TierCode.Trim();
+            if (!isSystemTier)
+                plan.TierCode = requestedTierCode;
             plan.Description = dto.Description?.Trim();
             plan.Price = dto.Price;
             plan.DurationDays = dto.DurationDays;
@@ -137,18 +168,9 @@ namespace Api_Vapp.Services.Admin
             return ApiResponse<SubscriptionPlanResponseDto>.CreateSuccess(MapPlan(plan), "پلن اشتراک به‌روزرسانی شد");
         }
 
-        public async Task<ApiResponse<bool>> DeleteAsync(int id)
-        {
-            var plan = await _context.SubscriptionPlans.FirstOrDefaultAsync(p => p.Id == id && !p.IsDeleted);
-            if (plan == null)
-                return ApiResponse<bool>.NotFound("پلن اشتراک یافت نشد");
-
-            plan.IsDeleted = true;
-            plan.IsActive = false;
-            plan.UpdatedAt = DateTime.UtcNow;
-            await _context.SaveChangesAsync();
-            return ApiResponse<bool>.CreateSuccess(true, "پلن اشتراک حذف شد");
-        }
+        public Task<ApiResponse<bool>> DeleteAsync(int id) =>
+            Task.FromResult(ApiResponse<bool>.BadRequest(
+                "حذف پلن اشتراک مجاز نیست. برای توقف فروش، پلن را غیرفعال کنید."));
 
         public async Task<ApiResponse<List<SubscriptionPlanResponseDto>>> GetActivePlansAsync()
         {
@@ -166,8 +188,10 @@ namespace Api_Vapp.Services.Admin
             if (featureIds.Count == 0)
                 return (new List<SubscriptionFeature>(), null);
 
+            // امکانات از قبل روی پلن بوده‌اند حتی در حالت غیرفعال قابل نگه‌داری‌اند؛
+            // امکانات جدید فقط اگر فعال باشند اضافه می‌شوند (در UI مدیریت می‌شود).
             var features = await _context.SubscriptionFeatures
-                .Where(f => featureIds.Contains(f.Id) && f.IsActive && !f.IsDeleted)
+                .Where(f => featureIds.Contains(f.Id) && !f.IsDeleted)
                 .ToListAsync();
 
             if (features.Count != featureIds.Count)
@@ -194,6 +218,9 @@ namespace Api_Vapp.Services.Admin
                 .ThenBy(f => f.Id)
                 .ToList();
 
+            var isSystemTier = SubscriptionPlanTierCodes.IsSystemTier(plan.TierCode);
+            var isFreeTier = SubscriptionPlanTierCodes.IsFree(plan.TierCode);
+
             return new SubscriptionPlanResponseDto
             {
                 Id = plan.Id,
@@ -207,6 +234,11 @@ namespace Api_Vapp.Services.Admin
                 MonthlySmsLimit = plan.MonthlySmsLimit,
                 SortOrder = plan.SortOrder,
                 IsActive = plan.IsActive,
+                IsSystemTier = isSystemTier,
+                IsFreeTier = isFreeTier,
+                CanChangeTierCode = !isSystemTier,
+                CanDelete = false,
+                CanDeactivate = !isFreeTier,
                 FeatureIds = activeFeatures.Select(f => f.Id).ToList(),
                 Features = activeFeatures.Select(f => new SubscriptionFeatureSummaryDto
                 {

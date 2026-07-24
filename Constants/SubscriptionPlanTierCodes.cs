@@ -5,6 +5,28 @@ namespace Api_Vapp.Constants
         public const string Free = "free";
         public const string Plus = "plus";
         public const string Gold = "gold";
+
+        /// <summary>
+        /// کدهای سیستمی — قابل تغییر نیستند؛ پلن رایگان قابل حذف/غیرفعال‌سازی نیست.
+        /// </summary>
+        public static readonly IReadOnlySet<string> SystemTiers = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            Free,
+            Plus,
+            Gold
+        };
+
+        public static string Normalize(string? tierCode) =>
+            (tierCode ?? string.Empty).Trim().ToLowerInvariant();
+
+        public static bool IsSystemTier(string? tierCode)
+        {
+            var normalized = Normalize(tierCode);
+            return normalized.Length > 0 && SystemTiers.Contains(normalized);
+        }
+
+        public static bool IsFree(string? tierCode) =>
+            string.Equals(Normalize(tierCode), Free, StringComparison.Ordinal);
     }
 
     public sealed record DefaultSubscriptionPlanDefinition(
@@ -16,7 +38,7 @@ namespace Api_Vapp.Constants
         IReadOnlyList<string> FeatureCodes);
 
     /// <summary>
-    /// پلن‌های پیش‌فرض — ادمین می‌تواند بعداً ویرایش کند.
+    /// پلن‌های پیش‌فرض سیستمی — نام/قیمت/امکانات قابل ویرایش؛ کد سطح قفل است.
     /// </summary>
     public static class SubscriptionPlanCatalog
     {

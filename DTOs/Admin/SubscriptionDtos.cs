@@ -19,6 +19,8 @@ namespace Api_Vapp.DTOs.Admin
         public int SortOrder { get; set; }
         public bool IsActive { get; set; }
         public bool IsSystemManaged { get; set; }
+        public bool CanChangeCode { get; set; }
+        public bool CanDelete { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
     }
@@ -66,6 +68,13 @@ namespace Api_Vapp.DTOs.Admin
         public int? MonthlySmsLimit { get; set; }
         public int SortOrder { get; set; }
         public bool IsActive { get; set; }
+        /// <summary>کد سطح سیستمی است و قابل تغییر نیست.</summary>
+        public bool IsSystemTier { get; set; }
+        /// <summary>پلن رایگان سیستمی — حذف و غیرفعال‌سازی ممنوع.</summary>
+        public bool IsFreeTier { get; set; }
+        public bool CanChangeTierCode { get; set; }
+        public bool CanDelete { get; set; }
+        public bool CanDeactivate { get; set; }
         public List<int> FeatureIds { get; set; } = new();
         public List<SubscriptionFeatureSummaryDto> Features { get; set; } = new();
         public DateTime CreatedAt { get; set; }

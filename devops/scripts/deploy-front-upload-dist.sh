@@ -1,54 +1,74 @@
 #!/usr/bin/env bash
-# Build Admin روی Mac و آپلود dist به سرور (سریع‌تر از npm ci روی سرور)
+# Build Admin_Vapp on Mac and upload dist to server with progress, resume and stall detection.
 #
-# Usage (روی Mac):
-#   SERVER=root@185.116.162.233 bash devops/scripts/deploy-front-upload-dist.sh
-#   SKIP_BUILD=1 SERVER=root@185.116.162.233 bash devops/scripts/deploy-front-upload-dist.sh
+# Usage (from Api_Vapp_Manually root):
+#   SERVER=vapp-prod bash devops/scripts/deploy-front-upload-dist.sh
+#   SKIP_BUILD=1 SERVER=vapp-prod bash devops/scripts/deploy-front-upload-dist.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LOCAL_API_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+# shellcheck source=lib/deploy-progress.sh
+source "$SCRIPT_DIR/lib/deploy-progress.sh"
+
+LOCAL_API_DIR="${LOCAL_API_DIR:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
 LOCAL_FRONT_DIR="${LOCAL_FRONT_DIR:-$(cd "$LOCAL_API_DIR/../Admin_Vapp" && pwd)}"
 REMOTE_API_DIR="${REMOTE_API_DIR:-/root/Api_Vapp_Manually}"
 FRONT_STATIC_ROOT="${FRONT_STATIC_ROOT:-/var/www/vapp-admin}"
-SERVER="${SERVER:-root@185.116.162.233}"
+SERVER="${SERVER:-vapp-prod}"
 VITE_API_URL="${VITE_API_URL:-}"
 SKIP_BUILD="${SKIP_BUILD:-0}"
+DEPLOY_STEP_TOTAL=4
 
-log() {
-  echo "[$(date '+%Y-%m-%dT%H:%M:%S')] $*"
-}
+# SSH options to avoid silent hangs and detect dead connections quickly.
+SSH_OPTS=(
+  -o ServerAliveInterval=15
+  -o ServerAliveCountMax=4
+  -o TCPKeepAlive=yes
+  -o ConnectTimeout=30
+  -o BatchMode=no
+)
 
-[[ -d "$LOCAL_FRONT_DIR" ]] || { echo "ERROR: $LOCAL_FRONT_DIR not found" >&2; exit 1; }
+HAS_RSYNC=$(command -v rsync || true)
 
+deploy_log "=== deploy-front-upload-dist ==="
+deploy_log "Build: $LOCAL_FRONT_DIR"
+deploy_log "Server: $SERVER:$FRONT_STATIC_ROOT"
+deploy_log "Tools: rsync=${HAS_RSYNC:-none}"
+
+[[ -d "$LOCAL_FRONT_DIR" ]] || { deploy_log "ERROR: $LOCAL_FRONT_DIR not found" >&2; exit 1; }
 cd "$LOCAL_FRONT_DIR"
 
 if [[ "$SKIP_BUILD" == "1" ]]; then
-  log "SKIP_BUILD=1 — using existing dist/"
-  [[ -d dist/index.html || -f dist/index.html ]] || { echo "ERROR: dist/ not found — run without SKIP_BUILD first" >&2; exit 1; }
+  deploy_step "Validate existing dist"
+  [[ -f dist/index.html ]] || { deploy_log "ERROR: dist/ not found — run without SKIP_BUILD first" >&2; exit 1; }
 else
-  log "Building Admin locally..."
-  npm ci --no-audit --no-fund
+  deploy_step "Build Admin locally"
+  npm ci --no-audit --no-fund 2>/dev/null || npm install --no-audit --no-fund
   VITE_API_URL="$VITE_API_URL" npm run build
 fi
 
-[[ -d dist ]] || { echo "ERROR: dist/ not found" >&2; exit 1; }
+[[ -d dist ]] || { deploy_log "ERROR: dist/ not found" >&2; exit 1; }
 
-log "Testing SSH → $SERVER ..."
-if ! ssh -o ConnectTimeout=15 -o BatchMode=yes "$SERVER" "echo ok" >/dev/null 2>&1; then
-  echo "ERROR: SSH to $SERVER failed (Connection refused / timeout / no key)." >&2
-  echo "  1) From Mac: ssh $SERVER" >&2
-  echo "  2) Open port 22 in VPS firewall for your Mac IP" >&2
-  echo "  3) dist is ready at: $LOCAL_FRONT_DIR/dist — upload when SSH works:" >&2
-  echo "     rsync -avz --delete $LOCAL_FRONT_DIR/dist/ $SERVER:$FRONT_STATIC_ROOT/" >&2
+deploy_step "Test SSH → $SERVER"
+if ! ssh "${SSH_OPTS[@]}" -o BatchMode=yes "$SERVER" "echo ok" >/dev/null 2>&1; then
+  deploy_log "ERROR: SSH to $SERVER failed." >&2
+  deploy_log "  dist ready: $LOCAL_FRONT_DIR/dist" >&2
+  deploy_log "  retry: rsync -avz --delete $LOCAL_FRONT_DIR/dist/ $SERVER:$FRONT_STATIC_ROOT/" >&2
   exit 1
 fi
 
-log "Uploading dist → $SERVER:$FRONT_STATIC_ROOT"
-ssh "$SERVER" "mkdir -p $FRONT_STATIC_ROOT"
-rsync -avz --delete dist/ "$SERVER:$FRONT_STATIC_ROOT/"
+deploy_step "Upload dist → $SERVER:$FRONT_STATIC_ROOT"
+ssh "${SSH_OPTS[@]}" "$SERVER" "mkdir -p $FRONT_STATIC_ROOT"
+if [[ -n "$HAS_RSYNC" ]]; then
+  rsync -ah --progress --partial --delete \
+    --timeout=300 \
+    dist/ "$SERVER:$FRONT_STATIC_ROOT/"
+else
+  deploy_log "WARN: rsync not found — using scp fallback (no resume)"
+  scp -r dist/* "$SERVER:$FRONT_STATIC_ROOT/"
+fi
 
-log "Applying nginx (Admin + Public)..."
-ssh "$SERVER" "FRONT_STATIC_ROOT=$FRONT_STATIC_ROOT PUBLIC_STATIC_ROOT=${PUBLIC_STATIC_ROOT:-/var/www/vapp-public} SERVER_IP=${SERVER#*@} bash $REMOTE_API_DIR/devops/scripts/apply-nginx.sh"
+deploy_step "Apply nginx (Admin + Public)"
+ssh "${SSH_OPTS[@]}" "$SERVER" "FRONT_STATIC_ROOT=$FRONT_STATIC_ROOT PUBLIC_STATIC_ROOT=${PUBLIC_STATIC_ROOT:-/var/www/vapp-public} SERVER_IP=${SERVER#*@} bash $REMOTE_API_DIR/devops/scripts/apply-nginx.sh"
 
-log "Done: http://${SERVER#*@}/auth"
+deploy_log "Done: http://${SERVER#*@}/auth"

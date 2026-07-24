@@ -2,7 +2,7 @@
 
 > برای Cursor / توسعه‌دهنده Flutter. **فاز ۱ backend آماده است** (ساخت، مدیریت، انتشار، لینک).
 
-**آخرین تغییرات:** `maxItems=20`، endpoint افزودن آیتم‌ها (`items/add` با لیست)، و وضعیت آمادگی انتشار (`isReadyToPublish`).
+**آخرین تغییرات:** اندپوینت ویرایش اطلاعات اصلی به `POST /{id}/update-info` تغییر کرد و دیگر جوایز را ویرایش نمی‌کند. برای ویرایش جزئی جوایز از `POST /{id}/items/update` و برای افزودن جایزه از `POST /{id}/items/add` استفاده کنید.
 
 ## پیش‌نیاز
 
@@ -72,7 +72,7 @@ GET /api/ContactNotebook?pageNumber=1&pageSize=100&isActive=true
 | صفحه | API |
 |------|-----|
 | مرحله ۱ — اطلاعات + دفترچه | `POST /` |
-| مرحله ۲ — جوایز | `POST /{id}/update` با `{ "items": [...] }` |
+| مرحله ۲ — جوایز | `POST /{id}/items/add` با `{ "items": [...] }` |
 | Preview | `GET /{id}` |
 | انتشار | `POST /{id}/publish` |
 
@@ -86,16 +86,18 @@ GET /api/ContactNotebook?pageNumber=1&pageSize=100&isActive=true
 | حذف | `POST /{id}/delete` |
 | تنظیمات (ورود) | `GET /{id}` |
 | توگل فعال/غیرفعال | `POST /{id}/toggle-active` |
-| اطلاعات اصلی | `POST /{id}/update` (بدون `items`) |
-| ویرایش جوایز | `POST /{id}/update` (فقط `items`) |
+| اطلاعات اصلی | `POST /{id}/update-info` |
+| ویرایش جوایز (جزئی) | `POST /{id}/items/update` با `{ "items": [...] }` |
 | افزودن جایزه جدید (دکمه +) | `POST /{id}/items/add` (لیست `items`) |
 | مشاهده نتایج | فاز ۲ ❌ |
 
 ---
 
-## به‌روزرسانی جزئی (Partial Update) — مهم
+## به‌روزرسانی جزئی (Partial Update)
 
-`POST /{id}/update` — **همه فیلدها اختیاری.** فقط فیلدهایی که در body می‌فرستی تغییر می‌کنند.
+### `POST /{id}/update-info` — اطلاعات اصلی
+
+**همه فیلدها اختیاری.** فقط فیلدهایی که در body می‌فرستی تغییر می‌کنند.
 
 | فیلد در body | رفتار |
 |--------------|--------|
@@ -104,32 +106,30 @@ GET /api/ContactNotebook?pageNumber=1&pageSize=100&isActive=true
 | `slug` | فقط اگر ارسال شود (غیرخالی) |
 | `saveToPhonebook` | فقط اگر ارسال شود |
 | `notebookIds` | اگر ارسال شود → **جایگزین کامل** لیست |
-| `items` | اگر ارسال شود → **جایگزین کامل** لیست جوایز |
 | فیلد ارسال نشده | **مقدار قبلی حفظ می‌شود** |
 | body خالی `{}` | `400` — «هیچ موردی برای به‌روزرسانی ارسال نشده است» |
+
+### `POST /{id}/items/update` — جوایز
+
+**همه فیلدهای `items` اختیاری.** اگر لیست خالی باشد، هیچ تغییری در جوایز اعمال نمی‌شود.  
+برای هر آیتم در لیست:
+- اگر `id` ارسال شود → همان جایزه ویرایش می‌شود.
+- اگر `id` نباشد → جایزه جدید اضافه می‌شود.
+- آیتم‌هایی که در لیست نیستند → **حذف نمی‌شوند** و حفظ می‌شوند.
 
 ### نکات Flutter
 
 1. **فقط فیلدهای تغییرکرده** را بفرست — `null` یا حذف از JSON = بدون تغییر
-2. **اطلاعات اصلی** و **جوایز** جدا — نیازی نیست هر دو را با هم بفرستی
+2. **اطلاعات اصلی** و **جوایز** کاملا جدا هستند — اطلاعات اصلی فقط در `update-info` و جوایز در `items/update` (جزئی) یا `items/add` (افزودن)
 3. `notebookIds` را فقط وقتی بفرست که کاربر دفترچه‌ها را تغییر داد یا toggle روشن است
 4. `saveToPhonebook=false` بدون `notebookIds` → دفترچه‌های قبلی در DB می‌مانند (برای وقتی دوباره روشن شود)
+5. در `items/update` نیازی به ارسال کل لیست جوایز نیست — فقط جایزه‌هایی که تغییر کرده‌اند را بفرست
 
 ### مثال‌ها
 
 **فقط عنوان (جوایز حفظ می‌شوند):**
 ```json
 { "title": "گردونه جشن تابستانه" }
-```
-
-**فقط جوایز (اطلاعات اصلی حفظ می‌شود):**
-```json
-{
-  "items": [
-    { "name": "۱۰٪ تخفیف", "probability": 50, "displayOrder": 1 },
-    { "name": "پوچ", "probability": 50, "displayOrder": 2 }
-  ]
-}
 ```
 
 **اطلاعات اصلی + دفترچه:**
@@ -233,6 +233,42 @@ GET /api/ContactNotebook?pageNumber=1&pageSize=100&isActive=true
 
 ---
 
+### `POST /{id}/items/update` — به‌روزرسانی جزئی جوایز
+
+Merge جزئی: فقط آیتم‌هایی که در `items` ارسال می‌شوند تغییر می‌کنند.  
+آیتم‌هایی که ارسال نمی‌شوند **حذف نمی‌شوند** و مقدار قبلی‌شان حفظ می‌شود.
+
+```json
+{
+  "items": [
+    {
+      "id": 5,
+      "name": "۳۰٪ تخفیف",
+      "probability": 20,
+      "displayOrder": 1
+    },
+    {
+      "name": "جایزه جدید",
+      "probability": 10,
+      "displayOrder": 5
+    }
+  ]
+}
+```
+
+| فیلد | توضیح |
+|------|-------|
+| `id` | اختیاری — شناسه داخلی جایزه. اگر ارسال شود، همان جایزه ویرایش می‌شود. اگر خالی باشد، جایزه جدید اضافه می‌شود. |
+| `name` | الزامی |
+| `probability` | الزامی — ۰.۰۱ تا ۱۰۰ |
+| `displayOrder` | الزامی — ۱ تا ۲۰، بدون تکرار |
+
+قوانین اعتبارسنجی:
+- **Draft:** تنها محدودیت‌های `name`، `probability`، `displayOrder` بررسی می‌شود.
+- **Published:** علاوه بر موارد بالا، مجموع نهایی `probability` باید دقیقاً **۱۰۰** باشد (شامل آیتم‌های unchanged).
+
+---
+
 ### `GET /` — لیست
 
 ```
@@ -320,8 +356,7 @@ GET /?pageNumber=1&pageSize=10
 ### ساخت
 ```
 POST / → wheelId
-POST /{id}/update (items)
-POST /{id}/items/add (اختیاری برای دکمه +)
+POST /{id}/items/add (items)
 GET /{id} → preview
 POST /{id}/publish → publicUrl
 ```
@@ -331,7 +366,9 @@ POST /{id}/publish → publicUrl
 GET / → لیست
 GET /{id} → تنظیمات
 POST /{id}/toggle-active
-POST /{id}/update → اطلاعات اصلی یا جوایز (جدا)
+POST /{id}/update-info → اطلاعات اصلی
+POST /{id}/items/update → ویرایش جزئی جوایز
+POST /{id}/items/add → افزودن جایزه جدید
 POST /{id}/delete
 ```
 
@@ -342,10 +379,12 @@ POST /{id}/delete
 | سناریو | انتظار |
 |--------|--------|
 | `POST /` معتبر | `201` Draft |
-| `update` فقط title | `200` — items حفظ |
-| `update` فقط items | `200` — title حفظ |
-| `update` `{}` | `400` |
-| `update` title خالی | `400` |
+| `update-info` فقط title | `200` — items حفظ |
+| `update-info` `{}` | `400` |
+| `update-info` title خالی | `400` |
+| `items/update` یک جایزه | `200` — بقیه حفظ |
+| `items/update` خالی | `200` — بدون تغییر |
+| `items/add` items معتبر | `200` |
 | `publish` بدون items | `400` |
 | `toggle-active` Draft | `400` |
 | `delete` سپس `GET` | `404` |

@@ -62,7 +62,7 @@ namespace Api_Vapp.Services.Admin
 
         public Task<ApiResponse<bool>> DeleteAsync(int id) =>
             Task.FromResult(ApiResponse<bool>.BadRequest(
-                "امکانات اشتراک سیستمی هستند و قابل حذف نیستند. می‌توانید آن‌ها را غیرفعال کنید."));
+                "حذف امکان اشتراک مجاز نیست. برای توقف تخصیص به پلن‌های جدید، آن را غیرفعال کنید."));
 
         private static SubscriptionFeatureResponseDto Map(SubscriptionFeature feature) => new()
         {
@@ -73,6 +73,8 @@ namespace Api_Vapp.Services.Admin
             SortOrder = feature.SortOrder,
             IsActive = feature.IsActive,
             IsSystemManaged = SubscriptionFeatureCodes.IsKnown(feature.Code),
+            CanChangeCode = false,
+            CanDelete = false,
             CreatedAt = feature.CreatedAt,
             UpdatedAt = feature.UpdatedAt
         };

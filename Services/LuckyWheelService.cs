@@ -114,20 +114,6 @@ namespace Api_Vapp.Services
                         errorCode: ErrorCodes.ValidationFailed);
                 }
 
-                if (updateDto.Items != null)
-                {
-                    var itemErrors = wheel.Status == LuckyWheelStatus.Published
-                        ? ValidateItemsForPublish(updateDto.Items)
-                        : ValidateItemsForEditing(updateDto.Items);
-                    if (itemErrors.Count > 0)
-                    {
-                        return ApiResponse<LuckyWheelResponseDto>.BadRequest(
-                            "داده‌های جوایز نامعتبر است",
-                            itemErrors,
-                            ErrorCodes.ValidationFailed);
-                    }
-                }
-
                 if (!string.IsNullOrWhiteSpace(updateDto.Slug))
                 {
                     var slugValidation = await ValidateSlugAsync(updateDto.Slug, id);
@@ -181,11 +167,6 @@ namespace Api_Vapp.Services
                             ContactNotebookId = notebookId
                         });
                     }
-                }
-
-                if (updateDto.Items != null)
-                {
-                    await ReplaceItemsAsync(wheel, updateDto.Items);
                 }
 
                 var notebookIdsForValidation = updateDto.NotebookIds?.Distinct().ToList()
@@ -289,6 +270,97 @@ namespace Api_Vapp.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error adding items to lucky wheel {WheelId} for user {UserId}", id, userId);
+                return ApiResponse<LuckyWheelResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
+        public async Task<ApiResponse<LuckyWheelResponseDto>> UpdateItemsAsync(int id, int userId, UpdateLuckyWheelItemsDto updateDto)
+        {
+            _logger.LogInformation(
+                "Updating items for lucky wheel {WheelId} for user {UserId}",
+                id,
+                userId);
+
+            try
+            {
+                var wheel = await _luckyWheelRepository.GetByIdWithDetailsTrackedAsync(id);
+                if (wheel == null)
+                {
+                    return ApiResponse<LuckyWheelResponseDto>.NotFound("گردونه یافت نشد");
+                }
+
+                if (wheel.UserId != userId)
+                {
+                    return ApiResponse<LuckyWheelResponseDto>.Forbidden(
+                        ControlledErrorHelper.Unauthorized,
+                        ErrorCodes.Forbidden);
+                }
+
+                var existingById = wheel.Items
+                    .Where(i => i.Id > 0)
+                    .ToDictionary(i => i.Id);
+
+                var items = updateDto.Items ?? new List<UpdateLuckyWheelItemDto>();
+
+                foreach (var updateItem in items)
+                {
+                    if (updateItem.Id.HasValue && updateItem.Id.Value > 0)
+                    {
+                        if (!existingById.TryGetValue(updateItem.Id.Value, out var existingItem))
+                        {
+                            return ApiResponse<LuckyWheelResponseDto>.BadRequest(
+                                $"آیتم جایزه با شناسه {updateItem.Id.Value} یافت نشد",
+                                errorCode: ErrorCodes.ValidationFailed);
+                        }
+
+                        existingItem.Name = updateItem.Name.Trim();
+                        existingItem.Probability = Math.Round(updateItem.Probability, 2, MidpointRounding.AwayFromZero);
+                        existingItem.DisplayOrder = updateItem.DisplayOrder;
+                    }
+                    else
+                    {
+                        wheel.Items.Add(new LuckyWheelItem
+                        {
+                            Name = updateItem.Name.Trim(),
+                            Probability = Math.Round(updateItem.Probability, 2, MidpointRounding.AwayFromZero),
+                            DisplayOrder = updateItem.DisplayOrder
+                        });
+                    }
+                }
+
+                var finalItems = wheel.Items
+                    .OrderBy(i => i.DisplayOrder)
+                    .Select(MapItemToDto)
+                    .ToList();
+
+                var itemErrors = wheel.Status == LuckyWheelStatus.Published
+                    ? ValidateItemsForPublish(finalItems)
+                    : ValidateItemsForEditing(finalItems);
+                if (itemErrors.Count > 0)
+                {
+                    return ApiResponse<LuckyWheelResponseDto>.BadRequest(
+                        "داده‌های جوایز نامعتبر است",
+                        itemErrors,
+                        ErrorCodes.ValidationFailed);
+                }
+
+                wheel.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+
+                return ApiResponse<LuckyWheelResponseDto>.CreateSuccess(
+                    MapToResponseDto(wheel),
+                    "آیتم‌های جایزه با موفقيت به‌روزرسانی شدند");
+            }
+            catch (DbUpdateException dbEx)
+            {
+                _logger.LogError(dbEx, "Database error updating items for lucky wheel {WheelId} for user {UserId}", id, userId);
+                return ApiResponse<LuckyWheelResponseDto>.InternalServerError(
+                    ControlledErrorHelper.Database,
+                    ErrorCodes.DatabaseError);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating items for lucky wheel {WheelId} for user {UserId}", id, userId);
                 return ApiResponse<LuckyWheelResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
@@ -642,27 +714,7 @@ namespace Api_Vapp.Services
                 || updateDto.Description != null
                 || !string.IsNullOrWhiteSpace(updateDto.Slug)
                 || updateDto.SaveToPhonebook.HasValue
-                || updateDto.NotebookIds != null
-                || (updateDto.Items != null);
-        }
-
-        private async Task ReplaceItemsAsync(LuckyWheel wheel, List<LuckyWheelItemDto> items)
-        {
-            await _context.LuckyWheelItems
-                .Where(i => i.LuckyWheelId == wheel.Id)
-                .ExecuteDeleteAsync();
-
-            wheel.Items.Clear();
-
-            var orderedItems = items
-                .OrderBy(i => i.DisplayOrder)
-                .Select(MapItem)
-                .ToList();
-
-            foreach (var item in orderedItems)
-            {
-                wheel.Items.Add(item);
-            }
+                || updateDto.NotebookIds != null;
         }
 
         private async Task ClearNotebookLinksAsync(LuckyWheel wheel)
@@ -709,6 +761,7 @@ namespace Api_Vapp.Services
         {
             return new LuckyWheelItemDto
             {
+                Id = item.Id,
                 Name = item.Name,
                 Probability = item.Probability,
                 DisplayOrder = item.DisplayOrder

@@ -116,6 +116,7 @@ namespace Api_Vapp.Controller
         /// <response code="402">موجودی کیف پول SMS کافی نیست</response>
         /// <response code="500">خطای سرور</response>
         [HttpPost("send")]
+        [Authorize(Policy = "AdminOnly")]
         [ProducesResponseType(typeof(ApiResponse<SendSmsResponseDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<SendSmsResponseDto>), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(typeof(ApiResponse<SendSmsResponseDto>), StatusCodes.Status401Unauthorized)]
@@ -168,6 +169,7 @@ namespace Api_Vapp.Controller
         /// <response code="402">موجودی کیف پول SMS کافی نیست</response>
         /// <response code="500">خطای سرور</response>
         [HttpPost("send-bulk")]
+        [Authorize(Policy = "AdminOnly")]
         [ProducesResponseType(typeof(ApiResponse<SendBulkResponseDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<SendBulkResponseDto>), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(typeof(ApiResponse<SendBulkResponseDto>), StatusCodes.Status401Unauthorized)]
@@ -224,6 +226,7 @@ namespace Api_Vapp.Controller
         /// <response code="402">موجودی کیف پول SMS کافی نیست</response>
         /// <response code="500">خطای سرور</response>
         [HttpPost("send-array")]
+        [Authorize(Policy = "AdminOnly")]
         [ProducesResponseType(typeof(ApiResponse<SendArrayResponseDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<SendArrayResponseDto>), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(typeof(ApiResponse<SendArrayResponseDto>), StatusCodes.Status401Unauthorized)]

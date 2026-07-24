@@ -49,11 +49,11 @@ public class LuckyWheelServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Update_ItemsProbabilityNot100InDraft_Returns200AndNotReady()
+    public async Task AddItems_ProbabilityNot100InDraft_Returns200AndNotReady()
     {
         var wheelId = await _ctx.CreateDraftAsync();
 
-        var result = await _ctx.Service.UpdateAsync(wheelId, _ctx.OwnerUserId, new UpdateLuckyWheelDto
+        var result = await _ctx.Service.AddItemsAsync(wheelId, _ctx.OwnerUserId, new AddLuckyWheelItemsDto
         {
             Items = LuckyWheelTestContext.SampleItems(thirdProbability: 30m)
         });
@@ -65,13 +65,141 @@ public class LuckyWheelServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Update_ValidItems_Returns200()
+    public async Task AddItems_ValidItems_Returns200()
     {
         var wheelId = await _ctx.CreateDraftAsync();
 
-        var result = await _ctx.Service.UpdateAsync(wheelId, _ctx.OwnerUserId, new UpdateLuckyWheelDto
+        var result = await _ctx.Service.AddItemsAsync(wheelId, _ctx.OwnerUserId, new AddLuckyWheelItemsDto
         {
             Items = LuckyWheelTestContext.SampleItems()
+        });
+
+        Assert.True(result.Success);
+        Assert.Equal(3, result.Data!.Items.Count);
+        Assert.Equal(100m, result.Data.Items.Sum(i => i.Probability));
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task UpdateItems_ValidPartialUpdate_Returns200AndMerges()
+    {
+        var wheelId = await _ctx.CreateWheelWithItemsAsync();
+        var firstItemId = _ctx.Context.LuckyWheelItems
+            .Where(i => i.LuckyWheelId == wheelId)
+            .OrderBy(i => i.DisplayOrder)
+            .Select(i => i.Id)
+            .First();
+
+        var result = await _ctx.Service.UpdateItemsAsync(wheelId, _ctx.OwnerUserId, new UpdateLuckyWheelItemsDto
+        {
+            Items =
+            [
+                new UpdateLuckyWheelItemDto { Id = firstItemId, Name = "درصد جدید", Probability = 50, DisplayOrder = 1 }
+            ]
+        });
+
+        Assert.True(result.Success);
+        Assert.Equal(3, result.Data!.Items.Count);
+        Assert.Equal("درصد جدید", result.Data.Items.First(i => i.Id == firstItemId).Name);
+        Assert.Equal(50m, result.Data.Items.First(i => i.Id == firstItemId).Probability);
+        Assert.Equal(100m, result.Data.Items.Sum(i => i.Probability));
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task UpdateItems_AddNewItem_Returns200()
+    {
+        var wheelId = await _ctx.CreateWheelWithItemsAsync();
+
+        var result = await _ctx.Service.UpdateItemsAsync(wheelId, _ctx.OwnerUserId, new UpdateLuckyWheelItemsDto
+        {
+            Items =
+            [
+                new UpdateLuckyWheelItemDto { Name = "جایزه جدید", Probability = 20, DisplayOrder = 4 }
+            ]
+        });
+
+        Assert.True(result.Success);
+        Assert.Equal(4, result.Data!.Items.Count);
+        Assert.Contains(result.Data.Items, i => i.Name == "جایزه جدید" && i.Probability == 20m);
+        Assert.Equal(100m + 20m, result.Data.Items.Sum(i => i.Probability));
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task UpdateItems_InvalidProbability_Returns400()
+    {
+        var wheelId = await _ctx.CreateDraftAsync();
+
+        var result = await _ctx.Service.UpdateItemsAsync(wheelId, _ctx.OwnerUserId, new UpdateLuckyWheelItemsDto
+        {
+            Items =
+            [
+                new UpdateLuckyWheelItemDto { Name = "غیرمعتبر", Probability = 150, DisplayOrder = 1 }
+            ]
+        });
+
+        Assert.False(result.Success);
+        Assert.Equal(400, result.StatusCode);
+        Assert.Equal(ErrorCodes.ValidationFailed, result.ErrorCode);
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task UpdateItems_OtherUsersWheel_Returns403()
+    {
+        var wheelId = await _ctx.CreateWheelWithItemsAsync();
+
+        var result = await _ctx.Service.UpdateItemsAsync(wheelId, _ctx.OtherUserId, new UpdateLuckyWheelItemsDto
+        {
+            Items =
+            [
+                new UpdateLuckyWheelItemDto { Name = "غیرمجاز", Probability = 50, DisplayOrder = 1 }
+            ]
+        });
+
+        Assert.False(result.Success);
+        Assert.Equal(403, result.StatusCode);
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task UpdateItems_PublishedWheelRequiresSum100_Returns400()
+    {
+        var wheelId = await _ctx.CreateWheelWithItemsAsync();
+        await _ctx.Service.PublishAsync(wheelId, _ctx.OwnerUserId, new PublishLuckyWheelDto
+        {
+            Slug = $"pub-{Guid.NewGuid():N}"[..12]
+        });
+
+        var firstItemId = _ctx.Context.LuckyWheelItems
+            .Where(i => i.LuckyWheelId == wheelId)
+            .OrderBy(i => i.DisplayOrder)
+            .Select(i => i.Id)
+            .First();
+
+        var result = await _ctx.Service.UpdateItemsAsync(wheelId, _ctx.OwnerUserId, new UpdateLuckyWheelItemsDto
+        {
+            Items =
+            [
+                new UpdateLuckyWheelItemDto { Id = firstItemId, Name = "A", Probability = 60, DisplayOrder = 1 }
+            ]
+        });
+
+        Assert.False(result.Success);
+        Assert.Equal(400, result.StatusCode);
+        Assert.Contains(result.Data!.PublishValidationErrors, e => e.Contains("مجموع درصد"));
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task UpdateItems_EmptyList_KeepsItems()
+    {
+        var wheelId = await _ctx.CreateWheelWithItemsAsync();
+
+        var result = await _ctx.Service.UpdateItemsAsync(wheelId, _ctx.OwnerUserId, new UpdateLuckyWheelItemsDto
+        {
+            Items = []
         });
 
         Assert.True(result.Success);

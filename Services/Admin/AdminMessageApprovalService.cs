@@ -105,27 +105,41 @@ namespace Api_Vapp.Services.Admin
 
                 if (request.RequestType == SmsApprovalRequestTypes.Campaign && request.MessageCampaignId.HasValue)
                 {
-                    var campaign = await _context.MessageCampaigns
-                        .FirstOrDefaultAsync(c => c.Id == request.MessageCampaignId.Value && !c.IsDeleted);
-                    if (campaign != null)
-                    {
-                        campaign.AdminApprovalStatus = AdminApprovalStatuses.Approved;
-                        campaign.AdminApprovedAt = DateTime.UtcNow;
-                        campaign.AdminApprovedByUserId = adminUserId;
-                        campaign.UpdatedAt = DateTime.UtcNow;
-                        await _context.SaveChangesAsync();
-                    }
-
+                    // مهم: وضعیت کمپین فقط بعد از ارسال موفق Approved می‌شود؛
+                    // در غیر این صورت روی شکست، کاربر می‌تواند بدون تأیید دوباره ارسال کند.
                     var sendResult = await _messageService.ConfirmAndSendCampaignAsync(
                         request.MessageCampaignId.Value,
                         request.UserId,
                         bypassAdminApproval: true);
 
-                    if (!sendResult.Success)
+                    var campaign = await _context.MessageCampaigns
+                        .FirstOrDefaultAsync(c => c.Id == request.MessageCampaignId.Value && !c.IsDeleted);
+
+                    // ConfirmAndSend حتی با ۰ ارسال موفق، Success=true برمی‌گرداند — صریحاً چک می‌کنیم
+                    var sendReallySucceeded = sendResult.Success
+                        && campaign != null
+                        && campaign.Status == "Sent"
+                        && campaign.SentCount > 0;
+
+                    if (!sendReallySucceeded)
                     {
                         await RevertToPendingAsync(request);
                         return ApiResponse<bool>.BadRequest(
-                            ControlledErrorHelper.SanitizeArgumentMessage(sendResult.Message, ControlledErrorHelper.SendFailed));
+                            ControlledErrorHelper.SanitizeArgumentMessage(
+                                sendResult.Success ? "هیچ پیامکی ارسال نشد" : sendResult.Message,
+                                ControlledErrorHelper.SendFailed));
+                    }
+
+                    campaign!.AdminApprovalStatus = AdminApprovalStatuses.Approved;
+                    campaign.AdminApprovedAt = DateTime.UtcNow;
+                    campaign.AdminApprovedByUserId = adminUserId;
+                    campaign.UpdatedAt = DateTime.UtcNow;
+
+                    if (campaign.AutomatedMessageId.HasValue)
+                    {
+                        await SyncAutomationExecutionsAfterSendAsync(
+                            campaign.AutomatedMessageId.Value,
+                            campaign.Id);
                     }
                 }
                 else if (request.RequestType == SmsApprovalRequestTypes.DirectMessage)
@@ -168,11 +182,17 @@ namespace Api_Vapp.Services.Admin
                         session,
                         bypassAdminApproval: true);
 
-                    if (!sendResult.Success)
+                    var directOk = sendResult.Success
+                        && sendResult.Data != null
+                        && sendResult.Data.SentCount > 0;
+
+                    if (!directOk)
                     {
                         await RevertToPendingAsync(request);
                         return ApiResponse<bool>.BadRequest(
-                            ControlledErrorHelper.SanitizeArgumentMessage(sendResult.Message, ControlledErrorHelper.SendFailed));
+                            ControlledErrorHelper.SanitizeArgumentMessage(
+                                sendResult.Success ? "هیچ پیامکی ارسال نشد" : sendResult.Message,
+                                ControlledErrorHelper.SendFailed));
                     }
                 }
 
@@ -187,7 +207,7 @@ namespace Api_Vapp.Services.Admin
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error approving SMS request {RequestId}", id);
-                await RevertToPendingAsync(id);
+                await SafeRevertAfterApproveFailureAsync(id);
                 return ApiResponse<bool>.InternalServerError(ControlledErrorHelper.SmsFailed);
             }
         }
@@ -221,6 +241,36 @@ namespace Api_Vapp.Services.Admin
                         campaign.AdminRejectionReason = dto.Reason.Trim();
                         campaign.Status = "Draft";
                         campaign.UpdatedAt = DateTime.UtcNow;
+
+                        if (campaign.AutomatedMessageId.HasValue)
+                        {
+                            var contactIds = await _context.MessageRecipients
+                                .Where(r => r.CampaignId == campaign.Id && r.ContactId.HasValue)
+                                .Select(r => r.ContactId!.Value)
+                                .Distinct()
+                                .ToListAsync();
+
+                            if (contactIds.Count > 0)
+                            {
+                                var todayStart = DateTime.UtcNow.Date;
+                                var todayEnd = todayStart.AddDays(1);
+                                var executions = await _context.AutomationExecutions
+                                    .Where(ae => ae.AutomatedMessageId == campaign.AutomatedMessageId.Value
+                                        && ae.ContactId.HasValue
+                                        && contactIds.Contains(ae.ContactId.Value)
+                                        && ae.ExecutedAt >= todayStart
+                                        && ae.ExecutedAt < todayEnd
+                                        && ae.Status == "PendingApproval")
+                                    .ToListAsync();
+
+                                foreach (var execution in executions)
+                                {
+                                    execution.Status = "Rejected";
+                                    execution.ErrorMessage = dto.Reason.Trim();
+                                    execution.SentCount = 0;
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -236,18 +286,117 @@ namespace Api_Vapp.Services.Admin
 
         private async Task RevertToPendingAsync(SmsApprovalRequest request)
         {
+            if (request.MessageCampaignId.HasValue)
+            {
+                var campaign = await _context.MessageCampaigns
+                    .FirstOrDefaultAsync(c => c.Id == request.MessageCampaignId.Value && !c.IsDeleted);
+
+                if (campaign != null)
+                {
+                    // اگر SMS واقعاً رفته، هرگز Pending نکن (جلوگیری از ارسال دوباره)
+                    if (campaign.Status == "Sent" || campaign.SentCount > 0)
+                    {
+                        request.Status = AdminApprovalStatuses.Approved;
+                        request.UpdatedAt = DateTime.UtcNow;
+                        campaign.AdminApprovalStatus = AdminApprovalStatuses.Approved;
+                        campaign.AdminApprovedAt ??= DateTime.UtcNow;
+                        campaign.UpdatedAt = DateTime.UtcNow;
+                        await _context.SaveChangesAsync();
+                        return;
+                    }
+
+                    campaign.AdminApprovalStatus = AdminApprovalStatuses.Pending;
+                    campaign.AdminApprovedAt = null;
+                    campaign.AdminApprovedByUserId = null;
+                    campaign.Status = "PendingApproval";
+                    campaign.ErrorMessage = null;
+                    campaign.FailedCount = 0;
+                    campaign.UpdatedAt = DateTime.UtcNow;
+
+                    // گیرندگان Failed را برای تلاش مجدد آماده کن (فقط وقتی هیچ ارسالی موفق نبوده)
+                    var failedRecipients = await _context.MessageRecipients
+                        .Where(r => r.CampaignId == campaign.Id && r.Status == "Failed")
+                        .ToListAsync();
+                    foreach (var recipient in failedRecipients)
+                    {
+                        recipient.Status = "Pending";
+                        recipient.ErrorMessage = null;
+                        recipient.SmsServiceId = null;
+                        recipient.SentAt = null;
+                    }
+                }
+            }
+
             request.Status = AdminApprovalStatuses.Pending;
             request.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
         }
 
-        private async Task RevertToPendingAsync(int id)
+        /// <summary>
+        /// بعد از Exception در Approve: فقط اگر هنوز Processing باشد و SMS نرفته باشد، به Pending برگردان.
+        /// </summary>
+        private async Task SafeRevertAfterApproveFailureAsync(int id)
         {
-            await _context.SmsApprovalRequests
-                .Where(r => r.Id == id && r.Status == AdminApprovalStatuses.Processing)
-                .ExecuteUpdateAsync(setters => setters
-                    .SetProperty(r => r.Status, AdminApprovalStatuses.Pending)
-                    .SetProperty(r => r.UpdatedAt, DateTime.UtcNow));
+            var request = await _context.SmsApprovalRequests
+                .FirstOrDefaultAsync(r => r.Id == id && !r.IsDeleted);
+
+            if (request == null)
+                return;
+
+            // نهایی‌شده‌ها را دست نزن
+            if (request.Status is AdminApprovalStatuses.Approved or AdminApprovalStatuses.Rejected)
+                return;
+
+            await RevertToPendingAsync(request);
+        }
+
+        /// <summary>
+        /// وضعیت اجرای اتوماسیون را با نتیجه واقعی گیرندگان کمپین هم‌تراز می‌کند.
+        /// </summary>
+        private async Task SyncAutomationExecutionsAfterSendAsync(int automatedMessageId, int campaignId)
+        {
+            var recipients = await _context.MessageRecipients
+                .AsNoTracking()
+                .Where(r => r.CampaignId == campaignId && r.ContactId.HasValue)
+                .Select(r => new { ContactId = r.ContactId!.Value, r.Status })
+                .ToListAsync();
+
+            if (recipients.Count == 0)
+                return;
+
+            var statusByContact = recipients
+                .GroupBy(r => r.ContactId)
+                .ToDictionary(g => g.Key, g => g.First().Status);
+
+            var contactIds = statusByContact.Keys.ToList();
+            var todayStart = DateTime.UtcNow.Date;
+            var todayEnd = todayStart.AddDays(1);
+
+            var executions = await _context.AutomationExecutions
+                .Where(ae => ae.AutomatedMessageId == automatedMessageId
+                    && ae.ContactId.HasValue
+                    && contactIds.Contains(ae.ContactId.Value)
+                    && ae.ExecutedAt >= todayStart
+                    && ae.ExecutedAt < todayEnd
+                    && ae.Status == "PendingApproval")
+                .ToListAsync();
+
+            foreach (var execution in executions)
+            {
+                var recipientStatus = statusByContact[execution.ContactId!.Value];
+                if (recipientStatus == "Sent")
+                {
+                    execution.Status = "Success";
+                    execution.SentCount = 1;
+                    execution.ErrorMessage = null;
+                }
+                else
+                {
+                    execution.Status = "Failed";
+                    execution.SentCount = 0;
+                    execution.ErrorMessage = ControlledErrorHelper.SendFailed;
+                }
+            }
         }
 
         private static SmsApprovalRequestResponseDto Map(SmsApprovalRequest request) => new()

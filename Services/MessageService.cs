@@ -5537,8 +5537,36 @@ namespace Api_Vapp.Services
                 
                 if (existingTemplates.Any())
                 {
-                    await transaction.RollbackAsync();
-                    _logger.LogInformation("User {UserId} already has default templates", userId);
+                    // فقط قالب‌های سیستمی که هرگز ویرایش نشده‌اند (UpdatedAt == null)
+                    // قالب پیش‌فرض ویرایش‌شده باید دوباره تأیید ادمین بگیرد
+                    var pendingDefaults = existingTemplates
+                        .Where(t => t.ApprovalStatus != AdminApprovalStatuses.Approved && t.UpdatedAt == null)
+                        .ToList();
+
+                    if (pendingDefaults.Count > 0)
+                    {
+                        var now = DateTime.UtcNow;
+                        foreach (var template in pendingDefaults)
+                        {
+                            template.ApprovalStatus = AdminApprovalStatuses.Approved;
+                            template.ApprovedAt = now;
+                            template.ApprovedByUserId = null;
+                            template.RejectionReason = null;
+                            // UpdatedAt را عمداً null نگه می‌داریم تا «ویرایش‌نشده سیستمی» مشخص بماند
+                        }
+
+                        await _context.SaveChangesAsync();
+                        await transaction.CommitAsync();
+                        _logger.LogInformation(
+                            "Auto-approved {Count} existing default templates for user {UserId}",
+                            pendingDefaults.Count, userId);
+                    }
+                    else
+                    {
+                        await transaction.RollbackAsync();
+                        _logger.LogInformation("User {UserId} already has default templates", userId);
+                    }
+
                     return;
                 }
 
@@ -5555,6 +5583,8 @@ namespace Api_Vapp.Services
                         Icon = "🎂",
                         IsDefault = true,
                         IsActive = true,
+                        ApprovalStatus = AdminApprovalStatuses.Approved,
+                        ApprovedAt = DateTime.UtcNow,
                         CreatedAt = DateTime.UtcNow
                     },
                     new MessageTemplate
@@ -5567,6 +5597,8 @@ namespace Api_Vapp.Services
                         Icon = "💍",
                         IsDefault = true,
                         IsActive = true,
+                        ApprovalStatus = AdminApprovalStatuses.Approved,
+                        ApprovedAt = DateTime.UtcNow,
                         CreatedAt = DateTime.UtcNow
                     },
                     new MessageTemplate
@@ -5579,6 +5611,8 @@ namespace Api_Vapp.Services
                         Icon = "🌸",
                         IsDefault = true,
                         IsActive = true,
+                        ApprovalStatus = AdminApprovalStatuses.Approved,
+                        ApprovedAt = DateTime.UtcNow,
                         CreatedAt = DateTime.UtcNow
                     },
 
@@ -5593,6 +5627,8 @@ namespace Api_Vapp.Services
                         Icon = "🏪",
                         IsDefault = true,
                         IsActive = true,
+                        ApprovalStatus = AdminApprovalStatuses.Approved,
+                        ApprovedAt = DateTime.UtcNow,
                         CreatedAt = DateTime.UtcNow
                     },
                     new MessageTemplate
@@ -5605,6 +5641,8 @@ namespace Api_Vapp.Services
                         Icon = "🎁",
                         IsDefault = true,
                         IsActive = true,
+                        ApprovalStatus = AdminApprovalStatuses.Approved,
+                        ApprovedAt = DateTime.UtcNow,
                         CreatedAt = DateTime.UtcNow
                     },
                     new MessageTemplate
@@ -5617,6 +5655,8 @@ namespace Api_Vapp.Services
                         Icon = "🛒",
                         IsDefault = true,
                         IsActive = true,
+                        ApprovalStatus = AdminApprovalStatuses.Approved,
+                        ApprovedAt = DateTime.UtcNow,
                         CreatedAt = DateTime.UtcNow
                     },
 
@@ -5631,6 +5671,8 @@ namespace Api_Vapp.Services
                         Icon = "👋",
                         IsDefault = true,
                         IsActive = true,
+                        ApprovalStatus = AdminApprovalStatuses.Approved,
+                        ApprovedAt = DateTime.UtcNow,
                         CreatedAt = DateTime.UtcNow
                     },
 
@@ -5645,6 +5687,8 @@ namespace Api_Vapp.Services
                         Icon = "💰",
                         IsDefault = true,
                         IsActive = true,
+                        ApprovalStatus = AdminApprovalStatuses.Approved,
+                        ApprovedAt = DateTime.UtcNow,
                         CreatedAt = DateTime.UtcNow
                     },
                     new MessageTemplate
@@ -5657,6 +5701,8 @@ namespace Api_Vapp.Services
                         Icon = "⏰",
                         IsDefault = true,
                         IsActive = true,
+                        ApprovalStatus = AdminApprovalStatuses.Approved,
+                        ApprovedAt = DateTime.UtcNow,
                         CreatedAt = DateTime.UtcNow
                     },
 
@@ -5671,6 +5717,8 @@ namespace Api_Vapp.Services
                         Icon = "💬",
                         IsDefault = true,
                         IsActive = true,
+                        ApprovalStatus = AdminApprovalStatuses.Approved,
+                        ApprovedAt = DateTime.UtcNow,
                         CreatedAt = DateTime.UtcNow
                     },
                     new MessageTemplate
@@ -5683,6 +5731,8 @@ namespace Api_Vapp.Services
                         Icon = "📢",
                         IsDefault = true,
                         IsActive = true,
+                        ApprovalStatus = AdminApprovalStatuses.Approved,
+                        ApprovedAt = DateTime.UtcNow,
                         CreatedAt = DateTime.UtcNow
                     }
                 };

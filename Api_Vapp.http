@@ -19,7 +19,7 @@ Content-Type: application/json
 }
 
 ### به‌روزرسانی جوایز (مرحله ۲) — wheelId را جایگزین کنید
-POST {{Api_Vapp_HostAddress}}/api/LuckyWheel/1/update
+POST {{Api_Vapp_HostAddress}}/api/LuckyWheel/1/items/add
 Content-Type: application/json
 
 {
@@ -44,6 +44,26 @@ Content-Type: application/json
   ]
 }
 
+### به‌روزرسانی جزئی جوایز (ویرایش درصد/نام/ترتیب)
+POST {{Api_Vapp_HostAddress}}/api/LuckyWheel/1/items/update
+Content-Type: application/json
+
+{
+  "items": [
+    {
+      "id": 5,
+      "name": "درصد جدید",
+      "probability": 50,
+      "displayOrder": 1
+    },
+    {
+      "name": "جایزه جدید",
+      "probability": 10,
+      "displayOrder": 5
+    }
+  ]
+}
+
 ### جزئیات گردونه (Preview)
 GET {{Api_Vapp_HostAddress}}/api/LuckyWheel/1
 
@@ -59,7 +79,7 @@ Content-Type: application/json
 GET {{Api_Vapp_HostAddress}}/api/LuckyWheel?pageNumber=1&pageSize=10
 
 ### ویرایش اطلاعات اصلی (تنظیمات)
-POST {{Api_Vapp_HostAddress}}/api/LuckyWheel/1/update
+POST {{Api_Vapp_HostAddress}}/api/LuckyWheel/1/update-info
 Content-Type: application/json
 
 {
