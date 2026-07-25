@@ -7,6 +7,7 @@ using Api_Vapp.Exceptions;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Utilities;
 using Api_Vapp.Models;
+using Api_Vapp.Services.Audit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -30,6 +31,7 @@ namespace Api_Vapp.Services
         private readonly ISubscriptionEntitlementService _subscriptionEntitlementService;
         private readonly IConfiguration _configuration;
         private readonly IHttpClientFactory _httpClientFactory;
+        private readonly IAuditService _audit;
         private readonly ILogger<PaymentService> _logger;
 
         // تنظیمات درگاه به‌پرداخت
@@ -50,6 +52,7 @@ namespace Api_Vapp.Services
             ISubscriptionEntitlementService subscriptionEntitlementService,
             IConfiguration configuration,
             IHttpClientFactory httpClientFactory,
+            IAuditService audit,
             ILogger<PaymentService> logger)
         {
             _context = context;
@@ -60,6 +63,7 @@ namespace Api_Vapp.Services
             _subscriptionEntitlementService = subscriptionEntitlementService;
             _configuration = configuration;
             _httpClientFactory = httpClientFactory;
+            _audit = audit;
             _logger = logger;
 
             // خواندن تنظیمات درگاه
@@ -85,6 +89,22 @@ namespace Api_Vapp.Services
                 // بررسی وجود پرداخت در انتظار
                 if (await _paymentRepository.HasPendingPaymentAsync(userId))
                 {
+                    await _audit.WriteAsync(new AuditEntry
+                    {
+                        Category = AuditCategories.Payment,
+                        Action = AuditActions.PaymentRequestFailed,
+                        EntityType = AuditEntityTypes.Payment,
+                        TargetUserId = userId,
+                        Succeeded = false,
+                        ErrorMessage = "پرداخت در انتظار قبلی وجود دارد",
+                        Metadata = new
+                        {
+                            userId,
+                            amount = createDto.Amount,
+                            paymentType = createDto.PaymentType,
+                            gateway = createDto.Gateway
+                        }
+                    });
                     return ApiResponse<PaymentDto>.BadRequest("شما یک پرداخت در انتظار دارید. لطفاً ابتدا آن را تکمیل یا لغو کنید.");
                 }
 
@@ -108,6 +128,25 @@ namespace Api_Vapp.Services
                 await _context.SaveChangesAsync();
 
                 _logger.LogInformation("پرداخت جدید با شناسه {PaymentId} برای کاربر {UserId} ایجاد شد", payment.Id, userId);
+
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Payment,
+                    Action = AuditActions.PaymentRequested,
+                    EntityType = AuditEntityTypes.Payment,
+                    EntityId = payment.Id.ToString(),
+                    TargetUserId = userId,
+                    After = new
+                    {
+                        paymentId = payment.Id,
+                        userId = payment.UserId,
+                        amount = payment.Amount,
+                        paymentType = payment.PaymentType,
+                        gateway = payment.Gateway,
+                        orderId = payment.OrderId,
+                        status = payment.Status
+                    }
+                });
 
                 return ApiResponse<PaymentDto>.CreateSuccess(MapToPaymentDto(payment), "پرداخت با موفقیت ایجاد شد", 201);
             }
@@ -287,6 +326,27 @@ namespace Api_Vapp.Services
 
                         _logger.LogInformation("پرداخت {PaymentId} با موفقیت تأیید شد. مبلغ: {Amount}", payment.Id, payment.Amount);
 
+                        await _audit.WriteAsync(new AuditEntry
+                        {
+                            Category = AuditCategories.Payment,
+                            Action = AuditActions.PaymentVerified,
+                            EntityType = AuditEntityTypes.Payment,
+                            EntityId = payment.Id.ToString(),
+                            TargetUserId = payment.UserId,
+                            After = new
+                            {
+                                paymentId = payment.Id,
+                                userId = payment.UserId,
+                                amount = payment.Amount,
+                                paymentType = payment.PaymentType,
+                                gateway = payment.Gateway,
+                                orderId = payment.OrderId,
+                                status = payment.Status,
+                                refId = payment.RefId,
+                                cardNumber = MaskCardNumber(payment.CardNumber)
+                            }
+                        });
+
                         return ApiResponse<PaymentResultDto>.CreateSuccess(successResult, successResult.Message);
                     }
                     else
@@ -303,6 +363,29 @@ namespace Api_Vapp.Services
                         };
 
                         _logger.LogWarning("پرداخت {PaymentId} ناموفق بود. کد خطا: {ErrorCode}", payment.Id, payment.ErrorCode);
+
+                        await _audit.WriteAsync(new AuditEntry
+                        {
+                            Category = AuditCategories.Payment,
+                            Action = AuditActions.PaymentVerifyFailed,
+                            EntityType = AuditEntityTypes.Payment,
+                            EntityId = payment.Id.ToString(),
+                            TargetUserId = payment.UserId,
+                            Succeeded = false,
+                            ErrorMessage = payment.ErrorMessage,
+                            After = new
+                            {
+                                paymentId = payment.Id,
+                                userId = payment.UserId,
+                                amount = payment.Amount,
+                                paymentType = payment.PaymentType,
+                                gateway = payment.Gateway,
+                                orderId = payment.OrderId,
+                                status = payment.Status,
+                                refId = payment.RefId,
+                                cardNumber = MaskCardNumber(payment.CardNumber)
+                            }
+                        });
 
                         return ApiResponse<PaymentResultDto>.CreateSuccess(failResult, "پرداخت ناموفق بود");
                     }
@@ -572,6 +655,19 @@ namespace Api_Vapp.Services
         private string GenerateOrderId()
         {
             return $"VP{DateTime.UtcNow:yyyyMMddHHmmss}{Random.Shared.Next(1000, 9999)}";
+        }
+
+        /// <summary>هرگز شماره کامل کارت را در audit ثبت نکن — فقط ۴ رقم آخر نگه‌داشته می‌شود.</summary>
+        private static string? MaskCardNumber(string? cardNumber)
+        {
+            if (string.IsNullOrWhiteSpace(cardNumber))
+                return cardNumber;
+
+            var digitsOnly = new string(cardNumber.Where(char.IsDigit).ToArray());
+            if (digitsOnly.Length < 4)
+                return "****";
+
+            return $"******{digitsOnly[^4..]}";
         }
 
         private static string GetPaymentTypeTitle(string paymentType)

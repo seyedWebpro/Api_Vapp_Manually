@@ -13,6 +13,7 @@ namespace Api_Vapp.Interfaces
         Task<ApiResponse<SmsDeliveryReportListDto>> GetReportAsync(int userId, SmsDeliveryReportFilterDto filter);
         Task<ApiResponse<SmsDeliverySummaryDto>> GetSummaryAsync(int userId, SmsDeliveryReportFilterDto filter);
         Task<ApiResponse<SmsDeliveryRecordDto>> RefreshRecordAsync(int userId, int id);
+        Task<ApiResponse<SmsDeliverySummaryDto>> RefreshBySidAsync(int userId, long sid);
         Task SyncPendingDeliveriesAsync(CancellationToken cancellationToken = default);
     }
 }

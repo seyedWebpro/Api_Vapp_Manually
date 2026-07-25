@@ -50,8 +50,7 @@ namespace Api_Vapp.Repositories
                     s.Id == serviceId &&
                     s.BookingSystemId == systemId &&
                     !s.IsDeleted &&
-                    !s.BookingSystem.IsDeleted &&
-                    s.BookingSystem.IsActive)
+                    !s.BookingSystem.IsDeleted)
                 .FirstOrDefaultAsync();
         }
 
@@ -65,9 +64,41 @@ namespace Api_Vapp.Repositories
                 .Where(a =>
                     a.BookingServiceItemId == serviceId &&
                     !a.IsDeleted &&
-                    a.Status == BookingAppointmentStatuses.Confirmed &&
+                    (a.Status == BookingAppointmentStatuses.Confirmed || a.Status == BookingAppointmentStatuses.Pending) &&
                     a.StartUtc >= dayStart &&
                     a.StartUtc < dayEnd)
+                .ToListAsync();
+        }
+
+        public async Task<List<BookingAppointment>> GetAppointmentsForSystemOnDateAsync(int systemId, DateOnly dateUtc)
+        {
+            var dayStart = dateUtc.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+            var dayEnd = dayStart.AddDays(1);
+
+            return await _dbSet
+                .AsNoTracking()
+                .Include(a => a.BookingServiceItem)
+                .Where(a =>
+                    a.BookingSystemId == systemId &&
+                    !a.IsDeleted &&
+                    a.StartUtc >= dayStart &&
+                    a.StartUtc < dayEnd)
+                .OrderBy(a => a.StartUtc)
+                .ToListAsync();
+        }
+
+        public async Task<List<DateTime>> GetBlockedStartsForSystemOnDateAsync(int systemId, DateOnly dateUtc)
+        {
+            var dayStart = dateUtc.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+            var dayEnd = dayStart.AddDays(1);
+
+            return await _context.BookingSlotBlocks
+                .AsNoTracking()
+                .Where(b =>
+                    b.BookingSystemId == systemId &&
+                    b.SlotStartUtc >= dayStart &&
+                    b.SlotStartUtc < dayEnd)
+                .Select(b => b.SlotStartUtc)
                 .ToListAsync();
         }
 
@@ -106,7 +137,8 @@ namespace Api_Vapp.Repositories
             string? status,
             DateTime? fromUtc,
             DateTime? toUtc,
-            int? serviceId)
+            int? serviceId,
+            string? searchName = null)
         {
             var query = _dbSet
                 .AsNoTracking()
@@ -132,6 +164,12 @@ namespace Api_Vapp.Repositories
                 query = query.Where(a => a.BookingServiceItemId == serviceId.Value);
             }
 
+            if (!string.IsNullOrWhiteSpace(searchName))
+            {
+                var term = searchName.Trim();
+                query = query.Where(a => a.CustomerFullName.Contains(term));
+            }
+
             var totalCount = await query.CountAsync();
 
             var items = await query
@@ -145,6 +183,7 @@ namespace Api_Vapp.Repositories
                     BookingServiceItemId = a.BookingServiceItemId,
                     CustomerFullName = a.CustomerFullName,
                     CustomerMobile = a.CustomerMobile,
+                    CustomerNote = a.CustomerNote,
                     StartUtc = a.StartUtc,
                     EndUtc = a.EndUtc,
                     Status = a.Status,
@@ -157,6 +196,42 @@ namespace Api_Vapp.Repositories
                 .ToListAsync();
 
             return (items, totalCount);
+        }
+
+        public async Task<BookingDashboardCounts> GetDashboardCountsAsync(int systemId, DateOnly todayUtc)
+        {
+            var dayStart = todayUtc.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+            var dayEnd = dayStart.AddDays(1);
+
+            var todayQuery = _dbSet.AsNoTracking()
+                .Where(a =>
+                    a.BookingSystemId == systemId &&
+                    !a.IsDeleted &&
+                    a.StartUtc >= dayStart &&
+                    a.StartUtc < dayEnd);
+
+            return new BookingDashboardCounts
+            {
+                TodayTotal = await todayQuery.CountAsync(),
+                Confirmed = await todayQuery.CountAsync(a => a.Status == BookingAppointmentStatuses.Confirmed),
+                Pending = await todayQuery.CountAsync(a => a.Status == BookingAppointmentStatuses.Pending),
+                Cancelled = await todayQuery.CountAsync(a => a.Status == BookingAppointmentStatuses.Cancelled)
+            };
+        }
+
+        public async Task<List<BookingAppointment>> GetCalendarAppointmentsAsync(
+            int systemId, DateTime fromUtc, DateTime toUtc)
+        {
+            return await _dbSet
+                .AsNoTracking()
+                .Include(a => a.BookingServiceItem)
+                .Where(a =>
+                    a.BookingSystemId == systemId &&
+                    !a.IsDeleted &&
+                    a.StartUtc >= fromUtc &&
+                    a.StartUtc < toUtc)
+                .OrderBy(a => a.StartUtc)
+                .ToListAsync();
         }
     }
 }

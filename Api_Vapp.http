@@ -454,3 +454,112 @@ Content-Type: application/json
 }
 
 ###
+
+# --- SMS Delivery Reports (گزارش پیامک) ---
+
+### گزینه‌های فیلتر گزارش
+GET {{Api_Vapp_HostAddress}}/api/sms/delivery-reports/filter-options
+Authorization: Bearer {{token}}
+
+### لیست ارسال‌ها
+GET {{Api_Vapp_HostAddress}}/api/sms/delivery-reports/sends?pageNumber=1&pageSize=20&dateRangePreset=Last7Days&sendType=All
+Authorization: Bearer {{token}}
+
+### جزئیات یک ارسال (Sid را جایگزین کنید)
+GET {{Api_Vapp_HostAddress}}/api/sms/delivery-reports/sends/123456
+Authorization: Bearer {{token}}
+
+### لیست مخاطبین یک ارسال
+GET {{Api_Vapp_HostAddress}}/api/sms/delivery-reports/sends/123456/recipients?pageNumber=1&pageSize=20
+Authorization: Bearer {{token}}
+
+### خروجی اکسل مخاطبین
+GET {{Api_Vapp_HostAddress}}/api/sms/delivery-reports/sends/123456/recipients/export-excel
+Authorization: Bearer {{token}}
+
+### بروزرسانی وضعیت از ایران‌نوین
+POST {{Api_Vapp_HostAddress}}/api/sms/delivery-reports/sends/123456/refresh
+Authorization: Bearer {{token}}
+
+### جزئیات یک پیامک (RecordId را جایگزین کنید)
+GET {{Api_Vapp_HostAddress}}/api/sms/delivery-reports/messages/1
+Authorization: Bearer {{token}}
+
+### آمار کلی (سازگاری قبلی)
+GET {{Api_Vapp_HostAddress}}/api/sms/delivery-reports/summary
+Authorization: Bearer {{token}}
+
+###
+
+###
+
+# --- BusinessCard (کارت ویزیت) — نیاز به JWT یا Development:DisableAuth=true ---
+
+### ایجاد پیش‌نویس
+POST {{Api_Vapp_HostAddress}}/api/BusinessCard
+Content-Type: application/json
+
+{
+  "templateKey": "business",
+  "title": "سالن زیبایی زهرا",
+  "slug": "zahra-salon-test",
+  "sliderEnabled": true,
+  "descriptionEnabled": true,
+  "servicesEnabled": true,
+  "mapEnabled": true,
+  "contactEnabled": true,
+  "descriptionTitle": "درباره سالن",
+  "descriptionText": "توضیحات تست",
+  "contactPhone": "09121234567",
+  "contactEmail": "info@example.com",
+  "contactInstagram": "zahra_salon",
+  "serviceItems": [
+    { "title": "فیشیال تخصصی", "price": 350000, "displayOrder": 0 }
+  ]
+}
+
+### لیست کارت‌ها
+GET {{Api_Vapp_HostAddress}}/api/BusinessCard?pageNumber=1&pageSize=10
+
+### جزئیات
+GET {{Api_Vapp_HostAddress}}/api/BusinessCard/1
+
+### به‌روزرسانی اطلاعات اصلی
+POST {{Api_Vapp_HostAddress}}/api/BusinessCard/1/update-info
+Content-Type: application/json
+
+{
+  "title": "سالن زیبایی زهرا",
+  "slug": "zahra-salon-test"
+}
+
+### به‌روزرسانی بخش‌ها
+POST {{Api_Vapp_HostAddress}}/api/BusinessCard/1/update-sections
+Content-Type: application/json
+
+{
+  "descriptionEnabled": true,
+  "descriptionText": "متن به‌روزشده",
+  "contactEnabled": true,
+  "contactPhone": "09121234567"
+}
+
+### انتشار
+POST {{Api_Vapp_HostAddress}}/api/BusinessCard/1/publish
+Content-Type: application/json
+
+{}
+
+### فعال/غیرفعال
+POST {{Api_Vapp_HostAddress}}/api/BusinessCard/1/toggle-active
+Content-Type: application/json
+
+{
+  "isActive": true
+}
+
+### حذف
+POST {{Api_Vapp_HostAddress}}/api/BusinessCard/1/delete
+
+### عمومی
+GET {{Api_Vapp_HostAddress}}/api/BusinessCardPublic/zahra-salon-test

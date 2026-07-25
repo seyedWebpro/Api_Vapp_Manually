@@ -4,6 +4,7 @@ using Api_Vapp.DTOs.Admin;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
 using Api_Vapp.Services;
+using Api_Vapp.Tests.Shared;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Configuration;
@@ -138,7 +139,7 @@ internal sealed class SubscriptionTestContext : IDisposable
     {
         EntitlementService = new SubscriptionEntitlementService(_context);
         DiscountService = new SubscriptionDiscountService(_context);
-        ActivationService = new SubscriptionActivationService(_context, NullLogger<SubscriptionActivationService>.Instance);
+        ActivationService = new SubscriptionActivationService(_context, new NoOpAuditService(), NullLogger<SubscriptionActivationService>.Instance);
 
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -156,6 +157,7 @@ internal sealed class SubscriptionTestContext : IDisposable
             ActivationService,
             paymentService,
             config,
+            new NoOpAuditService(),
             NullLogger<SubscriptionPurchaseService>.Instance);
 
         CatalogService = new UserSubscriptionService(

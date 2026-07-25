@@ -67,7 +67,7 @@ public class BookingAppointmentServiceTests : IAsyncLifetime
         });
 
         BookingApiAssertions.AssertSuccess(result, 201);
-        Assert.Equal(BookingAppointmentStatuses.Confirmed, result.Data!.Appointment.Status);
+        Assert.Equal(BookingAppointmentStatuses.Pending, result.Data!.Appointment.Status);
     }
 
     [Fact]
@@ -144,6 +144,82 @@ public class BookingAppointmentServiceTests : IAsyncLifetime
 
         var slotsAfterCancel = await _ctx.AppointmentService.GetAvailableSlotsAsync(slug, serviceId, date);
         Assert.Contains(slotsAfterCancel.Data!.Slots, s => s.StartUtc == startUtc);
+    }
+
+    [Fact]
+    public async Task ConfirmAppointment_Pending_ReturnsConfirmed()
+    {
+        var (systemId, _) = await _ctx.CreateConfirmedSystemAsync();
+        var appointmentId = await BookSampleAsync(systemId);
+
+        var result = await _ctx.AppointmentService.ConfirmAppointmentAsync(
+            systemId, appointmentId, _ctx.OwnerUserId);
+
+        BookingApiAssertions.AssertSuccess(result);
+        Assert.Equal(BookingAppointmentStatuses.Confirmed, result.Data!.Status);
+    }
+
+    [Fact]
+    public async Task GetDashboard_ReturnsStats()
+    {
+        var (systemId, _) = await _ctx.CreateConfirmedSystemAsync();
+        await BookSampleAsync(systemId);
+
+        var result = await _ctx.AppointmentService.GetDashboardAsync(systemId, _ctx.OwnerUserId);
+
+        BookingApiAssertions.AssertSuccess(result);
+        Assert.Equal(systemId, result.Data!.SystemId);
+    }
+
+    [Fact]
+    public async Task CreateManualBooking_ReturnsConfirmed()
+    {
+        var (systemId, _) = await _ctx.CreateConfirmedSystemAsync();
+        var system = await _ctx.SystemService.GetByIdAsync(systemId, _ctx.OwnerUserId);
+        var serviceId = system.Data!.Services.First().Id;
+        var date = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(8));
+        var slug = system.Data.Slug;
+        var startUtc = (await _ctx.AppointmentService.GetAvailableSlotsAsync(slug, serviceId, date)).Data!.Slots.First().StartUtc;
+
+        var result = await _ctx.AppointmentService.CreateManualBookingAsync(systemId, _ctx.OwnerUserId, new CreateManualBookingDto
+        {
+            ServiceId = serviceId,
+            StartUtc = startUtc,
+            CustomerFullName = "رزرو دستی",
+            CustomerMobile = "09124444444",
+            CustomerNote = "توضیح"
+        });
+
+        BookingApiAssertions.AssertSuccess(result, 201);
+        Assert.Equal(BookingAppointmentStatuses.Confirmed, result.Data!.Status);
+        Assert.Equal("توضیح", result.Data.CustomerNote);
+    }
+
+    [Fact]
+    public async Task SaveDayAvailability_BlocksSlot()
+    {
+        var (systemId, _) = await _ctx.CreateConfirmedSystemAsync();
+        var system = await _ctx.SystemService.GetByIdAsync(systemId, _ctx.OwnerUserId);
+        var serviceId = system.Data!.Services.First().Id;
+        var date = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(9));
+        var availability = await _ctx.AppointmentService.GetDayAvailabilityAsync(systemId, _ctx.OwnerUserId, date, serviceId);
+        var slot = availability.Data!.Slots.First(s => s.Status == BookingManagedSlotStatuses.Empty);
+
+        var save = await _ctx.AppointmentService.SaveDayAvailabilityAsync(systemId, _ctx.OwnerUserId, new SaveBookingDayAvailabilityDto
+        {
+            Date = date,
+            ServiceId = serviceId,
+            Slots = new List<BookingSlotToggleDto>
+            {
+                new() { StartUtc = slot.StartUtc, IsEnabled = false }
+            }
+        });
+
+        BookingApiAssertions.AssertSuccess(save);
+        Assert.Contains(save.Data!.Slots, s => s.StartUtc == slot.StartUtc && s.Status == BookingManagedSlotStatuses.Blocked);
+
+        var publicSlots = await _ctx.AppointmentService.GetAvailableSlotsAsync(system.Data.Slug, serviceId, date);
+        Assert.DoesNotContain(publicSlots.Data!.Slots, s => s.StartUtc == slot.StartUtc);
     }
 
     private async Task<int> BookSampleAsync(int systemId)

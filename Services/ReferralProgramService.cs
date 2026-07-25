@@ -1181,7 +1181,8 @@ namespace Api_Vapp.Services
                             SourceEntityId = program.Id,
                             SourceEntityLabel = program.Title ?? $"برنامه پاداش #{program.Id}",
                             Mobile = contact.MobileNumber,
-                            Sid = smsResult.Data!.Sid
+                            Sid = smsResult.Data!.Sid,
+                            MessageText = message
                         });
                     }
                     else

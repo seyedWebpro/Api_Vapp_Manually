@@ -5,6 +5,7 @@ using Api_Vapp.DTOs.Common;
 using Api_Vapp.DTOs.Message;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
+using Api_Vapp.Services.Audit;
 using Api_Vapp.Utilities;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
@@ -15,15 +16,18 @@ namespace Api_Vapp.Services.Admin
     {
         private readonly Api_Context _context;
         private readonly IMessageService _messageService;
+        private readonly IAuditService _audit;
         private readonly ILogger<AdminMessageApprovalService> _logger;
 
         public AdminMessageApprovalService(
             Api_Context context,
             IMessageService messageService,
+            IAuditService audit,
             ILogger<AdminMessageApprovalService> logger)
         {
             _context = context;
             _messageService = messageService;
+            _audit = audit;
             _logger = logger;
         }
 
@@ -202,6 +206,31 @@ namespace Api_Vapp.Services.Admin
                 request.UpdatedAt = DateTime.UtcNow;
                 await _context.SaveChangesAsync();
 
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Approval,
+                    Action = AuditActions.SmsApprovalApproved,
+                    EntityType = AuditEntityTypes.SmsApprovalRequest,
+                    EntityId = request.Id.ToString(),
+                    ActorUserId = adminUserId,
+                    TargetUserId = request.UserId,
+                    Before = new
+                    {
+                        id = request.Id,
+                        status = AdminApprovalStatuses.Pending,
+                        requestType = request.RequestType,
+                        userId = request.UserId,
+                        messageId = request.MessageId,
+                        messageCampaignId = request.MessageCampaignId
+                    },
+                    After = new
+                    {
+                        status = request.Status,
+                        reviewedByUserId = request.ReviewedByUserId,
+                        reviewedAt = request.ReviewedAt
+                    }
+                });
+
                 return ApiResponse<bool>.CreateSuccess(true, "درخواست تأیید و ارسال انجام شد");
             }
             catch (Exception ex)
@@ -224,6 +253,8 @@ namespace Api_Vapp.Services.Admin
 
                 if (request.Status != AdminApprovalStatuses.Pending && request.Status != AdminApprovalStatuses.Processing)
                     return ApiResponse<bool>.BadRequest("این درخواست قبلاً بررسی شده است");
+
+                var statusBeforeReject = request.Status;
 
                 request.Status = AdminApprovalStatuses.Rejected;
                 request.ReviewedByUserId = adminUserId;
@@ -275,6 +306,33 @@ namespace Api_Vapp.Services.Admin
                 }
 
                 await _context.SaveChangesAsync();
+
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Approval,
+                    Action = AuditActions.SmsApprovalRejected,
+                    EntityType = AuditEntityTypes.SmsApprovalRequest,
+                    EntityId = request.Id.ToString(),
+                    ActorUserId = adminUserId,
+                    TargetUserId = request.UserId,
+                    Before = new
+                    {
+                        id = request.Id,
+                        status = statusBeforeReject,
+                        requestType = request.RequestType,
+                        userId = request.UserId,
+                        messageId = request.MessageId,
+                        messageCampaignId = request.MessageCampaignId
+                    },
+                    After = new
+                    {
+                        status = request.Status,
+                        reviewedByUserId = request.ReviewedByUserId,
+                        reviewedAt = request.ReviewedAt,
+                        rejectionReason = request.RejectionReason
+                    }
+                });
+
                 return ApiResponse<bool>.CreateSuccess(true, "درخواست رد شد");
             }
             catch (Exception ex)

@@ -32,8 +32,11 @@ namespace Api_Vapp.Utilities
             // منتظر تایید
             22 => SmsDeliveryCategories.PendingApproval,
 
-            // رد پیام / خطا / بلاک
-            4 or 7 or 17 or 19 or 23 or 25 or 27 => SmsDeliveryCategories.Rejected,
+            // ارسال ناموفق (خطا در ارسال)
+            7 => SmsDeliveryCategories.SendFailed,
+
+            // رد پیام / بلاک / کنسل
+            4 or 17 or 19 or 23 or 25 or 27 => SmsDeliveryCategories.Rejected,
 
             // وضعیت نامشخص یا مشکل بروزرسانی — هنوز نهایی نیست
             6 or 20 => SmsDeliveryCategories.SentToOperator,

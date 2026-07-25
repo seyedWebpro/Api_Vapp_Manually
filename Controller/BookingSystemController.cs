@@ -268,15 +268,85 @@ namespace Api_Vapp.Controller
             [FromQuery] string? status = null,
             [FromQuery] DateTime? fromUtc = null,
             [FromQuery] DateTime? toUtc = null,
-            [FromQuery] int? serviceId = null)
+            [FromQuery] int? serviceId = null,
+            [FromQuery] string? searchName = null)
         {
             var userId = await GetCurrentUserIdAsync();
             var result = await _appointmentService.GetAppointmentsAsync(
-                id, userId, pageNumber, pageSize, status, fromUtc, toUtc, serviceId);
+                id, userId, pageNumber, pageSize, status, fromUtc, toUtc, serviceId, searchName);
             return StatusCode(result.StatusCode, result);
         }
 
-        [HttpPost("{id}/appointments/{appointmentId}/cancel")]
+        [HttpGet("{id}/dashboard")]
+        [ProducesResponseType(typeof(ApiResponse<BookingDashboardDto>), StatusCodes.Status200OK)]
+        public async Task<ActionResult<ApiResponse<BookingDashboardDto>>> GetDashboard(
+            int id,
+            [FromQuery] DateOnly? date = null)
+        {
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _appointmentService.GetDashboardAsync(id, userId, date);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        [HttpGet("{id}/appointments/calendar")]
+        [ProducesResponseType(typeof(ApiResponse<BookingCalendarMonthDto>), StatusCodes.Status200OK)]
+        public async Task<ActionResult<ApiResponse<BookingCalendarMonthDto>>> GetCalendar(
+            int id,
+            [FromQuery] int year,
+            [FromQuery] int month)
+        {
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _appointmentService.GetCalendarAsync(id, userId, year, month);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        [HttpGet("{id}/appointments/{appointmentId:int}")]
+        [ProducesResponseType(typeof(ApiResponse<BookingAppointmentDto>), StatusCodes.Status200OK)]
+        public async Task<ActionResult<ApiResponse<BookingAppointmentDto>>> GetAppointment(
+            int id, int appointmentId)
+        {
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _appointmentService.GetAppointmentByIdAsync(id, appointmentId, userId);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        [HttpPost("{id}/appointments/manual")]
+        [ProducesResponseType(typeof(ApiResponse<BookingAppointmentDto>), StatusCodes.Status201Created)]
+        public async Task<ActionResult<ApiResponse<BookingAppointmentDto>>> CreateManualAppointment(
+            int id, [FromBody] CreateManualBookingDto dto)
+        {
+            var invalid = InvalidModelStateResponse<BookingAppointmentDto>();
+            if (invalid != null) return invalid;
+
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _appointmentService.CreateManualBookingAsync(id, userId, dto);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        [HttpPost("{id}/appointments/{appointmentId:int}/update")]
+        [ProducesResponseType(typeof(ApiResponse<BookingAppointmentDto>), StatusCodes.Status200OK)]
+        public async Task<ActionResult<ApiResponse<BookingAppointmentDto>>> UpdateAppointment(
+            int id, int appointmentId, [FromBody] UpdateBookingAppointmentDto dto)
+        {
+            var invalid = InvalidModelStateResponse<BookingAppointmentDto>();
+            if (invalid != null) return invalid;
+
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _appointmentService.UpdateAppointmentAsync(id, appointmentId, userId, dto);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        [HttpPost("{id}/appointments/{appointmentId:int}/confirm")]
+        [ProducesResponseType(typeof(ApiResponse<BookingAppointmentDto>), StatusCodes.Status200OK)]
+        public async Task<ActionResult<ApiResponse<BookingAppointmentDto>>> ConfirmAppointment(
+            int id, int appointmentId)
+        {
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _appointmentService.ConfirmAppointmentAsync(id, appointmentId, userId);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        [HttpPost("{id}/appointments/{appointmentId:int}/cancel")]
         [ProducesResponseType(typeof(ApiResponse<BookingAppointmentDto>), StatusCodes.Status200OK)]
         public async Task<ActionResult<ApiResponse<BookingAppointmentDto>>> CancelAppointment(
             int id,
@@ -285,6 +355,31 @@ namespace Api_Vapp.Controller
         {
             var userId = await GetCurrentUserIdAsync();
             var result = await _appointmentService.CancelAppointmentAsync(id, appointmentId, userId, dto);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        [HttpGet("{id}/availability")]
+        [ProducesResponseType(typeof(ApiResponse<BookingDayAvailabilityDto>), StatusCodes.Status200OK)]
+        public async Task<ActionResult<ApiResponse<BookingDayAvailabilityDto>>> GetDayAvailability(
+            int id,
+            [FromQuery] DateOnly date,
+            [FromQuery] int? serviceId = null)
+        {
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _appointmentService.GetDayAvailabilityAsync(id, userId, date, serviceId);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        [HttpPost("{id}/availability/save")]
+        [ProducesResponseType(typeof(ApiResponse<BookingDayAvailabilityDto>), StatusCodes.Status200OK)]
+        public async Task<ActionResult<ApiResponse<BookingDayAvailabilityDto>>> SaveDayAvailability(
+            int id, [FromBody] SaveBookingDayAvailabilityDto dto)
+        {
+            var invalid = InvalidModelStateResponse<BookingDayAvailabilityDto>();
+            if (invalid != null) return invalid;
+
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _appointmentService.SaveDayAvailabilityAsync(id, userId, dto);
             return StatusCode(result.StatusCode, result);
         }
     }

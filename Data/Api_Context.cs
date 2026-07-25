@@ -69,7 +69,12 @@ namespace Api_Vapp.Data
         public DbSet<BookingServiceDaySchedule> BookingServiceDaySchedules { get; set; }
         public DbSet<BookingScheduleException> BookingScheduleExceptions { get; set; }
         public DbSet<BookingAppointment> BookingAppointments { get; set; }
+        public DbSet<BookingSlotBlock> BookingSlotBlocks { get; set; }
         public DbSet<NumberSeekerTask> NumberSeekerTasks { get; set; }
+        public DbSet<BusinessCard> BusinessCards { get; set; }
+        public DbSet<BusinessCardSliderImage> BusinessCardSliderImages { get; set; }
+        public DbSet<BusinessCardServiceItem> BusinessCardServiceItems { get; set; }
+        public DbSet<AdminAuditLog> AdminAuditLogs { get; set; }
 
         public Api_Context(DbContextOptions<Api_Context> options) : base(options)
         {
@@ -1542,6 +1547,7 @@ namespace Api_Vapp.Data
                 entity.Property(b => b.Title).IsRequired().HasMaxLength(200);
                 entity.Property(b => b.ActivityType).IsRequired().HasMaxLength(50);
                 entity.Property(b => b.Description).HasMaxLength(2000);
+                entity.Property(b => b.Location).HasMaxLength(200);
                 entity.Property(b => b.Slug).IsRequired().HasMaxLength(100);
                 entity.Property(b => b.Status).IsRequired();
                 entity.Property(b => b.SaveToPhonebook).HasDefaultValue(false);
@@ -1659,6 +1665,7 @@ namespace Api_Vapp.Data
                 entity.Property(a => a.Id).ValueGeneratedOnAdd();
                 entity.Property(a => a.CustomerFullName).IsRequired().HasMaxLength(200);
                 entity.Property(a => a.CustomerMobile).IsRequired().HasMaxLength(20);
+                entity.Property(a => a.CustomerNote).HasMaxLength(1000);
                 entity.Property(a => a.Status).IsRequired().HasMaxLength(20);
                 entity.Property(a => a.CancellationReason).HasMaxLength(500);
                 entity.Property(a => a.IsDeleted).HasDefaultValue(false);
@@ -1685,7 +1692,95 @@ namespace Api_Vapp.Data
                 entity.HasIndex(a => new { a.Status, a.StartUtc, a.ReminderSentAt });
                 entity.HasIndex(a => new { a.BookingServiceItemId, a.StartUtc })
                     .IsUnique()
-                    .HasFilter("[IsDeleted] = 0 AND [Status] = 'Confirmed'");
+                    .HasFilter("[IsDeleted] = 0 AND ([Status] = 'Confirmed' OR [Status] = 'Pending')");
+            });
+
+            modelBuilder.Entity<BookingSlotBlock>(entity =>
+            {
+                entity.HasKey(b => b.Id);
+                entity.Property(b => b.Id).ValueGeneratedOnAdd();
+                entity.Property(b => b.BookingSystemId).IsRequired();
+                entity.Property(b => b.SlotStartUtc).IsRequired();
+                entity.Property(b => b.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+                entity.HasOne(b => b.BookingSystem)
+                    .WithMany(s => s.SlotBlocks)
+                    .HasForeignKey(b => b.BookingSystemId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasIndex(b => new { b.BookingSystemId, b.SlotStartUtc }).IsUnique();
+            });
+
+            // تنظیمات BusinessCard (کارت ویزیت)
+            modelBuilder.Entity<BusinessCard>(entity =>
+            {
+                entity.HasKey(c => c.Id);
+                entity.Property(c => c.Id).ValueGeneratedOnAdd();
+                entity.Property(c => c.UserId).IsRequired();
+                entity.Property(c => c.Title).IsRequired().HasMaxLength(200);
+                entity.Property(c => c.LogoUrl).HasMaxLength(500);
+                entity.Property(c => c.Slug).HasMaxLength(100);
+                entity.Property(c => c.TemplateKey).HasMaxLength(100);
+                entity.Property(c => c.Status).IsRequired();
+                entity.Property(c => c.IsActive).HasDefaultValue(true);
+                entity.Property(c => c.IsDeleted).HasDefaultValue(false);
+                entity.Property(c => c.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+                entity.Property(c => c.SliderEnabled).HasDefaultValue(false);
+                entity.Property(c => c.DescriptionEnabled).HasDefaultValue(true);
+                entity.Property(c => c.ServicesEnabled).HasDefaultValue(false);
+                entity.Property(c => c.MapEnabled).HasDefaultValue(false);
+                entity.Property(c => c.ContactEnabled).HasDefaultValue(true);
+                entity.Property(c => c.DescriptionTitle).HasMaxLength(200);
+                entity.Property(c => c.DescriptionText).HasMaxLength(4000);
+                entity.Property(c => c.MapAddress).HasMaxLength(500);
+                entity.Property(c => c.ContactPhone).HasMaxLength(20);
+                entity.Property(c => c.ContactEmail).HasMaxLength(200);
+                entity.Property(c => c.ContactInstagram).HasMaxLength(100);
+
+                entity.HasOne(c => c.User)
+                    .WithMany()
+                    .HasForeignKey(c => c.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasIndex(c => c.UserId);
+                entity.HasIndex(c => c.Status);
+                entity.HasIndex(c => c.IsDeleted);
+                entity.HasIndex(c => new { c.UserId, c.IsDeleted, c.CreatedAt });
+                entity.HasIndex(c => c.Slug)
+                    .IsUnique()
+                    .HasFilter("[Slug] IS NOT NULL AND [IsDeleted] = 0");
+            });
+
+            modelBuilder.Entity<BusinessCardSliderImage>(entity =>
+            {
+                entity.HasKey(i => i.Id);
+                entity.Property(i => i.Id).ValueGeneratedOnAdd();
+                entity.Property(i => i.BusinessCardId).IsRequired();
+                entity.Property(i => i.ImageUrl).IsRequired().HasMaxLength(500);
+
+                entity.HasOne(i => i.BusinessCard)
+                    .WithMany(c => c.SliderImages)
+                    .HasForeignKey(i => i.BusinessCardId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasIndex(i => i.BusinessCardId);
+            });
+
+            modelBuilder.Entity<BusinessCardServiceItem>(entity =>
+            {
+                entity.HasKey(i => i.Id);
+                entity.Property(i => i.Id).ValueGeneratedOnAdd();
+                entity.Property(i => i.BusinessCardId).IsRequired();
+                entity.Property(i => i.Title).IsRequired().HasMaxLength(200);
+                entity.Property(i => i.Price).HasColumnType("decimal(18,2)");
+                entity.Property(i => i.ImageUrl).HasMaxLength(500);
+
+                entity.HasOne(i => i.BusinessCard)
+                    .WithMany(c => c.ServiceItems)
+                    .HasForeignKey(i => i.BusinessCardId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasIndex(i => i.BusinessCardId);
             });
 
             modelBuilder.Entity<SmsDeliveryRecord>(entity =>
@@ -1696,6 +1791,7 @@ namespace Api_Vapp.Data
                 entity.Property(r => r.SourceModule).IsRequired().HasMaxLength(50);
                 entity.Property(r => r.SourceEntityLabel).HasMaxLength(200);
                 entity.Property(r => r.Mobile).IsRequired().HasMaxLength(20);
+                entity.Property(r => r.MessageText).HasColumnType("nvarchar(max)");
                 entity.Property(r => r.SendStatus).IsRequired().HasMaxLength(20).HasDefaultValue("Sent");
                 entity.Property(r => r.DeliveryCategory).IsRequired().HasMaxLength(50);
                 entity.Property(r => r.ProviderStatusMessage).HasMaxLength(200);
@@ -1711,6 +1807,8 @@ namespace Api_Vapp.Data
 
                 entity.HasIndex(r => r.UserId);
                 entity.HasIndex(r => r.Sid);
+                entity.HasIndex(r => new { r.UserId, r.Sid });
+                entity.HasIndex(r => new { r.UserId, r.SentAt });
                 entity.HasIndex(r => new { r.SourceModule, r.SourceEntityId });
                 entity.HasIndex(r => r.DeliveryCategory);
                 entity.HasIndex(r => r.SentAt);
@@ -1758,6 +1856,40 @@ namespace Api_Vapp.Data
                 entity.HasIndex(t => t.ScraperTaskId).IsUnique();
                 entity.HasIndex(t => new { t.UserId, t.CreatedAt });
                 entity.HasIndex(t => t.Status);
+            });
+
+            // Audit — immutable append-only trail
+            modelBuilder.Entity<AdminAuditLog>(entity =>
+            {
+                entity.ToTable("AdminAuditLogs");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).ValueGeneratedOnAdd();
+
+                entity.Property(e => e.Category).IsRequired().HasMaxLength(50);
+                entity.Property(e => e.Action).IsRequired().HasMaxLength(120);
+                entity.Property(e => e.EntityType).IsRequired().HasMaxLength(100);
+                entity.Property(e => e.EntityId).HasMaxLength(64);
+                entity.Property(e => e.OldValue).HasColumnType("nvarchar(max)");
+                entity.Property(e => e.NewValue).HasColumnType("nvarchar(max)");
+                entity.Property(e => e.Metadata).HasColumnType("nvarchar(max)");
+                entity.Property(e => e.CorrelationId).HasMaxLength(64);
+                entity.Property(e => e.IpAddress).HasMaxLength(45);
+                entity.Property(e => e.UserAgent).HasMaxLength(512);
+                entity.Property(e => e.RequestPath).HasMaxLength(500);
+                entity.Property(e => e.HttpMethod).HasMaxLength(16);
+                entity.Property(e => e.Source).IsRequired().HasMaxLength(20).HasDefaultValue(AuditSources.Http);
+                entity.Property(e => e.Succeeded).HasDefaultValue(true);
+                entity.Property(e => e.ErrorMessage).HasMaxLength(1000);
+                entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+                entity.HasIndex(e => e.CreatedAt);
+                entity.HasIndex(e => e.ActorUserId);
+                entity.HasIndex(e => e.Action);
+                entity.HasIndex(e => e.Category);
+                entity.HasIndex(e => e.CorrelationId);
+                entity.HasIndex(e => new { e.EntityType, e.EntityId });
+                entity.HasIndex(e => new { e.Category, e.CreatedAt });
+                entity.HasIndex(e => new { e.ActorUserId, e.CreatedAt });
             });
         }
     }

@@ -1,0 +1,483 @@
+using Api_Vapp.Constants;
+using Api_Vapp.DTOs.Common;
+using Api_Vapp.DTOs.Contact;
+using Api_Vapp.DTOs.Sms;
+using Api_Vapp.Interfaces;
+using Api_Vapp.Models;
+using Api_Vapp.Utilities;
+using ClosedXML.Excel;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+
+namespace Api_Vapp.Services
+{
+    public class SmsReportService : ISmsReportService
+    {
+        private const int MaxExcelExportRows = 20_000;
+
+        private readonly ISmsDeliveryRecordRepository _repository;
+        private readonly ISmsDeliveryTrackingService _deliveryTracking;
+        private readonly ILogger<SmsReportService> _logger;
+        private readonly string _senderNumber;
+
+        public SmsReportService(
+            ISmsDeliveryRecordRepository repository,
+            ISmsDeliveryTrackingService deliveryTracking,
+            IConfiguration configuration,
+            ILogger<SmsReportService> logger)
+        {
+            _repository = repository;
+            _deliveryTracking = deliveryTracking;
+            _logger = logger;
+            _senderNumber = configuration["Sms:SenderNumber"] ?? string.Empty;
+        }
+
+        public Task<ApiResponse<SmsReportFilterOptionsDto>> GetFilterOptionsAsync()
+        {
+            var options = new SmsReportFilterOptionsDto
+            {
+                SendTypes = SmsSendTypeFilters.PersianLabels
+                    .Select(kv => new SmsReportFilterOptionDto { Value = kv.Key, Label = kv.Value })
+                    .ToList(),
+                DateRangePresets = SmsReportDateRangePresets.PersianLabels
+                    .Where(kv => kv.Key != SmsReportDateRangePresets.Custom)
+                    .Select(kv => new SmsReportFilterOptionDto { Value = kv.Key, Label = kv.Value })
+                    .ToList(),
+                DeliveryCategories = SmsDeliveryCategories.PersianLabels
+                    .Select(kv => new SmsReportFilterOptionDto { Value = kv.Key, Label = kv.Value })
+                    .ToList()
+            };
+
+            return Task.FromResult(ApiResponse<SmsReportFilterOptionsDto>.CreateSuccess(options));
+        }
+
+        public async Task<ApiResponse<SmsSendBatchListDto>> GetSendBatchesAsync(int userId, SmsSendListFilterDto filter)
+        {
+            try
+            {
+                var validationError = ValidateAndNormalizeListFilter(filter);
+                if (validationError != null)
+                    return ApiResponse<SmsSendBatchListDto>.BadRequest(validationError, errorCode: ErrorCodes.InvalidInput);
+
+                var (items, totalCount) = await _repository.GetSendBatchesAsync(userId, filter);
+                var partsMap = await LoadPartsMapAsync(items);
+                var messageTexts = await _repository.GetSampleMessageTextsBySidsAsync(
+                    userId, items.Select(i => i.Sid));
+
+                var dtoItems = items.Select(item =>
+                {
+                    messageTexts.TryGetValue(item.Sid, out var sampleMessage);
+                    var (sendType, sendTypeLabel) = MapSendType(item.SourceModule);
+                    return new SmsSendBatchListItemDto
+                    {
+                        Sid = item.Sid,
+                        Title = item.Title ?? $"ارسال #{item.Sid}",
+                        SourceModule = item.SourceModule,
+                        SourceModuleLabel = SmsSourceModules.GetPersianLabel(item.SourceModule),
+                        SendType = sendType,
+                        SendTypeLabel = sendTypeLabel,
+                        SourceEntityId = item.SourceEntityId,
+                        SendCount = item.SendCount,
+                        PartsCount = ResolvePartsCount(item, partsMap, sampleMessage),
+                        SentAt = item.SentAt
+                    };
+                }).ToList();
+
+                var totalPages = totalCount == 0 ? 0 : (int)Math.Ceiling(totalCount / (double)filter.PageSize);
+
+                _logger.LogInformation(
+                    "SMS send batches listed — UserId: {UserId}, Total: {Total}, Page: {Page}/{PageSize}, SendType: {SendType}, Search: {Search}",
+                    userId, totalCount, filter.PageNumber, filter.PageSize, filter.SendType ?? "-", filter.Search ?? "-");
+
+                return ApiResponse<SmsSendBatchListDto>.CreateSuccess(new SmsSendBatchListDto
+                {
+                    Items = dtoItems,
+                    TotalCount = totalCount,
+                    PageNumber = filter.PageNumber,
+                    PageSize = filter.PageSize,
+                    TotalPages = totalPages
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "SMS send batches list failed — UserId: {UserId}", userId);
+                return ApiResponse<SmsSendBatchListDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
+        public async Task<ApiResponse<SmsSendBatchDetailDto>> GetSendBatchDetailAsync(int userId, long sid)
+        {
+            try
+            {
+                if (sid <= 0)
+                    return ApiResponse<SmsSendBatchDetailDto>.BadRequest("کد ارسال نامعتبر است");
+
+                var batch = await _repository.GetSendBatchBySidAsync(userId, sid);
+                if (batch == null)
+                    return ApiResponse<SmsSendBatchDetailDto>.NotFound("ارسال مورد نظر یافت نشد");
+
+                var summary = await _repository.GetSummaryBySidAsync(userId, sid);
+                var partsMap = await LoadPartsMapAsync(new[] { batch });
+                var messageText = await ResolveBatchMessageTextAsync(userId, batch);
+                var (sendType, sendTypeLabel) = MapSendType(batch.SourceModule);
+
+                var dto = new SmsSendBatchDetailDto
+                {
+                    Sid = batch.Sid,
+                    Title = batch.Title ?? $"ارسال #{batch.Sid}",
+                    SourceModule = batch.SourceModule,
+                    SourceModuleLabel = SmsSourceModules.GetPersianLabel(batch.SourceModule),
+                    SendType = sendType,
+                    SendTypeLabel = sendTypeLabel,
+                    SourceEntityId = batch.SourceEntityId,
+                    SenderNumber = _senderNumber,
+                    SendCount = batch.SendCount,
+                    PartsCount = ResolvePartsCount(batch, partsMap, messageText),
+                    SentAt = batch.SentAt,
+                    MessageText = messageText,
+                    Summary = summary
+                };
+
+                _logger.LogInformation(
+                    "SMS send batch detail — UserId: {UserId}, Sid: {Sid}, Count: {Count}",
+                    userId, sid, batch.SendCount);
+
+                return ApiResponse<SmsSendBatchDetailDto>.CreateSuccess(dto);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "SMS send batch detail failed — UserId: {UserId}, Sid: {Sid}", userId, sid);
+                return ApiResponse<SmsSendBatchDetailDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
+        public async Task<ApiResponse<SmsSendRecipientListDto>> GetRecipientsAsync(
+            int userId, long sid, SmsSendRecipientFilterDto filter)
+        {
+            try
+            {
+                if (sid <= 0)
+                    return ApiResponse<SmsSendRecipientListDto>.BadRequest("کد ارسال نامعتبر است");
+
+                NormalizeRecipientFilter(filter);
+
+                if (!await _repository.UserOwnsSidAsync(userId, sid))
+                    return ApiResponse<SmsSendRecipientListDto>.NotFound("ارسال مورد نظر یافت نشد");
+
+                var (items, totalCount) = await _repository.GetRecipientsBySidAsync(userId, sid, filter);
+                var rowOffset = (filter.PageNumber - 1) * filter.PageSize;
+
+                var dtoItems = items.Select((record, index) => MapRecipient(record, rowOffset + index + 1)).ToList();
+                var totalPages = totalCount == 0 ? 0 : (int)Math.Ceiling(totalCount / (double)filter.PageSize);
+
+                return ApiResponse<SmsSendRecipientListDto>.CreateSuccess(new SmsSendRecipientListDto
+                {
+                    Sid = sid,
+                    Items = dtoItems,
+                    TotalCount = totalCount,
+                    PageNumber = filter.PageNumber,
+                    PageSize = filter.PageSize,
+                    TotalPages = totalPages
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "SMS recipients list failed — UserId: {UserId}, Sid: {Sid}", userId, sid);
+                return ApiResponse<SmsSendRecipientListDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
+        public async Task<ApiResponse<SmsMessageDetailDto>> GetMessageDetailAsync(int userId, int recordId)
+        {
+            try
+            {
+                var record = await _repository.GetByIdAsync(recordId, userId);
+                if (record == null)
+                    return ApiResponse<SmsMessageDetailDto>.NotFound("پیامک مورد نظر یافت نشد");
+
+                var messageText = record.MessageText;
+                if (string.IsNullOrWhiteSpace(messageText))
+                    messageText = await ResolveRecordMessageTextAsync(record);
+
+                var categoryLabel = ResolveCategoryLabel(record);
+                var dto = new SmsMessageDetailDto
+                {
+                    Id = record.Id,
+                    Sid = record.Sid,
+                    Mobile = record.Mobile,
+                    SenderNumber = _senderNumber,
+                    Title = record.SourceEntityLabel ?? $"ارسال #{record.Sid}",
+                    SourceModule = record.SourceModule,
+                    SourceModuleLabel = SmsSourceModules.GetPersianLabel(record.SourceModule),
+                    DeliveryCategory = record.DeliveryCategory,
+                    DeliveryCategoryLabel = categoryLabel,
+                    StatusHint = BuildStatusHint(record.DeliveryCategory, categoryLabel),
+                    SentAt = record.SentAt,
+                    MessageText = messageText
+                };
+
+                return ApiResponse<SmsMessageDetailDto>.CreateSuccess(dto);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "SMS message detail failed — UserId: {UserId}, RecordId: {RecordId}", userId, recordId);
+                return ApiResponse<SmsMessageDetailDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
+        public async Task<ApiResponse<SmsDeliverySummaryDto>> RefreshSendBatchAsync(int userId, long sid)
+        {
+            try
+            {
+                if (sid <= 0)
+                    return ApiResponse<SmsDeliverySummaryDto>.BadRequest("کد ارسال نامعتبر است");
+
+                return await _deliveryTracking.RefreshBySidAsync(userId, sid);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "SMS send batch refresh failed — UserId: {UserId}, Sid: {Sid}", userId, sid);
+                return ApiResponse<SmsDeliverySummaryDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
+        public async Task<ApiResponse<ExportExcelResultDto>> ExportRecipientsToExcelAsync(
+            int userId, long sid, SmsSendRecipientFilterDto filter)
+        {
+            try
+            {
+                if (sid <= 0)
+                    return ApiResponse<ExportExcelResultDto>.BadRequest("کد ارسال نامعتبر است");
+
+                if (!await _repository.UserOwnsSidAsync(userId, sid))
+                    return ApiResponse<ExportExcelResultDto>.NotFound("ارسال مورد نظر یافت نشد");
+
+                NormalizeRecipientFilter(filter);
+
+                var batch = await _repository.GetSendBatchBySidAsync(userId, sid);
+                var totalMatching = (await _repository.GetRecipientsBySidAsync(userId, sid, new SmsSendRecipientFilterDto
+                {
+                    Search = filter.Search,
+                    DeliveryCategory = filter.DeliveryCategory,
+                    PageNumber = 1,
+                    PageSize = 1
+                })).TotalCount;
+
+                var records = await _repository.GetAllRecipientsBySidForExportAsync(
+                    userId, sid, filter, MaxExcelExportRows);
+                var isTruncated = totalMatching > records.Count;
+
+                using var workbook = new XLWorkbook();
+                var worksheet = workbook.Worksheets.Add("گیرندگان");
+
+                worksheet.Cell(1, 1).Value = "ردیف";
+                worksheet.Cell(1, 2).Value = "شماره موبایل";
+                worksheet.Cell(1, 3).Value = "فرستنده";
+                worksheet.Cell(1, 4).Value = "وضعیت";
+                worksheet.Cell(1, 5).Value = "کد وضعیت";
+                worksheet.Cell(1, 6).Value = "تاریخ ارسال";
+                worksheet.Cell(1, 7).Value = "کد ارسال";
+                worksheet.Cell(1, 8).Value = "عنوان";
+                worksheet.Row(1).Style.Font.Bold = true;
+
+                for (var i = 0; i < records.Count; i++)
+                {
+                    var record = records[i];
+                    var row = i + 2;
+                    worksheet.Cell(row, 1).Value = i + 1;
+                    worksheet.Cell(row, 2).Value = record.Mobile;
+                    worksheet.Cell(row, 3).Value = _senderNumber;
+                    worksheet.Cell(row, 4).Value = ResolveCategoryLabel(record);
+                    worksheet.Cell(row, 5).Value = record.ProviderStatusCode;
+                    worksheet.Cell(row, 6).Value = record.SentAt.ToString("yyyy-MM-dd HH:mm:ss");
+                    worksheet.Cell(row, 7).Value = record.Sid;
+                    worksheet.Cell(row, 8).Value = record.SourceEntityLabel ?? string.Empty;
+                }
+
+                worksheet.Columns().AdjustToContents();
+
+                using var stream = new MemoryStream();
+                workbook.SaveAs(stream);
+                var fileContent = stream.ToArray();
+
+                var safeTitle = string.Join("_", (batch?.Title ?? $"sid-{sid}").Split(Path.GetInvalidFileNameChars()));
+                if (string.IsNullOrWhiteSpace(safeTitle))
+                    safeTitle = $"sid-{sid}";
+
+                var result = new ExportExcelResultDto
+                {
+                    FileContent = fileContent,
+                    FileName = $"SmsReport_{safeTitle}_{sid}_{DateTime.UtcNow:yyyyMMdd_HHmmss}.xlsx",
+                    ContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    TotalCount = totalMatching,
+                    ExportedCount = records.Count,
+                    PageNumber = 1,
+                    PageSize = records.Count,
+                    TotalPages = 1,
+                    IsTruncated = isTruncated
+                };
+
+                _logger.LogInformation(
+                    "SMS recipients exported — UserId: {UserId}, Sid: {Sid}, Exported: {Exported}, Total: {Total}, Truncated: {Truncated}",
+                    userId, sid, records.Count, totalMatching, isTruncated);
+
+                var message = isTruncated
+                    ? $"فایل اکسل با {records.Count} ردیف از {totalMatching} آماده دانلود است (سقف خروجی اعمال شد)"
+                    : $"فایل اکسل با {records.Count} ردیف آماده دانلود است";
+
+                return ApiResponse<ExportExcelResultDto>.CreateSuccess(result, message);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "SMS recipients export failed — UserId: {UserId}, Sid: {Sid}", userId, sid);
+                return ApiResponse<ExportExcelResultDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
+        private async Task<Dictionary<int, int>> LoadPartsMapAsync(IEnumerable<SmsSendBatchProjection> items)
+        {
+            var campaignIds = items
+                .Where(i => i.SourceModule == SmsSourceModules.MessageCampaign && i.SourceEntityId.HasValue)
+                .Select(i => i.SourceEntityId!.Value);
+
+            return await _repository.GetCampaignPartsCountsAsync(campaignIds);
+        }
+
+        private static int ResolvePartsCount(
+            SmsSendBatchProjection item,
+            IReadOnlyDictionary<int, int> partsMap,
+            string? messageText = null)
+        {
+            if (item.SourceModule == SmsSourceModules.MessageCampaign &&
+                item.SourceEntityId.HasValue &&
+                partsMap.TryGetValue(item.SourceEntityId.Value, out var parts) &&
+                parts > 0)
+            {
+                return parts;
+            }
+
+            if (!string.IsNullOrWhiteSpace(messageText))
+            {
+                try
+                {
+                    return SmsPartsCalculator.CalculateParts(messageText);
+                }
+                catch (ArgumentException)
+                {
+                    return 1;
+                }
+            }
+
+            return 1;
+        }
+
+        private async Task<string?> ResolveBatchMessageTextAsync(int userId, SmsSendBatchProjection batch)
+        {
+            var stored = await _repository.GetSampleMessageTextBySidAsync(userId, batch.Sid);
+            if (!string.IsNullOrWhiteSpace(stored))
+                return stored;
+
+            if (batch.SourceModule == SmsSourceModules.MessageCampaign && batch.SourceEntityId.HasValue)
+                return await _repository.ResolveCampaignMessageTextAsync(batch.SourceEntityId.Value, string.Empty);
+
+            if (batch.SourceModule == SmsSourceModules.MessageDirect && batch.SourceEntityId.HasValue)
+                return await _repository.ResolveDirectMessageTextAsync(batch.SourceEntityId.Value);
+
+            return null;
+        }
+
+        private async Task<string?> ResolveRecordMessageTextAsync(SmsDeliveryRecord record)
+        {
+            if (record.SourceModule == SmsSourceModules.MessageCampaign && record.SourceEntityId.HasValue)
+                return await _repository.ResolveCampaignMessageTextAsync(record.SourceEntityId.Value, record.Mobile);
+
+            if (record.SourceModule == SmsSourceModules.MessageDirect && record.SourceEntityId.HasValue)
+                return await _repository.ResolveDirectMessageTextAsync(record.SourceEntityId.Value);
+
+            return null;
+        }
+
+        private SmsSendRecipientDto MapRecipient(SmsDeliveryRecord record, int rowNumber) =>
+            new()
+            {
+                Id = record.Id,
+                RowNumber = rowNumber,
+                Mobile = record.Mobile,
+                SenderNumber = _senderNumber,
+                DeliveryCategory = record.DeliveryCategory,
+                DeliveryCategoryLabel = ResolveCategoryLabel(record),
+                ProviderStatusCode = record.ProviderStatusCode,
+                ProviderStatusMessage = record.ProviderStatusMessage,
+                IsDeliveryFinal = record.IsDeliveryFinal,
+                SentAt = record.SentAt,
+                LastCheckedAt = record.LastCheckedAt
+            };
+
+        private static string ResolveCategoryLabel(SmsDeliveryRecord record) =>
+            SmsDeliveryCategories.GetPersianLabel(record.DeliveryCategory);
+
+        private static string BuildStatusHint(string category, string label) =>
+            category switch
+            {
+                SmsDeliveryCategories.DeliveredToPhone => "پیامک با موفقیت به گیرنده تحویل شده است.",
+                SmsDeliveryCategories.SentToOperator => "پیامک به اپراتور ارسال شده و در مسیر تحویل است.",
+                SmsDeliveryCategories.NotDelivered => "پیامک به گوشی گیرنده نرسیده است.",
+                SmsDeliveryCategories.PendingApproval => "پیامک در انتظار تایید است.",
+                SmsDeliveryCategories.Rejected => "پیامک رد شده است.",
+                SmsDeliveryCategories.SendFailed => "ارسال پیامک ناموفق بوده است.",
+                _ => $"وضعیت فعلی: {label}"
+            };
+
+        private static (string SendType, string Label) MapSendType(string sourceModule)
+        {
+            if (sourceModule is SmsSourceModules.MessageCampaign
+                or SmsSourceModules.MessageDirect
+                or SmsSourceModules.AutomatedMessage)
+            {
+                return (SmsSendTypeFilters.Campaign, SmsSendTypeFilters.GetPersianLabel(SmsSendTypeFilters.Campaign));
+            }
+
+            if (sourceModule is SmsSourceModules.Cashback or SmsSourceModules.CashbackScheduled)
+            {
+                return (SmsSendTypeFilters.Cashback, SmsSendTypeFilters.GetPersianLabel(SmsSendTypeFilters.Cashback));
+            }
+
+            if (sourceModule == SmsSourceModules.ReferralProgram)
+            {
+                return (SmsSendTypeFilters.Reward, SmsSendTypeFilters.GetPersianLabel(SmsSendTypeFilters.Reward));
+            }
+
+            return (sourceModule, SmsSourceModules.GetPersianLabel(sourceModule));
+        }
+
+        private static string? ValidateAndNormalizeListFilter(SmsSendListFilterDto filter)
+        {
+            if (filter.PageNumber < 1) filter.PageNumber = 1;
+            if (filter.PageSize < 1 || filter.PageSize > 100) filter.PageSize = 20;
+
+            if (!SmsSendTypeFilters.IsValid(filter.SendType))
+                return "نوع ارسال نامعتبر است";
+
+            if (!SmsReportDateRangePresets.IsValid(filter.DateRangePreset))
+                return "بازه زمانی نامعتبر است";
+
+            if (string.IsNullOrWhiteSpace(filter.SendType))
+                filter.SendType = SmsSendTypeFilters.All;
+
+            if (string.IsNullOrWhiteSpace(filter.DateRangePreset))
+            {
+                filter.DateRangePreset = filter.FromDate.HasValue || filter.ToDate.HasValue
+                    ? SmsReportDateRangePresets.Custom
+                    : SmsReportDateRangePresets.Last7Days;
+            }
+
+            return null;
+        }
+
+        private static void NormalizeRecipientFilter(SmsSendRecipientFilterDto filter)
+        {
+            if (filter.PageNumber < 1) filter.PageNumber = 1;
+            if (filter.PageSize < 1 || filter.PageSize > 100) filter.PageSize = 20;
+        }
+    }
+}

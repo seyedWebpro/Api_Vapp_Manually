@@ -156,8 +156,13 @@ namespace Api_Vapp.Controller
         }
 
         /// <summary>
-        /// فعال/غیرفعال کردن فرم (سوئیچ تنظیمات — true = انتشار/فعال، false = غیرفعال)
+        /// فعال/غیرفعال کردن فرم منتشرشده (مثل گردونه — فقط بعد از publish)
         /// </summary>
+        /// <remarks>
+        /// مسیر اصلی مثل گردونه: <c>toggle-active</c>.
+        /// <c>toggle-status</c> برای سازگاری عقب‌رو همان منطق را دارد.
+        /// </remarks>
+        [HttpPost("{id}/toggle-active")]
         [HttpPost("{id}/toggle-status")]
         [ProducesResponseType(typeof(ApiResponse<UserFormResponseDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<UserFormResponseDto>), StatusCodes.Status400BadRequest)]

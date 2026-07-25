@@ -38,6 +38,11 @@ namespace Api_Vapp.DTOs.File
         /// </summary>
         public const string EntityType_LuckyWheel = "luckywheel";
 
+        /// <summary>
+        /// کارت ویزیت دیجیتال
+        /// </summary>
+        public const string EntityType_BusinessCard = "businesscard";
+
         #endregion
 
         #region SubFolders (پوشه‌های فرعی)

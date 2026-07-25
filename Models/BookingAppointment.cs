@@ -16,6 +16,11 @@ namespace Api_Vapp.Models
         public string CustomerMobile { get; set; } = string.Empty;
 
         /// <summary>
+        /// یادداشت مشتری / توضیحات رزرو — اختیاری
+        /// </summary>
+        public string? CustomerNote { get; set; }
+
+        /// <summary>
         /// مخاطب ذخیره‌شده در دفترچه — در صورت فعال بودن SaveToPhonebook
         /// </summary>
         public int? ContactId { get; set; }
@@ -25,9 +30,9 @@ namespace Api_Vapp.Models
         public DateTime EndUtc { get; set; }
 
         /// <summary>
-        /// Confirmed | Cancelled | Completed
+        /// Pending | Confirmed | Cancelled | Completed
         /// </summary>
-        public string Status { get; set; } = BookingAppointmentStatuses.Confirmed;
+        public string Status { get; set; } = BookingAppointmentStatuses.Pending;
 
         public DateTime? ReminderSentAt { get; set; }
 
@@ -50,11 +55,18 @@ namespace Api_Vapp.Models
 
     public static class BookingAppointmentStatuses
     {
+        /// <summary>منتظر تأیید مالک</summary>
+        public const string Pending = "Pending";
+
         public const string Confirmed = "Confirmed";
         public const string Cancelled = "Cancelled";
         public const string Completed = "Completed";
 
+        /// <summary>نوبت‌هایی که اسلات را اشغال می‌کنند</summary>
         public static bool IsActive(string status) =>
-            status == Confirmed;
+            status == Pending || status == Confirmed;
+
+        public static bool IsValid(string status) =>
+            status is Pending or Confirmed or Cancelled or Completed;
     }
 }

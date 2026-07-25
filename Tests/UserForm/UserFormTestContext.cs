@@ -5,6 +5,7 @@ using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
 using Api_Vapp.Repositories;
 using Api_Vapp.Services;
+using Api_Vapp.Tests.Shared;
 using Api_Vapp.Utilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -180,6 +181,7 @@ internal sealed class UserFormTestContext : IDisposable
             context,
             options,
             fileUploadService,
+            new NoOpAuditService(),
             NullLogger<UserFormService>.Instance);
     }
 

@@ -4,6 +4,7 @@ using Api_Vapp.DTOs.Admin;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
+using Api_Vapp.Services.Audit;
 using Api_Vapp.Utilities;
 using Microsoft.EntityFrameworkCore;
 
@@ -12,11 +13,13 @@ namespace Api_Vapp.Services.Admin
     public class AdminTemplateApprovalService : IAdminTemplateApprovalService
     {
         private readonly Api_Context _context;
+        private readonly IAuditService _audit;
         private readonly ILogger<AdminTemplateApprovalService> _logger;
 
-        public AdminTemplateApprovalService(Api_Context context, ILogger<AdminTemplateApprovalService> logger)
+        public AdminTemplateApprovalService(Api_Context context, IAuditService audit, ILogger<AdminTemplateApprovalService> logger)
         {
             _context = context;
+            _audit = audit;
             _logger = logger;
         }
 
@@ -81,6 +84,11 @@ namespace Api_Vapp.Services.Admin
         {
             try
             {
+                var before = await _context.MessageTemplates.AsNoTracking()
+                    .Where(t => t.Id == id && !t.IsDeleted)
+                    .Select(t => new { t.Id, t.UserId, t.ApprovalStatus, t.Name })
+                    .FirstOrDefaultAsync();
+
                 var updated = await _context.MessageTemplates
                     .Where(t => t.Id == id && t.ApprovalStatus == AdminApprovalStatuses.Pending && !t.IsDeleted)
                     .ExecuteUpdateAsync(setters => setters
@@ -92,6 +100,28 @@ namespace Api_Vapp.Services.Admin
 
                 if (updated == 0)
                     return ApiResponse<bool>.BadRequest("این قالب قبلاً بررسی شده است یا یافت نشد");
+
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Approval,
+                    Action = AuditActions.TemplateApprovalApproved,
+                    EntityType = AuditEntityTypes.MessageTemplate,
+                    EntityId = id.ToString(),
+                    ActorUserId = adminUserId,
+                    TargetUserId = before?.UserId,
+                    Before = before == null ? null : new
+                    {
+                        id = before.Id,
+                        userId = before.UserId,
+                        approvalStatus = before.ApprovalStatus,
+                        name = before.Name
+                    },
+                    After = new
+                    {
+                        approvalStatus = AdminApprovalStatuses.Approved,
+                        approvedByUserId = adminUserId
+                    }
+                });
 
                 return ApiResponse<bool>.CreateSuccess(true, "قالب تأیید شد");
             }
@@ -106,6 +136,11 @@ namespace Api_Vapp.Services.Admin
         {
             try
             {
+                var before = await _context.MessageTemplates.AsNoTracking()
+                    .Where(t => t.Id == id && !t.IsDeleted)
+                    .Select(t => new { t.Id, t.UserId, t.ApprovalStatus, t.Name })
+                    .FirstOrDefaultAsync();
+
                 var updated = await _context.MessageTemplates
                     .Where(t => t.Id == id && t.ApprovalStatus == AdminApprovalStatuses.Pending && !t.IsDeleted)
                     .ExecuteUpdateAsync(setters => setters
@@ -117,6 +152,29 @@ namespace Api_Vapp.Services.Admin
 
                 if (updated == 0)
                     return ApiResponse<bool>.BadRequest("این قالب قبلاً بررسی شده است یا یافت نشد");
+
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Approval,
+                    Action = AuditActions.TemplateApprovalRejected,
+                    EntityType = AuditEntityTypes.MessageTemplate,
+                    EntityId = id.ToString(),
+                    ActorUserId = adminUserId,
+                    TargetUserId = before?.UserId,
+                    Before = before == null ? null : new
+                    {
+                        id = before.Id,
+                        userId = before.UserId,
+                        approvalStatus = before.ApprovalStatus,
+                        name = before.Name
+                    },
+                    After = new
+                    {
+                        approvalStatus = AdminApprovalStatuses.Rejected,
+                        approvedByUserId = adminUserId,
+                        rejectionReason = dto.Reason.Trim()
+                    }
+                });
 
                 return ApiResponse<bool>.CreateSuccess(true, "قالب رد شد");
             }

@@ -56,6 +56,7 @@ namespace Api_Vapp.Services
                     SourceEntityLabel = request.SourceEntityLabel,
                     Mobile = request.Mobile.Trim(),
                     Sid = request.Sid,
+                    MessageText = string.IsNullOrWhiteSpace(request.MessageText) ? null : request.MessageText.Trim(),
                     SendStatus = SmsSendStatuses.Sent,
                     DeliveryCategory = SmsDeliveryCategories.PendingSync,
                     SentAt = sentAtUtc,
@@ -109,7 +110,8 @@ namespace Api_Vapp.Services
                 Items = items.Select(MapToDto).ToList(),
                 TotalCount = totalCount,
                 PageNumber = filter.PageNumber,
-                PageSize = filter.PageSize
+                PageSize = filter.PageSize,
+                TotalPages = totalCount == 0 ? 0 : (int)Math.Ceiling(totalCount / (double)filter.PageSize)
             });
         }
 
@@ -154,6 +156,24 @@ namespace Api_Vapp.Services
                 id, updated!.Sid, updated.ProviderStatusCode, updated.ProviderStatusMessage ?? "-", updated.DeliveryCategory, updated.IsDeliveryFinal);
 
             return ApiResponse<SmsDeliveryRecordDto>.CreateSuccess(dto);
+        }
+
+        public async Task<ApiResponse<SmsDeliverySummaryDto>> RefreshBySidAsync(int userId, long sid)
+        {
+            if (sid <= 0)
+                return ApiResponse<SmsDeliverySummaryDto>.BadRequest("کد ارسال نامعتبر است");
+
+            if (!await _repository.UserOwnsSidAsync(userId, sid))
+                return ApiResponse<SmsDeliverySummaryDto>.NotFound("ارسال مورد نظر یافت نشد");
+
+            _logger.LogInformation(
+                "SMS delivery refresh by Sid — UserId: {UserId}, Sid: {Sid}",
+                userId, sid);
+
+            await SyncSidGroupForUserAsync(userId, sid);
+
+            var summary = await _repository.GetSummaryBySidAsync(userId, sid);
+            return ApiResponse<SmsDeliverySummaryDto>.CreateSuccess(summary, "وضعیت دلیوری بروزرسانی شد");
         }
 
         /// <summary>
@@ -208,7 +228,23 @@ namespace Api_Vapp.Services
                 return;
             }
 
-            var trigger = isManualRefresh ? "ManualRefresh" : "BackgroundJob";
+            await ApplyDeliveryStatusAsync(sid, activeRecords, isManualRefresh ? "ManualRefresh" : "BackgroundJob");
+        }
+
+        private async Task SyncSidGroupForUserAsync(int userId, long sid)
+        {
+            var records = await _repository.GetSentRecordsBySidForUserAsync(userId, sid);
+            if (records.Count == 0)
+            {
+                _logger.LogDebug("SMS delivery user refresh skipped for Sid {Sid} — no records", sid);
+                return;
+            }
+
+            await ApplyDeliveryStatusAsync(sid, records, "ManualRefreshBySid");
+        }
+
+        private async Task ApplyDeliveryStatusAsync(long sid, List<SmsDeliveryRecord> activeRecords, string trigger)
+        {
             var recordIds = string.Join(", ", activeRecords.Select(r => r.Id));
             var mobiles = string.Join(", ", activeRecords.Select(r => r.Mobile));
 
@@ -221,7 +257,9 @@ namespace Api_Vapp.Services
 
             foreach (var record in activeRecords)
             {
-                record.CheckAttempts++;
+                if (!record.IsDeliveryFinal)
+                    record.CheckAttempts++;
+
                 record.LastCheckedAt = nowUtc;
                 record.UpdatedAt = nowUtc;
             }
@@ -334,6 +372,7 @@ namespace Api_Vapp.Services
                 SourceEntityLabel = record.SourceEntityLabel,
                 Mobile = record.Mobile,
                 Sid = record.Sid,
+                MessageText = record.MessageText,
                 SendStatus = record.SendStatus,
                 DeliveryCategory = record.DeliveryCategory,
                 DeliveryCategoryLabel = categoryLabel,

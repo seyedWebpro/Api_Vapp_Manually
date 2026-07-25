@@ -1,0 +1,84 @@
+namespace Api_Vapp.Models
+{
+    /// <summary>
+    /// کارت ویزیت دیجیتال ساخته‌شده توسط کاربر
+    /// </summary>
+    public class BusinessCard
+    {
+        public int Id { get; set; }
+
+        public int UserId { get; set; }
+
+        /// <summary>
+        /// نام کسب‌وکار
+        /// </summary>
+        public string Title { get; set; } = string.Empty;
+
+        /// <summary>
+        /// مسیر نسبی لوگو / پروفایل
+        /// </summary>
+        public string? LogoUrl { get; set; }
+
+        /// <summary>
+        /// شناسه URL عمومی — پس از publish تنظیم می‌شود
+        /// </summary>
+        public string? Slug { get; set; }
+
+        /// <summary>
+        /// کلید قالب از سمت کلاینت (مثلاً business / classic)
+        /// </summary>
+        public string? TemplateKey { get; set; }
+
+        /// <summary>
+        /// شناسه قالب سمت سرور — فعلاً null
+        /// </summary>
+        public int? TemplateId { get; set; }
+
+        public BusinessCardStatus Status { get; set; } = BusinessCardStatus.Draft;
+
+        /// <summary>
+        /// برای کارت‌های منتشرشده — غیرفعال = لینک عمومی کار نمی‌کند
+        /// </summary>
+        public bool IsActive { get; set; } = true;
+
+        public bool IsDeleted { get; set; }
+
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+        public DateTime? UpdatedAt { get; set; }
+
+        public DateTime? PublishedAt { get; set; }
+
+        public bool SliderEnabled { get; set; }
+
+        public bool DescriptionEnabled { get; set; } = true;
+
+        public bool ServicesEnabled { get; set; }
+
+        public bool MapEnabled { get; set; }
+
+        public bool ContactEnabled { get; set; } = true;
+
+        public string? DescriptionTitle { get; set; }
+
+        public string? DescriptionText { get; set; }
+
+        public double? MapLatitude { get; set; }
+
+        public double? MapLongitude { get; set; }
+
+        public string? MapAddress { get; set; }
+
+        public string? ContactPhone { get; set; }
+
+        public string? ContactEmail { get; set; }
+
+        public string? ContactInstagram { get; set; }
+
+        public virtual User User { get; set; } = null!;
+
+        public virtual ICollection<BusinessCardSliderImage> SliderImages { get; set; } = new List<BusinessCardSliderImage>();
+
+        public virtual ICollection<BusinessCardServiceItem> ServiceItems { get; set; } = new List<BusinessCardServiceItem>();
+    }
+}

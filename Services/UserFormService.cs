@@ -1,9 +1,11 @@
+using Api_Vapp.Constants;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.DTOs.Contact;
 using Api_Vapp.DTOs.File;
 using Api_Vapp.DTOs.UserForm;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
+using Api_Vapp.Services.Audit;
 using Api_Vapp.Utilities;
 using ClosedXML.Excel;
 using Microsoft.Data.SqlClient;
@@ -22,6 +24,7 @@ namespace Api_Vapp.Services
         private readonly Api_Vapp.Data.Api_Context _context;
         private readonly FormBuilderOptions _formBuilderOptions;
         private readonly IFileUploadService _fileUploadService;
+        private readonly IAuditService _audit;
         private readonly ILogger<UserFormService> _logger;
 
         public UserFormService(
@@ -29,12 +32,14 @@ namespace Api_Vapp.Services
             Api_Vapp.Data.Api_Context context,
             IOptions<FormBuilderOptions> formBuilderOptions,
             IFileUploadService fileUploadService,
+            IAuditService audit,
             ILogger<UserFormService> logger)
         {
             _userFormRepository = userFormRepository;
             _context = context;
             _formBuilderOptions = formBuilderOptions.Value;
             _fileUploadService = fileUploadService;
+            _audit = audit;
             _logger = logger;
         }
 
@@ -279,6 +284,7 @@ namespace Api_Vapp.Services
                         "فرم قبلاً منتشر شده است");
                 }
 
+                var previousStatus = form.Status;
                 var publishError = await ValidateAndApplyPublishAsync(form, id, publishDto);
                 if (publishError != null)
                 {
@@ -286,6 +292,17 @@ namespace Api_Vapp.Services
                 }
 
                 await _context.SaveChangesAsync();
+
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Form,
+                    Action = AuditActions.UserFormStatusChanged,
+                    EntityType = AuditEntityTypes.UserForm,
+                    EntityId = form.Id.ToString(),
+                    ActorUserId = userId,
+                    Before = new { status = previousStatus.ToString() },
+                    After = new { status = form.Status.ToString(), isActive = form.IsActive, slug = form.Slug }
+                });
 
                 _logger.LogInformation("User form {FormId} published with slug {Slug}", id, form.Slug);
 
@@ -440,49 +457,40 @@ namespace Api_Vapp.Services
                         ErrorCodes.Forbidden);
                 }
 
-                var currentEffective = GetEffectiveIsActive(form);
-                if (currentEffective == isActive)
+                // هم‌تراز با گردونه: سوئیچ فقط برای فرم منتشرشده
+                if (form.Status != UserFormStatus.Published)
+                {
+                    return ApiResponse<UserFormResponseDto>.BadRequest(
+                        "فقط فرم‌های منتشرشده قابل فعال/غیرفعال کردن هستند",
+                        errorCode: ErrorCodes.ValidationFailed);
+                }
+
+                if (form.IsActive == isActive)
                 {
                     return ApiResponse<UserFormResponseDto>.CreateSuccess(
                         MapToResponseDto(form),
                         isActive ? "فرم از قبل فعال است" : "فرم از قبل غیرفعال است");
                 }
 
-                if (isActive)
-                {
-                    if (form.Status == UserFormStatus.Draft)
-                    {
-                        var publishError = await ValidateAndApplyPublishAsync(form, id, publishDto: null);
-                        if (publishError != null)
-                        {
-                            return publishError;
-                        }
-
-                        await _context.SaveChangesAsync();
-
-                        _logger.LogInformation("User form {FormId} activated via publish", id);
-
-                        return ApiResponse<UserFormResponseDto>.CreateSuccess(
-                            MapToResponseDto(form),
-                            "فرم فعال شد");
-                    }
-
-                    form.IsActive = true;
-                    form.UpdatedAt = DateTime.UtcNow;
-                    await _context.SaveChangesAsync();
-
-                    return ApiResponse<UserFormResponseDto>.CreateSuccess(
-                        MapToResponseDto(form),
-                        "فرم فعال شد");
-                }
-
-                form.IsActive = false;
+                var previousIsActive = form.IsActive;
+                form.IsActive = isActive;
                 form.UpdatedAt = DateTime.UtcNow;
                 await _context.SaveChangesAsync();
 
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Form,
+                    Action = AuditActions.UserFormStatusChanged,
+                    EntityType = AuditEntityTypes.UserForm,
+                    EntityId = form.Id.ToString(),
+                    ActorUserId = userId,
+                    Before = new { isActive = previousIsActive },
+                    After = new { isActive = form.IsActive, status = form.Status.ToString(), slug = form.Slug }
+                });
+
                 return ApiResponse<UserFormResponseDto>.CreateSuccess(
                     MapToResponseDto(form),
-                    "فرم غیرفعال شد");
+                    isActive ? "فرم فعال شد" : "فرم غیرفعال شد");
             }
             catch (DbUpdateException dbEx)
             {

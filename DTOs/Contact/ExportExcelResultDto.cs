@@ -44,6 +44,11 @@ namespace Api_Vapp.DTOs.Contact
         /// تعداد کل صفحات
         /// </summary>
         public int TotalPages { get; set; }
+
+        /// <summary>
+        /// آیا خروجی به سقف مجاز ردیف محدود شده است
+        /// </summary>
+        public bool IsTruncated { get; set; }
     }
 }
 

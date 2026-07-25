@@ -9,6 +9,7 @@ namespace Api_Vapp.DTOs.Sms
         public string? SourceEntityLabel { get; set; }
         public string Mobile { get; set; } = string.Empty;
         public long Sid { get; set; }
+        public string? MessageText { get; set; }
         public string SendStatus { get; set; } = string.Empty;
         public string DeliveryCategory { get; set; } = string.Empty;
         public string DeliveryCategoryLabel { get; set; } = string.Empty;
@@ -25,6 +26,7 @@ namespace Api_Vapp.DTOs.Sms
         public int TotalCount { get; set; }
         public int PageNumber { get; set; }
         public int PageSize { get; set; }
+        public int TotalPages { get; set; }
     }
 
     public class SmsDeliverySummaryDto

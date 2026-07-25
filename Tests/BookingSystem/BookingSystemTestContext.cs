@@ -7,6 +7,7 @@ using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
 using Api_Vapp.Repositories;
 using Api_Vapp.Services;
+using Api_Vapp.Tests.Shared;
 using Api_Vapp.Utilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -269,6 +270,7 @@ internal sealed class BookingSystemTestContext : IDisposable
             new BookingSystemRepository(context),
             new BookingSystemDraftRepository(context),
             options,
+            new NoOpAuditService(),
             NullLogger<BookingSystemService>.Instance);
     }
 
@@ -278,8 +280,10 @@ internal sealed class BookingSystemTestContext : IDisposable
             context,
             new BookingAppointmentRepository(context),
             new BookingSystemRepository(context),
+            new PublicPhonebookService(context),
             new FakeSmsService(),
             new FakeDeliveryTrackingService(),
+            Microsoft.Extensions.Options.Options.Create(new BookingSystemOptions()),
             NullLogger<BookingAppointmentService>.Instance);
     }
 
@@ -331,6 +335,9 @@ internal sealed class BookingSystemTestContext : IDisposable
             Task.FromResult(ApiResponse<SmsDeliveryRecordDto>.NotFound("not found"));
 
         public Task SyncPendingDeliveriesAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task<ApiResponse<SmsDeliverySummaryDto>> RefreshBySidAsync(int userId, long sid) =>
+            Task.FromResult(ApiResponse<SmsDeliverySummaryDto>.NotFound("not found"));
     }
 
     private async Task SeedAsync()

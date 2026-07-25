@@ -11,6 +11,7 @@ namespace Api_Vapp.DTOs.Sms
         public string? SourceEntityLabel { get; set; }
         public string Mobile { get; set; } = string.Empty;
         public long Sid { get; set; }
+        public string? MessageText { get; set; }
         public DateTime? SentAt { get; set; }
     }
 }

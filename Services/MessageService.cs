@@ -4,6 +4,7 @@ using Api_Vapp.DTOs.Sms;
 using Api_Vapp.Constants;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
+using Api_Vapp.Services.Audit;
 using Api_Vapp.Utilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -34,6 +35,7 @@ namespace Api_Vapp.Services
         private readonly IConfiguration _configuration;
         private readonly IHostEnvironment _hostEnvironment;
         private readonly IFileUploadService? _fileUploadService;
+        private readonly IAuditService _audit;
 
         // هزینه هر پارت پیام (قابل تنظیم از appsettings)
         private readonly decimal _costPerPart = 160; // تومان
@@ -61,6 +63,7 @@ namespace Api_Vapp.Services
             ILogger<MessageService> logger,
             IConfiguration configuration,
             IHostEnvironment hostEnvironment,
+            IAuditService audit,
             IFileUploadService? fileUploadService = null)
         {
             _messageRepository = messageRepository;
@@ -76,6 +79,7 @@ namespace Api_Vapp.Services
             _logger = logger;
             _configuration = configuration;
             _hostEnvironment = hostEnvironment;
+            _audit = audit;
             _fileUploadService = fileUploadService;
         }
 
@@ -1100,6 +1104,20 @@ namespace Api_Vapp.Services
                         await _campaignRepository.UpdateAsync(campaign);
                         await UpsertCampaignApprovalRequestAsync(campaign, message);
 
+                        await _audit.WriteAsync(new AuditEntry
+                        {
+                            Category = AuditCategories.Message,
+                            Action = AuditActions.CampaignStatusChanged,
+                            EntityType = AuditEntityTypes.MessageCampaign,
+                            EntityId = campaign.Id.ToString(),
+                            ActorUserId = userId,
+                            After = new
+                            {
+                                status = campaign.Status,
+                                adminApprovalStatus = campaign.AdminApprovalStatus
+                            }
+                        });
+
                         return ApiResponse<bool>.CreateSuccess(
                             true,
                             "درخواست ارسال در صف تأیید ادمین قرار گرفت",
@@ -1204,6 +1222,7 @@ namespace Api_Vapp.Services
                                 SourceEntityLabel = campaign.Title ?? $"کمپین #{campaignId}",
                                 Mobile = recipient.MobileNumber,
                                 Sid = smsResult.Data.Sid,
+                                MessageText = messageContent,
                                 SentAt = DateTime.UtcNow
                             });
                             
@@ -1266,6 +1285,21 @@ namespace Api_Vapp.Services
                 await _userRepository.UpdateAsync(user);
                 */
 
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Message,
+                    Action = campaign.Status == "Sent" ? AuditActions.CampaignSent : AuditActions.CampaignStatusChanged,
+                    EntityType = AuditEntityTypes.MessageCampaign,
+                    EntityId = campaign.Id.ToString(),
+                    ActorUserId = userId,
+                    After = new
+                    {
+                        status = campaign.Status,
+                        sentCount,
+                        failedCount
+                    }
+                });
+
                 _logger.LogInformation("Campaign {CampaignId} completed - Sent: {SentCount}, Failed: {FailedCount}, Actual Cost: {ActualCost}", 
                     campaignId, sentCount, failedCount, actualCost);
 
@@ -1308,9 +1342,21 @@ namespace Api_Vapp.Services
                     return ApiResponse<bool>.BadRequest("این کمپین قابل لغو نیست");
                 }
 
+                var previousStatus = campaign.Status;
                 campaign.Status = "Cancelled";
                 campaign.UpdatedAt = DateTime.UtcNow;
                 await _campaignRepository.UpdateAsync(campaign);
+
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Message,
+                    Action = AuditActions.CampaignStatusChanged,
+                    EntityType = AuditEntityTypes.MessageCampaign,
+                    EntityId = campaign.Id.ToString(),
+                    ActorUserId = userId,
+                    Before = new { status = previousStatus },
+                    After = new { status = campaign.Status }
+                });
 
                 _logger.LogInformation("Campaign cancelled successfully with ID: {CampaignId}", campaignId);
 
@@ -1357,11 +1403,23 @@ namespace Api_Vapp.Services
                     return ApiResponse<bool>.BadRequest("وضعیت کمپین‌های ارسال شده یا لغو شده قابل تغییر نیست");
                 }
 
+                var previousIsActive = campaign.IsActive;
                 campaign.IsActive = isActive;
                 campaign.UpdatedAt = DateTime.UtcNow;
                 await _campaignRepository.UpdateAsync(campaign);
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
+
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Message,
+                    Action = AuditActions.CampaignStatusChanged,
+                    EntityType = AuditEntityTypes.MessageCampaign,
+                    EntityId = campaign.Id.ToString(),
+                    ActorUserId = userId,
+                    Before = new { isActive = previousIsActive },
+                    After = new { isActive = campaign.IsActive }
+                });
 
                 _logger.LogInformation("Campaign status toggled to {Status} for ID: {CampaignId}", isActive ? "Active" : "Inactive", campaignId);
 
@@ -3875,6 +3933,7 @@ namespace Api_Vapp.Services
                                 SourceEntityLabel = message.Title ?? $"پیام #{messageId}",
                                 Mobile = recipient.MobileNumber,
                                 Sid = smsResult.Data!.Sid,
+                                MessageText = messageContent,
                                 SentAt = smsSendEndTime
                             });
                             

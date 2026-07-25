@@ -6,6 +6,7 @@ using Api_Vapp.DTOs.Subscription;
 using Api_Vapp.Exceptions;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
+using Api_Vapp.Services.Audit;
 using Api_Vapp.Utilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -15,11 +16,16 @@ namespace Api_Vapp.Services
     public class SubscriptionActivationService : ISubscriptionActivationService
     {
         private readonly Api_Context _context;
+        private readonly IAuditService _audit;
         private readonly ILogger<SubscriptionActivationService> _logger;
 
-        public SubscriptionActivationService(Api_Context context, ILogger<SubscriptionActivationService> logger)
+        public SubscriptionActivationService(
+            Api_Context context,
+            IAuditService audit,
+            ILogger<SubscriptionActivationService> logger)
         {
             _context = context;
+            _audit = audit;
             _logger = logger;
         }
 
@@ -168,6 +174,26 @@ namespace Api_Vapp.Services
 
                 if (ownsTransaction)
                     await transaction.CommitAsync();
+
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Subscription,
+                    Action = AuditActions.SubscriptionActivated,
+                    EntityType = AuditEntityTypes.UserSubscription,
+                    EntityId = subscription.Id.ToString(),
+                    ActorUserId = userId,
+                    TargetUserId = userId,
+                    After = new
+                    {
+                        userSubscriptionId = subscription.Id,
+                        userId,
+                        planId = plan.Id,
+                        startDate = subscription.StartDate,
+                        expiresAt = subscription.ExpiresAt,
+                        sourcePaymentId = paymentId,
+                        discountCodeId
+                    }
+                });
 
                 _ = originalAmount;
                 _ = discountCode;

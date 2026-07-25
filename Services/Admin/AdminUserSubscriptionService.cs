@@ -1,8 +1,10 @@
+using Api_Vapp.Constants;
 using Api_Vapp.Data;
 using Api_Vapp.DTOs.Admin;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
+using Api_Vapp.Services.Audit;
 using Microsoft.EntityFrameworkCore;
 
 namespace Api_Vapp.Services.Admin
@@ -10,10 +12,12 @@ namespace Api_Vapp.Services.Admin
     public class AdminUserSubscriptionService : IAdminUserSubscriptionService
     {
         private readonly Api_Context _context;
+        private readonly IAuditService _audit;
 
-        public AdminUserSubscriptionService(Api_Context context)
+        public AdminUserSubscriptionService(Api_Context context, IAuditService audit)
         {
             _context = context;
+            _audit = audit;
         }
 
         public async Task<ApiResponse<List<UserSubscriptionResponseDto>>> GetAllAsync(int? userId = null, string? status = null)
@@ -58,6 +62,26 @@ namespace Api_Vapp.Services.Admin
 
             subscription.User = user;
             subscription.Plan = plan;
+
+            await _audit.WriteAsync(new AuditEntry
+            {
+                Category = AuditCategories.Subscription,
+                Action = AuditActions.UserSubscriptionAssigned,
+                EntityType = AuditEntityTypes.UserSubscription,
+                EntityId = subscription.Id.ToString(),
+                TargetUserId = subscription.UserId,
+                After = new
+                {
+                    subscription.Id,
+                    subscription.UserId,
+                    subscription.SubscriptionPlanId,
+                    planName = plan.Name,
+                    subscription.StartDate,
+                    subscription.ExpiresAt,
+                    subscription.Status
+                }
+            });
+
             return ApiResponse<UserSubscriptionResponseDto>.CreateSuccess(Map(subscription), "اشتراک به کاربر اختصاص داده شد", 201);
         }
 
@@ -67,9 +91,37 @@ namespace Api_Vapp.Services.Admin
             if (subscription == null)
                 return ApiResponse<bool>.NotFound("اشتراک یافت نشد");
 
+            var before = new
+            {
+                subscription.Id,
+                subscription.UserId,
+                subscription.SubscriptionPlanId,
+                subscription.Status,
+                subscription.ExpiresAt
+            };
+
             subscription.Status = "Cancelled";
             subscription.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
+
+            await _audit.WriteAsync(new AuditEntry
+            {
+                Category = AuditCategories.Subscription,
+                Action = AuditActions.UserSubscriptionRevoked,
+                EntityType = AuditEntityTypes.UserSubscription,
+                EntityId = subscription.Id.ToString(),
+                TargetUserId = subscription.UserId,
+                Before = before,
+                After = new
+                {
+                    subscription.Id,
+                    subscription.UserId,
+                    subscription.SubscriptionPlanId,
+                    subscription.Status,
+                    subscription.ExpiresAt
+                }
+            });
+
             return ApiResponse<bool>.CreateSuccess(true, "اشتراک لغو شد");
         }
 

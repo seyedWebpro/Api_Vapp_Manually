@@ -4,6 +4,7 @@ using Api_Vapp.DTOs.BookingSystem;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
+using Api_Vapp.Services.Audit;
 using Api_Vapp.Utilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -18,6 +19,7 @@ namespace Api_Vapp.Services
         private readonly IBookingSystemRepository _systemRepository;
         private readonly IBookingSystemDraftRepository _draftRepository;
         private readonly BookingSystemOptions _options;
+        private readonly IAuditService _audit;
         private readonly ILogger<BookingSystemService> _logger;
 
         private const int DraftExpirationHours = 24;
@@ -28,12 +30,14 @@ namespace Api_Vapp.Services
             IBookingSystemRepository systemRepository,
             IBookingSystemDraftRepository draftRepository,
             IOptions<BookingSystemOptions> options,
+            IAuditService audit,
             ILogger<BookingSystemService> logger)
         {
             _context = context;
             _systemRepository = systemRepository;
             _draftRepository = draftRepository;
             _options = options.Value;
+            _audit = audit;
             _logger = logger;
         }
 
@@ -79,9 +83,21 @@ namespace Api_Vapp.Services
                 return ApiResponse<BookingSystemDto>.NotFound("سیستم رزرو یافت نشد");
             }
 
+            var previousIsActive = system.IsActive;
             system.IsActive = !system.IsActive;
             system.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
+
+            await _audit.WriteAsync(new AuditEntry
+            {
+                Category = AuditCategories.Booking,
+                Action = AuditActions.BookingSystemStatusChanged,
+                EntityType = AuditEntityTypes.BookingSystem,
+                EntityId = system.Id.ToString(),
+                ActorUserId = userId,
+                Before = new { isActive = previousIsActive },
+                After = new { isActive = system.IsActive }
+            });
 
             var statusText = system.IsActive ? "فعال" : "غیرفعال";
             var refreshed = await _systemRepository.GetByIdWithDetailsAsync(id, userId);
@@ -142,6 +158,11 @@ namespace Api_Vapp.Services
             if (updateDto.Description != null)
             {
                 system.Description = NormalizeOptionalText(updateDto.Description);
+            }
+
+            if (updateDto.Location != null)
+            {
+                system.Location = NormalizeOptionalText(updateDto.Location);
             }
 
             if (updateDto.ActivityType != null)
@@ -430,6 +451,7 @@ namespace Api_Vapp.Services
                     Title = step1.Title.Trim(),
                     ActivityType = step1.ActivityType,
                     Description = NormalizeOptionalText(step1.Description),
+                    Location = NormalizeOptionalText(step1.Location),
                     Slug = slug,
                     Status = BookingSystemStatus.Published,
                     SaveToPhonebook = step1.SaveToPhonebook,
@@ -782,6 +804,7 @@ namespace Api_Vapp.Services
         private static bool HasAnyUpdateFields(UpdateBookingSystemDto dto) =>
             dto.Title != null ||
             dto.Description != null ||
+            dto.Location != null ||
             dto.ActivityType != null ||
             dto.SaveToPhonebook.HasValue ||
             dto.NotebookIds != null ||
@@ -806,6 +829,7 @@ namespace Api_Vapp.Services
             ActivityType = system.ActivityType,
             ActivityTypeTitle = BookingActivityTypes.GetTitle(system.ActivityType),
             Description = system.Description,
+            Location = system.Location,
             Slug = system.Slug,
             PublicUrl = BuildPublicUrl(system.Slug),
             Status = system.Status.ToString(),

@@ -326,6 +326,8 @@ builder.Services.AddAuthorization(options =>
 builder.Services.AddHttpContextAccessor();
 #endregion
 
+// Audit logging (DB AdminAuditLogs)
+builder.Services.AddAuditLogging();
 
 // ثبت Repository ها
 builder.Services.AddScoped(typeof(Api_Vapp._Utilities.IBaseRepository<>), typeof(Api_Vapp._Utilities.BaseRepository<>));
@@ -341,6 +343,7 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.IMessageSessionRepository, Api_Va
 builder.Services.AddScoped<Api_Vapp.Interfaces.IQuickActionRepository, Api_Vapp.Repositories.QuickActionRepository>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IUserFormRepository, Api_Vapp.Repositories.UserFormRepository>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.ILuckyWheelRepository, Api_Vapp.Repositories.LuckyWheelRepository>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IBusinessCardRepository, Api_Vapp.Repositories.BusinessCardRepository>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.ISpecialOccasionRepository, Api_Vapp.Repositories.SpecialOccasionRepository>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAutomatedMessageRepository, Api_Vapp.Repositories.AutomatedMessageRepository>();
 
@@ -365,6 +368,7 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.IJwtService, Api_Vapp.Services.Jw
 builder.Services.AddScoped<Api_Vapp.Interfaces.ISmsService, Api_Vapp.Services.SmsService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.ISmsDeliveryRecordRepository, Api_Vapp.Repositories.SmsDeliveryRecordRepository>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.ISmsDeliveryTrackingService, Api_Vapp.Services.SmsDeliveryTrackingService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.ISmsReportService, Api_Vapp.Services.SmsReportService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IRefreshTokenService, Api_Vapp.Services.RefreshTokenService>();
 builder.Services.AddSingleton<Api_Vapp.Interfaces.ITokenBlacklistService, Api_Vapp.Services.TokenBlacklistService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAuthService, Api_Vapp.Services.AuthService>();
@@ -384,6 +388,7 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.IContactService, Api_Vapp.Service
 builder.Services.AddScoped<Api_Vapp.Interfaces.IQuickActionService, Api_Vapp.Services.QuickActionService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IUserFormService, Api_Vapp.Services.UserFormService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.ILuckyWheelService, Api_Vapp.Services.LuckyWheelService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IBusinessCardService, Api_Vapp.Services.BusinessCardService>();
 builder.Services.AddScoped<Api_Vapp.Services.PublicPhonebookService>();
 builder.Services.Configure<Api_Vapp.Configuration.PublicParticipantOptions>(
     builder.Configuration.GetSection(Api_Vapp.Configuration.PublicParticipantOptions.SectionName));
@@ -391,6 +396,7 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.IPublicParticipantSessionService,
 builder.Services.AddScoped<Api_Vapp.Interfaces.IPublicParticipantOtpService, Api_Vapp.Services.PublicParticipantOtpService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IUserFormPublicService, Api_Vapp.Services.UserFormPublicService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.ILuckyWheelPublicService, Api_Vapp.Services.LuckyWheelPublicService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IBusinessCardPublicService, Api_Vapp.Services.BusinessCardPublicService>();
 
 // ثبت سرویس‌های مدیریت پیام و اتوماسیون
 builder.Services.AddScoped<Api_Vapp.Interfaces.IMessageService, Api_Vapp.Services.MessageService>();
@@ -446,12 +452,17 @@ builder.Services.AddSingleton<IConfiguration>(builder.Configuration);
 builder.Services.Configure<Api_Vapp.DTOs.File.FileUploadOptions>(builder.Configuration.GetSection("FileUpload"));
 builder.Services.Configure<Api_Vapp.Utilities.FormBuilderOptions>(builder.Configuration.GetSection(Api_Vapp.Utilities.FormBuilderOptions.SectionName));
 builder.Services.Configure<Api_Vapp.Utilities.LuckyWheelOptions>(builder.Configuration.GetSection(Api_Vapp.Utilities.LuckyWheelOptions.SectionName));
+builder.Services.Configure<Api_Vapp.Utilities.BusinessCardOptions>(builder.Configuration.GetSection(Api_Vapp.Utilities.BusinessCardOptions.SectionName));
 builder.Services.Configure<Api_Vapp.Utilities.BookingSystemOptions>(builder.Configuration.GetSection(Api_Vapp.Utilities.BookingSystemOptions.SectionName));
 builder.Services.AddScoped<Api_Vapp.Interfaces.IFileUploadService, Api_Vapp.Services.FileUploadService>();
 #endregion
 
 #region dbContext
 var connectionString = SqlServerConnectionConfiguration.GetConnectionString(builder.Configuration);
+builder.Services.AddDbContextFactory<Api_Context>(options =>
+{
+    options.UseSqlServer(connectionString);
+});
 builder.Services.AddDbContext<Api_Context>(options =>
 {
     options.UseSqlServer(connectionString);

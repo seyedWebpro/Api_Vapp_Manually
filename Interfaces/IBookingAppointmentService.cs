@@ -9,6 +9,11 @@ namespace Api_Vapp.Interfaces
         Task<ApiResponse<BookingAvailableSlotsDto>> GetAvailableSlotsAsync(string slug, int serviceId, DateOnly date);
         Task<ApiResponse<CreatePublicBookingResponseDto>> CreatePublicBookingAsync(string slug, CreatePublicBookingDto dto);
 
+        Task<ApiResponse<BookingDashboardDto>> GetDashboardAsync(int systemId, int userId, DateOnly? dateUtc = null);
+
+        Task<ApiResponse<BookingCalendarMonthDto>> GetCalendarAsync(
+            int systemId, int userId, int year, int month);
+
         Task<ApiResponse<BookingAppointmentListDto>> GetAppointmentsAsync(
             int systemId,
             int userId,
@@ -17,13 +22,32 @@ namespace Api_Vapp.Interfaces
             string? status,
             DateTime? fromUtc,
             DateTime? toUtc,
-            int? serviceId);
+            int? serviceId,
+            string? searchName = null);
+
+        Task<ApiResponse<BookingAppointmentDto>> GetAppointmentByIdAsync(
+            int systemId, int appointmentId, int userId);
+
+        Task<ApiResponse<BookingAppointmentDto>> CreateManualBookingAsync(
+            int systemId, int userId, CreateManualBookingDto dto);
+
+        Task<ApiResponse<BookingAppointmentDto>> UpdateAppointmentAsync(
+            int systemId, int appointmentId, int userId, UpdateBookingAppointmentDto dto);
+
+        Task<ApiResponse<BookingAppointmentDto>> ConfirmAppointmentAsync(
+            int systemId, int appointmentId, int userId);
 
         Task<ApiResponse<BookingAppointmentDto>> CancelAppointmentAsync(
             int systemId,
             int appointmentId,
             int userId,
             CancelBookingAppointmentDto? dto);
+
+        Task<ApiResponse<BookingDayAvailabilityDto>> GetDayAvailabilityAsync(
+            int systemId, int userId, DateOnly date, int? serviceId = null);
+
+        Task<ApiResponse<BookingDayAvailabilityDto>> SaveDayAvailabilityAsync(
+            int systemId, int userId, SaveBookingDayAvailabilityDto dto);
 
         Task ProcessRemindersAsync(CancellationToken cancellationToken = default);
     }

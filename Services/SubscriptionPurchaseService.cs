@@ -6,6 +6,7 @@ using Api_Vapp.DTOs.Payment;
 using Api_Vapp.DTOs.Subscription;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
+using Api_Vapp.Services.Audit;
 using Api_Vapp.Utilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -21,6 +22,7 @@ namespace Api_Vapp.Services
         private readonly ISubscriptionActivationService _activationService;
         private readonly IPaymentService _paymentService;
         private readonly IConfiguration _configuration;
+        private readonly IAuditService _audit;
         private readonly ILogger<SubscriptionPurchaseService> _logger;
 
         public SubscriptionPurchaseService(
@@ -30,6 +32,7 @@ namespace Api_Vapp.Services
             ISubscriptionActivationService activationService,
             IPaymentService paymentService,
             IConfiguration configuration,
+            IAuditService audit,
             ILogger<SubscriptionPurchaseService> logger)
         {
             _context = context;
@@ -38,6 +41,7 @@ namespace Api_Vapp.Services
             _activationService = activationService;
             _paymentService = paymentService;
             _configuration = configuration;
+            _audit = audit;
             _logger = logger;
         }
 
@@ -93,6 +97,25 @@ namespace Api_Vapp.Services
                         pricing.DiscountCode,
                         pricing.DiscountCodeId,
                         paymentId: null);
+
+                    await _audit.WriteAsync(new AuditEntry
+                    {
+                        Category = AuditCategories.Subscription,
+                        Action = AuditActions.SubscriptionPurchased,
+                        EntityType = AuditEntityTypes.UserSubscription,
+                        EntityId = subscription.Id.ToString(),
+                        ActorUserId = userId,
+                        After = new
+                        {
+                            planId = plan.Id,
+                            userSubscriptionId = subscription.Id,
+                            originalAmount = pricing.OriginalAmount,
+                            discountAmount = pricing.DiscountAmount,
+                            payableAmount = pricing.PayableAmount,
+                            discountCode = pricing.DiscountCode,
+                            zeroPayActivation = true
+                        }
+                    });
 
                     return ApiResponse<SubscriptionPurchaseResultDto>.CreateSuccess(new SubscriptionPurchaseResultDto
                     {
@@ -154,6 +177,24 @@ namespace Api_Vapp.Services
                     payment.ErrorMessage = ControlledErrorHelper.PaymentFailed;
                     await _context.SaveChangesAsync();
                     _logger.LogWarning("Gateway token failed for payment {PaymentId}", payment.Id);
+
+                    await _audit.WriteAsync(new AuditEntry
+                    {
+                        Category = AuditCategories.Payment,
+                        Action = AuditActions.PaymentRequestFailed,
+                        EntityType = AuditEntityTypes.Payment,
+                        EntityId = payment.Id.ToString(),
+                        ActorUserId = userId,
+                        Succeeded = false,
+                        ErrorMessage = tokenResult.ErrorMessage,
+                        Metadata = new
+                        {
+                            planId = plan.Id,
+                            amount = payment.Amount,
+                            gateway = request.Gateway
+                        }
+                    });
+
                     return ApiResponse<SubscriptionPurchaseResultDto>.BadRequest(
                         ControlledErrorHelper.PaymentFailed,
                         errorCode: ErrorCodes.PaymentFailed);
@@ -162,6 +203,24 @@ namespace Api_Vapp.Services
                 payment.RefId = tokenResult.RefId;
                 payment.Status = PaymentStatuses.Processing;
                 await _context.SaveChangesAsync();
+
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Subscription,
+                    Action = AuditActions.SubscriptionPurchased,
+                    EntityType = AuditEntityTypes.Payment,
+                    EntityId = payment.Id.ToString(),
+                    ActorUserId = userId,
+                    After = new
+                    {
+                        planId = plan.Id,
+                        paymentId = payment.Id,
+                        originalAmount = pricing.OriginalAmount,
+                        discountAmount = pricing.DiscountAmount,
+                        payableAmount = pricing.PayableAmount,
+                        discountCode = pricing.DiscountCode
+                    }
+                });
 
                 var apiBaseUrl = _configuration["Payment:ApiBaseUrl"]?.TrimEnd('/') ?? string.Empty;
                 var redirectPath = $"/api/Payment/redirect/{payment.Id}";

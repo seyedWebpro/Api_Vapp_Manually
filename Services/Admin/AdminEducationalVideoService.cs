@@ -1,8 +1,10 @@
+using Api_Vapp.Constants;
 using Api_Vapp.Data;
 using Api_Vapp.DTOs.Admin;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
+using Api_Vapp.Services.Audit;
 using Microsoft.EntityFrameworkCore;
 
 namespace Api_Vapp.Services.Admin
@@ -10,10 +12,12 @@ namespace Api_Vapp.Services.Admin
     public class AdminEducationalVideoService : IAdminEducationalVideoService
     {
         private readonly Api_Context _context;
+        private readonly IAuditService _audit;
 
-        public AdminEducationalVideoService(Api_Context context)
+        public AdminEducationalVideoService(Api_Context context, IAuditService audit)
         {
             _context = context;
+            _audit = audit;
         }
 
         public async Task<ApiResponse<List<EducationalVideoResponseDto>>> GetAllAsync(bool includeInactive = true)
@@ -51,6 +55,16 @@ namespace Api_Vapp.Services.Admin
 
             _context.EducationalVideos.Add(video);
             await _context.SaveChangesAsync();
+
+            await _audit.WriteAsync(new AuditEntry
+            {
+                Category = AuditCategories.Admin,
+                Action = AuditActions.EducationalVideoCreated,
+                EntityType = AuditEntityTypes.EducationalVideo,
+                EntityId = video.Id.ToString(),
+                After = Snapshot(video)
+            });
+
             return ApiResponse<EducationalVideoResponseDto>.CreateSuccess(Map(video), "ویدیو ایجاد شد", 201);
         }
 
@@ -59,6 +73,8 @@ namespace Api_Vapp.Services.Admin
             var video = await _context.EducationalVideos.FirstOrDefaultAsync(v => v.Id == id && !v.IsDeleted);
             if (video == null)
                 return ApiResponse<EducationalVideoResponseDto>.NotFound("ویدیو یافت نشد");
+
+            var before = Snapshot(video);
 
             video.Title = dto.Title.Trim();
             video.Description = dto.Description?.Trim();
@@ -69,6 +85,17 @@ namespace Api_Vapp.Services.Admin
             video.UpdatedAt = DateTime.UtcNow;
 
             await _context.SaveChangesAsync();
+
+            await _audit.WriteAsync(new AuditEntry
+            {
+                Category = AuditCategories.Admin,
+                Action = AuditActions.EducationalVideoUpdated,
+                EntityType = AuditEntityTypes.EducationalVideo,
+                EntityId = video.Id.ToString(),
+                Before = before,
+                After = Snapshot(video)
+            });
+
             return ApiResponse<EducationalVideoResponseDto>.CreateSuccess(Map(video), "ویدیو به‌روزرسانی شد");
         }
 
@@ -78,10 +105,23 @@ namespace Api_Vapp.Services.Admin
             if (video == null)
                 return ApiResponse<bool>.NotFound("ویدیو یافت نشد");
 
+            var before = Snapshot(video);
+
             video.IsDeleted = true;
             video.IsActive = false;
             video.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
+
+            await _audit.WriteAsync(new AuditEntry
+            {
+                Category = AuditCategories.Admin,
+                Action = AuditActions.EducationalVideoDeleted,
+                EntityType = AuditEntityTypes.EducationalVideo,
+                EntityId = video.Id.ToString(),
+                Before = before,
+                After = new { video.Id, isDeleted = true, isActive = false }
+            });
+
             return ApiResponse<bool>.CreateSuccess(true, "ویدیو حذف شد");
         }
 
@@ -93,6 +133,16 @@ namespace Api_Vapp.Services.Admin
                 .ToListAsync();
             return ApiResponse<List<EducationalVideoResponseDto>>.CreateSuccess(videos.Select(Map).ToList());
         }
+
+        private static object Snapshot(EducationalVideo video) => new
+        {
+            video.Id,
+            video.Title,
+            video.VideoUrl,
+            video.ThumbnailUrl,
+            video.SortOrder,
+            video.IsActive
+        };
 
         private static EducationalVideoResponseDto Map(EducationalVideo video) => new()
         {

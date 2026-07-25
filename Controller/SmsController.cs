@@ -54,7 +54,7 @@ namespace Api_Vapp.Controller
 
         private static bool IsSmsSendSuccessful(long sid, int status) => sid > 0 || status > 0;
 
-        private Task TrackManualSendAsync(int userId, string mobile, long sid, string? label = null) =>
+        private Task TrackManualSendAsync(int userId, string mobile, long sid, string? messageText = null, string? label = null) =>
             _deliveryTracking.TrackSuccessfulSendAsync(new SmsDeliveryTrackRequestDto
             {
                 UserId = userId,
@@ -62,6 +62,7 @@ namespace Api_Vapp.Controller
                 SourceEntityLabel = label ?? "ارسال دستی",
                 Mobile = mobile,
                 Sid = sid,
+                MessageText = messageText,
                 SentAt = DateTime.UtcNow
             });
 
@@ -139,7 +140,7 @@ namespace Api_Vapp.Controller
             var result = await _smsService.SendSmsAsync(request);
             if (userId.HasValue && result.Success && result.Data != null && IsSmsSendSuccessful(result.Data.Sid, result.Data.Status))
             {
-                await TrackManualSendAsync(userId.Value, request.Mobile, result.Data.Sid);
+                await TrackManualSendAsync(userId.Value, request.Mobile, result.Data.Sid, request.Message);
             }
             return StatusCode(result.StatusCode, result);
         }
@@ -194,7 +195,7 @@ namespace Api_Vapp.Controller
             {
                 foreach (var mobile in request.Mobiles)
                 {
-                    await TrackManualSendAsync(userId.Value, mobile, result.Data.Sid, "ارسال گروهی");
+                    await TrackManualSendAsync(userId.Value, mobile, result.Data.Sid, request.Message, "ارسال گروهی");
                 }
             }
             return StatusCode(result.StatusCode, result);
@@ -249,9 +250,11 @@ namespace Api_Vapp.Controller
             var result = await _smsService.SendArraySmsAsync(request);
             if (userId.HasValue && result.Success && result.Data != null && IsSmsSendSuccessful(result.Data.Sid, result.Data.Status))
             {
-                foreach (var mobile in request.Mobiles)
+                for (var i = 0; i < request.Mobiles.Count; i++)
                 {
-                    await TrackManualSendAsync(userId.Value, mobile, result.Data.Sid, "ارسال نظیر به نظیر");
+                    var mobile = request.Mobiles[i];
+                    var messageText = i < request.Message.Count ? request.Message[i] : null;
+                    await TrackManualSendAsync(userId.Value, mobile, result.Data.Sid, messageText, "ارسال نظیر به نظیر");
                 }
             }
             return StatusCode(result.StatusCode, result);

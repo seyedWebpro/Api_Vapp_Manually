@@ -363,16 +363,15 @@ public class UserFormServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task SetActiveStatus_SetTrue_OnDraft_PublishesAndReturns200()
+    public async Task SetActiveStatus_SetTrue_OnDraft_Returns400()
     {
         var formId = await _ctx.CreateDraftAsync();
 
         var result = await _ctx.Service.SetActiveStatusAsync(formId, _ctx.OwnerUserId, isActive: true);
 
-        Assert.True(result.Success);
-        Assert.Equal(200, result.StatusCode);
-        Assert.Equal("Published", result.Data!.Status);
-        Assert.True(result.Data.IsActive);
+        Assert.False(result.Success);
+        Assert.Equal(400, result.StatusCode);
+        Assert.Equal(ErrorCodes.ValidationFailed, result.ErrorCode);
         AssertNoServerError(result);
     }
 
@@ -391,15 +390,31 @@ public class UserFormServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task SetActiveStatus_SetFalse_OnDraft_Returns200AlreadyInactive()
+    public async Task SetActiveStatus_SetFalse_OnDraft_Returns400()
     {
         var formId = await _ctx.CreateDraftAsync();
 
         var result = await _ctx.Service.SetActiveStatusAsync(formId, _ctx.OwnerUserId, isActive: false);
 
+        Assert.False(result.Success);
+        Assert.Equal(400, result.StatusCode);
+        Assert.Equal(ErrorCodes.ValidationFailed, result.ErrorCode);
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task SetActiveStatus_SetTrue_OnPublishedInactive_Returns200()
+    {
+        var slug = $"react-{Guid.NewGuid():N}"[..12];
+        var formId = await _ctx.CreatePublishedFormAsync(slug);
+        await _ctx.Service.SetActiveStatusAsync(formId, _ctx.OwnerUserId, isActive: false);
+
+        var result = await _ctx.Service.SetActiveStatusAsync(formId, _ctx.OwnerUserId, isActive: true);
+
         Assert.True(result.Success);
         Assert.Equal(200, result.StatusCode);
-        Assert.False(result.Data!.IsActive);
+        Assert.True(result.Data!.IsActive);
+        Assert.Equal("Published", result.Data.Status);
         AssertNoServerError(result);
     }
 

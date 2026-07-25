@@ -1,7 +1,9 @@
+using Api_Vapp.Constants;
 using Api_Vapp.Data;
 using Api_Vapp.DTOs.Auth;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
+using Api_Vapp.Services.Audit;
 using Api_Vapp.Utilities;
 using BCrypt.Net;
 using Microsoft.EntityFrameworkCore;
@@ -21,6 +23,7 @@ namespace Api_Vapp.Services
         private readonly ITokenBlacklistService _tokenBlacklistService;
         private readonly IMemoryCache _cache;
         private readonly Api_Context _context;
+        private readonly IAuditService _audit;
         private readonly ILogger<AuthService> _logger;
         
         private const int OtpExpirationMinutes = 5;
@@ -38,6 +41,7 @@ namespace Api_Vapp.Services
             ITokenBlacklistService tokenBlacklistService,
             IMemoryCache cache,
             Api_Context context,
+            IAuditService audit,
             ILogger<AuthService> logger)
         {
             _userRepository = userRepository;
@@ -48,6 +52,7 @@ namespace Api_Vapp.Services
             _tokenBlacklistService = tokenBlacklistService;
             _cache = cache;
             _context = context;
+            _audit = audit;
             _logger = logger;
         }
 
@@ -287,6 +292,42 @@ namespace Api_Vapp.Services
 
             _logger.LogWarning("Admin panel OTP blocked for non-admin user {UserId}", user.Id);
             return CreateAdminPanelAccessDeniedOtpResponse();
+        }
+
+        private Task LogAdminLoginFailedAsync(string? phoneNumber, string reason, string? ipAddress, int? userId = null)
+        {
+            return _audit.WriteAsync(new AuditEntry
+            {
+                Category = AuditCategories.Auth,
+                Action = AuditActions.AdminLoginFailed,
+                EntityType = AuditEntityTypes.User,
+                EntityId = userId?.ToString(),
+                ActorUserId = userId,
+                Succeeded = false,
+                Metadata = new
+                {
+                    phone = phoneNumber,
+                    reason,
+                    ip = ipAddress
+                }
+            });
+        }
+
+        private Task LogAdminLoginSucceededAsync(int userId, string? phoneNumber, string? ipAddress)
+        {
+            return _audit.WriteAsync(new AuditEntry
+            {
+                Category = AuditCategories.Auth,
+                Action = AuditActions.AdminLoginSucceeded,
+                EntityType = AuditEntityTypes.User,
+                EntityId = userId.ToString(),
+                ActorUserId = userId,
+                Metadata = new
+                {
+                    phone = phoneNumber,
+                    ip = ipAddress
+                }
+            });
         }
 
         public async Task<SendOtpResponseDto> RegisterAsync(RegisterDto registerDto, string? ipAddress = null)
@@ -644,6 +685,8 @@ namespace Api_Vapp.Services
                 {
                     _logger.LogWarning("Rate limit exceeded for login {PhoneNumber} from IP {IpAddress}", 
                         loginDto.PhoneNumber, ipAddress);
+                    if (requireAdminPanelAccess)
+                        await LogAdminLoginFailedAsync(loginDto.PhoneNumber, "RateLimited", ipAddress);
                     return new SendOtpResponseDto
                     {
                         StatusCode = 429, // Too Many Requests
@@ -657,6 +700,8 @@ namespace Api_Vapp.Services
                 var (user, blockedResponse) = await ResolveLoginUserForOtpAsync(loginDto.PhoneNumber);
                 if (blockedResponse != null)
                 {
+                    if (requireAdminPanelAccess)
+                        await LogAdminLoginFailedAsync(loginDto.PhoneNumber, "UserNotFoundOrInactive", ipAddress);
                     return blockedResponse;
                 }
 
@@ -665,6 +710,7 @@ namespace Api_Vapp.Services
                     var adminBlock = await BlockAdminPanelAccessForOtpAsync(user);
                     if (adminBlock != null)
                     {
+                        await LogAdminLoginFailedAsync(loginDto.PhoneNumber, "NotAdmin", ipAddress, user.Id);
                         return adminBlock;
                     }
                 }
@@ -690,6 +736,8 @@ namespace Api_Vapp.Services
                     ipAddress);
                 if (!sent)
                 {
+                    if (requireAdminPanelAccess)
+                        await LogAdminLoginFailedAsync(loginDto.PhoneNumber, "OtpSendFailed", ipAddress, user?.Id);
                     return failureResponse!;
                 }
                 
@@ -723,6 +771,8 @@ namespace Api_Vapp.Services
                     var remainingMinutes = (int)(attemptData.LockedUntil.Value - DateTime.UtcNow).TotalMinutes;
                     _logger.LogWarning("OTP attempts locked for login {PhoneNumber} from IP {IpAddress}", 
                         verifyOtpDto.PhoneNumber, ipAddress);
+                    if (requireAdminPanelAccess)
+                        await LogAdminLoginFailedAsync(verifyOtpDto.PhoneNumber, "Locked", ipAddress);
                     return new AuthResponseDto
                     {
                         StatusCode = 423, // Locked
@@ -738,6 +788,8 @@ namespace Api_Vapp.Services
                 {
                     // اگر OTP در cache وجود نداشت، ممکن است شماره تلفن اشتباه باشد یا OTP منقضی شده باشد
                     // برای امنیت، پیام کلی می‌دهیم
+                    if (requireAdminPanelAccess)
+                        await LogAdminLoginFailedAsync(verifyOtpDto.PhoneNumber, "OtpExpired", ipAddress);
                     return new AuthResponseDto
                     {
                         StatusCode = 400, // Bad Request
@@ -779,6 +831,9 @@ namespace Api_Vapp.Services
 
                     SetCacheData(attemptKey, attemptData, OtpLockoutMinutes + 5);
 
+                    if (requireAdminPanelAccess)
+                        await LogAdminLoginFailedAsync(verifyOtpDto.PhoneNumber, "IncorrectOtp", ipAddress);
+
                     return new AuthResponseDto
                     {
                         StatusCode = 400, // Bad Request
@@ -791,11 +846,15 @@ namespace Api_Vapp.Services
                 var (user, blockedResponse) = await ResolveLoginUserForVerifyAsync(verifyOtpDto.PhoneNumber);
                 if (blockedResponse != null)
                 {
+                    if (requireAdminPanelAccess)
+                        await LogAdminLoginFailedAsync(verifyOtpDto.PhoneNumber, "UserNotFoundOrInactive", ipAddress);
                     return blockedResponse;
                 }
 
                 if (user == null)
                 {
+                    if (requireAdminPanelAccess)
+                        await LogAdminLoginFailedAsync(verifyOtpDto.PhoneNumber, "UserNotFound", ipAddress);
                     return new AuthResponseDto
                     {
                         StatusCode = 400,
@@ -809,6 +868,7 @@ namespace Api_Vapp.Services
                     _cache.Remove(cacheKey);
                     _cache.Remove(attemptKey);
                     _logger.LogWarning("Admin panel login blocked for non-admin user {UserId}", user.Id);
+                    await LogAdminLoginFailedAsync(verifyOtpDto.PhoneNumber, "NotAdmin", ipAddress, user.Id);
                     return CreateAdminPanelAccessDeniedAuthResponse();
                 }
 
@@ -825,6 +885,9 @@ namespace Api_Vapp.Services
 
                 _logger.LogInformation("User logged in successfully: {PhoneNumber} from IP {IpAddress}", 
                     verifyOtpDto.PhoneNumber, ipAddress);
+
+                if (requireAdminPanelAccess)
+                    await LogAdminLoginSucceededAsync(user.Id, verifyOtpDto.PhoneNumber, ipAddress);
 
                 return new AuthResponseDto
                 {
@@ -885,6 +948,7 @@ namespace Api_Vapp.Services
                     var adminBlock = await BlockAdminPanelAccessForOtpAsync(user);
                     if (adminBlock != null)
                     {
+                        await LogAdminLoginFailedAsync(loginDto.PhoneNumber, "NotAdmin", ipAddress, user.Id);
                         return adminBlock;
                     }
                 }

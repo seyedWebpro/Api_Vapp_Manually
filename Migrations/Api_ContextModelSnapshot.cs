@@ -22,6 +22,110 @@ namespace Api_Vapp.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("Api_Vapp.Models.AdminAuditLog", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<int?>("ActorUserId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("CorrelationId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<string>("EntityId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("EntityType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("HttpMethod")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<string>("IpAddress")
+                        .HasMaxLength(45)
+                        .HasColumnType("nvarchar(45)");
+
+                    b.Property<string>("Metadata")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("NewValue")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("OldValue")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("RequestPath")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasDefaultValue("Http");
+
+                    b.Property<bool>("Succeeded")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
+                    b.Property<int?>("TargetUserId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("UserAgent")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Action");
+
+                    b.HasIndex("ActorUserId");
+
+                    b.HasIndex("Category");
+
+                    b.HasIndex("CorrelationId");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("ActorUserId", "CreatedAt");
+
+                    b.HasIndex("Category", "CreatedAt");
+
+                    b.HasIndex("EntityType", "EntityId");
+
+                    b.ToTable("AdminAuditLogs", (string)null);
+                });
+
             modelBuilder.Entity("Api_Vapp.Models.AutomatedMessage", b =>
                 {
                     b.Property<int>("Id")
@@ -205,6 +309,10 @@ namespace Api_Vapp.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
 
+                    b.Property<string>("CustomerNote")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
                     b.Property<DateTime>("EndUtc")
                         .HasColumnType("datetime2");
 
@@ -237,7 +345,7 @@ namespace Api_Vapp.Migrations
 
                     b.HasIndex("BookingServiceItemId", "StartUtc")
                         .IsUnique()
-                        .HasFilter("[IsDeleted] = 0 AND [Status] = 'Confirmed'");
+                        .HasFilter("[IsDeleted] = 0 AND ([Status] = 'Confirmed' OR [Status] = 'Pending')");
 
                     b.HasIndex("Status", "StartUtc", "ReminderSentAt");
 
@@ -384,6 +492,33 @@ namespace Api_Vapp.Migrations
                     b.ToTable("BookingServiceItems");
                 });
 
+            modelBuilder.Entity("Api_Vapp.Models.BookingSlotBlock", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("BookingSystemId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<DateTime>("SlotStartUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BookingSystemId", "SlotStartUtc")
+                        .IsUnique();
+
+                    b.ToTable("BookingSlotBlocks");
+                });
+
             modelBuilder.Entity("Api_Vapp.Models.BookingSystem", b =>
                 {
                     b.Property<int>("Id")
@@ -415,6 +550,10 @@ namespace Api_Vapp.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
                         .HasDefaultValue(false);
+
+                    b.Property<string>("Location")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<DateTime?>("PublishedAt")
                         .HasColumnType("datetime2");
@@ -527,6 +666,192 @@ namespace Api_Vapp.Migrations
                     b.HasIndex("ContactNotebookId");
 
                     b.ToTable("BookingSystemNotebooks");
+                });
+
+            modelBuilder.Entity("Api_Vapp.Models.BusinessCard", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("ContactEmail")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<bool>("ContactEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
+                    b.Property<string>("ContactInstagram")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("ContactPhone")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<bool>("DescriptionEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
+                    b.Property<string>("DescriptionText")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<string>("DescriptionTitle")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<string>("LogoUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("MapAddress")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<bool>("MapEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<double?>("MapLatitude")
+                        .HasColumnType("float");
+
+                    b.Property<double?>("MapLongitude")
+                        .HasColumnType("float");
+
+                    b.Property<DateTime?>("PublishedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("ServicesEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<bool>("SliderEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<string>("Slug")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("TemplateId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("TemplateKey")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IsDeleted");
+
+                    b.HasIndex("Slug")
+                        .IsUnique()
+                        .HasFilter("[Slug] IS NOT NULL AND [IsDeleted] = 0");
+
+                    b.HasIndex("Status");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("UserId", "IsDeleted", "CreatedAt");
+
+                    b.ToTable("BusinessCards");
+                });
+
+            modelBuilder.Entity("Api_Vapp.Models.BusinessCardServiceItem", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("BusinessCardId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ImageUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<decimal>("Price")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BusinessCardId");
+
+                    b.ToTable("BusinessCardServiceItems");
+                });
+
+            modelBuilder.Entity("Api_Vapp.Models.BusinessCardSliderImage", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("BusinessCardId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ImageUrl")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BusinessCardId");
+
+                    b.ToTable("BusinessCardSliderImages");
                 });
 
             modelBuilder.Entity("Api_Vapp.Models.Cashback", b =>
@@ -2567,6 +2892,9 @@ namespace Api_Vapp.Migrations
                     b.Property<DateTime?>("LastCheckedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("MessageText")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("Mobile")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -2623,6 +2951,10 @@ namespace Api_Vapp.Migrations
                     b.HasIndex("UserId");
 
                     b.HasIndex("SourceModule", "SourceEntityId");
+
+                    b.HasIndex("UserId", "SentAt");
+
+                    b.HasIndex("UserId", "Sid");
 
                     b.HasIndex("IsDeliveryFinal", "SendStatus", "SentAt");
 
@@ -3850,6 +4182,17 @@ namespace Api_Vapp.Migrations
                     b.Navigation("BookingSystem");
                 });
 
+            modelBuilder.Entity("Api_Vapp.Models.BookingSlotBlock", b =>
+                {
+                    b.HasOne("Api_Vapp.Models.BookingSystem", "BookingSystem")
+                        .WithMany("SlotBlocks")
+                        .HasForeignKey("BookingSystemId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("BookingSystem");
+                });
+
             modelBuilder.Entity("Api_Vapp.Models.BookingSystem", b =>
                 {
                     b.HasOne("Api_Vapp.Models.User", "User")
@@ -3889,6 +4232,39 @@ namespace Api_Vapp.Migrations
                     b.Navigation("BookingSystem");
 
                     b.Navigation("ContactNotebook");
+                });
+
+            modelBuilder.Entity("Api_Vapp.Models.BusinessCard", b =>
+                {
+                    b.HasOne("Api_Vapp.Models.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Api_Vapp.Models.BusinessCardServiceItem", b =>
+                {
+                    b.HasOne("Api_Vapp.Models.BusinessCard", "BusinessCard")
+                        .WithMany("ServiceItems")
+                        .HasForeignKey("BusinessCardId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("BusinessCard");
+                });
+
+            modelBuilder.Entity("Api_Vapp.Models.BusinessCardSliderImage", b =>
+                {
+                    b.HasOne("Api_Vapp.Models.BusinessCard", "BusinessCard")
+                        .WithMany("SliderImages")
+                        .HasForeignKey("BusinessCardId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("BusinessCard");
                 });
 
             modelBuilder.Entity("Api_Vapp.Models.Cashback", b =>
@@ -4661,6 +5037,15 @@ namespace Api_Vapp.Migrations
                     b.Navigation("Notebooks");
 
                     b.Navigation("Services");
+
+                    b.Navigation("SlotBlocks");
+                });
+
+            modelBuilder.Entity("Api_Vapp.Models.BusinessCard", b =>
+                {
+                    b.Navigation("ServiceItems");
+
+                    b.Navigation("SliderImages");
                 });
 
             modelBuilder.Entity("Api_Vapp.Models.Cashback", b =>

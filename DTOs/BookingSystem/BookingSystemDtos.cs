@@ -22,6 +22,7 @@ namespace Api_Vapp.DTOs.BookingSystem
         public string ActivityType { get; set; } = string.Empty;
         public string? ActivityTypeTitle { get; set; }
         public string? Description { get; set; }
+        public string? Location { get; set; }
         public string Slug { get; set; } = string.Empty;
         public string PublicUrl { get; set; } = string.Empty;
         public string Status { get; set; } = string.Empty;
@@ -75,6 +76,12 @@ namespace Api_Vapp.DTOs.BookingSystem
         public string ActivityType { get; set; } = string.Empty;
 
         public string? Description { get; set; }
+
+        /// <summary>
+        /// مکان نمایشی — اختیاری (مثلاً تهران، سعادت‌آباد)
+        /// </summary>
+        [MaxLength(200)]
+        public string? Location { get; set; }
 
         /// <summary>
         /// slug سفارشی — اختیاری؛ در صورت خالی بودن در confirm خودکار ساخته می‌شود
@@ -260,6 +267,10 @@ namespace Api_Vapp.DTOs.BookingSystem
     {
         public string? Title { get; set; }
         public string? Description { get; set; }
+
+        [MaxLength(200)]
+        public string? Location { get; set; }
+
         public string? ActivityType { get; set; }
         public bool? SaveToPhonebook { get; set; }
         public List<int>? NotebookIds { get; set; }

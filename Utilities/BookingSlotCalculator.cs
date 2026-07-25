@@ -4,14 +4,49 @@ using Api_Vapp.Models;
 namespace Api_Vapp.Utilities
 {
     /// <summary>
-    /// محاسبه اسلات‌های خالی بر اساس برنامه هفتگی، استثناها و نوبت‌های موجود
+    /// محاسبه اسلات‌های خالی بر اساس برنامه هفتگی، استثناها، بلاک‌ها و نوبت‌های موجود
     /// </summary>
     public static class BookingSlotCalculator
     {
         public static List<BookingTimeSlotDto> CalculateAvailableSlots(
             BookingServiceItem service,
             DateOnly dateUtc,
-            IEnumerable<BookingAppointment> existingAppointments)
+            IEnumerable<BookingAppointment> existingAppointments,
+            IEnumerable<DateTime>? blockedStarts = null)
+        {
+            var allSlots = CalculateAllSlots(service, dateUtc);
+            if (allSlots.Count == 0)
+            {
+                return allSlots;
+            }
+
+            var activeAppointments = existingAppointments
+                .Where(a => BookingAppointmentStatuses.IsActive(a.Status))
+                .OrderBy(a => a.StartUtc)
+                .ToList();
+
+            if (service.MaxDailyReservations.HasValue &&
+                activeAppointments.Count >= service.MaxDailyReservations.Value)
+            {
+                return new List<BookingTimeSlotDto>();
+            }
+
+            var blocked = new HashSet<DateTime>(
+                (blockedStarts ?? Enumerable.Empty<DateTime>()).Select(NormalizeUtc));
+
+            return allSlots
+                .Where(slot =>
+                    !blocked.Contains(NormalizeUtc(slot.StartUtc)) &&
+                    !HasConflict(slot.StartUtc, slot.EndUtc, service.BufferMinutesBetweenAppointments, activeAppointments))
+                .ToList();
+        }
+
+        /// <summary>
+        /// همه اسلات‌های ممکن در ساعات کاری (بدون در نظر گرفتن رزرو/بلاک)
+        /// </summary>
+        public static List<BookingTimeSlotDto> CalculateAllSlots(
+            BookingServiceItem service,
+            DateOnly dateUtc)
         {
             if (IsExceptionDay(service, dateUtc))
             {
@@ -35,17 +70,6 @@ namespace Api_Vapp.Utilities
                 return new List<BookingTimeSlotDto>();
             }
 
-            var activeAppointments = existingAppointments
-                .Where(a => BookingAppointmentStatuses.IsActive(a.Status))
-                .OrderBy(a => a.StartUtc)
-                .ToList();
-
-            if (service.MaxDailyReservations.HasValue &&
-                activeAppointments.Count >= service.MaxDailyReservations.Value)
-            {
-                return new List<BookingTimeSlotDto>();
-            }
-
             var slots = new List<BookingTimeSlotDto>();
             var step = TimeSpan.FromMinutes(service.DurationMinutes + service.BufferMinutesBetweenAppointments);
             var duration = TimeSpan.FromMinutes(service.DurationMinutes);
@@ -53,16 +77,11 @@ namespace Api_Vapp.Utilities
 
             while (cursor + duration <= workEnd)
             {
-                var slotEnd = cursor + duration;
-                if (!HasConflict(cursor, slotEnd, service.BufferMinutesBetweenAppointments, activeAppointments))
+                slots.Add(new BookingTimeSlotDto
                 {
-                    slots.Add(new BookingTimeSlotDto
-                    {
-                        StartUtc = cursor,
-                        EndUtc = slotEnd
-                    });
-                }
-
+                    StartUtc = cursor,
+                    EndUtc = cursor + duration
+                });
                 cursor += step;
             }
 
@@ -72,11 +91,13 @@ namespace Api_Vapp.Utilities
         public static bool IsSlotAvailable(
             BookingServiceItem service,
             DateTime startUtc,
-            IEnumerable<BookingAppointment> existingAppointments)
+            IEnumerable<BookingAppointment> existingAppointments,
+            IEnumerable<DateTime>? blockedStarts = null)
         {
             var date = DateOnly.FromDateTime(startUtc);
-            var slots = CalculateAvailableSlots(service, date, existingAppointments);
-            return slots.Any(s => s.StartUtc == startUtc);
+            var slots = CalculateAvailableSlots(service, date, existingAppointments, blockedStarts);
+            var normalized = NormalizeUtc(startUtc);
+            return slots.Any(s => NormalizeUtc(s.StartUtc) == normalized);
         }
 
         private static bool IsExceptionDay(BookingServiceItem service, DateOnly dateUtc)
@@ -105,5 +126,8 @@ namespace Api_Vapp.Utilities
 
             return false;
         }
+
+        private static DateTime NormalizeUtc(DateTime value) =>
+            value.Kind == DateTimeKind.Utc ? value : DateTime.SpecifyKind(value, DateTimeKind.Utc);
     }
 }

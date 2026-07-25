@@ -5,6 +5,7 @@ using Api_Vapp.DTOs.Common;
 using Api_Vapp.DTOs.File;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
+using Api_Vapp.Services.Audit;
 using Api_Vapp.Utilities;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -15,15 +16,18 @@ namespace Api_Vapp.Services.Admin
     {
         private readonly Api_Context _context;
         private readonly IFileUploadService _fileUploadService;
+        private readonly IAuditService _audit;
         private readonly ILogger<AdminSupportTicketService> _logger;
 
         public AdminSupportTicketService(
             Api_Context context,
             IFileUploadService fileUploadService,
+            IAuditService audit,
             ILogger<AdminSupportTicketService> logger)
         {
             _context = context;
             _fileUploadService = fileUploadService;
+            _audit = audit;
             _logger = logger;
         }
 
@@ -166,6 +170,21 @@ namespace Api_Vapp.Services.Admin
                 ticket.UpdatedAt = DateTime.UtcNow;
                 await _context.SaveChangesAsync();
 
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Admin,
+                    Action = AuditActions.SupportTicketReplied,
+                    EntityType = AuditEntityTypes.SupportTicket,
+                    EntityId = ticket.Id.ToString(),
+                    ActorUserId = adminUserId,
+                    TargetUserId = ticket.UserId,
+                    After = new
+                    {
+                        hasAttachment,
+                        status = ticket.Status
+                    }
+                });
+
                 var reloaded = await LoadTicketAsync(id);
                 return ApiResponse<SupportTicketResponseDto>.CreateSuccess(MapTicket(reloaded!), "پاسخ ثبت شد");
             }
@@ -187,6 +206,9 @@ namespace Api_Vapp.Services.Admin
                 if (ticket == null)
                     return ApiResponse<SupportTicketResponseDto>.NotFound("تیکت یافت نشد");
 
+                var previousStatus = ticket.Status;
+                var previousAssignedToUserId = ticket.AssignedToUserId;
+
                 var newStatus = dto.Status.Trim();
                 ticket.Status = newStatus;
                 ticket.AssignedToUserId = dto.AssignedToUserId;
@@ -198,6 +220,26 @@ namespace Api_Vapp.Services.Admin
                     ticket.ClosedAt = null;
 
                 await _context.SaveChangesAsync();
+
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Admin,
+                    Action = AuditActions.SupportTicketStatusChanged,
+                    EntityType = AuditEntityTypes.SupportTicket,
+                    EntityId = ticket.Id.ToString(),
+                    TargetUserId = ticket.UserId,
+                    Before = new
+                    {
+                        status = previousStatus,
+                        assignedToUserId = previousAssignedToUserId
+                    },
+                    After = new
+                    {
+                        status = ticket.Status,
+                        assignedToUserId = ticket.AssignedToUserId
+                    }
+                });
+
                 var reloaded = await LoadTicketAsync(id);
                 return ApiResponse<SupportTicketResponseDto>.CreateSuccess(MapTicket(reloaded!), "وضعیت تیکت به‌روزرسانی شد");
             }

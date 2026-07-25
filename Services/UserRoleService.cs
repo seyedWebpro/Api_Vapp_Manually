@@ -1,8 +1,10 @@
+using Api_Vapp.Constants;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.DTOs.Role;
 using Api_Vapp.DTOs.UserRole;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
+using Api_Vapp.Services.Audit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -18,19 +20,22 @@ namespace Api_Vapp.Services
         private readonly IRoleRepository _roleRepository;
         private readonly Api_Vapp.Data.Api_Context _context;
         private readonly ILogger<UserRoleService> _logger;
+        private readonly IAuditService _audit;
 
         public UserRoleService(
             IUserRoleRepository userRoleRepository,
             IUserRepository userRepository,
             IRoleRepository roleRepository,
             Api_Vapp.Data.Api_Context context,
-            ILogger<UserRoleService> logger)
+            ILogger<UserRoleService> logger,
+            IAuditService audit)
         {
             _userRoleRepository = userRoleRepository;
             _userRepository = userRepository;
             _roleRepository = roleRepository;
             _context = context;
             _logger = logger;
+            _audit = audit;
         }
 
         public async Task<ApiResponse<UserRoleResponseDto>> CreateUserRoleAsync(CreateUserRoleDto createUserRoleDto)
@@ -85,6 +90,22 @@ namespace Api_Vapp.Services
                 var createdUserRole = await _userRoleRepository.AddAsync(userRole);
 
                 _logger.LogInformation("UserRole created successfully with ID: {UserRoleId}", createdUserRole.Id);
+
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.User,
+                    Action = AuditActions.UserRoleAssigned,
+                    EntityType = AuditEntityTypes.UserRole,
+                    EntityId = createdUserRole.Id.ToString(),
+                    TargetUserId = createdUserRole.UserId,
+                    After = new
+                    {
+                        userRoleId = createdUserRole.Id,
+                        userId = createdUserRole.UserId,
+                        roleId = createdUserRole.RoleId,
+                        isActive = createdUserRole.IsActive
+                    }
+                });
 
                 return ApiResponse<UserRoleResponseDto>.CreateSuccess(
                     MapToUserRoleResponseDto(createdUserRole),
@@ -286,6 +307,22 @@ namespace Api_Vapp.Services
                 await _userRoleRepository.UpdateAsync(userRole);
 
                 _logger.LogInformation("UserRole soft deleted successfully with ID: {UserRoleId}", id);
+
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.User,
+                    Action = AuditActions.UserRoleRemoved,
+                    EntityType = AuditEntityTypes.UserRole,
+                    EntityId = userRole.Id.ToString(),
+                    TargetUserId = userRole.UserId,
+                    Before = new
+                    {
+                        userRoleId = userRole.Id,
+                        userId = userRole.UserId,
+                        roleId = userRole.RoleId,
+                        isActive = userRole.IsActive
+                    }
+                });
 
                 return ApiResponse<bool>.CreateSuccess(true, "رابطه کاربر-نقش با موفقیت حذف شد");
             }

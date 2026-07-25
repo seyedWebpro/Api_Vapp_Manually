@@ -16,9 +16,11 @@ namespace Api_Vapp.Services
         private readonly Api_Context _context;
         private readonly IBookingAppointmentRepository _appointmentRepository;
         private readonly IBookingSystemRepository _systemRepository;
+        private readonly PublicPhonebookService _phonebookService;
         private readonly ISmsService _smsService;
         private readonly ISmsDeliveryTrackingService _deliveryTracking;
         private readonly ILogger<BookingAppointmentService> _logger;
+        private readonly BookingSystemOptions _options;
 
         private const int ReminderWindowMinutes = 2;
         private const int MaxReminderOffsetMinutes = 43200;
@@ -27,15 +29,19 @@ namespace Api_Vapp.Services
             Api_Context context,
             IBookingAppointmentRepository appointmentRepository,
             IBookingSystemRepository systemRepository,
+            PublicPhonebookService phonebookService,
             ISmsService smsService,
             ISmsDeliveryTrackingService deliveryTracking,
+            Microsoft.Extensions.Options.IOptions<BookingSystemOptions> options,
             ILogger<BookingAppointmentService> logger)
         {
             _context = context;
             _appointmentRepository = appointmentRepository;
             _systemRepository = systemRepository;
+            _phonebookService = phonebookService;
             _smsService = smsService;
             _deliveryTracking = deliveryTracking;
+            _options = options.Value;
             _logger = logger;
         }
 
@@ -93,7 +99,9 @@ namespace Api_Vapp.Services
                 }
 
                 var existing = await _appointmentRepository.GetAppointmentsForServiceOnDateAsync(serviceId, date);
-                var slots = BookingSlotCalculator.CalculateAvailableSlots(service, date, existing);
+                var blocked = await _appointmentRepository.GetBlockedStartsForSystemOnDateAsync(
+                    service.BookingSystemId, date);
+                var slots = BookingSlotCalculator.CalculateAvailableSlots(service, date, existing, blocked);
 
                 var now = DateTime.UtcNow;
                 slots = slots.Where(s => s.StartUtc > now).ToList();
@@ -123,7 +131,6 @@ namespace Api_Vapp.Services
             }
 
             var normalizedSlug = slug.Trim().ToLowerInvariant();
-
             await using var transaction = await _context.Database.BeginTransactionAsync();
 
             try
@@ -141,85 +148,35 @@ namespace Api_Vapp.Services
                     return ApiResponse<CreatePublicBookingResponseDto>.NotFound("صفحه رزرو یافت نشد");
                 }
 
-                var mobile = BookingMobileHelper.Normalize(dto.CustomerMobile);
-                if (!BookingMobileHelper.IsValidIranianMobile(mobile))
+                var created = await CreateAppointmentInternalAsync(
+                    system,
+                    dto.ServiceId,
+                    dto.StartUtc,
+                    dto.CustomerFullName,
+                    dto.CustomerMobile,
+                    dto.CustomerNote,
+                    BookingAppointmentStatuses.Pending,
+                    requireFutureSlot: true);
+
+                if (!created.Success)
                 {
-                    return ApiResponse<CreatePublicBookingResponseDto>.BadRequest(
-                        "شماره موبایل نامعتبر است",
-                        errorCode: ErrorCodes.ValidationFailed);
-                }
-
-                if (string.IsNullOrWhiteSpace(dto.CustomerFullName))
-                {
-                    return ApiResponse<CreatePublicBookingResponseDto>.BadRequest(
-                        "نام الزامی است",
-                        errorCode: ErrorCodes.ValidationFailed);
-                }
-
-                var service = await _appointmentRepository.GetServiceForBookingAsync(system.Id, dto.ServiceId);
-                if (service == null)
-                {
-                    return ApiResponse<CreatePublicBookingResponseDto>.NotFound("خدمت یافت نشد");
-                }
-
-                var startUtc = NormalizeUtc(dto.StartUtc);
-                if (startUtc <= DateTime.UtcNow)
-                {
-                    return ApiResponse<CreatePublicBookingResponseDto>.BadRequest(
-                        "زمان انتخاب‌شده گذشته است",
-                        errorCode: ErrorCodes.InvalidInput);
-                }
-
-                var date = DateOnly.FromDateTime(startUtc);
-                var existing = await _appointmentRepository.GetAppointmentsForServiceOnDateAsync(service.Id, date);
-
-                if (!BookingSlotCalculator.IsSlotAvailable(service, startUtc, existing))
-                {
-                    return ApiResponse<CreatePublicBookingResponseDto>.BadRequest(
-                        "این زمان دیگر در دسترس نیست",
-                        errorCode: ErrorCodes.ValidationFailed);
-                }
-
-                var now = DateTime.UtcNow;
-                var appointment = new BookingAppointment
-                {
-                    BookingSystemId = system.Id,
-                    BookingServiceItemId = service.Id,
-                    CustomerFullName = dto.CustomerFullName.Trim(),
-                    CustomerMobile = mobile,
-                    StartUtc = startUtc,
-                    EndUtc = startUtc.AddMinutes(service.DurationMinutes),
-                    Status = BookingAppointmentStatuses.Confirmed,
-                    CreatedAt = now
-                };
-
-                await _context.BookingAppointments.AddAsync(appointment);
-                await _context.SaveChangesAsync();
-
-                if (system.SaveToPhonebook && system.Notebooks.Count > 0)
-                {
-                    var contactId = await SaveCustomerToPhonebooksAsync(system, mobile, dto.CustomerFullName.Trim());
-                    if (contactId.HasValue)
-                    {
-                        appointment.ContactId = contactId;
-                        appointment.UpdatedAt = DateTime.UtcNow;
-                        await _context.SaveChangesAsync();
-                    }
+                    await transaction.RollbackAsync();
+                    return ApiResponse<CreatePublicBookingResponseDto>.Error(
+                        created.ErrorMessage!,
+                        created.StatusCode,
+                        errorCode: created.ErrorCode);
                 }
 
                 await transaction.CommitAsync();
 
                 _logger.LogInformation(
                     "Public booking created {AppointmentId} for system {SystemId}",
-                    appointment.Id,
+                    created.Appointment!.Id,
                     system.Id);
 
-                var responseDto = MapToDto(appointment);
-                responseDto.ServiceTitle = service.Title;
-
                 return ApiResponse<CreatePublicBookingResponseDto>.CreateSuccess(
-                    new CreatePublicBookingResponseDto { Appointment = responseDto },
-                    "نوبت با موفقیت ثبت شد",
+                    new CreatePublicBookingResponseDto { Appointment = MapToDto(created.Appointment) },
+                    "نوبت با موفقیت ثبت شد و منتظر تأیید است",
                     201);
             }
             catch (DbUpdateException dbEx)
@@ -236,6 +193,111 @@ namespace Api_Vapp.Services
             }
         }
 
+        public async Task<ApiResponse<BookingDashboardDto>> GetDashboardAsync(
+            int systemId, int userId, DateOnly? dateUtc = null)
+        {
+            try
+            {
+                var system = await _systemRepository.GetByIdAndUserIdAsync(systemId, userId);
+                if (system == null)
+                {
+                    return ApiResponse<BookingDashboardDto>.NotFound("سیستم رزرو یافت نشد");
+                }
+
+                var today = dateUtc ?? DateOnly.FromDateTime(DateTime.UtcNow);
+                var counts = await _appointmentRepository.GetDashboardCountsAsync(systemId, today);
+                var todayAppointments = await _appointmentRepository.GetAppointmentsForSystemOnDateAsync(systemId, today);
+
+                var todaySchedule = todayAppointments
+                    .Where(a => a.Status == BookingAppointmentStatuses.Confirmed)
+                    .OrderBy(a => a.StartUtc)
+                    .Select(MapToDto)
+                    .ToList();
+
+                return ApiResponse<BookingDashboardDto>.CreateSuccess(new BookingDashboardDto
+                {
+                    SystemId = system.Id,
+                    Title = system.Title,
+                    ActivityType = system.ActivityType,
+                    ActivityTypeTitle = BookingActivityTypes.GetTitle(system.ActivityType),
+                    Location = system.Location,
+                    PublicUrl = BuildPublicUrl(system.Slug),
+                    IsActive = system.IsActive,
+                    Stats = new BookingDashboardStatsDto
+                    {
+                        TodayTotal = counts.TodayTotal,
+                        Confirmed = counts.Confirmed,
+                        Pending = counts.Pending,
+                        Cancelled = counts.Cancelled
+                    },
+                    TodaySchedule = todaySchedule
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error loading dashboard for system {SystemId}", systemId);
+                return ApiResponse<BookingDashboardDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
+        public async Task<ApiResponse<BookingCalendarMonthDto>> GetCalendarAsync(
+            int systemId, int userId, int year, int month)
+        {
+            try
+            {
+                if (year < 2000 || year > 2100 || month < 1 || month > 12)
+                {
+                    return ApiResponse<BookingCalendarMonthDto>.BadRequest(
+                        "سال یا ماه نامعتبر است",
+                        errorCode: ErrorCodes.InvalidInput);
+                }
+
+                var system = await _systemRepository.GetByIdAndUserIdAsync(systemId, userId);
+                if (system == null)
+                {
+                    return ApiResponse<BookingCalendarMonthDto>.NotFound("سیستم رزرو یافت نشد");
+                }
+
+                var fromUtc = new DateTime(year, month, 1, 0, 0, 0, DateTimeKind.Utc);
+                var toUtc = fromUtc.AddMonths(1);
+                var appointments = await _appointmentRepository.GetCalendarAppointmentsAsync(systemId, fromUtc, toUtc);
+
+                var days = appointments
+                    .GroupBy(a => DateOnly.FromDateTime(a.StartUtc))
+                    .OrderBy(g => g.Key)
+                    .Select(g => new BookingCalendarDayDto
+                    {
+                        Date = g.Key,
+                        TotalCount = g.Count(),
+                        Slots = g
+                            .OrderBy(a => a.StartUtc)
+                            .Take(5)
+                            .Select(a => new BookingCalendarSlotDto
+                            {
+                                AppointmentId = a.Id,
+                                StartUtc = EnsureUtc(a.StartUtc),
+                                Status = a.Status,
+                                CustomerFullName = a.CustomerFullName,
+                                ServiceTitle = a.BookingServiceItem?.Title ?? string.Empty
+                            })
+                            .ToList()
+                    })
+                    .ToList();
+
+                return ApiResponse<BookingCalendarMonthDto>.CreateSuccess(new BookingCalendarMonthDto
+                {
+                    Year = year,
+                    Month = month,
+                    Days = days
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error loading calendar for system {SystemId}", systemId);
+                return ApiResponse<BookingCalendarMonthDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
         public async Task<ApiResponse<BookingAppointmentListDto>> GetAppointmentsAsync(
             int systemId,
             int userId,
@@ -244,7 +306,8 @@ namespace Api_Vapp.Services
             string? status,
             DateTime? fromUtc,
             DateTime? toUtc,
-            int? serviceId)
+            int? serviceId,
+            string? searchName = null)
         {
             try
             {
@@ -260,6 +323,13 @@ namespace Api_Vapp.Services
                     pageSize = 20;
                 }
 
+                if (!string.IsNullOrWhiteSpace(status) && !BookingAppointmentStatuses.IsValid(status))
+                {
+                    return ApiResponse<BookingAppointmentListDto>.BadRequest(
+                        "وضعیت نامعتبر است",
+                        errorCode: ErrorCodes.InvalidInput);
+                }
+
                 var system = await _systemRepository.GetByIdAndUserIdAsync(systemId, userId);
                 if (system == null)
                 {
@@ -267,7 +337,7 @@ namespace Api_Vapp.Services
                 }
 
                 var (items, totalCount) = await _appointmentRepository.GetBySystemIdAsync(
-                    systemId, pageNumber, pageSize, status, fromUtc, toUtc, serviceId);
+                    systemId, pageNumber, pageSize, status, fromUtc, toUtc, serviceId, searchName);
 
                 var totalPages = totalCount == 0 ? 0 : (int)Math.Ceiling(totalCount / (double)pageSize);
 
@@ -284,6 +354,274 @@ namespace Api_Vapp.Services
             {
                 _logger.LogError(ex, "Error loading appointments for system {SystemId}, user {UserId}", systemId, userId);
                 return ApiResponse<BookingAppointmentListDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
+        public async Task<ApiResponse<BookingAppointmentDto>> GetAppointmentByIdAsync(
+            int systemId, int appointmentId, int userId)
+        {
+            try
+            {
+                var system = await _systemRepository.GetByIdAndUserIdAsync(systemId, userId);
+                if (system == null)
+                {
+                    return ApiResponse<BookingAppointmentDto>.NotFound("سیستم رزرو یافت نشد");
+                }
+
+                var appointment = await _appointmentRepository.GetByIdAndSystemIdAsync(appointmentId, systemId);
+                if (appointment == null)
+                {
+                    return ApiResponse<BookingAppointmentDto>.NotFound("نوبت یافت نشد");
+                }
+
+                return ApiResponse<BookingAppointmentDto>.CreateSuccess(MapToDto(appointment));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error loading appointment {AppointmentId}", appointmentId);
+                return ApiResponse<BookingAppointmentDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
+        public async Task<ApiResponse<BookingAppointmentDto>> CreateManualBookingAsync(
+            int systemId, int userId, CreateManualBookingDto dto)
+        {
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+
+            try
+            {
+                var system = await _context.BookingSystems
+                    .Include(b => b.Notebooks)
+                    .FirstOrDefaultAsync(b => b.Id == systemId && b.UserId == userId && !b.IsDeleted);
+
+                if (system == null)
+                {
+                    return ApiResponse<BookingAppointmentDto>.NotFound("سیستم رزرو یافت نشد");
+                }
+
+                var created = await CreateAppointmentInternalAsync(
+                    system,
+                    dto.ServiceId,
+                    dto.StartUtc,
+                    dto.CustomerFullName,
+                    dto.CustomerMobile,
+                    dto.CustomerNote,
+                    BookingAppointmentStatuses.Confirmed,
+                    requireFutureSlot: false);
+
+                if (!created.Success)
+                {
+                    await transaction.RollbackAsync();
+                    return ApiResponse<BookingAppointmentDto>.Error(
+                        created.ErrorMessage!,
+                        created.StatusCode,
+                        errorCode: created.ErrorCode);
+                }
+
+                await transaction.CommitAsync();
+
+                return ApiResponse<BookingAppointmentDto>.CreateSuccess(
+                    MapToDto(created.Appointment!),
+                    "نوبت دستی با موفقیت ثبت شد",
+                    201);
+            }
+            catch (DbUpdateException dbEx)
+            {
+                await transaction.RollbackAsync();
+                return BookingDbExceptionHelper.MapDbUpdateException<BookingAppointmentDto>(
+                    dbEx, _logger, "creating manual booking");
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                _logger.LogError(ex, "Error creating manual booking for system {SystemId}", systemId);
+                return ApiResponse<BookingAppointmentDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
+        public async Task<ApiResponse<BookingAppointmentDto>> UpdateAppointmentAsync(
+            int systemId, int appointmentId, int userId, UpdateBookingAppointmentDto dto)
+        {
+            if (dto == null ||
+                (dto.CustomerFullName == null &&
+                 dto.CustomerMobile == null &&
+                 dto.CustomerNote == null &&
+                 !dto.ServiceId.HasValue &&
+                 !dto.StartUtc.HasValue))
+            {
+                return ApiResponse<BookingAppointmentDto>.BadRequest(
+                    "هیچ موردی برای به‌روزرسانی ارسال نشده است",
+                    errorCode: ErrorCodes.ValidationFailed);
+            }
+
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+
+            try
+            {
+                var system = await _systemRepository.GetByIdAndUserIdAsync(systemId, userId);
+                if (system == null)
+                {
+                    return ApiResponse<BookingAppointmentDto>.NotFound("سیستم رزرو یافت نشد");
+                }
+
+                var appointment = await _context.BookingAppointments
+                    .Include(a => a.BookingServiceItem)
+                    .FirstOrDefaultAsync(a =>
+                        a.Id == appointmentId &&
+                        a.BookingSystemId == systemId &&
+                        !a.IsDeleted);
+
+                if (appointment == null)
+                {
+                    return ApiResponse<BookingAppointmentDto>.NotFound("نوبت یافت نشد");
+                }
+
+                if (appointment.Status == BookingAppointmentStatuses.Cancelled)
+                {
+                    return ApiResponse<BookingAppointmentDto>.BadRequest(
+                        "نوبت لغو شده قابل ویرایش نیست",
+                        errorCode: ErrorCodes.ValidationFailed);
+                }
+
+                if (dto.CustomerFullName != null)
+                {
+                    if (string.IsNullOrWhiteSpace(dto.CustomerFullName))
+                    {
+                        return ApiResponse<BookingAppointmentDto>.BadRequest("نام نمی‌تواند خالی باشد");
+                    }
+
+                    appointment.CustomerFullName = dto.CustomerFullName.Trim();
+                }
+
+                if (dto.CustomerMobile != null)
+                {
+                    var mobile = BookingMobileHelper.Normalize(dto.CustomerMobile);
+                    if (!BookingMobileHelper.IsValidIranianMobile(mobile))
+                    {
+                        return ApiResponse<BookingAppointmentDto>.BadRequest(
+                            "شماره موبایل نامعتبر است",
+                            errorCode: ErrorCodes.ValidationFailed);
+                    }
+
+                    appointment.CustomerMobile = mobile;
+                }
+
+                if (dto.CustomerNote != null)
+                {
+                    appointment.CustomerNote = string.IsNullOrWhiteSpace(dto.CustomerNote)
+                        ? null
+                        : dto.CustomerNote.Trim();
+                }
+
+                var serviceId = dto.ServiceId ?? appointment.BookingServiceItemId;
+                var startUtc = dto.StartUtc.HasValue
+                    ? NormalizeUtc(dto.StartUtc.Value)
+                    : appointment.StartUtc;
+
+                var serviceChanged = serviceId != appointment.BookingServiceItemId;
+                var timeChanged = startUtc != appointment.StartUtc;
+
+                if (serviceChanged || timeChanged)
+                {
+                    var service = await _appointmentRepository.GetServiceForBookingAsync(systemId, serviceId);
+                    if (service == null)
+                    {
+                        return ApiResponse<BookingAppointmentDto>.NotFound("خدمت یافت نشد");
+                    }
+
+                    var date = DateOnly.FromDateTime(startUtc);
+                    var existing = await _appointmentRepository.GetAppointmentsForServiceOnDateAsync(serviceId, date);
+                    existing = existing.Where(a => a.Id != appointmentId).ToList();
+                    var blocked = await _appointmentRepository.GetBlockedStartsForSystemOnDateAsync(systemId, date);
+
+                    if (!BookingSlotCalculator.IsSlotAvailable(service, startUtc, existing, blocked))
+                    {
+                        return ApiResponse<BookingAppointmentDto>.BadRequest(
+                            "این زمان دیگر در دسترس نیست",
+                            errorCode: ErrorCodes.ValidationFailed);
+                    }
+
+                    appointment.BookingServiceItemId = serviceId;
+                    appointment.StartUtc = startUtc;
+                    appointment.EndUtc = startUtc.AddMinutes(service.DurationMinutes);
+                    appointment.BookingServiceItem = service;
+                }
+
+                appointment.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                if (appointment.BookingServiceItem == null)
+                {
+                    await _context.Entry(appointment).Reference(a => a.BookingServiceItem).LoadAsync();
+                }
+
+                return ApiResponse<BookingAppointmentDto>.CreateSuccess(MapToDto(appointment), "نوبت به‌روزرسانی شد");
+            }
+            catch (DbUpdateException dbEx)
+            {
+                await transaction.RollbackAsync();
+                return BookingDbExceptionHelper.MapDbUpdateException<BookingAppointmentDto>(
+                    dbEx, _logger, "updating appointment", appointmentId, userId);
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                _logger.LogError(ex, "Error updating appointment {AppointmentId}", appointmentId);
+                return ApiResponse<BookingAppointmentDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
+        public async Task<ApiResponse<BookingAppointmentDto>> ConfirmAppointmentAsync(
+            int systemId, int appointmentId, int userId)
+        {
+            try
+            {
+                var system = await _systemRepository.GetByIdAndUserIdAsync(systemId, userId);
+                if (system == null)
+                {
+                    return ApiResponse<BookingAppointmentDto>.NotFound("سیستم رزرو یافت نشد");
+                }
+
+                var appointment = await _context.BookingAppointments
+                    .Include(a => a.BookingServiceItem)
+                    .FirstOrDefaultAsync(a =>
+                        a.Id == appointmentId &&
+                        a.BookingSystemId == systemId &&
+                        !a.IsDeleted);
+
+                if (appointment == null)
+                {
+                    return ApiResponse<BookingAppointmentDto>.NotFound("نوبت یافت نشد");
+                }
+
+                if (appointment.Status == BookingAppointmentStatuses.Confirmed)
+                {
+                    return ApiResponse<BookingAppointmentDto>.CreateSuccess(MapToDto(appointment), "نوبت قبلاً تأیید شده است");
+                }
+
+                if (appointment.Status != BookingAppointmentStatuses.Pending)
+                {
+                    return ApiResponse<BookingAppointmentDto>.BadRequest(
+                        "فقط نوبت‌های در انتظار تأیید قابل تأیید هستند",
+                        errorCode: ErrorCodes.ValidationFailed);
+                }
+
+                appointment.Status = BookingAppointmentStatuses.Confirmed;
+                appointment.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+
+                return ApiResponse<BookingAppointmentDto>.CreateSuccess(MapToDto(appointment), "نوبت تأیید شد");
+            }
+            catch (DbUpdateException dbEx)
+            {
+                return BookingDbExceptionHelper.MapDbUpdateException<BookingAppointmentDto>(
+                    dbEx, _logger, "confirming appointment", appointmentId, userId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error confirming appointment {AppointmentId}", appointmentId);
+                return ApiResponse<BookingAppointmentDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -337,6 +675,130 @@ namespace Api_Vapp.Services
             {
                 _logger.LogError(ex, "Error cancelling appointment {AppointmentId}", appointmentId);
                 return ApiResponse<BookingAppointmentDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
+        public async Task<ApiResponse<BookingDayAvailabilityDto>> GetDayAvailabilityAsync(
+            int systemId, int userId, DateOnly date, int? serviceId = null)
+        {
+            try
+            {
+                var system = await _systemRepository.GetByIdAndUserIdAsync(systemId, userId);
+                if (system == null)
+                {
+                    return ApiResponse<BookingDayAvailabilityDto>.NotFound("سیستم رزرو یافت نشد");
+                }
+
+                var service = await ResolveServiceForAvailabilityAsync(systemId, serviceId);
+                if (service == null)
+                {
+                    return ApiResponse<BookingDayAvailabilityDto>.BadRequest(
+                        "خدمتی برای مدیریت وقت خالی یافت نشد",
+                        errorCode: ErrorCodes.ValidationFailed);
+                }
+
+                var dto = await BuildDayAvailabilityAsync(systemId, service, date);
+                return ApiResponse<BookingDayAvailabilityDto>.CreateSuccess(dto);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error loading day availability for system {SystemId}", systemId);
+                return ApiResponse<BookingDayAvailabilityDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
+        public async Task<ApiResponse<BookingDayAvailabilityDto>> SaveDayAvailabilityAsync(
+            int systemId, int userId, SaveBookingDayAvailabilityDto dto)
+        {
+            try
+            {
+                var system = await _systemRepository.GetByIdAndUserIdAsync(systemId, userId);
+                if (system == null)
+                {
+                    return ApiResponse<BookingDayAvailabilityDto>.NotFound("سیستم رزرو یافت نشد");
+                }
+
+                if (dto.Slots == null || dto.Slots.Count == 0)
+                {
+                    return ApiResponse<BookingDayAvailabilityDto>.BadRequest(
+                        "لیست اسلات‌ها الزامی است",
+                        errorCode: ErrorCodes.ValidationFailed);
+                }
+
+                var service = await ResolveServiceForAvailabilityAsync(systemId, dto.ServiceId);
+                if (service == null)
+                {
+                    return ApiResponse<BookingDayAvailabilityDto>.BadRequest(
+                        "خدمتی برای مدیریت وقت خالی یافت نشد",
+                        errorCode: ErrorCodes.ValidationFailed);
+                }
+
+                var dayStart = dto.Date.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+                var dayEnd = dayStart.AddDays(1);
+
+                var existingBlocks = await _context.BookingSlotBlocks
+                    .Where(b =>
+                        b.BookingSystemId == systemId &&
+                        b.SlotStartUtc >= dayStart &&
+                        b.SlotStartUtc < dayEnd)
+                    .ToListAsync();
+
+                var reservedStarts = (await _appointmentRepository.GetAppointmentsForServiceOnDateAsync(service.Id, dto.Date))
+                    .Select(a => NormalizeUtc(a.StartUtc))
+                    .ToHashSet();
+
+                var blockByStart = existingBlocks.ToDictionary(b => NormalizeUtc(b.SlotStartUtc));
+
+                foreach (var slot in dto.Slots)
+                {
+                    var start = NormalizeUtc(slot.StartUtc);
+                    if (start < dayStart || start >= dayEnd)
+                    {
+                        return ApiResponse<BookingDayAvailabilityDto>.BadRequest(
+                            "زمان اسلات با تاریخ انتخاب‌شده مطابقت ندارد",
+                            errorCode: ErrorCodes.ValidationFailed);
+                    }
+
+                    if (reservedStarts.Contains(start))
+                    {
+                        continue;
+                    }
+
+                    if (!slot.IsEnabled)
+                    {
+                        if (!blockByStart.ContainsKey(start))
+                        {
+                            var block = new BookingSlotBlock
+                            {
+                                BookingSystemId = systemId,
+                                SlotStartUtc = start,
+                                CreatedAt = DateTime.UtcNow
+                            };
+                            await _context.BookingSlotBlocks.AddAsync(block);
+                            blockByStart[start] = block;
+                        }
+                    }
+                    else if (blockByStart.TryGetValue(start, out var existing))
+                    {
+                        _context.BookingSlotBlocks.Remove(existing);
+                        blockByStart.Remove(start);
+                    }
+                }
+
+                await _context.SaveChangesAsync();
+
+                var result = await BuildDayAvailabilityAsync(systemId, service, dto.Date);
+                return ApiResponse<BookingDayAvailabilityDto>.CreateSuccess(result, "تغییرات وقت خالی ذخیره شد");
+            }
+            catch (DbUpdateException dbEx)
+            {
+                return BookingDbExceptionHelper.MapDbUpdateException<BookingDayAvailabilityDto>(
+                    dbEx, _logger, "saving day availability");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error saving day availability for system {SystemId}", systemId);
+                return ApiResponse<BookingDayAvailabilityDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -404,7 +866,8 @@ namespace Api_Vapp.Services
                         SourceEntityId = tracked.Id,
                         SourceEntityLabel = candidate.BookingSystem.Title,
                         Mobile = tracked.CustomerMobile,
-                        Sid = smsResult.Data!.Sid
+                        Sid = smsResult.Data!.Sid,
+                        MessageText = message
                     });
 
                     tracked.ReminderSentAt = DateTime.UtcNow;
@@ -420,62 +883,193 @@ namespace Api_Vapp.Services
             }
         }
 
-        private async Task<int?> SaveCustomerToPhonebooksAsync(
-            BookingSystem system,
-            string mobile,
-            string fullName)
+        private sealed class AppointmentCreateResult
         {
-            var notebookIds = system.Notebooks.Select(n => n.ContactNotebookId).ToList();
-            if (notebookIds.Count == 0)
+            public bool Success { get; init; }
+            public BookingAppointment? Appointment { get; init; }
+            public string? ErrorMessage { get; init; }
+            public string? ErrorCode { get; init; }
+            public int StatusCode { get; init; } = 400;
+
+            public static AppointmentCreateResult Ok(BookingAppointment appointment) => new()
             {
-                return null;
+                Success = true,
+                Appointment = appointment
+            };
+
+            public static AppointmentCreateResult Fail(string message, int statusCode = 400, string? errorCode = null) => new()
+            {
+                Success = false,
+                ErrorMessage = message,
+                StatusCode = statusCode,
+                ErrorCode = errorCode
+            };
+        }
+
+        private async Task<AppointmentCreateResult> CreateAppointmentInternalAsync(
+            BookingSystem system,
+            int serviceId,
+            DateTime startUtcRaw,
+            string customerFullName,
+            string customerMobile,
+            string? customerNote,
+            string status,
+            bool requireFutureSlot)
+        {
+            var mobile = BookingMobileHelper.Normalize(customerMobile);
+            if (!BookingMobileHelper.IsValidIranianMobile(mobile))
+            {
+                return AppointmentCreateResult.Fail(
+                    "شماره موبایل نامعتبر است",
+                    errorCode: ErrorCodes.ValidationFailed);
             }
 
-            var existingContacts = await _context.Contacts
-                .Where(c =>
-                    notebookIds.Contains(c.ContactNotebookId) &&
-                    c.MobileNumber == mobile &&
-                    !c.IsDeleted)
-                .ToListAsync();
+            if (string.IsNullOrWhiteSpace(customerFullName))
+            {
+                return AppointmentCreateResult.Fail(
+                    "نام الزامی است",
+                    errorCode: ErrorCodes.ValidationFailed);
+            }
 
-            var existingByNotebook = existingContacts.ToDictionary(c => c.ContactNotebookId);
-            Contact? savedContact = existingContacts.FirstOrDefault();
+            var service = await _appointmentRepository.GetServiceForBookingAsync(system.Id, serviceId);
+            if (service == null)
+            {
+                return AppointmentCreateResult.Fail("خدمت یافت نشد", 404, ErrorCodes.NotFound);
+            }
+
+            var startUtc = NormalizeUtc(startUtcRaw);
+            if (requireFutureSlot && startUtc <= DateTime.UtcNow)
+            {
+                return AppointmentCreateResult.Fail(
+                    "زمان انتخاب‌شده گذشته است",
+                    errorCode: ErrorCodes.InvalidInput);
+            }
+
+            var date = DateOnly.FromDateTime(startUtc);
+            var existing = await _appointmentRepository.GetAppointmentsForServiceOnDateAsync(service.Id, date);
+            var blocked = await _appointmentRepository.GetBlockedStartsForSystemOnDateAsync(system.Id, date);
+
+            if (!BookingSlotCalculator.IsSlotAvailable(service, startUtc, existing, blocked))
+            {
+                return AppointmentCreateResult.Fail(
+                    "این زمان دیگر در دسترس نیست",
+                    errorCode: ErrorCodes.ValidationFailed);
+            }
+
             var now = DateTime.UtcNow;
-
-            foreach (var notebookId in notebookIds)
+            var appointment = new BookingAppointment
             {
-                if (existingByNotebook.TryGetValue(notebookId, out var existing))
-                {
-                    savedContact ??= existing;
-                    if (string.IsNullOrWhiteSpace(existing.FullName) && !string.IsNullOrWhiteSpace(fullName))
-                    {
-                        existing.FullName = fullName;
-                        existing.UpdatedAt = now;
-                    }
-                }
-                else
-                {
-                    var contact = new Contact
-                    {
-                        ContactNotebookId = notebookId,
-                        MobileNumber = mobile,
-                        FullName = fullName,
-                        CreatedAt = now
-                    };
+                BookingSystemId = system.Id,
+                BookingServiceItemId = service.Id,
+                CustomerFullName = customerFullName.Trim(),
+                CustomerMobile = mobile,
+                CustomerNote = string.IsNullOrWhiteSpace(customerNote) ? null : customerNote.Trim(),
+                StartUtc = startUtc,
+                EndUtc = startUtc.AddMinutes(service.DurationMinutes),
+                Status = status,
+                CreatedAt = now
+            };
 
-                    await _context.Contacts.AddAsync(contact);
-                    savedContact ??= contact;
+            await _context.BookingAppointments.AddAsync(appointment);
+            await _context.SaveChangesAsync();
+
+            if (system.SaveToPhonebook && system.Notebooks.Count > 0)
+            {
+                var notebookIds = system.Notebooks.Select(n => n.ContactNotebookId).ToList();
+                var contactId = await _phonebookService.SaveParticipantAsync(
+                    notebookIds, mobile, appointment.CustomerFullName);
+                if (contactId.HasValue)
+                {
+                    appointment.ContactId = contactId;
+                    appointment.UpdatedAt = DateTime.UtcNow;
+                    await _context.SaveChangesAsync();
                 }
             }
 
-            await _context.SaveChangesAsync();
-            return savedContact?.Id;
+            appointment.BookingServiceItem = service;
+            return AppointmentCreateResult.Ok(appointment);
+        }
+
+        private async Task<BookingServiceItem?> ResolveServiceForAvailabilityAsync(int systemId, int? serviceId)
+        {
+            if (serviceId.HasValue)
+            {
+                return await _appointmentRepository.GetServiceForBookingAsync(systemId, serviceId.Value);
+            }
+
+            return await _context.BookingServiceItems
+                .Include(s => s.DaySchedules)
+                .Include(s => s.ScheduleExceptions.Where(e => !e.IsDeleted))
+                .AsNoTracking()
+                .Where(s => s.BookingSystemId == systemId && !s.IsDeleted)
+                .OrderBy(s => s.SortOrder)
+                .FirstOrDefaultAsync();
+        }
+
+        private async Task<BookingDayAvailabilityDto> BuildDayAvailabilityAsync(
+            int systemId, BookingServiceItem service, DateOnly date)
+        {
+            var allSlots = BookingSlotCalculator.CalculateAllSlots(service, date);
+            var appointments = await _appointmentRepository.GetAppointmentsForServiceOnDateAsync(service.Id, date);
+            var blocked = (await _appointmentRepository.GetBlockedStartsForSystemOnDateAsync(systemId, date))
+                .Select(NormalizeUtc)
+                .ToHashSet();
+
+            var appointmentByStart = appointments
+                .GroupBy(a => NormalizeUtc(a.StartUtc))
+                .ToDictionary(g => g.Key, g => g.First());
+
+            var managed = allSlots.Select(slot =>
+            {
+                var start = NormalizeUtc(slot.StartUtc);
+                if (appointmentByStart.TryGetValue(start, out var appointment))
+                {
+                    return new BookingManagedSlotDto
+                    {
+                        StartUtc = slot.StartUtc,
+                        EndUtc = slot.EndUtc,
+                        Status = BookingManagedSlotStatuses.Reserved,
+                        IsEnabled = true,
+                        AppointmentId = appointment.Id,
+                        CustomerFullName = appointment.CustomerFullName
+                    };
+                }
+
+                if (blocked.Contains(start))
+                {
+                    return new BookingManagedSlotDto
+                    {
+                        StartUtc = slot.StartUtc,
+                        EndUtc = slot.EndUtc,
+                        Status = BookingManagedSlotStatuses.Blocked,
+                        IsEnabled = false
+                    };
+                }
+
+                return new BookingManagedSlotDto
+                {
+                    StartUtc = slot.StartUtc,
+                    EndUtc = slot.EndUtc,
+                    Status = BookingManagedSlotStatuses.Empty,
+                    IsEnabled = true
+                };
+            }).ToList();
+
+            return new BookingDayAvailabilityDto
+            {
+                SystemId = systemId,
+                ServiceId = service.Id,
+                ServiceTitle = service.Title,
+                Date = date,
+                Slots = managed
+            };
         }
 
         private static BookingPublicSystemDto MapToPublicDto(BookingSystem system) => new()
         {
             Title = system.Title,
             Description = system.Description,
+            Location = system.Location,
             ActivityType = system.ActivityType,
             ActivityTypeTitle = BookingActivityTypes.GetTitle(system.ActivityType),
             Slug = system.Slug,
@@ -497,11 +1091,13 @@ namespace Api_Vapp.Services
         private static BookingAppointmentDto MapToDto(BookingAppointment appointment) => new()
         {
             Id = appointment.Id,
+            AppointmentNumber = appointment.Id,
             BookingSystemId = appointment.BookingSystemId,
             ServiceId = appointment.BookingServiceItemId,
             ServiceTitle = appointment.BookingServiceItem?.Title ?? string.Empty,
             CustomerFullName = appointment.CustomerFullName,
             CustomerMobile = appointment.CustomerMobile,
+            CustomerNote = appointment.CustomerNote,
             StartUtc = EnsureUtc(appointment.StartUtc),
             EndUtc = EnsureUtc(appointment.EndUtc),
             Status = appointment.Status,
@@ -510,6 +1106,14 @@ namespace Api_Vapp.Services
             CancellationReason = appointment.CancellationReason,
             CreatedAt = EnsureUtc(appointment.CreatedAt)
         };
+
+        private string BuildPublicUrl(string slug)
+        {
+            var baseUrl = string.IsNullOrWhiteSpace(_options.PublicBaseUrl)
+                ? "https://app.com/book"
+                : _options.PublicBaseUrl.TrimEnd('/');
+            return $"{baseUrl}/{slug}";
+        }
 
         private static string BuildReminderMessage(
             BookingAppointment appointment,

@@ -16,6 +16,11 @@ namespace Api_Vapp.Models
         public string? Description { get; set; }
 
         /// <summary>
+        /// مکان نمایشی در لیست (مثلاً تهران، سعادت‌آباد) — اختیاری
+        /// </summary>
+        public string? Location { get; set; }
+
+        /// <summary>
         /// شناسه URL عمومی — یکتا در کل سیستم
         /// </summary>
         public string Slug { get; set; } = string.Empty;
@@ -39,6 +44,8 @@ namespace Api_Vapp.Models
         public virtual ICollection<BookingSystemNotebook> Notebooks { get; set; } = new List<BookingSystemNotebook>();
 
         public virtual ICollection<BookingServiceItem> Services { get; set; } = new List<BookingServiceItem>();
+
+        public virtual ICollection<BookingSlotBlock> SlotBlocks { get; set; } = new List<BookingSlotBlock>();
     }
 
     public enum BookingSystemStatus

@@ -1,7 +1,9 @@
+using Api_Vapp.Constants;
 using Api_Vapp.DTOs.Automation;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
+using Api_Vapp.Services.Audit;
 using Api_Vapp.Utilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -31,6 +33,7 @@ namespace Api_Vapp.Services
         private readonly IConfiguration _configuration;
         private readonly IHostEnvironment _hostEnvironment;
         private readonly IServiceProvider _serviceProvider;
+        private readonly IAuditService _audit;
 
         // هزینه هر قسمت پیام (قابل تنظیم از appsettings)
         private readonly decimal _costPerPart = 160; // تومان
@@ -57,7 +60,8 @@ namespace Api_Vapp.Services
             ILogger<AutomatedMessageService> logger,
             IConfiguration configuration,
             IHostEnvironment hostEnvironment,
-            IServiceProvider serviceProvider)
+            IServiceProvider serviceProvider,
+            IAuditService audit)
         {
             _automatedMessageRepository = automatedMessageRepository;
             _messageRepository = messageRepository;
@@ -72,6 +76,7 @@ namespace Api_Vapp.Services
             _configuration = configuration;
             _hostEnvironment = hostEnvironment;
             _serviceProvider = serviceProvider;
+            _audit = audit;
         }
 
         public Task<ApiResponse<AutomationTypeListResponseDto>> GetAutomationTypesAsync(int pageNumber = 1, int pageSize = 10)
@@ -2741,6 +2746,23 @@ namespace Api_Vapp.Services
 
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
+
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Message,
+                    Action = AuditActions.CampaignCreated,
+                    EntityType = AuditEntityTypes.MessageCampaign,
+                    EntityId = campaign.Id.ToString(),
+                    ActorUserId = userId,
+                    After = new
+                    {
+                        campaignId = campaign.Id,
+                        automatedMessageId,
+                        automationType = automatedMessage.AutomationType,
+                        recipientsCount = eligibleRecipients.Count,
+                        status = campaign.Status
+                    }
+                });
 
                 _logger.LogInformation("Automated message activated and campaign created - AutomatedMessageId: {Id}, CampaignId: {CampaignId}, RecipientsCount: {Count}",
                     automatedMessageId, campaign.Id, eligibleRecipients.Count);

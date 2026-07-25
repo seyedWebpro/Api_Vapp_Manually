@@ -264,5 +264,8 @@ internal sealed class ReferralProgramTestContext : IDisposable
             Task.FromResult(ApiResponse<SmsDeliveryRecordDto>.NotFound("not found"));
 
         public Task SyncPendingDeliveriesAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task<ApiResponse<SmsDeliverySummaryDto>> RefreshBySidAsync(int userId, long sid) =>
+            Task.FromResult(ApiResponse<SmsDeliverySummaryDto>.NotFound("not found"));
     }
 }

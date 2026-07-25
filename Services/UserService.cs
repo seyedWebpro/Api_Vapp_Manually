@@ -1,8 +1,10 @@
+using Api_Vapp.Constants;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.DTOs.File;
 using Api_Vapp.DTOs.User;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
+using Api_Vapp.Services.Audit;
 using Api_Vapp.Utilities;
 using BCrypt.Net;
 using Microsoft.EntityFrameworkCore;
@@ -21,20 +23,34 @@ namespace Api_Vapp.Services
         private readonly ILogger<UserService> _logger;
         private readonly IFileUploadService _fileUploadService;
         private readonly IRefreshTokenService _refreshTokenService;
+        private readonly IAuditService _audit;
 
         public UserService(
             IUserRepository userRepository, 
             Api_Vapp.Data.Api_Context context, 
             ILogger<UserService> logger,
             IFileUploadService fileUploadService,
-            IRefreshTokenService refreshTokenService)
+            IRefreshTokenService refreshTokenService,
+            IAuditService audit)
         {
             _userRepository = userRepository;
             _context = context;
             _logger = logger;
             _fileUploadService = fileUploadService;
             _refreshTokenService = refreshTokenService;
+            _audit = audit;
         }
+
+        private static object SafeUserSnapshot(User user) => new
+        {
+            id = user.Id,
+            phoneNumber = user.PhoneNumber,
+            fullName = user.FullName,
+            nationalId = user.NationalId,
+            email = user.Email,
+            isActive = user.IsActive,
+            isPhoneVerified = user.IsPhoneVerified
+        };
 
         private async Task InvalidateUserSessionsAsync(int userId, string reason)
         {
@@ -173,6 +189,8 @@ namespace Api_Vapp.Services
                     return ApiResponse<UserResponseDto>.NotFound("کاربر یافت نشد");
                 }
 
+                var beforeSnapshot = SafeUserSnapshot(user);
+
                 // به‌روزرسانی فیلدها - فقط اگر مقدار داده شده باشد (null یا empty نباشد)
                 if (!string.IsNullOrWhiteSpace(updateUserDto.PhoneNumber))
                 {
@@ -228,6 +246,17 @@ namespace Api_Vapp.Services
                 }
 
                 _logger.LogInformation("User updated successfully with ID: {UserId}", id);
+
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.User,
+                    Action = AuditActions.UserUpdated,
+                    EntityType = AuditEntityTypes.User,
+                    EntityId = updatedUser.Id.ToString(),
+                    TargetUserId = updatedUser.Id,
+                    Before = beforeSnapshot,
+                    After = SafeUserSnapshot(updatedUser)
+                });
 
                 return ApiResponse<UserResponseDto>.CreateSuccess(
                     MapToUserResponseDto(updatedUser),
@@ -339,6 +368,8 @@ namespace Api_Vapp.Services
                     return ApiResponse<UserResponseDto>.NotFound("کاربر یافت نشد");
                 }
 
+                var beforeSnapshot = SafeUserSnapshot(user);
+
                 // بن کردن = غیرفعال کردن
                 user.IsActive = !banUserDto.IsBanned;
                 user.UpdatedAt = DateTime.UtcNow;
@@ -352,6 +383,18 @@ namespace Api_Vapp.Services
                 var message = banUserDto.IsBanned ? "کاربر با موفقیت بن شد" : "بن کاربر با موفقیت رفع شد";
 
                 _logger.LogInformation("User {Action} with ID: {UserId}", banUserDto.IsBanned ? "banned" : "unbanned", id);
+
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.User,
+                    Action = banUserDto.IsBanned ? AuditActions.UserDeactivated : AuditActions.UserActivated,
+                    EntityType = AuditEntityTypes.User,
+                    EntityId = updatedUser.Id.ToString(),
+                    TargetUserId = updatedUser.Id,
+                    Before = beforeSnapshot,
+                    After = SafeUserSnapshot(updatedUser),
+                    Metadata = new { isBanned = banUserDto.IsBanned }
+                });
 
                 return ApiResponse<UserResponseDto>.CreateSuccess(
                     MapToUserResponseDto(updatedUser),
@@ -377,6 +420,8 @@ namespace Api_Vapp.Services
                     return ApiResponse<UserResponseDto>.NotFound("کاربر یافت نشد");
                 }
 
+                var beforeSnapshot = SafeUserSnapshot(user);
+
                 user.IsActive = isActive;
                 user.UpdatedAt = DateTime.UtcNow;
                 var updatedUser = await _userRepository.UpdateAsync(user);
@@ -389,6 +434,17 @@ namespace Api_Vapp.Services
                 var message = isActive ? "کاربر با موفقیت فعال شد" : "کاربر با موفقیت غیرفعال شد";
 
                 _logger.LogInformation("User active status toggled to {Status} for ID: {UserId}", isActive, id);
+
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.User,
+                    Action = isActive ? AuditActions.UserActivated : AuditActions.UserDeactivated,
+                    EntityType = AuditEntityTypes.User,
+                    EntityId = updatedUser.Id.ToString(),
+                    TargetUserId = updatedUser.Id,
+                    Before = beforeSnapshot,
+                    After = SafeUserSnapshot(updatedUser)
+                });
 
                 return ApiResponse<UserResponseDto>.CreateSuccess(
                     MapToUserResponseDto(updatedUser),

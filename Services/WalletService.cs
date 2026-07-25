@@ -1,9 +1,11 @@
+using Api_Vapp.Constants;
 using Api_Vapp.Data;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.DTOs.Wallet;
 using Api_Vapp.DTOs.Cashback;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
+using Api_Vapp.Services.Audit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Configuration;
@@ -24,6 +26,7 @@ namespace Api_Vapp.Services
         private readonly ICashbackRepository _cashbackRepository;
         private readonly IServiceProvider _serviceProvider;
         private readonly IConfiguration _configuration;
+        private readonly IAuditService _audit;
         private readonly ILogger<WalletService> _logger;
 
         public WalletService(
@@ -33,6 +36,7 @@ namespace Api_Vapp.Services
             ICashbackRepository cashbackRepository,
             IServiceProvider serviceProvider,
             IConfiguration configuration,
+            IAuditService audit,
             ILogger<WalletService> logger)
         {
             _context = context;
@@ -41,6 +45,7 @@ namespace Api_Vapp.Services
             _cashbackRepository = cashbackRepository;
             _serviceProvider = serviceProvider;
             _configuration = configuration;
+            _audit = audit;
             _logger = logger;
         }
 
@@ -252,6 +257,27 @@ namespace Api_Vapp.Services
                     _logger.LogInformation("موجودی کیف پول کاربر {UserId} به مبلغ {Amount} تومان افزایش یافت. موجودی جدید: {NewBalance}", 
                         userId, amount, balanceAfter);
 
+                    await _audit.WriteAsync(new AuditEntry
+                    {
+                        Category = AuditCategories.Wallet,
+                        Action = AuditActions.WalletCredited,
+                        EntityType = AuditEntityTypes.WalletTransaction,
+                        EntityId = walletTransaction.Id.ToString(),
+                        TargetUserId = userId,
+                        After = new
+                        {
+                            walletTransactionId = walletTransaction.Id,
+                            userId,
+                            amount,
+                            balanceBefore,
+                            balanceAfter,
+                            transactionType,
+                            title,
+                            paymentId,
+                            cashbackId
+                        }
+                    });
+
                     return ApiResponse<WalletTransactionDto>.CreateSuccess(
                         MapToWalletTransactionDto(walletTransaction), 
                         "موجودی با موفقیت افزایش یافت");
@@ -331,6 +357,25 @@ namespace Api_Vapp.Services
 
                     _logger.LogInformation("موجودی کیف پول کاربر {UserId} به مبلغ {Amount} تومان کاهش یافت. موجودی جدید: {NewBalance}", 
                         userId, amount, balanceAfter);
+
+                    await _audit.WriteAsync(new AuditEntry
+                    {
+                        Category = AuditCategories.Wallet,
+                        Action = AuditActions.WalletDebited,
+                        EntityType = AuditEntityTypes.WalletTransaction,
+                        EntityId = walletTransaction.Id.ToString(),
+                        TargetUserId = userId,
+                        After = new
+                        {
+                            walletTransactionId = walletTransaction.Id,
+                            userId,
+                            amount,
+                            balanceBefore,
+                            balanceAfter,
+                            transactionType = WalletTransactionTypes.Purchase,
+                            title
+                        }
+                    });
 
                     return ApiResponse<WalletTransactionDto>.CreateSuccess(
                         MapToWalletTransactionDto(walletTransaction), 

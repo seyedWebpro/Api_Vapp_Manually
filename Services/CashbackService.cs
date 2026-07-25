@@ -5,6 +5,7 @@ using Api_Vapp.DTOs.Cashback;
 using Api_Vapp.DTOs.Sms;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
+using Api_Vapp.Services.Audit;
 using Api_Vapp.Utilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -27,6 +28,7 @@ namespace Api_Vapp.Services
         private readonly IWalletService _walletService;
         private readonly ISmsService _smsService;
         private readonly ISmsDeliveryTrackingService _deliveryTracking;
+        private readonly IAuditService _audit;
         private readonly ILogger<CashbackService> _logger;
         private const decimal CostPerSms = 160; // هزینه هر پیامک
         private const int DraftExpirationHours = 24; // draft به مدت 24 ساعت معتبر است
@@ -41,6 +43,7 @@ namespace Api_Vapp.Services
             IWalletService walletService,
             ISmsService smsService,
             ISmsDeliveryTrackingService deliveryTracking,
+            IAuditService audit,
             ILogger<CashbackService> logger)
         {
             _context = context;
@@ -52,6 +55,7 @@ namespace Api_Vapp.Services
             _walletService = walletService;
             _smsService = smsService;
             _deliveryTracking = deliveryTracking;
+            _audit = audit;
             _logger = logger;
         }
 
@@ -368,6 +372,21 @@ namespace Api_Vapp.Services
                 // حذف draft بعد از ایجاد موفق کش‌بک
                 if (!string.IsNullOrEmpty(createDto.DraftId))
                 {
+                    await _audit.WriteAsync(new AuditEntry
+                    {
+                        Category = AuditCategories.Cashback,
+                        Action = AuditActions.CashbackDraftApproved,
+                        EntityType = AuditEntityTypes.CashbackDraft,
+                        EntityId = createDto.DraftId,
+                        TargetUserId = userId,
+                        After = new
+                        {
+                            draftId = createDto.DraftId,
+                            cashbackId = cashback.Id,
+                            userId
+                        }
+                    });
+
                     try
                     {
                         await _cashbackDraftRepository.DeleteAsync(createDto.DraftId, userId);
@@ -1555,7 +1574,7 @@ namespace Api_Vapp.Services
                                 successCount++;
                                 totalCashbackAmount += cashbackAmount;
 
-                                await TrackCashbackSmsAsync(userId, cashback.Id, cashback.Title, contact.MobileNumber, smsResult.Data!.Sid);
+                                await TrackCashbackSmsAsync(userId, cashback.Id, cashback.Title, contact.MobileNumber, smsResult.Data!.Sid, message);
                             }
                             else
                             {
@@ -1602,6 +1621,24 @@ namespace Api_Vapp.Services
 
                     _logger.LogInformation("کش‌بک {CashbackId} برای کاربر {UserId} اعمال شد - موفق: {Success}, ناموفق: {Failed}", 
                         cashbackId, userId, successCount, failedCount);
+
+                    await _audit.WriteAsync(new AuditEntry
+                    {
+                        Category = AuditCategories.Cashback,
+                        Action = AuditActions.CashbackApplied,
+                        EntityType = AuditEntityTypes.Cashback,
+                        EntityId = cashbackId.ToString(),
+                        TargetUserId = userId,
+                        After = new
+                        {
+                            cashbackId,
+                            userId,
+                            totalContacts = contacts.Count,
+                            successCount,
+                            failedCount,
+                            totalCashbackAmount
+                        }
+                    });
 
                     return ApiResponse<ApplyCashbackResultDto>.CreateSuccess(result, "کش‌بک با موفقیت اعمال شد");
                 }
@@ -1931,7 +1968,7 @@ namespace Api_Vapp.Services
                         cashbackTransaction.DepositedAt = now;
                         cashbackTransaction.Description = "کش‌بک با موفقیت ارسال شد";
 
-                        await TrackCashbackSmsAsync(userId, cashback.Id, cashback.Title, normalizedMobile, smsResult.Data!.Sid);
+                        await TrackCashbackSmsAsync(userId, cashback.Id, cashback.Title, normalizedMobile, smsResult.Data!.Sid, smsMessage);
 
                         // کسر هزینه ارسال پیامک
                         // غیرفعال شده - دیگر از کیف پول کسر نمی‌شود
@@ -1979,6 +2016,27 @@ namespace Api_Vapp.Services
 
                         _logger.LogInformation("کش‌بک {CashbackId} برای مخاطب {ContactId} ({Mobile}) با موفقیت اعمال شد - مبلغ: {Amount}, موجودی قبلی: {PreviousBalance}, موجودی جدید: {NewBalance}", 
                             cashback.Id, contact.Id, normalizedMobile, cashbackAmount, balanceBefore, balance.TotalBalance);
+
+                        await _audit.WriteAsync(new AuditEntry
+                        {
+                            Category = AuditCategories.Cashback,
+                            Action = AuditActions.CashbackApplied,
+                            EntityType = AuditEntityTypes.Cashback,
+                            EntityId = cashback.Id.ToString(),
+                            TargetUserId = userId,
+                            After = new
+                            {
+                                cashbackId = cashback.Id,
+                                userId,
+                                contactId = contact.Id,
+                                totalContacts = 1,
+                                successCount = 1,
+                                failedCount = 0,
+                                cashbackAmount,
+                                balanceBefore,
+                                balanceAfter = balance.TotalBalance
+                            }
+                        });
 
                         return ApiResponse<ApplyCashbackToContactResultDto>.CreateSuccess(result, responseMessage);
                     }
@@ -2439,7 +2497,7 @@ namespace Api_Vapp.Services
 
                             if (isSmsSent)
                             {
-                                await TrackCashbackSmsAsync(userId, null, "کش‌بک دستی", contact.MobileNumber, smsResult.Data!.Sid);
+                                await TrackCashbackSmsAsync(userId, null, "کش‌بک دستی", contact.MobileNumber, smsResult.Data!.Sid, message);
 
                                 // TODO: کسر هزینه ارسال پیامک - فعلاً غیرفعال است (موجودی کیف پول کامل نشده)
                                 // var deductResult = await _walletService.DeductBalanceAsync(
@@ -2659,7 +2717,7 @@ namespace Api_Vapp.Services
 
                             if (isSmsSent)
                             {
-                                await TrackCashbackSmsAsync(userId, null, "برداشت کش‌بک", contact.MobileNumber, smsResult.Data!.Sid);
+                                await TrackCashbackSmsAsync(userId, null, "برداشت کش‌بک", contact.MobileNumber, smsResult.Data!.Sid, message);
 
                                 _logger.LogInformation(
                                     "پیامک برداشت کش‌بک با موفقیت ارسال شد - ContactId: {ContactId}, Mobile: {Mobile}",
@@ -2897,6 +2955,16 @@ namespace Api_Vapp.Services
 
                 _logger.LogInformation("Draft کش‌بک با شناسه {DraftId} برای کاربر {UserId} حذف شد", draftId, userId);
 
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Cashback,
+                    Action = AuditActions.CashbackDraftRejected,
+                    EntityType = AuditEntityTypes.CashbackDraft,
+                    EntityId = draftId,
+                    TargetUserId = userId,
+                    Before = new { draftId, userId }
+                });
+
                 return ApiResponse<bool>.CreateSuccess(true, "Draft با موفقیت حذف شد");
             }
             catch (Exception ex)
@@ -2908,7 +2976,7 @@ namespace Api_Vapp.Services
 
         #endregion
 
-        private Task TrackCashbackSmsAsync(int userId, int? cashbackId, string? label, string mobile, long sid, bool scheduled = false) =>
+        private Task TrackCashbackSmsAsync(int userId, int? cashbackId, string? label, string mobile, long sid, string? messageText = null, bool scheduled = false) =>
             _deliveryTracking.TrackSuccessfulSendAsync(new SmsDeliveryTrackRequestDto
             {
                 UserId = userId,
@@ -2916,7 +2984,8 @@ namespace Api_Vapp.Services
                 SourceEntityId = cashbackId,
                 SourceEntityLabel = label ?? (cashbackId.HasValue ? $"کش‌بک #{cashbackId}" : "کش‌بک"),
                 Mobile = mobile,
-                Sid = sid
+                Sid = sid,
+                MessageText = messageText
             });
     }
 }

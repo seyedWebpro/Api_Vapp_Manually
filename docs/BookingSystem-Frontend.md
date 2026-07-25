@@ -1,6 +1,6 @@
 # BookingSystem — راهنمای اتصال فرانت
 
-> Backend **فاز ۱** (ویزارد + لینک) و **فاز ۲** (رزرو مشتری + SMS یادآوری) آماده اتصال است.
+> Backend **کامل** است: ویزارد ایجاد، لینک عمومی، داشبورد، تقویم/جدول، رزرو دستی، مدیریت وقت خالی، تأیید/ویرایش/لغو، SMS یادآوری.
 
 ## پیش‌نیاز
 
@@ -46,6 +46,15 @@ Content:   application/json
 | ویزارد — خلاصه | `GET /summary?draftId=` |
 | ویزارد — تأیید نهایی | `POST /confirm` |
 | مدیریت خدمات | `GET /{id}/services` + CRUD زیر |
+| داشبورد نوبت‌ها | `GET /{id}/dashboard` |
+| تقویم ماهانه | `GET /{id}/appointments/calendar?year=&month=` |
+| لیست/جدول نوبت‌ها | `GET /{id}/appointments?searchName=&status=&fromUtc=&toUtc=` |
+| جزئیات نوبت | `GET /{id}/appointments/{appointmentId}` |
+| رزرو دستی | `POST /{id}/appointments/manual` |
+| ویرایش نوبت | `POST /{id}/appointments/{appointmentId}/update` |
+| تأیید نوبت | `POST /{id}/appointments/{appointmentId}/confirm` |
+| لغو نوبت | `POST /{id}/appointments/{appointmentId}/cancel` |
+| مدیریت وقت خالی | `GET /{id}/availability?date=` + `POST /{id}/availability/save` |
 
 ---
 
@@ -71,12 +80,14 @@ confirm         →  draftId  →  سیستم + publicUrl
   "title": "سالن زیبایی",
   "activityType": "beauty_salon",
   "description": "توضیحات اختیاری",
+  "location": "تهران، سعادت‌آباد",
   "customSlug": "beauty-salon",
   "saveToPhonebook": true,
   "notebookIds": [12, 15]
 }
 ```
 
+- `location` اختیاری — مکان نمایشی در لیست
 - `customSlug` اختیاری — فقط `a-z0-9-`
 - اگر `saveToPhonebook=true` → `notebookIds` الزامی
 - `activityType` از `GET /activity-types`
@@ -189,7 +200,7 @@ confirm         →  draftId  →  سیستم + publicUrl
 | ۱ روز قبل | 1440 |
 | ۲ روز قبل | 2880 |
 
-> ارسال SMS در **فاز ۲** پیاده‌سازی می‌شود؛ الان فقط ذخیره می‌شود.
+> SMS یادآوری توسط Background job ارسال می‌شود (هر ۱ دقیقه).
 
 ---
 
@@ -295,28 +306,101 @@ Base: `/api/BookingPublic` — **AllowAnonymous**
   "serviceId": 5,
   "startUtc": "2026-07-01T05:30:00Z",
   "customerFullName": "علی رضایی",
-  "customerMobile": "09121234567"
+  "customerMobile": "09121234567",
+  "customerNote": "درخواست مشاوره حضوری"
 }
 ```
 
+- وضعیت اولیه نوبت عمومی: **`Pending`** (منتظر تأیید مالک)
+- `customerNote` اختیاری
 - اگر `saveToPhonebook=true` → شماره در دفترچه‌های انتخاب‌شده ذخیره می‌شود
 - `startUtc` باید دقیقاً یکی از اسلات‌های برگشتی باشد
 
 ---
 
-## فاز ۲ — مدیریت نوبت‌ها (Auth)
+## فاز ۳ — داشبورد و مدیریت نوبت‌ها (Auth)
 
 | عملیات | API |
 |--------|-----|
-| لیست رزروها | `GET /api/BookingSystem/{id}/appointments?pageNumber=1&status=Confirmed&fromUtc=&toUtc=&serviceId=` |
-| لغو نوبت | `POST /api/BookingSystem/{id}/appointments/{appointmentId}/cancel` |
+| داشبورد (آمار امروز + برنامه امروز) | `GET /{id}/dashboard?date=` |
+| خلاصه تقویم ماهانه | `GET /{id}/appointments/calendar?year=2026&month=7` |
+| لیست/جدول نوبت‌ها | `GET /{id}/appointments?pageNumber=1&status=&searchName=&fromUtc=&toUtc=&serviceId=` |
+| جزئیات نوبت | `GET /{id}/appointments/{appointmentId}` |
+| رزرو دستی | `POST /{id}/appointments/manual` |
+| ویرایش نوبت | `POST /{id}/appointments/{appointmentId}/update` |
+| تأیید نوبت Pending | `POST /{id}/appointments/{appointmentId}/confirm` |
+| لغو نوبت | `POST /{id}/appointments/{appointmentId}/cancel` |
+| مدیریت وقت خالی — مشاهده | `GET /{id}/availability?date=2026-07-01&serviceId=` |
+| مدیریت وقت خالی — ذخیره | `POST /{id}/availability/save` |
 
 ### وضعیت‌ها (`status`)
 
-`Confirmed` | `Cancelled` | `Completed`
+`Pending` | `Confirmed` | `Cancelled` | `Completed`
+
+- رزرو عمومی → `Pending`
+- رزرو دستی مالک → `Confirmed`
+- `appointmentNumber` در پاسخ همان `id` است (نمایش `#۲۵۴۸`)
+
+### داشبورد — `GET /{id}/dashboard`
+
+```json
+{
+  "systemId": 12,
+  "title": "سالن زیبایی",
+  "activityType": "beauty_salon",
+  "activityTypeTitle": "سالن زیبایی",
+  "location": "تهران، سعادت‌آباد",
+  "publicUrl": "https://app.com/book/beauty",
+  "isActive": true,
+  "stats": {
+    "todayTotal": 24,
+    "confirmed": 18,
+    "pending": 5,
+    "cancelled": 1
+  },
+  "todaySchedule": [ /* نوبت‌های Confirmed امروز به ترتیب زمان */ ]
+}
+```
+
+### تقویم — `GET /{id}/appointments/calendar`
+
+هر روز: `totalCount` + تا ۵ اسلات نمونه (`startUtc`, `status`, `customerFullName`, `serviceTitle`)
+
+### رزرو دستی — `POST /{id}/appointments/manual`
+
+```json
+{
+  "customerFullName": "سمیه کریمی",
+  "customerMobile": "09131234567",
+  "customerNote": "توضیحات اختیاری",
+  "serviceId": 5,
+  "startUtc": "2026-07-01T05:30:00Z"
+}
+```
+
+### مدیریت وقت خالی
+
+`GET /{id}/availability?date=yyyy-MM-dd&serviceId=`
+
+هر اسلات: `status` = `Reserved` | `Empty` | `Blocked` + `isEnabled`
+
+```json
+// POST /{id}/availability/save
+{
+  "date": "2026-07-01",
+  "serviceId": 5,
+  "slots": [
+    { "startUtc": "2026-07-01T08:00:00Z", "isEnabled": false }
+  ]
+}
+```
+
+- اسلات‌های `Reserved` قابل بلاک نیستند
+- اسلات‌های بلاک‌شده از لیست عمومی حذف می‌شوند
 
 ### SMS یادآوری
 
 - Background job هر **۱ دقیقه**
+- فقط برای نوبت‌های `Confirmed`
 - زمان ارسال: `StartUtc - ReminderOffsetMinutes` (پنجره ۲ دقیقه‌ای)
 - ماژول گزارش SMS: `BookingReminder`

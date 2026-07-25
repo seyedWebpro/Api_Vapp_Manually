@@ -22,6 +22,9 @@ namespace Api_Vapp.Models
 
         public long Sid { get; set; }
 
+        /// <summary>متن پیامک ارسالی — برای گزارش جزئیات (ایران‌نوین برنمی‌گرداند)</summary>
+        public string? MessageText { get; set; }
+
         /// <summary>Sent | Failed</summary>
         public string SendStatus { get; set; } = "Sent";
 

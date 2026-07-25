@@ -359,7 +359,8 @@ namespace Api_Vapp.Services.BackgroundServices
                                 SourceEntityId = cashback.Id,
                                 SourceEntityLabel = cashback.Title,
                                 Mobile = normalizedMobile,
-                                Sid = smsResult.Data!.Sid
+                                Sid = smsResult.Data!.Sid,
+                                MessageText = smsRequest.Message
                             });
 
                             _logger.LogDebug("کش‌بک ارسال شد - ContactId: {ContactId}, Mobile: {Mobile}, Amount: {Amount}",
@@ -546,7 +547,8 @@ namespace Api_Vapp.Services.BackgroundServices
                             SourceEntityId = transaction.CashbackId,
                             SourceEntityLabel = transaction.Cashback.Title,
                             Mobile = normalizedMobile,
-                            Sid = smsResult.Data!.Sid
+                            Sid = smsResult.Data!.Sid,
+                            MessageText = message
                         });
 
                         _logger.LogInformation("تراکنش کش‌بک {TransactionId} با موفقیت پردازش شد - Mobile: {Mobile}",

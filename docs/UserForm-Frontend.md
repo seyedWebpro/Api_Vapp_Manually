@@ -33,7 +33,8 @@ Content:   application/json
 
 - **قالب‌ها (Template)** فقط سمت Flutter — backend فقط `templateKey` + فیلدهای نهایی را ذخیره می‌کند
 - **Preview** فقط کلاینت — API ندارد
-- **Publish** → `status=Published` + `slug` + `publicUrl` (یا از سوئیچ `toggle-status` با `isActive: true`)
+- **Publish** → `status=Published` + `slug` + `publicUrl` + `isActive=true`
+- سوئیچ فعال/غیرفعال فقط بعد از Publish (مثل گردونه)
 - اگر `saveToPhonebook=true` → حداقل **۱ notebookId** + فیلد **mobile** فعال (`fieldKey` یا `fieldType`)
 - حداکثر **۵۰ فیلد** در هر فرم
 - `slug` فقط: `a-z`، `0-9`، `-` (مثلاً `my-form-2`)
@@ -50,7 +51,7 @@ Content:   application/json
 | ذخیره اطلاعات اصلی | `POST /{id}/update-info` |
 | ذخیره فیلدها | `POST /{id}/update-fields` |
 | انتشار + لینک | `POST /{id}/publish` |
-| تنظیمات — سوئیچ فعال بودن فرم | `POST /{id}/toggle-status` |
+| تنظیمات — سوئیچ فعال بودن فرم | `POST /{id}/toggle-active` *(alias: `toggle-status`)* |
 | حذف | `POST /{id}/delete` |
 | انتخاب دفترچه تلفن | `GET /api/ContactNotebook` *(کنترلر جدا)* |
 
@@ -71,7 +72,7 @@ Content:   application/json
 > **تغییر API (breaking):** `POST /{id}/update` حذف شد. به‌جای آن دو endpoint جدا استفاده کنید:
 > - `update-info` → عنوان، توضیحات، slug، دفترچه
 > - `update-fields` → آرایه `fields`
-> - `toggle-status` → سوئیچ فعال بودن فرم (`isActive`)
+> - `toggle-active` → سوئیچ فعال بودن فرم (`isActive`) — فقط بعد از publish (مثل گردونه). مسیر قدیمی `toggle-status` هم کار می‌کند.
 
 ---
 
@@ -214,22 +215,21 @@ Content:   application/json
 
 ---
 
-## `POST /{id}/toggle-status` — سوئیچ «فعال بودن فرم» (صفحه تنظیمات)
+## `POST /{id}/toggle-active` — سوئیچ «فعال بودن فرم» (مثل گردونه)
+
+Alias سازگار: `POST /{id}/toggle-status`
 
 ```json
-{ "isActive": true }
+{ "isActive": false }
 ```
 
-| `isActive` | رفتار |
-|------------|--------|
-| `true` | فرم فعال — اگر Draft باشد خودکار **publish** می‌شود |
-| `false` | فرم غیرفعال — لینک عمومی کار نمی‌کند |
-
+- فقط فرم‌های **Published** — اگر Draft باشد → `400`
+- `true` / `false` فقط `isActive` را عوض می‌کند (دیگر auto-publish ندارد)
+- برای گرفتن لینک عمومی همیشه اول `POST /{id}/publish` بزنید
 - body خالی یا بدون `isActive` → `400`
-- `GET /{id}` → فیلد `isActive` وضعیت سوئیچ را نشان می‌دهد (`Draft` = `false`)
-- `update-info` دیگر `isActive` نمی‌پذیرد
+- `GET /{id}` → در Draft مقدار `isActive` برابر `false` است (هنوز عمومی نیست)
 
-پاسخ موفق: همان `UserFormResponseDto` + `status` / `publicUrl` / `isActive` به‌روز
+پاسخ موفق: همان `UserFormResponseDto` + `isActive` به‌روز
 
 ---
 
@@ -302,8 +302,8 @@ Query: `pageNumber`, `pageSize` (پیش‌فرض 1 و 10)
 | 6 | `saveToPhonebook=true` + `notebookIds` + mobile | `update-info` | `200` |
 | 7 | `saveToPhonebook=true` بدون mobile | create یا update-fields | `400` |
 | 8 | انتشار | `POST /{id}/publish` | `200` + `publicUrl` |
-| 9 | سوئیچ فعال (Draft) | `POST /{id}/toggle-status` `{ "isActive": true }` | `200` + `Published` |
-| 10 | سوئیچ غیرفعال | `POST /{id}/toggle-status` `{ "isActive": false }` | `200` + `isActive: false` |
+| 9 | سوئیچ روی Draft | `POST /{id}/toggle-active` `{ "isActive": true }` | `400` |
+| 10 | سوئیچ غیرفعال | `POST /{id}/toggle-active` `{ "isActive": false }` | `200` + `isActive: false` (فقط Published) |
 | 11 | فرم کاربر دیگر | هر update | `403` |
 
 ---

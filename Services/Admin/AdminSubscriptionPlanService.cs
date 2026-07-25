@@ -4,6 +4,7 @@ using Api_Vapp.DTOs.Admin;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
+using Api_Vapp.Services.Audit;
 using Microsoft.EntityFrameworkCore;
 
 namespace Api_Vapp.Services.Admin
@@ -11,10 +12,12 @@ namespace Api_Vapp.Services.Admin
     public class AdminSubscriptionPlanService : IAdminSubscriptionPlanService
     {
         private readonly Api_Context _context;
+        private readonly IAuditService _audit;
 
-        public AdminSubscriptionPlanService(Api_Context context)
+        public AdminSubscriptionPlanService(Api_Context context, IAuditService audit)
         {
             _context = context;
+            _audit = audit;
         }
 
         public async Task<ApiResponse<List<SubscriptionPlanResponseDto>>> GetAllAsync(bool includeInactive = true)
@@ -88,6 +91,26 @@ namespace Api_Vapp.Services.Admin
                 .Include(pf => pf.Feature)
                 .LoadAsync();
 
+            await _audit.WriteAsync(new AuditEntry
+            {
+                Category = AuditCategories.Subscription,
+                Action = AuditActions.SubscriptionPlanCreated,
+                EntityType = AuditEntityTypes.SubscriptionPlan,
+                EntityId = plan.Id.ToString(),
+                After = new
+                {
+                    id = plan.Id,
+                    name = plan.Name,
+                    tierCode = plan.TierCode,
+                    price = plan.Price,
+                    durationDays = plan.DurationDays,
+                    monthlySmsLimit = plan.MonthlySmsLimit,
+                    sortOrder = plan.SortOrder,
+                    isActive = plan.IsActive,
+                    featureIds = plan.PlanFeatures.Select(pf => pf.SubscriptionFeatureId).ToList()
+                }
+            });
+
             return ApiResponse<SubscriptionPlanResponseDto>.CreateSuccess(MapPlan(plan), "پلن اشتراک ایجاد شد", 201);
         }
 
@@ -134,6 +157,22 @@ namespace Api_Vapp.Services.Admin
             if (featuresResult.Error != null)
                 return featuresResult.Error;
 
+            // اسنپ‌شات قبل از تغییر — برای audit
+            var beforeSnapshot = new
+            {
+                id = plan.Id,
+                name = plan.Name,
+                tierCode = plan.TierCode,
+                price = plan.Price,
+                durationDays = plan.DurationDays,
+                monthlySmsLimit = plan.MonthlySmsLimit,
+                sortOrder = plan.SortOrder,
+                isActive = plan.IsActive,
+                featureIds = plan.PlanFeatures.Select(pf => pf.SubscriptionFeatureId).ToList()
+            };
+            var priceBefore = plan.Price;
+            var isActiveBefore = plan.IsActive;
+
             var features = featuresResult.Features!;
             plan.Name = dto.Name.Trim();
             if (!isSystemTier)
@@ -164,6 +203,60 @@ namespace Api_Vapp.Services.Admin
             await _context.Entry(plan).Collection(p => p.PlanFeatures).Query()
                 .Include(pf => pf.Feature)
                 .LoadAsync();
+
+            var afterSnapshot = new
+            {
+                id = plan.Id,
+                name = plan.Name,
+                tierCode = plan.TierCode,
+                price = plan.Price,
+                durationDays = plan.DurationDays,
+                monthlySmsLimit = plan.MonthlySmsLimit,
+                sortOrder = plan.SortOrder,
+                isActive = plan.IsActive,
+                featureIds = plan.PlanFeatures.Select(pf => pf.SubscriptionFeatureId).ToList()
+            };
+
+            var auditEntries = new List<AuditEntry>
+            {
+                new()
+                {
+                    Category = AuditCategories.Subscription,
+                    Action = AuditActions.SubscriptionPlanUpdated,
+                    EntityType = AuditEntityTypes.SubscriptionPlan,
+                    EntityId = plan.Id.ToString(),
+                    Before = beforeSnapshot,
+                    After = afterSnapshot
+                }
+            };
+
+            if (priceBefore != plan.Price)
+            {
+                auditEntries.Add(new AuditEntry
+                {
+                    Category = AuditCategories.Subscription,
+                    Action = AuditActions.SubscriptionPlanPriceUpdated,
+                    EntityType = AuditEntityTypes.SubscriptionPlan,
+                    EntityId = plan.Id.ToString(),
+                    Before = beforeSnapshot,
+                    After = afterSnapshot
+                });
+            }
+
+            if (isActiveBefore != plan.IsActive)
+            {
+                auditEntries.Add(new AuditEntry
+                {
+                    Category = AuditCategories.Subscription,
+                    Action = AuditActions.SubscriptionPlanStatusChanged,
+                    EntityType = AuditEntityTypes.SubscriptionPlan,
+                    EntityId = plan.Id.ToString(),
+                    Before = beforeSnapshot,
+                    After = afterSnapshot
+                });
+            }
+
+            await _audit.WriteRangeAsync(auditEntries);
 
             return ApiResponse<SubscriptionPlanResponseDto>.CreateSuccess(MapPlan(plan), "پلن اشتراک به‌روزرسانی شد");
         }
