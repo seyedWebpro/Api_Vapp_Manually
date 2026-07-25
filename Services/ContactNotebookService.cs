@@ -515,38 +515,11 @@ namespace Api_Vapp.Services
         /// <summary>
         /// اعتبارسنجی فایل آیکون
         /// </summary>
-        private string? ValidateIcon(Microsoft.AspNetCore.Http.IFormFile iconFile)
-        {
-            if (iconFile == null || iconFile.Length == 0)
-            {
-                return "فایل آیکون انتخاب نشده است";
-            }
-
-            // بررسی نوع فایل - فقط عکس مجاز است
-            var allowedImageTypes = new[] { "image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp" };
-            var contentType = iconFile.ContentType.ToLower();
-            
-            if (!allowedImageTypes.Contains(contentType))
-            {
-                return $"نوع فایل '{contentType}' مجاز نیست. فقط فایل‌های تصویری (JPEG, PNG, GIF, WebP) قابل قبول هستند";
-            }
-
-            // بررسی حجم فایل (حداکثر 5 مگابایت برای آیکون)
-            var maxSize = 5 * 1024 * 1024; // 5 MB
-            if (iconFile.Length > maxSize)
-            {
-                var fileSizeMB = iconFile.Length / (1024.0 * 1024.0);
-                return $"حجم فایل ({fileSizeMB:F2} MB) از حد مجاز (5 MB) بیشتر است";
-            }
-
-            // بررسی نام فایل
-            if (string.IsNullOrWhiteSpace(iconFile.FileName))
-            {
-                return "نام فایل معتبر نیست";
-            }
-
-            return null; // فایل معتبر است
-        }
+        private string? ValidateIcon(Microsoft.AspNetCore.Http.IFormFile iconFile) =>
+            SecureFileValidator.ValidateImage(
+                iconFile,
+                SecureFileValidator.IconMaxBytes,
+                "۲ مگابایت");
 
         /// <summary>
         /// تبدیل ContactNotebook به ContactNotebookResponseDto

@@ -108,13 +108,39 @@ POST {{Api_Vapp_HostAddress}}/api/LuckyWheel/1/delete
 ### دریافت schema فرم منتشرشده
 GET {{Api_Vapp_HostAddress}}/api/FormPublic/contact-form
 
-### ثبت پاسخ فرم
+### ثبت مشخصات تماس و ارسال کد تایید
+POST {{Api_Vapp_HostAddress}}/api/FormPublic/contact-form/register
+Content-Type: application/json
+
+{
+  "firstName": "علی",
+  "lastName": "رضایی",
+  "participantMobile": "09121112233"
+}
+
+### تأیید کد OTP
+POST {{Api_Vapp_HostAddress}}/api/FormPublic/contact-form/verify-otp
+Content-Type: application/json
+
+{
+  "accessToken": "{{publicParticipantToken}}",
+  "otpCode": "1234"
+}
+
+### ارسال مجدد کد تایید
+POST {{Api_Vapp_HostAddress}}/api/FormPublic/contact-form/resend-otp
+Content-Type: application/json
+
+{
+  "accessToken": "{{publicParticipantToken}}"
+}
+
+### ثبت پاسخ فرم (accessToken تأییدشده)
 POST {{Api_Vapp_HostAddress}}/api/FormPublic/contact-form/submit
 Content-Type: application/json
 
 {
-  "participantFullName": "علی رضایی",
-  "participantMobile": "09121112233",
+  "accessToken": "{{publicParticipantToken}}",
   "values": {
     "full_name": "علی رضایی",
     "mobile": "09121112233"
@@ -128,13 +154,39 @@ Content-Type: application/json
 ### دریافت اطلاعات گردونه
 GET {{Api_Vapp_HostAddress}}/api/LuckyWheelPublic/norooz-wheel
 
-### چرخش گردونه
+### ثبت مشخصات تماس (قبل از چرخش)
+POST {{Api_Vapp_HostAddress}}/api/LuckyWheelPublic/norooz-wheel/register
+Content-Type: application/json
+
+{
+  "firstName": "سارا",
+  "lastName": "محمدی",
+  "participantMobile": "09123334455"
+}
+
+### تأیید کد OTP
+POST {{Api_Vapp_HostAddress}}/api/LuckyWheelPublic/norooz-wheel/verify-otp
+Content-Type: application/json
+
+{
+  "accessToken": "{{publicParticipantToken}}",
+  "otpCode": "1234"
+}
+
+### ارسال مجدد کد تایید
+POST {{Api_Vapp_HostAddress}}/api/LuckyWheelPublic/norooz-wheel/resend-otp
+Content-Type: application/json
+
+{
+  "accessToken": "{{publicParticipantToken}}"
+}
+
+### چرخش گردونه (accessToken تأییدشده)
 POST {{Api_Vapp_HostAddress}}/api/LuckyWheelPublic/norooz-wheel/spin
 Content-Type: application/json
 
 {
-  "participantFullName": "سارا محمدی",
-  "participantMobile": "09123334455"
+  "accessToken": "{{publicParticipantToken}}"
 }
 
 ###
@@ -267,6 +319,138 @@ Authorization: Bearer {{token}}
   "contactNotebookId": 1,
   "contactNamePrefix": "رستوران",
   "force": false
+}
+
+###
+
+# --- SupportTicket (تیکت پشتیبانی — کاربر) ---
+
+### آمار تیکت‌های من
+GET {{Api_Vapp_HostAddress}}/api/SupportTicket/stats
+Authorization: Bearer {{token}}
+
+### لیست ماژول‌ها
+GET {{Api_Vapp_HostAddress}}/api/SupportTicket/modules
+Authorization: Bearer {{token}}
+
+### لیست تیکت‌های من
+GET {{Api_Vapp_HostAddress}}/api/SupportTicket?page=1&pageSize=20
+Authorization: Bearer {{token}}
+
+### لیست با فیلتر وضعیت/اولویت
+GET {{Api_Vapp_HostAddress}}/api/SupportTicket?status=Open&priority=Normal&page=1&pageSize=20
+Authorization: Bearer {{token}}
+
+### ایجاد تیکت (JSON)
+POST {{Api_Vapp_HostAddress}}/api/SupportTicket
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "subject": "مشکل در پرداخت",
+  "module": "Payment",
+  "priority": "Normal",
+  "content": "سلام بعد از ارسال پیامک وضعیت بروزرسانی نمی‌شود."
+}
+
+### ایجاد تیکت با فایل
+POST {{Api_Vapp_HostAddress}}/api/SupportTicket/with-attachment
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary
+
+------WebKitFormBoundary
+Content-Disposition: form-data; name="subject"
+
+مشکل در پرداخت
+------WebKitFormBoundary
+Content-Disposition: form-data; name="module"
+
+Payment
+------WebKitFormBoundary
+Content-Disposition: form-data; name="priority"
+
+Normal
+------WebKitFormBoundary
+Content-Disposition: form-data; name="content"
+
+شرح مشکل با فایل
+------WebKitFormBoundary
+Content-Disposition: form-data; name="attachmentFile"; filename="shot.png"
+Content-Type: image/png
+
+< ./wwwroot/uploads/.gitkeep
+------WebKitFormBoundary--
+
+### پاسخ کاربر با فایل
+POST {{Api_Vapp_HostAddress}}/api/SupportTicket/1/reply-with-attachment
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7
+
+------WebKitFormBoundary7
+Content-Disposition: form-data; name="content"
+
+پیام همراه فایل
+------WebKitFormBoundary7--
+
+### پاسخ ادمین با فایل
+POST {{Api_Vapp_HostAddress}}/api/Admin/SupportTicket/1/reply-with-attachment
+Authorization: Bearer {{adminToken}}
+Content-Type: multipart/form-data; boundary=----AdminBoundary
+
+------AdminBoundary
+Content-Disposition: form-data; name="content"
+
+پاسخ پشتیبانی با تصویر
+------AdminBoundary--
+
+### پاسخ کاربر به تیکت
+POST {{Api_Vapp_HostAddress}}/api/SupportTicket/1/reply
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "content": "هنوز مشکل برطرف نشده است."
+}
+
+### حذف تیکت
+POST {{Api_Vapp_HostAddress}}/api/SupportTicket/1/delete
+Authorization: Bearer {{token}}
+
+# --- SupportTicket (تیکت پشتیبانی — ادمین) ---
+
+### لیست تیکت‌ها (ادمین)
+GET {{Api_Vapp_HostAddress}}/api/Admin/SupportTicket?page=1&pageSize=20
+Authorization: Bearer {{adminToken}}
+
+### جزئیات تیکت (ادمین)
+GET {{Api_Vapp_HostAddress}}/api/Admin/SupportTicket/1
+Authorization: Bearer {{adminToken}}
+
+### پاسخ ادمین
+POST {{Api_Vapp_HostAddress}}/api/Admin/SupportTicket/1/reply
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "content": "سلام وقت بخیر در حال بررسی موضوع هستیم"
+}
+
+### بستن تیکت
+POST {{Api_Vapp_HostAddress}}/api/Admin/SupportTicket/1/status
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "status": "Closed"
+}
+
+### بازگشایی تیکت
+POST {{Api_Vapp_HostAddress}}/api/Admin/SupportTicket/1/status
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "status": "Open"
 }
 
 ###

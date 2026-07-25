@@ -32,18 +32,30 @@ namespace Api_Vapp.Interfaces
 
     public interface IAdminSupportTicketService
     {
-        Task<ApiResponse<PagedResponse<SupportTicketResponseDto>>> GetAllAsync(string? status = null, int page = 1, int pageSize = 20);
+        Task<ApiResponse<PagedResponse<SupportTicketResponseDto>>> GetAllAsync(
+            string? status = null,
+            string? priority = null,
+            int page = 1,
+            int pageSize = 20);
         Task<ApiResponse<SupportTicketResponseDto>> GetByIdAsync(int id);
-        Task<ApiResponse<SupportTicketResponseDto>> ReplyAsync(int id, int adminUserId, ReplySupportTicketDto dto, IFormFile? imageFile = null);
+        Task<ApiResponse<SupportTicketResponseDto>> ReplyAsync(int id, int adminUserId, ReplySupportTicketDto dto, IFormFile? attachmentFile = null);
         Task<ApiResponse<SupportTicketResponseDto>> UpdateStatusAsync(int id, UpdateSupportTicketStatusDto dto);
     }
 
     public interface IUserSupportTicketService
     {
-        Task<ApiResponse<SupportTicketResponseDto>> CreateAsync(int userId, CreateSupportTicketDto dto);
-        Task<ApiResponse<List<SupportTicketResponseDto>>> GetMyTicketsAsync(int userId);
+        Task<ApiResponse<SupportTicketStatsDto>> GetMyStatsAsync(int userId);
+        Task<ApiResponse<List<TicketModuleOptionDto>>> GetModulesAsync();
+        Task<ApiResponse<PagedResponse<SupportTicketResponseDto>>> GetMyTicketsAsync(
+            int userId,
+            string? status = null,
+            string? priority = null,
+            int page = 1,
+            int pageSize = 20);
         Task<ApiResponse<SupportTicketResponseDto>> GetMyTicketByIdAsync(int userId, int ticketId);
-        Task<ApiResponse<SupportTicketResponseDto>> ReplyAsync(int userId, int ticketId, ReplySupportTicketDto dto);
+        Task<ApiResponse<SupportTicketResponseDto>> CreateAsync(int userId, CreateSupportTicketDto dto, IFormFile? attachmentFile = null);
+        Task<ApiResponse<SupportTicketResponseDto>> ReplyAsync(int userId, int ticketId, ReplySupportTicketDto dto, IFormFile? attachmentFile = null);
+        Task<ApiResponse<bool>> DeleteAsync(int userId, int ticketId);
     }
 
     public interface IAdminEducationalVideoService

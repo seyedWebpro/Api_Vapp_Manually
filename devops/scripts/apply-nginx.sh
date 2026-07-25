@@ -53,6 +53,19 @@ if [[ -n "$PUBLIC_STATIC_ROOT" ]]; then
         access_log off;
     }
 
+    # بنر/آیکون/تصاویر/فونت ریشه Public_Vapp (قبل از location / ادمین؛ وگرنه HTML ادمین برمی‌گردد)
+    location ~* ^/(vapp-logo\\.png|form-bg\\.jpg|gift-icon(-gold)?\\.svg|user(-circle)?-icon\\.svg|phone-icon\\.svg|arrow-icon\\.svg|wheel\\.svg)\$ {
+        root ${PUBLIC_STATIC_ROOT};
+        expires 7d;
+        access_log off;
+    }
+
+    location ~* ^/fonts/Shabnam[^/]*\\.(woff2?|ttf)\$ {
+        root ${PUBLIC_STATIC_ROOT};
+        expires 30d;
+        access_log off;
+    }
+
     location ~ ^/(form|wheel)(/.*)?$ {
         root ${PUBLIC_STATIC_ROOT};
         try_files \$uri \$uri/ @public_vapp;
@@ -65,6 +78,14 @@ if [[ -n "$PUBLIC_STATIC_ROOT" ]]; then
 else
   PUBLIC_BLOCK="    # Public_Vapp — docker :${PUBLIC_PORT}
     location /public-assets/ {
+        proxy_pass http://127.0.0.1:${PUBLIC_PORT};
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Forwarded-Host \$host;
+        proxy_set_header X-Forwarded-Proto \$forwarded_proto;
+    }
+
+    location ~* ^/(vapp-logo\\.png|form-bg\\.jpg|gift-icon(-gold)?\\.svg|user(-circle)?-icon\\.svg|phone-icon\\.svg|arrow-icon\\.svg|wheel\\.svg)\$ {
         proxy_pass http://127.0.0.1:${PUBLIC_PORT};
         proxy_http_version 1.1;
         proxy_set_header Host \$host;

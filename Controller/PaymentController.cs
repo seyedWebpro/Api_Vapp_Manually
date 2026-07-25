@@ -37,14 +37,17 @@ namespace Api_Vapp.Controller
     public class PaymentController : VappControllerBase
     {
         private readonly IPaymentService _paymentService;
+        private readonly IPaymentRepository _paymentRepository;
 
         public PaymentController(
             IPaymentService paymentService,
+            IPaymentRepository paymentRepository,
             IConfiguration configuration,
             IUserRepository userRepository)
             : base(configuration, userRepository)
         {
             _paymentService = paymentService;
+            _paymentRepository = paymentRepository;
         }
 
         /// <summary>
@@ -250,25 +253,9 @@ namespace Api_Vapp.Controller
         /// <summary>
         /// Callback درگاه به‌پرداخت (GET)
         /// </summary>
-        /// <param name="PaymentId">شناسه پرداخت</param>
-        /// <param name="RefId">شماره مرجع</param>
-        /// <param name="ResCode">کد نتیجه</param>
-        /// <param name="SaleOrderId">شماره سفارش</param>
-        /// <param name="SaleReferenceId">شماره مرجع فروش</param>
-        /// <param name="CardHolderPan">شماره کارت</param>
-        /// <returns>ریدایرکت به صفحه نتیجه پرداخت</returns>
-        /// <remarks>
-        /// این endpoint توسط درگاه به‌پرداخت بعد از پرداخت فراخوانی می‌شود.
-        /// 
-        /// **نکات مهم:**
-        /// - این endpoint نیاز به احراز هویت ندارد (AllowAnonymous)
-        /// - کاربر را به صفحه نتیجه پرداخت در فرانت‌اند هدایت می‌کند
-        /// - اطلاعات پرداخت در Query String به فرانت‌اند ارسال می‌شود
-        /// </remarks>
-        /// <response code="302">ریدایرکت به صفحه نتیجه پرداخت</response>
         [HttpGet("callback/behpardakht")]
         [AllowAnonymous]
-        public Task<ActionResult> BehpardakhtCallbackGet(
+        public async Task<ActionResult> BehpardakhtCallbackGet(
             [FromQuery] int? PaymentId,
             [FromQuery] string? RefId,
             [FromQuery] string? ResCode,
@@ -276,41 +263,26 @@ namespace Api_Vapp.Controller
             [FromQuery] string? SaleReferenceId,
             [FromQuery] string? CardHolderPan)
         {
-            // ریدایرکت به فرانت‌اند با پارامترها
-            var redirectUrl = Configuration["Payment:Behpardakht:FrontendCallbackUrl"] ?? "/payment/result";
-            
-            var queryParams = new List<string>();
-            if (PaymentId.HasValue) queryParams.Add($"paymentId={PaymentId}");
-            if (!string.IsNullOrEmpty(RefId)) queryParams.Add($"refId={RefId}");
-            if (!string.IsNullOrEmpty(ResCode)) queryParams.Add($"resCode={ResCode}");
-            if (!string.IsNullOrEmpty(SaleOrderId)) queryParams.Add($"orderId={SaleOrderId}");
-            if (!string.IsNullOrEmpty(SaleReferenceId)) queryParams.Add($"saleReferenceId={SaleReferenceId}");
-            if (!string.IsNullOrEmpty(CardHolderPan)) queryParams.Add($"cardNumber={CardHolderPan}");
+            string? paymentType = null;
+            if (PaymentId.HasValue)
+            {
+                var payment = await _paymentRepository.GetByIdAsync(PaymentId.Value);
+                paymentType = payment?.PaymentType;
+            }
 
-            var fullUrl = queryParams.Any() ? $"{redirectUrl}?{string.Join("&", queryParams)}" : redirectUrl;
-            
-            return Task.FromResult<ActionResult>(Redirect(fullUrl));
+            return Redirect(BuildFrontendCallbackUrl(
+                PaymentId,
+                paymentType,
+                RefId,
+                ResCode,
+                SaleOrderId,
+                SaleReferenceId,
+                CardHolderPan));
         }
 
         /// <summary>
         /// Callback درگاه به‌پرداخت (POST)
         /// </summary>
-        /// <param name="PaymentId">شناسه پرداخت</param>
-        /// <param name="RefId">شماره مرجع</param>
-        /// <param name="ResCode">کد نتیجه</param>
-        /// <param name="SaleOrderId">شماره سفارش</param>
-        /// <param name="SaleReferenceId">شماره مرجع فروش</param>
-        /// <param name="CardHolderPan">شماره کارت</param>
-        /// <returns>ریدایرکت به صفحه نتیجه پرداخت</returns>
-        /// <remarks>
-        /// این endpoint توسط درگاه به‌پرداخت بعد از پرداخت فراخوانی می‌شود (POST).
-        /// 
-        /// **نکات مهم:**
-        /// - این endpoint نیاز به احراز هویت ندارد (AllowAnonymous)
-        /// - اطلاعات از Form Data دریافت می‌شود
-        /// - کاربر را به صفحه نتیجه پرداخت هدایت می‌کند
-        /// </remarks>
-        /// <response code="302">ریدایرکت به صفحه نتیجه پرداخت</response>
         [HttpPost("callback/behpardakht")]
         [AllowAnonymous]
         public async Task<ActionResult> BehpardakhtCallbackPost(
@@ -327,20 +299,6 @@ namespace Api_Vapp.Controller
         /// <summary>
         /// لغو پرداخت در انتظار
         /// </summary>
-        /// <param name="id">شناسه پرداخت</param>
-        /// <returns>پاسخ شامل وضعیت لغو</returns>
-        /// <remarks>
-        /// این endpoint برای لغو یک پرداخت در وضعیت Pending استفاده می‌شود.
-        /// 
-        /// **نکات مهم:**
-        /// - فقط پرداخت‌های در وضعیت Pending قابل لغو هستند
-        /// - پرداخت‌های تأیید شده یا ناموفق قابل لغو نیستند
-        /// - پس از لغو، وضعیت پرداخت به Cancelled تغییر می‌کند
-        /// </remarks>
-        /// <response code="200">پرداخت با موفقیت لغو شد</response>
-        /// <response code="400">پرداخت در وضعیت نامعتبر است (قبلاً تأیید یا لغو شده)</response>
-        /// <response code="404">پرداخت یافت نشد</response>
-        /// <response code="500">خطای سرور</response>
         [HttpPost("{id}/cancel")]
         [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status400BadRequest)]
@@ -354,28 +312,90 @@ namespace Api_Vapp.Controller
         }
 
         /// <summary>
-        /// ریدایرکت به درگاه پرداخت
+        /// تکمیل پرداخت شبیه‌سازی‌شده (بدون ریدایرکت) — برای اپ موبایل تا آماده‌شدن درگاه واقعی
         /// </summary>
-        /// <param name="paymentId">شناسه پرداخت</param>
-        /// <returns>ریدایرکت به درگاه پرداخت یا صفحه شبیه‌سازی</returns>
         /// <remarks>
-        /// این endpoint کاربر را به درگاه پرداخت منتقل می‌کند.
-        /// 
-        /// **نکات مهم:**
-        /// - این endpoint نیاز به احراز هویت ندارد (AllowAnonymous)
-        /// - در محیط توسعه، به صفحه شبیه‌سازی درگاه هدایت می‌شود
-        /// - در محیط production، به درگاه واقعی هدایت می‌شود
+        /// وقتی Payment:UseSimulation=true است، این endpoint پرداخت را تأیید می‌کند.
+        /// برای شارژ کیف پول موجودی واقعاً افزایش می‌یابد.
+        /// فیلد payment.paymentType مشخص می‌کند پرداخت WalletCharge است یا Subscription.
         /// </remarks>
-        /// <response code="302">ریدایرکت به درگاه پرداخت</response>
+        [HttpPost("{paymentId}/simulate")]
+        [ProducesResponseType(typeof(ApiResponse<PaymentResultDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<PaymentResultDto>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(ApiResponse<PaymentResultDto>), StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<ApiResponse<PaymentResultDto>>> SimulatePayment(int paymentId)
+        {
+            var userId = await GetCurrentUserIdAsync();
+            var payment = await _paymentRepository.GetByIdAsync(paymentId);
+            if (payment == null || payment.UserId != userId)
+            {
+                return StatusCode(404, ApiResponse<PaymentResultDto>.NotFound("پرداخت یافت نشد"));
+            }
+
+            var result = await _paymentService.SimulateGatewayPaymentAsync(paymentId);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        /// <summary>
+        /// ریدایرکت به درگاه پرداخت (در حالت شبیه‌سازی: تأیید خودکار و بازگشت به فرانت)
+        /// </summary>
         [HttpGet("redirect/{paymentId}")]
         [AllowAnonymous]
-        public Task<ActionResult> RedirectToGateway(int paymentId)
+        public async Task<ActionResult> RedirectToGateway(int paymentId)
         {
-            // در اینجا باید پرداخت را از دیتابیس بخوانیم و به درگاه ریدایرکت کنیم
-            // برای حالت توسعه، یک صفحه شبیه‌سازی نشان می‌دهیم
-            
-            var simulationUrl = Configuration["Payment:SimulationUrl"] ?? "/payment/simulation";
-            return Task.FromResult<ActionResult>(Redirect($"{simulationUrl}?paymentId={paymentId}"));
+            var useSimulation = Configuration.GetValue("Payment:UseSimulation", true);
+            if (!useSimulation)
+            {
+                var payment = await _paymentRepository.GetByIdAsync(paymentId);
+                if (payment == null || string.IsNullOrEmpty(payment.RefId))
+                {
+                    return NotFound("پرداخت یافت نشد");
+                }
+
+                var paymentUrl = Configuration["Payment:Behpardakht:PaymentUrl"]
+                    ?? "https://bpm.shaparak.ir/pgwchannel/startpay.mellat";
+                return Content(
+                    $"<html><body onload=\"document.forms[0].submit()\">" +
+                    $"<form method=\"post\" action=\"{paymentUrl}\">" +
+                    $"<input type=\"hidden\" name=\"RefId\" value=\"{payment.RefId}\" />" +
+                    $"</form>در حال انتقال به درگاه...</body></html>",
+                    "text/html");
+            }
+
+            var result = await _paymentService.SimulateGatewayPaymentAsync(paymentId);
+            var paymentInfo = result.Data?.Payment;
+
+            return Redirect(BuildFrontendCallbackUrl(
+                paymentId,
+                paymentInfo?.PaymentType,
+                paymentInfo?.RefId,
+                result.Data?.Success == true ? "0" : "15",
+                paymentInfo?.OrderId,
+                paymentInfo?.ReferenceNumber,
+                paymentInfo?.CardNumber));
+        }
+
+        private string BuildFrontendCallbackUrl(
+            int? paymentId,
+            string? paymentType,
+            string? refId,
+            string? resCode,
+            string? orderId,
+            string? saleReferenceId,
+            string? cardNumber)
+        {
+            var redirectUrl = Configuration["Payment:Behpardakht:FrontendCallbackUrl"] ?? "/payment/result";
+            var queryParams = new List<string>();
+
+            if (paymentId.HasValue) queryParams.Add($"paymentId={paymentId.Value}");
+            if (!string.IsNullOrEmpty(paymentType)) queryParams.Add($"paymentType={Uri.EscapeDataString(paymentType)}");
+            if (!string.IsNullOrEmpty(refId)) queryParams.Add($"refId={Uri.EscapeDataString(refId)}");
+            if (!string.IsNullOrEmpty(resCode)) queryParams.Add($"resCode={Uri.EscapeDataString(resCode)}");
+            if (!string.IsNullOrEmpty(orderId)) queryParams.Add($"orderId={Uri.EscapeDataString(orderId)}");
+            if (!string.IsNullOrEmpty(saleReferenceId)) queryParams.Add($"saleReferenceId={Uri.EscapeDataString(saleReferenceId)}");
+            if (!string.IsNullOrEmpty(cardNumber)) queryParams.Add($"cardNumber={Uri.EscapeDataString(cardNumber)}");
+
+            return queryParams.Count > 0 ? $"{redirectUrl}?{string.Join("&", queryParams)}" : redirectUrl;
         }
     }
 }

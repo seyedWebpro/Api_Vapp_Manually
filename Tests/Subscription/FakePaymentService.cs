@@ -81,6 +81,9 @@ internal sealed class FakePaymentService : IPaymentService
     public Task<ApiResponse<PaymentResultDto>> VerifyPaymentAsync(int userId, VerifyPaymentRequestDto verifyDto) =>
         throw new NotSupportedException();
 
+    public Task<ApiResponse<PaymentResultDto>> SimulateGatewayPaymentAsync(int paymentId) =>
+        throw new NotSupportedException();
+
     public Task<ApiResponse<PaymentListDto>> GetPaymentsAsync(int userId, int pageNumber = 1, int pageSize = 10) =>
         throw new NotSupportedException();
 

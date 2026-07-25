@@ -1242,6 +1242,11 @@ namespace Api_Vapp.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
 
+                    b.Property<string>("PrizeCode")
+                        .IsRequired()
+                        .HasMaxLength(12)
+                        .HasColumnType("nvarchar(12)");
+
                     b.Property<int>("WonLuckyWheelItemId")
                         .HasColumnType("int");
 
@@ -1258,6 +1263,9 @@ namespace Api_Vapp.Migrations
                     b.HasIndex("WonLuckyWheelItemId");
 
                     b.HasIndex("LuckyWheelId", "ParticipantMobile")
+                        .IsUnique();
+
+                    b.HasIndex("LuckyWheelId", "PrizeCode")
                         .IsUnique();
 
                     b.ToTable("LuckyWheelParticipants");
@@ -1977,6 +1985,71 @@ namespace Api_Vapp.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("Payments");
+                });
+
+            modelBuilder.Entity("Api_Vapp.Models.PublicParticipantSession", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime?>("ConsumedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<string>("ParticipantFullName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("ParticipantMobile")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTime?>("PhoneVerifiedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("ResourceId")
+                        .HasColumnType("int");
+
+                    b.Property<byte>("ResourceType")
+                        .HasColumnType("tinyint");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpiresAt");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("ResourceType", "ResourceId", "ParticipantMobile")
+                        .IsUnique()
+                        .HasFilter("[IsDeleted] = 0");
+
+                    b.ToTable("PublicParticipantSessions");
                 });
 
             modelBuilder.Entity("Api_Vapp.Models.QuickAction", b =>
@@ -2964,6 +3037,13 @@ namespace Api_Vapp.Migrations
                         .HasColumnType("bit")
                         .HasDefaultValue(false);
 
+                    b.Property<string>("Module")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasDefaultValue("Other");
+
                     b.Property<string>("Priority")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
@@ -2992,6 +3072,8 @@ namespace Api_Vapp.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("AssignedToUserId");
+
+                    b.HasIndex("Module");
 
                     b.HasIndex("Status");
 
@@ -3092,6 +3174,9 @@ namespace Api_Vapp.Migrations
 
                     b.Property<int>("TicketId")
                         .HasColumnType("int");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
 
                     b.HasKey("Id");
 
@@ -3400,6 +3485,9 @@ namespace Api_Vapp.Migrations
                     b.HasIndex("ParticipantMobile");
 
                     b.HasIndex("UserFormId");
+
+                    b.HasIndex("UserFormId", "ParticipantMobile")
+                        .IsUnique();
 
                     b.ToTable("UserFormSubmissions");
                 });

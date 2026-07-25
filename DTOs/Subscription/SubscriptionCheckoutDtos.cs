@@ -55,6 +55,17 @@ namespace Api_Vapp.DTOs.Subscription
         public string? OrderId { get; set; }
         public string? RefId { get; set; }
         public string? RedirectUrl { get; set; }
+
+        /// <summary>
+        /// نوع پرداخت — همیشه Subscription در خرید اشتراک
+        /// </summary>
+        public string PaymentType { get; set; } = PaymentTypes.Subscription;
+
+        /// <summary>
+        /// عنوان نوع پرداخت
+        /// </summary>
+        public string PaymentTypeTitle { get; set; } = "خرید اشتراک";
+
         public SubscriptionCheckoutDto Checkout { get; set; } = new();
         public CurrentSubscriptionDto? ActivatedSubscription { get; set; }
     }

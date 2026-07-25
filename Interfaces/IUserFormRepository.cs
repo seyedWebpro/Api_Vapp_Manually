@@ -30,9 +30,21 @@ namespace Api_Vapp.Interfaces
 
         Task AddSubmissionAsync(UserFormSubmission submission);
 
+        Task<bool> HasSubmissionWithMobileAsync(int userFormId, string mobile);
+
+        Task<int> GetSubmissionCountAsync(int userFormId);
+
         Task<(IReadOnlyList<UserFormSubmission> Items, int TotalCount)> GetSubmissionsPagedAsync(
             int userFormId,
             int pageNumber,
-            int pageSize);
+            int pageSize,
+            string? searchTerm = null,
+            DateTime? fromUtc = null,
+            DateTime? toUtc = null);
+
+        /// <summary>
+        /// همه پاسخ‌ها با مقادیر فیلد — برای خروجی اکسل
+        /// </summary>
+        Task<IReadOnlyList<UserFormSubmission>> GetSubmissionsForExportAsync(int userFormId);
     }
 }

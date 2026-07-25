@@ -160,14 +160,31 @@ namespace Api_Vapp.Repositories
             await _context.SaveChangesAsync();
         }
 
+        public async Task<bool> HasSubmissionWithMobileAsync(int userFormId, string mobile)
+        {
+            return await _context.UserFormSubmissions
+                .AsNoTracking()
+                .AnyAsync(s =>
+                    s.UserFormId == userFormId &&
+                    s.ParticipantMobile == mobile);
+        }
+
+        public async Task<int> GetSubmissionCountAsync(int userFormId)
+        {
+            return await _context.UserFormSubmissions
+                .AsNoTracking()
+                .CountAsync(s => s.UserFormId == userFormId);
+        }
+
         public async Task<(IReadOnlyList<UserFormSubmission> Items, int TotalCount)> GetSubmissionsPagedAsync(
             int userFormId,
             int pageNumber,
-            int pageSize)
+            int pageSize,
+            string? searchTerm = null,
+            DateTime? fromUtc = null,
+            DateTime? toUtc = null)
         {
-            var query = _context.UserFormSubmissions
-                .AsNoTracking()
-                .Where(s => s.UserFormId == userFormId);
+            var query = BuildSubmissionsQuery(userFormId, searchTerm, fromUtc, toUtc);
 
             var totalCount = await query.CountAsync();
 
@@ -179,6 +196,50 @@ namespace Api_Vapp.Repositories
                 .ToListAsync();
 
             return (items, totalCount);
+        }
+
+        public async Task<IReadOnlyList<UserFormSubmission>> GetSubmissionsForExportAsync(int userFormId)
+        {
+            return await _context.UserFormSubmissions
+                .AsNoTracking()
+                .Where(s => s.UserFormId == userFormId)
+                .OrderByDescending(s => s.CreatedAt)
+                .Include(s => s.FieldValues)
+                .ToListAsync();
+        }
+
+        private IQueryable<UserFormSubmission> BuildSubmissionsQuery(
+            int userFormId,
+            string? searchTerm,
+            DateTime? fromUtc,
+            DateTime? toUtc)
+        {
+            var query = _context.UserFormSubmissions
+                .AsNoTracking()
+                .Where(s => s.UserFormId == userFormId);
+
+            if (fromUtc.HasValue)
+            {
+                query = query.Where(s => s.CreatedAt >= fromUtc.Value);
+            }
+
+            if (toUtc.HasValue)
+            {
+                query = query.Where(s => s.CreatedAt < toUtc.Value);
+            }
+
+            if (!string.IsNullOrWhiteSpace(searchTerm))
+            {
+                var term = searchTerm.Trim();
+                query = query.Where(s =>
+                    s.ParticipantFullName.Contains(term) ||
+                    s.ParticipantMobile.Contains(term) ||
+                    s.FieldValues.Any(v =>
+                        v.Value != null &&
+                        v.Value.Contains(term)));
+            }
+
+            return query;
         }
     }
 }

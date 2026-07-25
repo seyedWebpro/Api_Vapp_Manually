@@ -16,6 +16,11 @@ namespace Api_Vapp.Models
         public int WonLuckyWheelItemId { get; set; }
 
         /// <summary>
+        /// کد یکتای جایزه برای راستی‌آزمایی (مثلاً LW-A3K9P2)
+        /// </summary>
+        public string PrizeCode { get; set; } = string.Empty;
+
+        /// <summary>
         /// مخاطب ذخیره‌شده در دفترچه — در صورت فعال بودن SaveToPhonebook
         /// </summary>
         public int? ContactId { get; set; }

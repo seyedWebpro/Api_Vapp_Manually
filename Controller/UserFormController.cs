@@ -182,5 +182,54 @@ namespace Api_Vapp.Controller
             var result = await _userFormService.SetActiveStatusAsync(id, userId, statusDto.IsActive);
             return StatusCode(result.StatusCode, result);
         }
+
+        /// <summary>
+        /// لیست پاسخ‌های ثبت‌شده فرم (نام، موبایل، ایمیل) — مشابه شرکت‌کنندگان گردونه
+        /// </summary>
+        [HttpGet("{id}/submissions")]
+        [ProducesResponseType(typeof(ApiResponse<UserFormSubmissionsPageDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<UserFormSubmissionsPageDto>), StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<ApiResponse<UserFormSubmissionsPageDto>>> GetSubmissions(
+            int id,
+            [FromQuery] int pageNumber = 1,
+            [FromQuery] int pageSize = 10,
+            [FromQuery] string? searchTerm = null,
+            [FromQuery] DateTime? fromUtc = null,
+            [FromQuery] DateTime? toUtc = null)
+        {
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _userFormService.GetSubmissionsAsync(
+                id,
+                userId,
+                pageNumber,
+                pageSize,
+                searchTerm,
+                fromUtc,
+                toUtc);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        /// <summary>
+        /// خروجی اکسل کامل پاسخ‌های فرم (اطلاعات تماس + همه فیلدهای فرم)
+        /// </summary>
+        [HttpGet("{id}/submissions/export-excel")]
+        [Produces("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/json")]
+        [ProducesResponseType(typeof(FileResult), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+        public async Task<ActionResult> ExportSubmissionsToExcel(int id)
+        {
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _userFormService.ExportSubmissionsToExcelAsync(id, userId);
+
+            if (!result.Success)
+            {
+                return StatusCode(result.StatusCode, result);
+            }
+
+            return File(
+                result.Data!.FileContent,
+                result.Data.ContentType,
+                result.Data.FileName);
+        }
     }
 }

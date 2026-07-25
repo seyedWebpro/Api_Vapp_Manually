@@ -1,9 +1,11 @@
 using Api_Vapp.DTOs.Common;
+using Api_Vapp.DTOs.Contact;
 using Api_Vapp.DTOs.File;
 using Api_Vapp.DTOs.UserForm;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
 using Api_Vapp.Utilities;
+using ClosedXML.Excel;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -493,6 +495,205 @@ namespace Api_Vapp.Services
             }
         }
 
+        public async Task<ApiResponse<UserFormSubmissionsPageDto>> GetSubmissionsAsync(
+            int id,
+            int userId,
+            int pageNumber = 1,
+            int pageSize = 10,
+            string? searchTerm = null,
+            DateTime? fromUtc = null,
+            DateTime? toUtc = null)
+        {
+            try
+            {
+                if (pageNumber < 1)
+                {
+                    return ApiResponse<UserFormSubmissionsPageDto>.BadRequest(
+                        "شماره صفحه باید بزرگتر از صفر باشد",
+                        errorCode: ErrorCodes.InvalidInput);
+                }
+
+                if (pageSize < 1 || pageSize > 100)
+                {
+                    return ApiResponse<UserFormSubmissionsPageDto>.BadRequest(
+                        "تعداد در هر صفحه باید بین 1 تا 100 باشد",
+                        errorCode: ErrorCodes.InvalidInput);
+                }
+
+                if (fromUtc.HasValue && toUtc.HasValue && fromUtc.Value >= toUtc.Value)
+                {
+                    return ApiResponse<UserFormSubmissionsPageDto>.BadRequest(
+                        "بازه تاریخ نامعتبر است",
+                        errorCode: ErrorCodes.InvalidInput);
+                }
+
+                var form = await _userFormRepository.GetOwnedFormAsync(id, userId, tracked: false);
+                if (form == null)
+                {
+                    return ApiResponse<UserFormSubmissionsPageDto>.NotFound("فرم یافت نشد");
+                }
+
+                var submissionCount = await _userFormRepository.GetSubmissionCountAsync(id);
+                var (items, totalCount) = await _userFormRepository.GetSubmissionsPagedAsync(
+                    id,
+                    pageNumber,
+                    pageSize,
+                    searchTerm,
+                    fromUtc,
+                    toUtc);
+
+                var mapped = items.Select(s => new UserFormSubmissionListItemDto
+                {
+                    Id = s.Id,
+                    ParticipantFullName = s.ParticipantFullName,
+                    ParticipantMobile = s.ParticipantMobile,
+                    ParticipantEmail = ExtractEmail(s.FieldValues),
+                    CreatedAt = EnsureUtc(s.CreatedAt)
+                }).ToList();
+
+                return ApiResponse<UserFormSubmissionsPageDto>.CreateSuccess(new UserFormSubmissionsPageDto
+                {
+                    FormTitle = form.Title,
+                    SubmissionCount = submissionCount,
+                    Submissions = PagedResponse<UserFormSubmissionListItemDto>.Create(
+                        mapped,
+                        totalCount,
+                        pageNumber,
+                        pageSize)
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error listing user form submissions {FormId} for user {UserId}", id, userId);
+                return ApiResponse<UserFormSubmissionsPageDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
+        public async Task<ApiResponse<ExportExcelResultDto>> ExportSubmissionsToExcelAsync(int id, int userId)
+        {
+            try
+            {
+                var form = await _userFormRepository.GetOwnedFormAsync(id, userId, tracked: false);
+                if (form == null)
+                {
+                    return ApiResponse<ExportExcelResultDto>.NotFound("فرم یافت نشد");
+                }
+
+                var fields = (await _userFormRepository.GetFieldsReadOnlyAsync(id))
+                    .Where(f => f.IsActive)
+                    .OrderBy(f => f.DisplayOrder)
+                    .ThenBy(f => f.Id)
+                    .ToList();
+
+                var submissions = await _userFormRepository.GetSubmissionsForExportAsync(id);
+
+                using var workbook = new XLWorkbook();
+                var sheetName = SanitizeSheetName(form.Title);
+                var worksheet = workbook.Worksheets.Add(sheetName);
+                worksheet.RightToLeft = true;
+
+                const int fixedColumnCount = 4;
+                var headerRow = 1;
+                worksheet.Cell(headerRow, 1).Value = "ردیف";
+                worksheet.Cell(headerRow, 2).Value = "نام و نام خانوادگی";
+                worksheet.Cell(headerRow, 3).Value = "شماره تماس";
+                worksheet.Cell(headerRow, 4).Value = "تاریخ ثبت";
+
+                for (var i = 0; i < fields.Count; i++)
+                {
+                    worksheet.Cell(headerRow, fixedColumnCount + 1 + i).Value =
+                        string.IsNullOrWhiteSpace(fields[i].Label) ? fields[i].FieldKey : fields[i].Label;
+                }
+
+                var totalColumns = fixedColumnCount + fields.Count;
+                var headerRange = worksheet.Range(headerRow, 1, headerRow, Math.Max(totalColumns, 1));
+                headerRange.Style.Font.Bold = true;
+                headerRange.Style.Fill.BackgroundColor = XLColor.FromHtml("#4472C4");
+                headerRange.Style.Font.FontColor = XLColor.White;
+                headerRange.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+                headerRange.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+                headerRange.Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+
+                var rowNum = 2;
+                var itemIndex = 1;
+                foreach (var submission in submissions)
+                {
+                    var valueMap = submission.FieldValues
+                        .GroupBy(v => v.FieldKey, StringComparer.OrdinalIgnoreCase)
+                        .ToDictionary(g => g.Key, g => g.First().Value ?? string.Empty, StringComparer.OrdinalIgnoreCase);
+
+                    worksheet.Cell(rowNum, 1).Value = itemIndex;
+                    worksheet.Cell(rowNum, 2).Value = submission.ParticipantFullName;
+                    worksheet.Cell(rowNum, 3).Value = submission.ParticipantMobile;
+                    worksheet.Cell(rowNum, 4).Value = EnsureUtc(submission.CreatedAt).ToString("yyyy-MM-dd HH:mm");
+
+                    for (var i = 0; i < fields.Count; i++)
+                    {
+                        valueMap.TryGetValue(fields[i].FieldKey, out var fieldValue);
+                        worksheet.Cell(rowNum, fixedColumnCount + 1 + i).Value = fieldValue ?? string.Empty;
+                    }
+
+                    var dataRange = worksheet.Range(rowNum, 1, rowNum, Math.Max(totalColumns, 1));
+                    dataRange.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+                    dataRange.Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+                    if (rowNum % 2 == 0)
+                    {
+                        dataRange.Style.Fill.BackgroundColor = XLColor.FromHtml("#D9E2F3");
+                    }
+
+                    rowNum++;
+                    itemIndex++;
+                }
+
+                worksheet.Column(1).Width = 8;
+                worksheet.Column(2).Width = 25;
+                worksheet.Column(3).Width = 16;
+                worksheet.Column(4).Width = 18;
+                for (var i = 0; i < fields.Count; i++)
+                {
+                    worksheet.Column(fixedColumnCount + 1 + i).Width = 22;
+                }
+
+                using var memoryStream = new MemoryStream();
+                workbook.SaveAs(memoryStream);
+                var fileContent = memoryStream.ToArray();
+
+                var safeTitle = string.Join("_", form.Title.Split(Path.GetInvalidFileNameChars()));
+                if (string.IsNullOrWhiteSpace(safeTitle))
+                {
+                    safeTitle = $"form-{id}";
+                }
+
+                var fileName = $"FormSubmissions_{safeTitle}_{DateTime.UtcNow:yyyyMMdd_HHmmss}.xlsx";
+
+                var result = new ExportExcelResultDto
+                {
+                    FileContent = fileContent,
+                    FileName = fileName,
+                    ContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    TotalCount = submissions.Count,
+                    ExportedCount = submissions.Count,
+                    PageNumber = 1,
+                    PageSize = submissions.Count,
+                    TotalPages = 1
+                };
+
+                _logger.LogInformation(
+                    "User form submissions exported. FormId: {FormId}, Count: {Count}",
+                    id,
+                    submissions.Count);
+
+                return ApiResponse<ExportExcelResultDto>.CreateSuccess(
+                    result,
+                    $"فایل اکسل با {submissions.Count} پاسخ آماده دانلود است");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error exporting user form submissions {FormId} for user {UserId}", id, userId);
+                return ApiResponse<ExportExcelResultDto>.InternalServerError("خطا در تولید فایل اکسل");
+            }
+        }
+
         private async Task<ApiResponse<UserFormResponseDto>?> ValidateAndApplyPublishAsync(
             UserForm form,
             int formId,
@@ -832,6 +1033,29 @@ namespace Api_Vapp.Services
         private static DateTime? EnsureUtc(DateTime? value)
         {
             return value.HasValue ? EnsureUtc(value.Value) : null;
+        }
+
+        private static string ExtractEmail(IEnumerable<UserFormFieldValue> fieldValues)
+        {
+            var email = fieldValues.FirstOrDefault(v =>
+                string.Equals(v.FieldKey, "email", StringComparison.OrdinalIgnoreCase))?.Value;
+            return string.IsNullOrWhiteSpace(email) ? string.Empty : email.Trim();
+        }
+
+        private static string SanitizeSheetName(string title)
+        {
+            var name = string.IsNullOrWhiteSpace(title) ? "پاسخ‌ها" : title.Trim();
+            foreach (var c in Path.GetInvalidFileNameChars().Concat([':', '\\', '/', '?', '*', '[', ']']))
+            {
+                name = name.Replace(c, '_');
+            }
+
+            if (name.Length > 31)
+            {
+                name = name[..31];
+            }
+
+            return string.IsNullOrWhiteSpace(name) ? "پاسخ‌ها" : name;
         }
 
         private static UserFormFieldDto MapFieldToDto(UserFormField field)

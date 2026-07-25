@@ -7,5 +7,7 @@ namespace Api_Vapp.Utilities
         public const int MaxSlugLength = 100;
         public const int SlugGenerationMaxAttempts = 100;
         public const decimal RequiredProbabilityTotal = 100m;
+        public const int PrizeCodeMaxLength = 12;
+        public const int PrizeCodeGenerationMaxAttempts = 20;
     }
 }

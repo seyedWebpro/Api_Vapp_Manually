@@ -22,11 +22,9 @@ namespace Api_Vapp.DTOs.LuckyWheel
 
     public class SpinLuckyWheelPublicDto
     {
-        [Required]
-        public string ParticipantFullName { get; set; } = string.Empty;
-
-        [Required]
-        public string ParticipantMobile { get; set; } = string.Empty;
+        [Required(ErrorMessage = "توکن دسترسی الزامی است")]
+        [MaxLength(200, ErrorMessage = "توکن دسترسی نامعتبر است")]
+        public string AccessToken { get; set; } = string.Empty;
     }
 
     public class SpinLuckyWheelPublicResponseDto
@@ -36,5 +34,7 @@ namespace Api_Vapp.DTOs.LuckyWheel
         public int WonItemId { get; set; }
 
         public string WonItemName { get; set; } = string.Empty;
+
+        public string PrizeCode { get; set; } = string.Empty;
     }
 }

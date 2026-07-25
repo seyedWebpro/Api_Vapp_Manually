@@ -17,6 +17,18 @@ namespace Api_Vapp.Interfaces
 
         Task<ApiResponse<LuckyWheelResponseDto>> GetByIdAsync(int id, int userId);
 
+        Task<ApiResponse<LuckyWheelParticipantsPageDto>> GetParticipantsAsync(
+            int id,
+            int userId,
+            int pageNumber = 1,
+            int pageSize = 10,
+            string? searchTerm = null);
+
+        Task<ApiResponse<LuckyWheelParticipantVerifyDto>> VerifyParticipantAsync(
+            int id,
+            int userId,
+            string query);
+
         Task<ApiResponse<bool>> DeleteAsync(int id, int userId);
 
         Task<ApiResponse<LuckyWheelResponseDto>> SetActiveStatusAsync(int id, int userId, bool isActive);

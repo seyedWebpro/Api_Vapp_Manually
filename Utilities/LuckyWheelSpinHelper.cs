@@ -29,5 +29,20 @@ namespace Api_Vapp.Utilities
 
             return ordered[^1];
         }
+
+        /// <summary>
+        /// تولید کاندید کد جایزه خوانا (مثلاً LW-A3K9P2)
+        /// </summary>
+        public static string CreatePrizeCodeCandidate()
+        {
+            const string alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+            Span<char> chars = stackalloc char[6];
+            for (var i = 0; i < chars.Length; i++)
+            {
+                chars[i] = alphabet[Random.Shared.Next(alphabet.Length)];
+            }
+
+            return $"LW-{new string(chars)}";
+        }
     }
 }

@@ -1,6 +1,7 @@
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.DTOs.File;
 using Api_Vapp.DTOs.UserForm;
+using Api_Vapp.Models;
 using Api_Vapp.Utilities;
 using Xunit;
 
@@ -604,6 +605,90 @@ public class UserFormServiceTests : IAsyncLifetime
         Assert.Equal("Published", result.Data!.Status);
         Assert.Equal(firstPublishedAt, result.Data.PublishedAt);
         AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task GetSubmissions_ReturnsFormTitleAndContactColumns()
+    {
+        var formId = await _ctx.CreatePublishedFormAsync($"subs-{Guid.NewGuid():N}"[..20]);
+        await SeedSubmissionAsync(formId, "سمیه کریمی", "09131234501", "somaye@mail.com");
+        await SeedSubmissionAsync(formId, "محمد داوری", "09131234502", "mohammad@mail.com");
+
+        var result = await _ctx.Service.GetSubmissionsAsync(formId, _ctx.OwnerUserId, pageNumber: 1, pageSize: 10);
+
+        Assert.True(result.Success);
+        Assert.Equal("درخواست استخدام", result.Data!.FormTitle);
+        Assert.Equal(2, result.Data.SubmissionCount);
+        Assert.Equal(2, result.Data.Submissions.TotalCount);
+        Assert.Contains(result.Data.Submissions.Items, i =>
+            i.ParticipantFullName == "سمیه کریمی" &&
+            i.ParticipantMobile == "09131234501" &&
+            i.ParticipantEmail == "somaye@mail.com");
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task GetSubmissions_SearchByEmail_Filters()
+    {
+        var formId = await _ctx.CreatePublishedFormAsync($"srch-{Guid.NewGuid():N}"[..20]);
+        await SeedSubmissionAsync(formId, "علی", "09131111111", "ali@mail.com");
+        await SeedSubmissionAsync(formId, "رضا", "09132222222", "reza@mail.com");
+
+        var result = await _ctx.Service.GetSubmissionsAsync(
+            formId,
+            _ctx.OwnerUserId,
+            searchTerm: "reza@");
+
+        Assert.True(result.Success);
+        Assert.Equal(1, result.Data!.Submissions.TotalCount);
+        Assert.Equal("رضا", result.Data.Submissions.Items[0].ParticipantFullName);
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task GetSubmissions_OtherUser_Returns404()
+    {
+        var formId = await _ctx.CreatePublishedFormAsync($"own-{Guid.NewGuid():N}"[..20]);
+
+        var result = await _ctx.Service.GetSubmissionsAsync(formId, _ctx.OtherUserId);
+
+        Assert.False(result.Success);
+        Assert.Equal(404, result.StatusCode);
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task ExportSubmissions_ReturnsExcelBytes()
+    {
+        var formId = await _ctx.CreatePublishedFormAsync($"xls-{Guid.NewGuid():N}"[..20]);
+        await SeedSubmissionAsync(formId, "زهرا باقری", "09133333333", "zahra@mail.com");
+
+        var result = await _ctx.Service.ExportSubmissionsToExcelAsync(formId, _ctx.OwnerUserId);
+
+        Assert.True(result.Success);
+        Assert.NotNull(result.Data);
+        Assert.True(result.Data!.FileContent.Length > 0);
+        Assert.Equal(1, result.Data.ExportedCount);
+        Assert.EndsWith(".xlsx", result.Data.FileName);
+        AssertNoServerError(result);
+    }
+
+    private async Task SeedSubmissionAsync(int formId, string fullName, string mobile, string email)
+    {
+        _ctx.Context.UserFormSubmissions.Add(new UserFormSubmission
+        {
+            UserFormId = formId,
+            ParticipantFullName = fullName,
+            ParticipantMobile = mobile,
+            CreatedAt = DateTime.UtcNow,
+            FieldValues =
+            [
+                new UserFormFieldValue { FieldKey = "email", Value = email },
+                new UserFormFieldValue { FieldKey = "full_name", Value = fullName },
+                new UserFormFieldValue { FieldKey = "mobile", Value = mobile }
+            ]
+        });
+        await _ctx.Context.SaveChangesAsync();
     }
 
     private static void AssertNoServerError<T>(ApiResponse<T> response)

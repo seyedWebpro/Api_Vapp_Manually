@@ -28,9 +28,16 @@ namespace Api_Vapp.Interfaces
 
         Task AddParticipantAsync(LuckyWheelParticipant participant);
 
+        Task<bool> PrizeCodeExistsAsync(int luckyWheelId, string prizeCode);
+
         Task<(IReadOnlyList<LuckyWheelParticipant> Items, int TotalCount)> GetParticipantsPagedAsync(
             int luckyWheelId,
             int pageNumber,
-            int pageSize);
+            int pageSize,
+            string? searchTerm = null);
+
+        Task<LuckyWheelParticipant?> FindParticipantByMobileAsync(int luckyWheelId, string mobile);
+
+        Task<LuckyWheelParticipant?> FindParticipantByPrizeCodeAsync(int luckyWheelId, string prizeCode);
     }
 }

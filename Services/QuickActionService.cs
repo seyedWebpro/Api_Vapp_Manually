@@ -423,32 +423,11 @@ namespace Api_Vapp.Services
         /// <summary>
         /// اعتبارسنجی فایل عکس آیکون
         /// </summary>
-        private string? ValidateIconImage(Microsoft.AspNetCore.Http.IFormFile imageFile)
-        {
-            if (imageFile == null || imageFile.Length == 0)
-            {
-                return "فایل تصویر انتخاب نشده است";
-            }
-
-            // بررسی نوع فایل - فقط عکس مجاز است
-            var allowedImageTypes = new[] { "image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp", "image/svg+xml" };
-            var contentType = imageFile.ContentType.ToLower();
-            
-            if (!allowedImageTypes.Contains(contentType))
-            {
-                return $"نوع فایل '{contentType}' مجاز نیست. فقط فایل‌های تصویری (JPEG, PNG, GIF, WebP, SVG) قابل قبول هستند";
-            }
-
-            // بررسی حجم فایل (حداکثر 5 مگابایت برای آیکون)
-            var maxSize = 5 * 1024 * 1024; // 5 MB
-            if (imageFile.Length > maxSize)
-            {
-                var fileSizeMB = imageFile.Length / (1024.0 * 1024.0);
-                return $"حجم فایل ({fileSizeMB:F2} MB) از حد مجاز (5 MB) بیشتر است";
-            }
-
-            return null; // معتبر است
-        }
+        private string? ValidateIconImage(Microsoft.AspNetCore.Http.IFormFile imageFile) =>
+            SecureFileValidator.ValidateImage(
+                imageFile,
+                SecureFileValidator.IconMaxBytes,
+                "۲ مگابایت");
 
         public async Task<ApiResponse<QuickActionResponseDto>> SetUserDefaultActionAsync(int userId, int actionId)
         {

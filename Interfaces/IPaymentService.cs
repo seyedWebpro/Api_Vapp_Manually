@@ -29,6 +29,11 @@ namespace Api_Vapp.Interfaces
         Task<ApiResponse<PaymentResultDto>> VerifyPaymentAsync(int userId, VerifyPaymentRequestDto verifyDto);
 
         /// <summary>
+        /// تکمیل پرداخت در حالت شبیه‌سازی درگاه (توسعه / تا آماده‌شدن درگاه واقعی)
+        /// </summary>
+        Task<ApiResponse<PaymentResultDto>> SimulateGatewayPaymentAsync(int paymentId);
+
+        /// <summary>
         /// دریافت لیست پرداخت‌های کاربر
         /// </summary>
         Task<ApiResponse<PaymentListDto>> GetPaymentsAsync(int userId, int pageNumber = 1, int pageSize = 10);

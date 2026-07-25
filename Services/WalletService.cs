@@ -5,6 +5,8 @@ using Api_Vapp.DTOs.Cashback;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System.Globalization;
@@ -21,6 +23,7 @@ namespace Api_Vapp.Services
         private readonly IUserRepository _userRepository;
         private readonly ICashbackRepository _cashbackRepository;
         private readonly IServiceProvider _serviceProvider;
+        private readonly IConfiguration _configuration;
         private readonly ILogger<WalletService> _logger;
 
         public WalletService(
@@ -29,6 +32,7 @@ namespace Api_Vapp.Services
             IUserRepository userRepository,
             ICashbackRepository cashbackRepository,
             IServiceProvider serviceProvider,
+            IConfiguration configuration,
             ILogger<WalletService> logger)
         {
             _context = context;
@@ -36,6 +40,7 @@ namespace Api_Vapp.Services
             _userRepository = userRepository;
             _cashbackRepository = cashbackRepository;
             _serviceProvider = serviceProvider;
+            _configuration = configuration;
             _logger = logger;
         }
 
@@ -126,19 +131,32 @@ namespace Api_Vapp.Services
                     return ApiResponse<ChargeWalletResponseDto>.NotFound("کاربر یافت نشد");
                 }
 
-                // ایجاد شماره سفارش یکتا
-                var orderId = GenerateOrderId();
+                if (!string.Equals(request.Gateway, PaymentGateways.Behpardakht, StringComparison.OrdinalIgnoreCase))
+                {
+                    return ApiResponse<ChargeWalletResponseDto>.BadRequest("درگاه پرداخت پشتیبانی نمی‌شود");
+                }
 
-                // ایجاد رکورد پرداخت
+                var useSimulation = _configuration.GetValue("Payment:UseSimulation", true);
+                var orderId = GenerateOrderId();
+                var callbackUrl = request.CallbackUrl
+                    ?? _configuration["Payment:Behpardakht:FrontendCallbackUrl"]
+                    ?? "/payment/result";
+
+                // RefId شبیه‌سازی‌شده تا آماده‌شدن درگاه واقعی
+                var refId = useSimulation
+                    ? $"SIMREF{DateTime.UtcNow:yyyyMMddHHmmss}{Random.Shared.Next(1000, 9999)}"
+                    : null;
+
                 var payment = new Payment
                 {
                     UserId = userId,
                     Amount = request.Amount,
                     PaymentType = PaymentTypes.WalletCharge,
-                    Gateway = request.Gateway,
+                    Gateway = PaymentGateways.Behpardakht,
                     OrderId = orderId,
-                    Status = PaymentStatuses.Pending,
-                    CallbackUrl = request.CallbackUrl,
+                    RefId = refId,
+                    Status = useSimulation ? PaymentStatuses.Processing : PaymentStatuses.Pending,
+                    CallbackUrl = callbackUrl,
                     Description = "شارژ کیف پول",
                     CreatedAt = DateTime.UtcNow
                 };
@@ -146,20 +164,22 @@ namespace Api_Vapp.Services
                 await _context.Payments.AddAsync(payment);
                 await _context.SaveChangesAsync();
 
-                // ایجاد URL درگاه پرداخت
-                var gatewayUrl = GenerateGatewayUrl(payment, request.Gateway);
-
                 var response = new ChargeWalletResponseDto
                 {
                     PaymentId = payment.Id,
                     OrderId = orderId,
                     Amount = request.Amount,
-                    GatewayUrl = gatewayUrl,
-                    Gateway = request.Gateway
+                    GatewayUrl = BuildGatewayUrl(payment.Id),
+                    Gateway = payment.Gateway,
+                    PaymentType = PaymentTypes.WalletCharge,
+                    PaymentTypeTitle = "شارژ کیف پول",
+                    RefId = payment.RefId,
+                    IsSimulation = useSimulation
                 };
 
-                _logger.LogInformation("درخواست شارژ کیف پول با موفقیت ایجاد شد. کاربر: {UserId}, مبلغ: {Amount}, سفارش: {OrderId}", 
-                    userId, request.Amount, orderId);
+                _logger.LogInformation(
+                    "درخواست شارژ کیف پول ایجاد شد. کاربر: {UserId}, مبلغ: {Amount}, سفارش: {OrderId}, Simulation: {IsSimulation}",
+                    userId, request.Amount, orderId, useSimulation);
 
                 return ApiResponse<ChargeWalletResponseDto>.CreateSuccess(response, "درخواست پرداخت با موفقیت ایجاد شد", 201);
             }
@@ -193,13 +213,16 @@ namespace Api_Vapp.Services
                     return ApiResponse<WalletTransactionDto>.NotFound("کاربر یافت نشد");
                 }
 
-                using var transaction = await _context.Database.BeginTransactionAsync();
+                var ownsTransaction = _context.Database.CurrentTransaction == null;
+                IDbContextTransaction? transaction = null;
+                if (ownsTransaction)
+                    transaction = await _context.Database.BeginTransactionAsync();
+
                 try
                 {
                     var balanceBefore = user.WalletBalance;
                     var balanceAfter = balanceBefore + amount;
 
-                    // ایجاد تراکنش کیف پول
                     var walletTransaction = new WalletTransaction
                     {
                         UserId = userId,
@@ -219,12 +242,12 @@ namespace Api_Vapp.Services
 
                     await _context.WalletTransactions.AddAsync(walletTransaction);
 
-                    // به‌روزرسانی موجودی کاربر
                     user.WalletBalance = balanceAfter;
                     user.UpdatedAt = DateTime.UtcNow;
 
                     await _context.SaveChangesAsync();
-                    await transaction.CommitAsync();
+                    if (ownsTransaction && transaction != null)
+                        await transaction.CommitAsync();
 
                     _logger.LogInformation("موجودی کیف پول کاربر {UserId} به مبلغ {Amount} تومان افزایش یافت. موجودی جدید: {NewBalance}", 
                         userId, amount, balanceAfter);
@@ -235,8 +258,14 @@ namespace Api_Vapp.Services
                 }
                 catch
                 {
-                    await transaction.RollbackAsync();
+                    if (ownsTransaction && transaction != null)
+                        await transaction.RollbackAsync();
                     throw;
+                }
+                finally
+                {
+                    if (ownsTransaction)
+                        transaction?.Dispose();
                 }
             }
             catch (Exception ex)
@@ -420,14 +449,14 @@ namespace Api_Vapp.Services
         private string GenerateOrderId()
         {
             // فرمت: VW + تاریخ + شماره رندوم
-            return $"VW{DateTime.UtcNow:yyyyMMddHHmmss}{new Random().Next(1000, 9999)}";
+            return $"VW{DateTime.UtcNow:yyyyMMddHHmmss}{Random.Shared.Next(1000, 9999)}";
         }
 
-        private string GenerateGatewayUrl(Payment payment, string gateway)
+        private string BuildGatewayUrl(int paymentId)
         {
-            // در اینجا باید URL واقعی درگاه ساخته شود
-            // برای حالت توسعه، URL شبیه‌سازی شده برمی‌گردانیم
-            return $"/api/Payment/redirect/{payment.Id}";
+            var apiBaseUrl = _configuration["Payment:ApiBaseUrl"]?.TrimEnd('/') ?? string.Empty;
+            var redirectPath = $"/api/Payment/redirect/{paymentId}";
+            return string.IsNullOrEmpty(apiBaseUrl) ? redirectPath : $"{apiBaseUrl}{redirectPath}";
         }
 
         private static string FormatAmount(decimal amount)

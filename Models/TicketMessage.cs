@@ -13,8 +13,10 @@ namespace Api_Vapp.Models
         public string? AttachmentUrl { get; set; }
         public bool IsDeleted { get; set; }
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public DateTime? UpdatedAt { get; set; }
 
         public virtual SupportTicket Ticket { get; set; } = null!;
         public virtual User SenderUser { get; set; } = null!;
     }
 }
+

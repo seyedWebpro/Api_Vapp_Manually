@@ -908,27 +908,12 @@ namespace Api_Vapp.Services
                     return ApiResponse<ImportExcelResultDto>.Forbidden("شما مجاز به ایمپورت به این دفترچه نیستید");
                 }
 
-                // اعتبارسنجی فایل اکسل
-                if (importDto.ExcelFile == null || importDto.ExcelFile.Length == 0)
-                {
-                    return ApiResponse<ImportExcelResultDto>.BadRequest("فایل اکسل انتخاب نشده است");
-                }
-
-                var allowedExcelTypes = new[] { "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel" };
-                var contentType = importDto.ExcelFile.ContentType.ToLower();
-                
-                if (!allowedExcelTypes.Contains(contentType))
-                {
-                    return ApiResponse<ImportExcelResultDto>.BadRequest($"نوع فایل '{contentType}' مجاز نیست. فقط فایل‌های Excel (.xlsx, .xls) قابل قبول هستند");
-                }
-
-                // بررسی حجم فایل (حداکثر 10 مگابایت برای فایل اکسل)
-                var maxSize = 10 * 1024 * 1024; // 10 MB
-                if (importDto.ExcelFile.Length > maxSize)
-                {
-                    var fileSizeMB = importDto.ExcelFile.Length / (1024.0 * 1024.0);
-                    return ApiResponse<ImportExcelResultDto>.BadRequest($"حجم فایل ({fileSizeMB:F2} MB) از حد مجاز (10 MB) بیشتر است");
-                }
+                // اعتبارسنجی امن فایل اکسل (نوع، پسوند، magic bytes، حجم)
+                var excelValidation = SecureFileValidator.ValidateExcel(
+                    importDto.ExcelFile,
+                    maxBytes: 10 * 1024 * 1024);
+                if (excelValidation != null)
+                    return ApiResponse<ImportExcelResultDto>.BadRequest(excelValidation);
 
                 // نتیجه ایمپورت
                 var result = new ImportExcelResultDto();
@@ -1616,38 +1601,11 @@ namespace Api_Vapp.Services
         /// <summary>
         /// اعتبارسنجی فایل عکس پروفایل
         /// </summary>
-        private string? ValidateProfileImage(Microsoft.AspNetCore.Http.IFormFile imageFile)
-        {
-            if (imageFile == null || imageFile.Length == 0)
-            {
-                return "فایل تصویر انتخاب نشده است";
-            }
-
-            // بررسی نوع فایل - فقط عکس مجاز است
-            var allowedImageTypes = new[] { "image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp" };
-            var contentType = imageFile.ContentType.ToLower();
-            
-            if (!allowedImageTypes.Contains(contentType))
-            {
-                return $"نوع فایل '{contentType}' مجاز نیست. فقط فایل‌های تصویری (JPEG, PNG, GIF, WebP) قابل قبول هستند";
-            }
-
-            // بررسی حجم فایل (حداکثر 10 مگابایت برای عکس پروفایل)
-            var maxSize = 10 * 1024 * 1024; // 10 MB
-            if (imageFile.Length > maxSize)
-            {
-                var fileSizeMB = imageFile.Length / (1024.0 * 1024.0);
-                return $"حجم فایل ({fileSizeMB:F2} MB) از حد مجاز (10 MB) بیشتر است";
-            }
-
-            // بررسی نام فایل
-            if (string.IsNullOrWhiteSpace(imageFile.FileName))
-            {
-                return "نام فایل معتبر نیست";
-            }
-
-            return null; // فایل معتبر است
-        }
+        private string? ValidateProfileImage(Microsoft.AspNetCore.Http.IFormFile imageFile) =>
+            SecureFileValidator.ValidateImage(
+                imageFile,
+                SecureFileValidator.ContactImageMaxBytes,
+                "۱۰ مگابایت");
 
         /// <summary>
         /// تبدیل Contact به ContactResponseDto
@@ -1983,23 +1941,21 @@ namespace Api_Vapp.Services
                     return ApiResponse<List<string>>.BadRequest("هیچ فایلی ارسال نشده است");
                 }
 
-                // اعتبارسنجی فایل‌ها
+                // اعتبارسنجی فایل‌ها — نوع، پسوند، magic bytes و حجم
                 var validationErrors = new List<string>();
+                var allowedAttachmentTypes = SecureFileValidator.TicketContentTypes
+                    .Concat(SecureFileValidator.ExcelContentTypes)
+                    .ToArray();
+
                 foreach (var file in files)
                 {
-                    if (file == null || file.Length == 0)
-                    {
-                        validationErrors.Add($"فایل '{file?.FileName ?? "نامشخص"}' خالی است");
-                        continue;
-                    }
-
-                    // بررسی حجم فایل (حداکثر 50 مگابایت برای ضمیمه)
-                    var maxSize = 50 * 1024 * 1024; // 50 MB
-                    if (file.Length > maxSize)
-                    {
-                        var fileSizeMB = file.Length / (1024.0 * 1024.0);
-                        validationErrors.Add($"حجم فایل '{file.FileName}' ({fileSizeMB:F2} MB) از حد مجاز (50 MB) بیشتر است");
-                    }
+                    var error = SecureFileValidator.Validate(
+                        file,
+                        allowedAttachmentTypes,
+                        SecureFileValidator.ContactAttachmentMaxBytes,
+                        "۵۰ مگابایت");
+                    if (error != null)
+                        validationErrors.Add($"{file?.FileName ?? "فایل"}: {error}");
                 }
 
                 if (validationErrors.Any())

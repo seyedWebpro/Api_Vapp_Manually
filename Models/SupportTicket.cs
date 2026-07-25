@@ -8,6 +8,12 @@ namespace Api_Vapp.Models
         public int Id { get; set; }
         public int UserId { get; set; }
         public string Subject { get; set; } = string.Empty;
+
+        /// <summary>
+        /// کد ماژول مرتبط (مثلاً Subscription, Payment)
+        /// </summary>
+        public string Module { get; set; } = "Other";
+
         public string Status { get; set; } = "Open";
         public string Priority { get; set; } = "Normal";
         public int? AssignedToUserId { get; set; }
@@ -21,3 +27,4 @@ namespace Api_Vapp.Models
         public virtual ICollection<TicketMessage> Messages { get; set; } = new List<TicketMessage>();
     }
 }
+

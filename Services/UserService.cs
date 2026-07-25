@@ -590,41 +590,13 @@ namespace Api_Vapp.Services
                     return ApiResponse<string>.NotFound("کاربر یافت نشد");
                 }
 
-                // اعتبارسنجی فایل
-                if (imageFile == null || imageFile.Length == 0)
-                {
-                    return ApiResponse<string>.BadRequest("فایل عکس ارسال نشده است. لطفاً یک فایل تصویری انتخاب کنید");
-                }
-
-                // بررسی نام فایل
-                if (string.IsNullOrWhiteSpace(imageFile.FileName))
-                {
-                    return ApiResponse<string>.BadRequest("نام فایل نامعتبر است");
-                }
-
-                // بررسی نوع فایل
-                var allowedTypes = new[] { "image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp" };
-                var contentType = imageFile.ContentType?.ToLower() ?? string.Empty;
-                if (string.IsNullOrWhiteSpace(contentType) || !allowedTypes.Contains(contentType))
-                {
-                    return ApiResponse<string>.BadRequest("فرمت فایل نامعتبر است. فقط تصاویر JPEG, PNG, GIF و WebP مجاز است");
-                }
-
-                // بررسی پسوند فایل
-                var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".gif", ".webp" };
-                var fileExtension = Path.GetExtension(imageFile.FileName)?.ToLower();
-                if (string.IsNullOrWhiteSpace(fileExtension) || !allowedExtensions.Contains(fileExtension))
-                {
-                    return ApiResponse<string>.BadRequest($"پسوند فایل '{fileExtension}' مجاز نیست. فقط {string.Join(", ", allowedExtensions)} مجاز است");
-                }
-
-                // بررسی اندازه فایل (حداکثر 5 مگابایت)
-                const long maxFileSize = 5 * 1024 * 1024; // 5 MB
-                if (imageFile.Length > maxFileSize)
-                {
-                    var fileSizeMB = Math.Round(imageFile.Length / (1024.0 * 1024.0), 2);
-                    return ApiResponse<string>.BadRequest($"حجم فایل ({fileSizeMB} مگابایت) بیشتر از حد مجاز (5 مگابایت) است. لطفاً فایل کوچکتری انتخاب کنید");
-                }
+                // اعتبارسنجی امن فایل (نوع، پسوند، magic bytes، حجم)
+                var validationError = SecureFileValidator.ValidateImage(
+                    imageFile,
+                    SecureFileValidator.ProfileImageMaxBytes,
+                    "۵ مگابایت");
+                if (validationError != null)
+                    return ApiResponse<string>.BadRequest(validationError);
 
                 using var transaction = await _context.Database.BeginTransactionAsync();
                 try

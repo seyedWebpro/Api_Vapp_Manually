@@ -20,5 +20,9 @@ namespace Api_Vapp.DTOs.Common
         public const string SmsFailed = "SMS_FAILED";
         public const string PaymentFailed = "PAYMENT_FAILED";
         public const string FileUploadFailed = "FILE_UPLOAD_FAILED";
+        public const string OtpExpired = "OTP_EXPIRED";
+        public const string OtpIncorrect = "OTP_INCORRECT";
+        public const string OtpRateLimited = "OTP_RATE_LIMITED";
+        public const string OtpLocked = "OTP_LOCKED";
     }
 }

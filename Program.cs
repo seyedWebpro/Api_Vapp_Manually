@@ -385,6 +385,10 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.IQuickActionService, Api_Vapp.Ser
 builder.Services.AddScoped<Api_Vapp.Interfaces.IUserFormService, Api_Vapp.Services.UserFormService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.ILuckyWheelService, Api_Vapp.Services.LuckyWheelService>();
 builder.Services.AddScoped<Api_Vapp.Services.PublicPhonebookService>();
+builder.Services.Configure<Api_Vapp.Configuration.PublicParticipantOptions>(
+    builder.Configuration.GetSection(Api_Vapp.Configuration.PublicParticipantOptions.SectionName));
+builder.Services.AddScoped<Api_Vapp.Interfaces.IPublicParticipantSessionService, Api_Vapp.Services.PublicParticipantSessionService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IPublicParticipantOtpService, Api_Vapp.Services.PublicParticipantOtpService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IUserFormPublicService, Api_Vapp.Services.UserFormPublicService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.ILuckyWheelPublicService, Api_Vapp.Services.LuckyWheelPublicService>();
 
@@ -420,7 +424,7 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminSubscriptionPlanService, Ap
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminSubscriptionFeatureService, Api_Vapp.Services.Admin.AdminSubscriptionFeatureService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminUserSubscriptionService, Api_Vapp.Services.Admin.AdminUserSubscriptionService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminSupportTicketService, Api_Vapp.Services.Admin.AdminSupportTicketService>();
-builder.Services.AddScoped<Api_Vapp.Interfaces.IUserSupportTicketService, Api_Vapp.Services.Admin.UserSupportTicketService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IUserSupportTicketService, Api_Vapp.Services.UserSupportTicketService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminEducationalVideoService, Api_Vapp.Services.Admin.AdminEducationalVideoService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminMessageApprovalService, Api_Vapp.Services.Admin.AdminMessageApprovalService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminTemplateApprovalService, Api_Vapp.Services.Admin.AdminTemplateApprovalService>();

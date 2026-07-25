@@ -32,11 +32,9 @@ namespace Api_Vapp.DTOs.UserForm
 
     public class SubmitFormPublicDto
     {
-        [Required]
-        public string ParticipantFullName { get; set; } = string.Empty;
-
-        [Required]
-        public string ParticipantMobile { get; set; } = string.Empty;
+        [Required(ErrorMessage = "توکن دسترسی الزامی است")]
+        [MaxLength(200, ErrorMessage = "توکن دسترسی نامعتبر است")]
+        public string AccessToken { get; set; } = string.Empty;
 
         public Dictionary<string, string?> Values { get; set; } = new();
     }

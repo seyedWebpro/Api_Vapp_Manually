@@ -61,6 +61,7 @@ namespace Api_Vapp.Data
         public DbSet<LuckyWheelParticipant> LuckyWheelParticipants { get; set; }
         public DbSet<UserFormSubmission> UserFormSubmissions { get; set; }
         public DbSet<UserFormFieldValue> UserFormFieldValues { get; set; }
+        public DbSet<PublicParticipantSession> PublicParticipantSessions { get; set; }
         public DbSet<BookingSystem> BookingSystems { get; set; }
         public DbSet<BookingSystemNotebook> BookingSystemNotebooks { get; set; }
         public DbSet<BookingSystemDraft> BookingSystemDrafts { get; set; }
@@ -1132,6 +1133,7 @@ namespace Api_Vapp.Data
                 entity.HasKey(t => t.Id);
                 entity.Property(t => t.Id).ValueGeneratedOnAdd();
                 entity.Property(t => t.Subject).IsRequired().HasMaxLength(300);
+                entity.Property(t => t.Module).IsRequired().HasMaxLength(50).HasDefaultValue("Other");
                 entity.Property(t => t.Status).IsRequired().HasMaxLength(50).HasDefaultValue("Open");
                 entity.Property(t => t.Priority).IsRequired().HasMaxLength(50).HasDefaultValue("Normal");
                 entity.Property(t => t.IsDeleted).HasDefaultValue(false);
@@ -1140,6 +1142,7 @@ namespace Api_Vapp.Data
                 entity.HasOne(t => t.AssignedToUser).WithMany().HasForeignKey(t => t.AssignedToUserId).OnDelete(DeleteBehavior.NoAction);
                 entity.HasIndex(t => t.UserId);
                 entity.HasIndex(t => t.Status);
+                entity.HasIndex(t => t.Module);
             });
 
             // تنظیمات TicketMessage
@@ -1359,6 +1362,7 @@ namespace Api_Vapp.Data
                 entity.HasIndex(s => s.UserFormId);
                 entity.HasIndex(s => s.ParticipantMobile);
                 entity.HasIndex(s => s.CreatedAt);
+                entity.HasIndex(s => new { s.UserFormId, s.ParticipantMobile }).IsUnique();
             });
 
             modelBuilder.Entity<UserFormFieldValue>(entity =>
@@ -1378,6 +1382,26 @@ namespace Api_Vapp.Data
                 entity.HasIndex(v => new { v.UserFormSubmissionId, v.FieldKey }).IsUnique();
             });
 
+            modelBuilder.Entity<PublicParticipantSession>(entity =>
+            {
+                entity.HasKey(s => s.Id);
+                entity.Property(s => s.Id).ValueGeneratedOnAdd();
+                entity.Property(s => s.ResourceType).IsRequired();
+                entity.Property(s => s.ResourceId).IsRequired();
+                entity.Property(s => s.ParticipantFullName).IsRequired().HasMaxLength(200);
+                entity.Property(s => s.ParticipantMobile).IsRequired().HasMaxLength(20);
+                entity.Property(s => s.TokenHash).IsRequired().HasMaxLength(64);
+                entity.Property(s => s.ExpiresAt).IsRequired();
+                entity.Property(s => s.IsDeleted).HasDefaultValue(false);
+                entity.Property(s => s.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+                entity.HasIndex(s => s.TokenHash).IsUnique();
+                entity.HasIndex(s => s.ExpiresAt);
+                entity.HasIndex(s => new { s.ResourceType, s.ResourceId, s.ParticipantMobile })
+                    .IsUnique()
+                    .HasFilter("[IsDeleted] = 0");
+            });
+
             modelBuilder.Entity<LuckyWheelParticipant>(entity =>
             {
                 entity.HasKey(p => p.Id);
@@ -1386,6 +1410,7 @@ namespace Api_Vapp.Data
                 entity.Property(p => p.ParticipantFullName).IsRequired().HasMaxLength(200);
                 entity.Property(p => p.ParticipantMobile).IsRequired().HasMaxLength(20);
                 entity.Property(p => p.WonLuckyWheelItemId).IsRequired();
+                entity.Property(p => p.PrizeCode).IsRequired().HasMaxLength(12);
                 entity.Property(p => p.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
 
                 entity.HasOne(p => p.LuckyWheel)
@@ -1407,6 +1432,7 @@ namespace Api_Vapp.Data
                 entity.HasIndex(p => p.ParticipantMobile);
                 entity.HasIndex(p => p.CreatedAt);
                 entity.HasIndex(p => new { p.LuckyWheelId, p.ParticipantMobile }).IsUnique();
+                entity.HasIndex(p => new { p.LuckyWheelId, p.PrizeCode }).IsUnique();
             });
 
             modelBuilder.Entity<ReferralProgram>(entity =>

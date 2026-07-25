@@ -79,6 +79,38 @@ namespace Api_Vapp.Controller
         }
 
         /// <summary>
+        /// لیست شرکت‌کنندگان و آمار نتایج گردونه
+        /// </summary>
+        [HttpGet("{id}/participants")]
+        [ProducesResponseType(typeof(ApiResponse<LuckyWheelParticipantsPageDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<LuckyWheelParticipantsPageDto>), StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<ApiResponse<LuckyWheelParticipantsPageDto>>> GetParticipants(
+            int id,
+            [FromQuery] int pageNumber = 1,
+            [FromQuery] int pageSize = 10,
+            [FromQuery] string? searchTerm = null)
+        {
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _luckyWheelService.GetParticipantsAsync(id, userId, pageNumber, pageSize, searchTerm);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        /// <summary>
+        /// راستی‌آزمایی جایزه با شماره موبایل یا کد جایزه
+        /// </summary>
+        [HttpGet("{id}/participants/verify")]
+        [ProducesResponseType(typeof(ApiResponse<LuckyWheelParticipantVerifyDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<LuckyWheelParticipantVerifyDto>), StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<ApiResponse<LuckyWheelParticipantVerifyDto>>> VerifyParticipant(
+            int id,
+            [FromQuery] string query)
+        {
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _luckyWheelService.VerifyParticipantAsync(id, userId, query);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        /// <summary>
         /// به‌روزرسانی اطلاعات اصلی گردونه (عنوان، توضیحات، slug، دفترچه) — جوایز ویرایش نمی‌شوند
         /// </summary>
         [HttpPost("{id}/update-info")]

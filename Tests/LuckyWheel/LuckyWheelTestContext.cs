@@ -131,6 +131,29 @@ internal sealed class LuckyWheelTestContext : IDisposable
         return wheelId;
     }
 
+    public async Task SeedParticipantAsync(
+        int wheelId,
+        string fullName,
+        string mobile,
+        string prizeCode)
+    {
+        var itemId = await _context.LuckyWheelItems
+            .Where(i => i.LuckyWheelId == wheelId)
+            .Select(i => i.Id)
+            .FirstAsync();
+
+        _context.LuckyWheelParticipants.Add(new LuckyWheelParticipant
+        {
+            LuckyWheelId = wheelId,
+            ParticipantFullName = fullName,
+            ParticipantMobile = mobile,
+            WonLuckyWheelItemId = itemId,
+            PrizeCode = prizeCode,
+            CreatedAt = DateTime.UtcNow
+        });
+        await _context.SaveChangesAsync();
+    }
+
     public void Dispose()
     {
         _transaction?.Dispose();

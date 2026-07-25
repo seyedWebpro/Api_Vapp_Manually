@@ -205,6 +205,26 @@ namespace Api_Vapp.DTOs.Wallet
         /// نوع درگاه
         /// </summary>
         public string Gateway { get; set; } = string.Empty;
+
+        /// <summary>
+        /// نوع پرداخت (WalletCharge / Subscription / ...)
+        /// </summary>
+        public string PaymentType { get; set; } = string.Empty;
+
+        /// <summary>
+        /// عنوان نوع پرداخت
+        /// </summary>
+        public string PaymentTypeTitle { get; set; } = string.Empty;
+
+        /// <summary>
+        /// شماره مرجع درگاه (در حالت شبیه‌سازی پر می‌شود)
+        /// </summary>
+        public string? RefId { get; set; }
+
+        /// <summary>
+        /// آیا پرداخت از طریق درگاه شبیه‌سازی انجام می‌شود؟
+        /// </summary>
+        public bool IsSimulation { get; set; }
     }
 
     #endregion

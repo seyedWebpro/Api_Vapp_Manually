@@ -33,6 +33,14 @@ namespace Api_Vapp.Utilities
                 {
                     errors.Add($"مقدار فیلد {field.Label} نامعتبر است");
                 }
+                else if (IsEmailField(field) && !IsValidEmail(value))
+                {
+                    errors.Add($"مقدار فیلد {field.Label} نامعتبر است");
+                }
+                else if (IsNumberField(field) && !decimal.TryParse(value, out _))
+                {
+                    errors.Add($"مقدار فیلد {field.Label} باید عددی باشد");
+                }
             }
 
             return errors;
@@ -41,5 +49,24 @@ namespace Api_Vapp.Utilities
         private static bool IsMobileField(UserFormField field) =>
             string.Equals(field.FieldType, "mobile", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(field.FieldKey, "mobile", StringComparison.OrdinalIgnoreCase);
+
+        private static bool IsEmailField(UserFormField field) =>
+            string.Equals(field.FieldType, "email", StringComparison.OrdinalIgnoreCase);
+
+        private static bool IsNumberField(UserFormField field) =>
+            string.Equals(field.FieldType, "number", StringComparison.OrdinalIgnoreCase);
+
+        private static bool IsValidEmail(string value)
+        {
+            try
+            {
+                var addr = new System.Net.Mail.MailAddress(value);
+                return string.Equals(addr.Address, value, StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return false;
+            }
+        }
     }
 }

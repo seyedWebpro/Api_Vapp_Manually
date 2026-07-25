@@ -147,14 +147,34 @@ namespace Api_Vapp.Repositories
             await _context.SaveChangesAsync();
         }
 
+        public async Task<bool> PrizeCodeExistsAsync(int luckyWheelId, string prizeCode)
+        {
+            return await _context.LuckyWheelParticipants
+                .AsNoTracking()
+                .AnyAsync(p =>
+                    p.LuckyWheelId == luckyWheelId &&
+                    p.PrizeCode == prizeCode);
+        }
+
         public async Task<(IReadOnlyList<LuckyWheelParticipant> Items, int TotalCount)> GetParticipantsPagedAsync(
             int luckyWheelId,
             int pageNumber,
-            int pageSize)
+            int pageSize,
+            string? searchTerm = null)
         {
             var query = _context.LuckyWheelParticipants
                 .AsNoTracking()
+                .Include(p => p.WonItem)
                 .Where(p => p.LuckyWheelId == luckyWheelId);
+
+            if (!string.IsNullOrWhiteSpace(searchTerm))
+            {
+                var term = searchTerm.Trim();
+                query = query.Where(p =>
+                    p.ParticipantFullName.Contains(term) ||
+                    p.ParticipantMobile.Contains(term) ||
+                    p.PrizeCode.Contains(term));
+            }
 
             var totalCount = await query.CountAsync();
 
@@ -162,10 +182,31 @@ namespace Api_Vapp.Repositories
                 .OrderByDescending(p => p.CreatedAt)
                 .Skip((pageNumber - 1) * pageSize)
                 .Take(pageSize)
-                .Include(p => p.WonItem)
                 .ToListAsync();
 
             return (items, totalCount);
+        }
+
+        public async Task<LuckyWheelParticipant?> FindParticipantByMobileAsync(int luckyWheelId, string mobile)
+        {
+            return await _context.LuckyWheelParticipants
+                .AsNoTracking()
+                .Include(p => p.WonItem)
+                .Include(p => p.LuckyWheel)
+                .FirstOrDefaultAsync(p =>
+                    p.LuckyWheelId == luckyWheelId &&
+                    p.ParticipantMobile == mobile);
+        }
+
+        public async Task<LuckyWheelParticipant?> FindParticipantByPrizeCodeAsync(int luckyWheelId, string prizeCode)
+        {
+            return await _context.LuckyWheelParticipants
+                .AsNoTracking()
+                .Include(p => p.WonItem)
+                .Include(p => p.LuckyWheel)
+                .FirstOrDefaultAsync(p =>
+                    p.LuckyWheelId == luckyWheelId &&
+                    p.PrizeCode == prizeCode);
         }
     }
 }

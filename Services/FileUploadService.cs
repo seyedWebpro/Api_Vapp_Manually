@@ -476,28 +476,24 @@ namespace Api_Vapp.Services
                 throw new ArgumentException("فایل انتخاب نشده است یا خالی است.");
             }
 
-            // بررسی نوع فایل
-            var contentType = file.ContentType.ToLower();
-            if (!_options.AllowedFileTypes.Any(allowed => 
-                allowed.Equals(contentType, StringComparison.OrdinalIgnoreCase)))
+            var allowedTypes = _options.AllowedFileTypes ?? new List<string>();
+            if (allowedTypes.Count == 0)
             {
-                _logger.LogWarning("⚠️ نوع فایل مجاز نیست: {ContentType}", contentType);
-                throw new ArgumentException($"نوع فایل '{contentType}' مجاز نیست. انواع مجاز: {string.Join(", ", _options.AllowedFileTypes)}");
+                throw new ArgumentException("هیچ نوع فایلی برای آپلود پیکربندی نشده است");
             }
 
-            // بررسی حجم فایل
-            if (file.Length > _options.MaxFileSize)
-            {
-                var maxSizeMB = _options.MaxFileSize / (1024.0 * 1024.0);
-                _logger.LogWarning("⚠️ حجم فایل از حد مجاز بیشتر است: {FileSize} bytes, Max: {MaxSize} bytes", 
-                    file.Length, _options.MaxFileSize);
-                throw new ArgumentException($"حجم فایل ({file.Length / (1024.0 * 1024.0):F2} MB) از حد مجاز ({maxSizeMB:F2} MB) بیشتر است.");
-            }
+            var maxBytes = _options.MaxFileSize > 0 ? _options.MaxFileSize : SecureFileValidator.ContactAttachmentMaxBytes;
+            var maxMb = Math.Max(1, (int)Math.Round(maxBytes / (1024.0 * 1024.0)));
+            var validationError = SecureFileValidator.Validate(
+                file,
+                allowedTypes,
+                maxBytes,
+                $"{maxMb} مگابایت");
 
-            // بررسی نام فایل
-            if (string.IsNullOrWhiteSpace(file.FileName))
+            if (validationError != null)
             {
-                throw new ArgumentException("نام فایل معتبر نیست.");
+                _logger.LogWarning("⚠️ اعتبارسنجی امن فایل رد شد: {Error}", validationError);
+                throw new ArgumentException(validationError);
             }
         }
 

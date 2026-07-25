@@ -27,7 +27,11 @@ namespace Api_Vapp.Services.Admin
             _logger = logger;
         }
 
-        public async Task<ApiResponse<PagedResponse<SupportTicketResponseDto>>> GetAllAsync(string? status = null, int page = 1, int pageSize = 20)
+        public async Task<ApiResponse<PagedResponse<SupportTicketResponseDto>>> GetAllAsync(
+            string? status = null,
+            string? priority = null,
+            int page = 1,
+            int pageSize = 20)
         {
             try
             {
@@ -38,21 +42,27 @@ namespace Api_Vapp.Services.Admin
                     .Where(t => !t.IsDeleted);
 
                 if (!string.IsNullOrWhiteSpace(status))
-                    query = query.Where(t => t.Status == status);
+                    query = query.Where(t => t.Status == status.Trim());
+
+                if (!string.IsNullOrWhiteSpace(priority))
+                    query = query.Where(t => t.Priority == priority.Trim());
 
                 var totalCount = await query.CountAsync();
 
                 var items = await query
-                    .OrderByDescending(t => t.CreatedAt)
+                    .OrderByDescending(t => t.UpdatedAt ?? t.CreatedAt)
+                    .ThenByDescending(t => t.Id)
                     .Skip((page - 1) * pageSize)
                     .Take(pageSize)
                     .Select(t => new SupportTicketResponseDto
                     {
                         Id = t.Id,
+                        TicketNumber = FormatTicketNumber(t.Id),
                         UserId = t.UserId,
                         UserPhoneNumber = t.User.PhoneNumber,
                         UserFullName = t.User.FullName,
                         Subject = t.Subject,
+                        Module = t.Module,
                         Status = t.Status,
                         Priority = t.Priority,
                         AssignedToUserId = t.AssignedToUserId,
@@ -63,6 +73,9 @@ namespace Api_Vapp.Services.Admin
                         ReplyCount = t.Messages.Count(m => !m.IsDeleted)
                     })
                     .ToListAsync();
+
+                foreach (var item in items)
+                    EnrichLabels(item);
 
                 return ApiResponse<PagedResponse<SupportTicketResponseDto>>.CreateSuccess(
                     PagedResponse<SupportTicketResponseDto>.Create(items, totalCount, page, pageSize));
@@ -91,13 +104,19 @@ namespace Api_Vapp.Services.Admin
             }
         }
 
-        public async Task<ApiResponse<SupportTicketResponseDto>> ReplyAsync(int id, int adminUserId, ReplySupportTicketDto dto, IFormFile? imageFile = null)
+        public async Task<ApiResponse<SupportTicketResponseDto>> ReplyAsync(
+            int id,
+            int adminUserId,
+            ReplySupportTicketDto dto,
+            IFormFile? attachmentFile = null)
         {
             try
             {
                 var content = dto.Content?.Trim() ?? string.Empty;
-                if (string.IsNullOrWhiteSpace(content) && (imageFile == null || imageFile.Length == 0))
-                    return ApiResponse<SupportTicketResponseDto>.BadRequest("متن یا تصویر پاسخ الزامی است");
+                var hasAttachment = attachmentFile is { Length: > 0 };
+
+                if (string.IsNullOrWhiteSpace(content) && !hasAttachment)
+                    return ApiResponse<SupportTicketResponseDto>.BadRequest("متن یا فایل پاسخ الزامی است");
 
                 var ticket = await _context.SupportTickets
                     .FirstOrDefaultAsync(t => t.Id == id && !t.IsDeleted);
@@ -105,20 +124,19 @@ namespace Api_Vapp.Services.Admin
                 if (ticket == null)
                     return ApiResponse<SupportTicketResponseDto>.NotFound("تیکت یافت نشد");
 
+                if (TicketStatuses.IsClosedLike(ticket.Status))
+                    return ApiResponse<SupportTicketResponseDto>.BadRequest("این تیکت بسته شده است؛ ابتدا آن را باز کنید");
+
                 string? attachmentUrl = null;
-                if (imageFile != null && imageFile.Length > 0)
+                if (hasAttachment)
                 {
-                    var imageValidation = ValidateReplyImage(imageFile);
+                    var imageValidation = ValidateTicketAttachment(attachmentFile!);
                     if (imageValidation != null)
                         return ApiResponse<SupportTicketResponseDto>.BadRequest(imageValidation);
 
                     try
                     {
-                        attachmentUrl = await _fileUploadService.UploadFileAsync(
-                            imageFile,
-                            FileUploadConstants.EntityType_Ticket,
-                            id,
-                            FileUploadConstants.SubFolder_Images);
+                        attachmentUrl = await UploadTicketAttachmentAsync(attachmentFile!, id);
                     }
                     catch (ArgumentException ex)
                     {
@@ -127,7 +145,7 @@ namespace Api_Vapp.Services.Admin
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError(ex, "Error uploading ticket reply image for ticket {TicketId}", id);
+                        _logger.LogError(ex, "Error uploading ticket reply attachment for ticket {TicketId}", id);
                         return ApiResponse<SupportTicketResponseDto>.BadRequest(ControlledErrorHelper.FileUploadFailed);
                     }
                 }
@@ -137,13 +155,14 @@ namespace Api_Vapp.Services.Admin
                     TicketId = id,
                     SenderUserId = adminUserId,
                     IsAdminReply = true,
-                    Content = content,
+                    Content = string.IsNullOrWhiteSpace(content) ? "📎 فایل پیوست" : content,
                     AttachmentUrl = attachmentUrl,
                     CreatedAt = DateTime.UtcNow
                 });
 
                 if (ticket.Status == TicketStatuses.Open)
                     ticket.Status = TicketStatuses.InProgress;
+
                 ticket.UpdatedAt = DateTime.UtcNow;
                 await _context.SaveChangesAsync();
 
@@ -161,16 +180,22 @@ namespace Api_Vapp.Services.Admin
         {
             try
             {
+                if (!TicketStatuses.IsKnown(dto.Status))
+                    return ApiResponse<SupportTicketResponseDto>.BadRequest("وضعیت تیکت نامعتبر است", errorCode: ErrorCodes.InvalidInput);
+
                 var ticket = await _context.SupportTickets.FirstOrDefaultAsync(t => t.Id == id && !t.IsDeleted);
                 if (ticket == null)
                     return ApiResponse<SupportTicketResponseDto>.NotFound("تیکت یافت نشد");
 
-                ticket.Status = dto.Status.Trim();
+                var newStatus = dto.Status.Trim();
+                ticket.Status = newStatus;
                 ticket.AssignedToUserId = dto.AssignedToUserId;
                 ticket.UpdatedAt = DateTime.UtcNow;
 
-                if (dto.Status is TicketStatuses.Closed or TicketStatuses.Resolved)
+                if (TicketStatuses.IsClosedLike(newStatus))
                     ticket.ClosedAt = DateTime.UtcNow;
+                else
+                    ticket.ClosedAt = null;
 
                 await _context.SaveChangesAsync();
                 var reloaded = await LoadTicketAsync(id);
@@ -193,205 +218,69 @@ namespace Api_Vapp.Services.Admin
                 .FirstOrDefaultAsync(t => t.Id == id && !t.IsDeleted);
         }
 
-        private static SupportTicketResponseDto MapTicket(SupportTicket ticket) => new()
+        internal static SupportTicketResponseDto MapTicket(SupportTicket ticket)
         {
-            Id = ticket.Id,
-            UserId = ticket.UserId,
-            UserPhoneNumber = ticket.User?.PhoneNumber,
-            UserFullName = ticket.User?.FullName,
-            Subject = ticket.Subject,
-            Status = ticket.Status,
-            Priority = ticket.Priority,
-            AssignedToUserId = ticket.AssignedToUserId,
-            AssignedToName = ticket.AssignedToUser?.FullName,
-            CreatedAt = ticket.CreatedAt,
-            UpdatedAt = ticket.UpdatedAt,
-            ClosedAt = ticket.ClosedAt,
-            ReplyCount = ticket.Messages.Count(m => !m.IsDeleted),
-            Messages = ticket.Messages
-                .OrderBy(m => m.CreatedAt)
-                .Select(m => new TicketMessageResponseDto
-                {
-                    Id = m.Id,
-                    SenderUserId = m.SenderUserId,
-                    SenderName = m.SenderUser?.FullName,
-                    IsAdminReply = m.IsAdminReply,
-                    Content = m.Content,
-                    AttachmentUrl = m.AttachmentUrl,
-                    CreatedAt = m.CreatedAt
-                }).ToList()
-        };
-
-        private static string? ValidateReplyImage(IFormFile imageFile)
-        {
-            const long maxFileSize = 5 * 1024 * 1024;
-            if (imageFile.Length > maxFileSize)
+            var dto = new SupportTicketResponseDto
             {
-                var fileSizeMB = Math.Round(imageFile.Length / (1024.0 * 1024.0), 2);
-                return $"حجم فایل ({fileSizeMB} مگابایت) بیشتر از حد مجاز (5 مگابایت) است";
-            }
-
-            var allowedContentTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            {
-                "image/jpeg", "image/png", "image/gif", "image/webp"
+                Id = ticket.Id,
+                TicketNumber = FormatTicketNumber(ticket.Id),
+                UserId = ticket.UserId,
+                UserPhoneNumber = ticket.User?.PhoneNumber,
+                UserFullName = ticket.User?.FullName,
+                Subject = ticket.Subject,
+                Module = ticket.Module,
+                Status = ticket.Status,
+                Priority = ticket.Priority,
+                AssignedToUserId = ticket.AssignedToUserId,
+                AssignedToName = ticket.AssignedToUser?.FullName,
+                CreatedAt = ticket.CreatedAt,
+                UpdatedAt = ticket.UpdatedAt,
+                ClosedAt = ticket.ClosedAt,
+                ReplyCount = ticket.Messages.Count(m => !m.IsDeleted),
+                Messages = ticket.Messages
+                    .Where(m => !m.IsDeleted)
+                    .OrderBy(m => m.CreatedAt)
+                    .Select(m => new TicketMessageResponseDto
+                    {
+                        Id = m.Id,
+                        SenderUserId = m.SenderUserId,
+                        SenderName = m.SenderUser?.FullName,
+                        IsAdminReply = m.IsAdminReply,
+                        Content = m.Content,
+                        AttachmentUrl = m.AttachmentUrl,
+                        CreatedAt = m.CreatedAt
+                    }).ToList()
             };
 
-            if (!allowedContentTypes.Contains(imageFile.ContentType))
-                return "فقط فایل‌های تصویری (JPG, PNG, GIF, WEBP) مجاز هستند";
-
-            return null;
-        }
-    }
-
-    public class UserSupportTicketService : IUserSupportTicketService
-    {
-        private readonly Api_Context _context;
-        private readonly ILogger<UserSupportTicketService> _logger;
-
-        public UserSupportTicketService(Api_Context context, ILogger<UserSupportTicketService> logger)
-        {
-            _context = context;
-            _logger = logger;
+            EnrichLabels(dto);
+            return dto;
         }
 
-        public async Task<ApiResponse<SupportTicketResponseDto>> CreateAsync(int userId, CreateSupportTicketDto dto)
+        internal static string FormatTicketNumber(int id) => $"TK-{id:D4}";
+
+        internal static void EnrichLabels(SupportTicketResponseDto dto)
         {
-            try
-            {
-                var ticket = new SupportTicket
-                {
-                    UserId = userId,
-                    Subject = dto.Subject.Trim(),
-                    Priority = string.IsNullOrWhiteSpace(dto.Priority) ? TicketPriorities.Normal : dto.Priority.Trim(),
-                    Status = TicketStatuses.Open,
-                    CreatedAt = DateTime.UtcNow
-                };
-
-                ticket.Messages.Add(new TicketMessage
-                {
-                    SenderUserId = userId,
-                    IsAdminReply = false,
-                    Content = dto.Content.Trim(),
-                    CreatedAt = DateTime.UtcNow
-                });
-
-                _context.SupportTickets.Add(ticket);
-                await _context.SaveChangesAsync();
-
-                var user = await _context.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId);
-                ticket.User = user!;
-                return ApiResponse<SupportTicketResponseDto>.CreateSuccess(MapTicket(ticket), "تیکت ایجاد شد", 201);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error creating support ticket for user {UserId}", userId);
-                return ApiResponse<SupportTicketResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
-            }
+            dto.TicketNumber = FormatTicketNumber(dto.Id);
+            dto.ModuleFa = TicketModules.GetPersianLabel(dto.Module);
+            dto.StatusFa = TicketStatuses.GetPersianLabel(dto.Status);
+            dto.PriorityFa = TicketPriorities.GetPersianLabel(dto.Priority);
         }
 
-        public async Task<ApiResponse<List<SupportTicketResponseDto>>> GetMyTicketsAsync(int userId)
-        {
-            try
-            {
-                var tickets = await _context.SupportTickets.AsNoTracking()
-                    .Include(t => t.Messages.Where(m => !m.IsDeleted))
-                    .ThenInclude(m => m.SenderUser)
-                    .Where(t => t.UserId == userId && !t.IsDeleted)
-                    .OrderByDescending(t => t.CreatedAt)
-                    .ToListAsync();
+        internal static string? ValidateTicketAttachment(IFormFile file) =>
+            SecureFileValidator.ValidateTicketAttachment(file);
 
-                return ApiResponse<List<SupportTicketResponseDto>>.CreateSuccess(tickets.Select(MapTicket).ToList());
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error loading user tickets {UserId}", userId);
-                return ApiResponse<List<SupportTicketResponseDto>>.InternalServerError(ControlledErrorHelper.Unexpected);
-            }
+        private async Task<string> UploadTicketAttachmentAsync(IFormFile file, int ticketId)
+        {
+            var isPdf = file.ContentType.Equals("application/pdf", StringComparison.OrdinalIgnoreCase);
+            var subFolder = isPdf
+                ? FileUploadConstants.SubFolder_Documents
+                : FileUploadConstants.SubFolder_Images;
+
+            return await _fileUploadService.UploadFileAsync(
+                file,
+                FileUploadConstants.EntityType_Ticket,
+                ticketId,
+                subFolder);
         }
-
-        public async Task<ApiResponse<SupportTicketResponseDto>> GetMyTicketByIdAsync(int userId, int ticketId)
-        {
-            try
-            {
-                var ticket = await _context.SupportTickets.AsNoTracking()
-                    .Include(t => t.Messages.Where(m => !m.IsDeleted))
-                    .ThenInclude(m => m.SenderUser)
-                    .FirstOrDefaultAsync(t => t.Id == ticketId && t.UserId == userId && !t.IsDeleted);
-
-                if (ticket == null)
-                    return ApiResponse<SupportTicketResponseDto>.NotFound("تیکت یافت نشد");
-
-                return ApiResponse<SupportTicketResponseDto>.CreateSuccess(MapTicket(ticket));
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error loading user ticket {TicketId}", ticketId);
-                return ApiResponse<SupportTicketResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
-            }
-        }
-
-        public async Task<ApiResponse<SupportTicketResponseDto>> ReplyAsync(int userId, int ticketId, ReplySupportTicketDto dto)
-        {
-            try
-            {
-                var ticket = await _context.SupportTickets.FirstOrDefaultAsync(t => t.Id == ticketId && t.UserId == userId && !t.IsDeleted);
-                if (ticket == null)
-                    return ApiResponse<SupportTicketResponseDto>.NotFound("تیکت یافت نشد");
-
-                if (ticket.Status is TicketStatuses.Closed or TicketStatuses.Resolved)
-                    return ApiResponse<SupportTicketResponseDto>.BadRequest("این تیکت بسته شده است");
-
-                _context.TicketMessages.Add(new TicketMessage
-                {
-                    TicketId = ticketId,
-                    SenderUserId = userId,
-                    IsAdminReply = false,
-                    Content = dto.Content.Trim(),
-                    CreatedAt = DateTime.UtcNow
-                });
-
-                ticket.UpdatedAt = DateTime.UtcNow;
-                await _context.SaveChangesAsync();
-
-                var reloaded = await _context.SupportTickets.AsNoTracking()
-                    .Include(t => t.Messages.Where(m => !m.IsDeleted))
-                    .ThenInclude(m => m.SenderUser)
-                    .FirstAsync(t => t.Id == ticketId);
-
-                return ApiResponse<SupportTicketResponseDto>.CreateSuccess(MapTicket(reloaded), "پاسخ ثبت شد");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error replying to ticket {TicketId} by user {UserId}", ticketId, userId);
-                return ApiResponse<SupportTicketResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
-            }
-        }
-
-        private static SupportTicketResponseDto MapTicket(SupportTicket ticket) => new()
-        {
-            Id = ticket.Id,
-            UserId = ticket.UserId,
-            UserPhoneNumber = ticket.User?.PhoneNumber,
-            UserFullName = ticket.User?.FullName,
-            Subject = ticket.Subject,
-            Status = ticket.Status,
-            Priority = ticket.Priority,
-            CreatedAt = ticket.CreatedAt,
-            UpdatedAt = ticket.UpdatedAt,
-            ClosedAt = ticket.ClosedAt,
-            ReplyCount = ticket.Messages.Count(m => !m.IsDeleted),
-            Messages = ticket.Messages
-                .OrderBy(m => m.CreatedAt)
-                .Select(m => new TicketMessageResponseDto
-                {
-                    Id = m.Id,
-                    SenderUserId = m.SenderUserId,
-                    SenderName = m.SenderUser?.FullName,
-                    IsAdminReply = m.IsAdminReply,
-                    Content = m.Content,
-                    AttachmentUrl = m.AttachmentUrl,
-                    CreatedAt = m.CreatedAt
-                }).ToList()
-        };
     }
 }

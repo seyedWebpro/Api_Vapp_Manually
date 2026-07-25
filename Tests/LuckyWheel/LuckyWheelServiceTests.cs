@@ -351,6 +351,94 @@ public class LuckyWheelServiceTests : IAsyncLifetime
         AssertNoServerError(delete);
     }
 
+    [Fact]
+    public async Task GetParticipants_WithSeededRows_ReturnsStatsAndPagedList()
+    {
+        var wheelId = await _ctx.CreateWheelWithItemsAsync();
+        await _ctx.Service.PublishAsync(wheelId, _ctx.OwnerUserId, new PublishLuckyWheelDto
+        {
+            Slug = $"part-{Guid.NewGuid():N}"[..12]
+        });
+
+        await _ctx.SeedParticipantAsync(wheelId, "علی رضایی", "09121110001", "LW-AAAA01");
+        await _ctx.SeedParticipantAsync(wheelId, "سارا محمدی", "09121110002", "LW-BBBB02");
+
+        var result = await _ctx.Service.GetParticipantsAsync(wheelId, _ctx.OwnerUserId, pageNumber: 1, pageSize: 10);
+
+        Assert.True(result.Success);
+        Assert.Equal(200, result.StatusCode);
+        Assert.Equal(2, result.Data!.ParticipantCount);
+        Assert.Equal(2, result.Data.PrizeAwardedCount);
+        Assert.Equal(2, result.Data.Participants.TotalCount);
+        Assert.Equal(2, result.Data.Participants.Items.Count);
+        Assert.Contains(result.Data.Participants.Items, p => p.ParticipantMobile == "09121110001");
+        Assert.Contains(result.Data.Participants.Items, p => p.PrizeCode == "LW-BBBB02");
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task GetParticipants_SearchByPrizeCode_FiltersRows()
+    {
+        var wheelId = await _ctx.CreateWheelWithItemsAsync();
+        await _ctx.Service.PublishAsync(wheelId, _ctx.OwnerUserId, new PublishLuckyWheelDto
+        {
+            Slug = $"srch-{Guid.NewGuid():N}"[..12]
+        });
+
+        await _ctx.SeedParticipantAsync(wheelId, "علی رضایی", "09121110003", "LW-FIND01");
+        await _ctx.SeedParticipantAsync(wheelId, "سارا محمدی", "09121110004", "LW-OTHER2");
+
+        var result = await _ctx.Service.GetParticipantsAsync(
+            wheelId,
+            _ctx.OwnerUserId,
+            searchTerm: "FIND01");
+
+        Assert.True(result.Success);
+        Assert.Equal(1, result.Data!.Participants.TotalCount);
+        Assert.Equal("LW-FIND01", result.Data.Participants.Items[0].PrizeCode);
+        Assert.Equal(2, result.Data.ParticipantCount);
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task GetParticipants_OtherUser_Returns404()
+    {
+        var wheelId = await _ctx.CreateWheelWithItemsAsync();
+
+        var result = await _ctx.Service.GetParticipantsAsync(wheelId, _ctx.OtherUserId);
+
+        Assert.False(result.Success);
+        Assert.Equal(404, result.StatusCode);
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task VerifyParticipant_ByMobileAndPrizeCode_ReturnsDetails()
+    {
+        var wheelId = await _ctx.CreateWheelWithItemsAsync();
+        await _ctx.Service.PublishAsync(wheelId, _ctx.OwnerUserId, new PublishLuckyWheelDto
+        {
+            Slug = $"vrfy-{Guid.NewGuid():N}"[..12]
+        });
+
+        await _ctx.SeedParticipantAsync(wheelId, "رضا کریمی", "09123334455", "LW-VRIFY1");
+
+        var byMobile = await _ctx.Service.VerifyParticipantAsync(wheelId, _ctx.OwnerUserId, "09123334455");
+        Assert.True(byMobile.Success);
+        Assert.Equal("رضا کریمی", byMobile.Data!.ParticipantFullName);
+        Assert.Equal("LW-VRIFY1", byMobile.Data.PrizeCode);
+        Assert.False(string.IsNullOrWhiteSpace(byMobile.Data.WonItemName));
+
+        var byCode = await _ctx.Service.VerifyParticipantAsync(wheelId, _ctx.OwnerUserId, "lw-vrify1");
+        Assert.True(byCode.Success);
+        Assert.Equal("09123334455", byCode.Data!.ParticipantMobile);
+
+        var missing = await _ctx.Service.VerifyParticipantAsync(wheelId, _ctx.OwnerUserId, "09129999999");
+        Assert.False(missing.Success);
+        Assert.Equal(404, missing.StatusCode);
+        AssertNoServerError(byMobile);
+    }
+
     private static void AssertNoServerError<T>(ApiResponse<T> result)
     {
         Assert.NotEqual(500, result.StatusCode);

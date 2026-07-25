@@ -171,10 +171,12 @@ namespace Api_Vapp.Services
                     return ApiResponse<PaymentResultDto>.Forbidden("شما مجاز به تأیید این پرداخت نیستید");
                 }
 
-                // بررسی وضعیت پرداخت
+                // بررسی وضعیت پرداخت — تأیید مجدد امن (idempotent)
                 if (payment.Status == PaymentStatuses.Verified)
                 {
-                    return ApiResponse<PaymentResultDto>.BadRequest("این پرداخت قبلاً تأیید شده است");
+                    return ApiResponse<PaymentResultDto>.CreateSuccess(
+                        await BuildVerifiedResultAsync(payment),
+                        "این پرداخت قبلاً تأیید شده است");
                 }
 
                 if (payment.Status == PaymentStatuses.Failed || payment.Status == PaymentStatuses.Cancelled)
@@ -278,42 +280,14 @@ namespace Api_Vapp.Services
 
                         await transaction.CommitAsync();
 
-                        var user = await _userRepository.GetByIdAsync(payment.UserId);
-                        var successResult = new PaymentResultDto
-                        {
-                            Success = true,
-                            Message = payment.PaymentType == PaymentTypes.Subscription
-                                ? "اشتراک با موفقیت فعال شد"
-                                : "پرداخت با موفقیت انجام شد",
-                            Payment = MapToPaymentDto(payment),
-                            NewBalance = user?.WalletBalance,
-                            FormattedNewBalance = user != null ? $"{user.WalletBalance:N0} تومان" : null
-                        };
-
-                        if (payment.PaymentType == PaymentTypes.Subscription)
-                        {
-                            var active = await _subscriptionEntitlementService.GetActiveSubscriptionAsync(payment.UserId);
-                            if (active?.Plan != null)
-                            {
-                                var remainingDays = Math.Max(0, (int)Math.Ceiling((active.ExpiresAt - DateTime.UtcNow).TotalDays));
-                                successResult.ActivatedSubscription = new DTOs.Subscription.CurrentSubscriptionDto
-                                {
-                                    UserSubscriptionId = active.Id,
-                                    PlanId = active.Plan.Id,
-                                    PlanName = active.Plan.Name,
-                                    TierCode = active.Plan.TierCode,
-                                    StartDate = active.StartDate,
-                                    ExpiresAt = active.ExpiresAt,
-                                    RemainingDays = remainingDays,
-                                    IsActive = true,
-                                    IsFreePlan = false
-                                };
-                            }
-                        }
+                        var successResult = await BuildVerifiedResultAsync(payment);
+                        successResult.Message = payment.PaymentType == PaymentTypes.Subscription
+                            ? "اشتراک با موفقیت فعال شد"
+                            : "پرداخت با موفقیت انجام شد";
 
                         _logger.LogInformation("پرداخت {PaymentId} با موفقیت تأیید شد. مبلغ: {Amount}", payment.Id, payment.Amount);
 
-                        return ApiResponse<PaymentResultDto>.CreateSuccess(successResult, "پرداخت با موفقیت انجام شد");
+                        return ApiResponse<PaymentResultDto>.CreateSuccess(successResult, successResult.Message);
                     }
                     else
                     {
@@ -404,6 +378,55 @@ namespace Api_Vapp.Services
             return await Task.FromResult(ApiResponse<List<PaymentGatewayInfoDto>>.CreateSuccess(gateways));
         }
 
+        public async Task<ApiResponse<PaymentResultDto>> SimulateGatewayPaymentAsync(int paymentId)
+        {
+            try
+            {
+                var useSimulation = _configuration.GetValue("Payment:UseSimulation", true);
+                if (!useSimulation)
+                {
+                    return ApiResponse<PaymentResultDto>.BadRequest("شبیه‌سازی درگاه غیرفعال است");
+                }
+
+                var payment = await _paymentRepository.GetByIdAsync(paymentId);
+                if (payment == null)
+                {
+                    return ApiResponse<PaymentResultDto>.NotFound("پرداخت یافت نشد");
+                }
+
+                if (payment.Status == PaymentStatuses.Verified)
+                {
+                    return ApiResponse<PaymentResultDto>.CreateSuccess(
+                        await BuildVerifiedResultAsync(payment),
+                        "این پرداخت قبلاً تأیید شده است");
+                }
+
+                if (payment.Status is not (PaymentStatuses.Pending or PaymentStatuses.Processing))
+                {
+                    return ApiResponse<PaymentResultDto>.BadRequest("وضعیت پرداخت برای شبیه‌سازی معتبر نیست");
+                }
+
+                var refId = payment.RefId ?? $"SIMREF{DateTime.UtcNow:yyyyMMddHHmmss}{Random.Shared.Next(1000, 9999)}";
+                var saleReferenceId = (DateTime.UtcNow.Ticks % 1_000_000_000).ToString();
+
+                return await VerifyPaymentAsync(payment.UserId, new VerifyPaymentRequestDto
+                {
+                    PaymentId = payment.Id,
+                    OrderId = payment.OrderId,
+                    RefId = refId,
+                    ResCode = "0",
+                    SaleReferenceId = saleReferenceId,
+                    TransactionId = $"SIMTXN{payment.Id}",
+                    CardNumber = "6037-****-****-1234"
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "خطا در شبیه‌سازی پرداخت {PaymentId}", paymentId);
+                throw;
+            }
+        }
+
         public async Task<ApiResponse<bool>> CancelPaymentAsync(int paymentId, int userId)
         {
             try
@@ -448,7 +471,7 @@ namespace Api_Vapp.Services
                 _logger.LogInformation("درخواست توکن به‌پرداخت برای پرداخت {PaymentId}", paymentId);
                 
                 // شبیه‌سازی موفقیت
-                var refId = $"SIMREF{DateTime.UtcNow:yyyyMMddHHmmss}{new Random().Next(1000, 9999)}";
+                var refId = $"SIMREF{DateTime.UtcNow:yyyyMMddHHmmss}{Random.Shared.Next(1000, 9999)}";
                 
                 return await Task.FromResult((true, refId, (string?)null));
             }
@@ -482,6 +505,44 @@ namespace Api_Vapp.Services
 
         #region Private Methods
 
+        private async Task<PaymentResultDto> BuildVerifiedResultAsync(Payment payment)
+        {
+            var user = await _userRepository.GetByIdAsync(payment.UserId);
+            var result = new PaymentResultDto
+            {
+                Success = true,
+                Message = payment.PaymentType == PaymentTypes.Subscription
+                    ? "اشتراک با موفقیت فعال شد"
+                    : "پرداخت با موفقیت انجام شد",
+                Payment = MapToPaymentDto(payment),
+                NewBalance = user?.WalletBalance,
+                FormattedNewBalance = user != null ? $"{user.WalletBalance:N0} تومان" : null
+            };
+
+            if (payment.PaymentType == PaymentTypes.Subscription)
+            {
+                var active = await _subscriptionEntitlementService.GetActiveSubscriptionAsync(payment.UserId);
+                if (active?.Plan != null)
+                {
+                    var remainingDays = Math.Max(0, (int)Math.Ceiling((active.ExpiresAt - DateTime.UtcNow).TotalDays));
+                    result.ActivatedSubscription = new DTOs.Subscription.CurrentSubscriptionDto
+                    {
+                        UserSubscriptionId = active.Id,
+                        PlanId = active.Plan.Id,
+                        PlanName = active.Plan.Name,
+                        TierCode = active.Plan.TierCode,
+                        StartDate = active.StartDate,
+                        ExpiresAt = active.ExpiresAt,
+                        RemainingDays = remainingDays,
+                        IsActive = true,
+                        IsFreePlan = false
+                    };
+                }
+            }
+
+            return result;
+        }
+
         private PaymentDto MapToPaymentDto(Payment payment)
         {
             return new PaymentDto
@@ -510,7 +571,7 @@ namespace Api_Vapp.Services
 
         private string GenerateOrderId()
         {
-            return $"VP{DateTime.UtcNow:yyyyMMddHHmmss}{new Random().Next(1000, 9999)}";
+            return $"VP{DateTime.UtcNow:yyyyMMddHHmmss}{Random.Shared.Next(1000, 9999)}";
         }
 
         private static string GetPaymentTypeTitle(string paymentType)

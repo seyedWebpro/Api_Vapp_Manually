@@ -1,4 +1,5 @@
 using Api_Vapp.DTOs.Common;
+using Api_Vapp.DTOs.Contact;
 using Api_Vapp.DTOs.UserForm;
 
 namespace Api_Vapp.Interfaces
@@ -20,5 +21,16 @@ namespace Api_Vapp.Interfaces
         Task<ApiResponse<bool>> DeleteAsync(int id, int userId);
 
         Task<ApiResponse<UserFormResponseDto>> SetActiveStatusAsync(int id, int userId, bool isActive);
+
+        Task<ApiResponse<UserFormSubmissionsPageDto>> GetSubmissionsAsync(
+            int id,
+            int userId,
+            int pageNumber = 1,
+            int pageSize = 10,
+            string? searchTerm = null,
+            DateTime? fromUtc = null,
+            DateTime? toUtc = null);
+
+        Task<ApiResponse<ExportExcelResultDto>> ExportSubmissionsToExcelAsync(int id, int userId);
     }
 }

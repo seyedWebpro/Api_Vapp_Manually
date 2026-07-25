@@ -1394,7 +1394,14 @@ namespace Api_Vapp.Services
             {
                 try
                 {
-                    // استفاده از userId به عنوان entityId موقت
+                    var iconError = SecureFileValidator.ValidateImage(
+                        createDto.IconFile,
+                        SecureFileValidator.IconMaxBytes,
+                        "۲ مگابایت");
+                    if (iconError != null)
+                        return ApiResponse<TemplateResponseDto>.BadRequest(iconError);
+
+// استفاده از userId به عنوان entityId موقت
                     // فایل در پوشه template/{userId}/icons ذخیره می‌شود
                     uploadedIconPath = await _fileUploadService.UploadFileAsync(
                         createDto.IconFile, 
@@ -1681,7 +1688,14 @@ namespace Api_Vapp.Services
             {
                 try
                 {
-                    // استفاده از id به عنوان entityId
+                    var iconError = SecureFileValidator.ValidateImage(
+                        updateDto.IconFile,
+                        SecureFileValidator.IconMaxBytes,
+                        "۲ مگابایت");
+                    if (iconError != null)
+                        return ApiResponse<TemplateResponseDto>.BadRequest(iconError);
+
+// استفاده از id به عنوان entityId
                     // فایل در پوشه template/{id}/icons ذخیره می‌شود
                     uploadedIconPath = await _fileUploadService.UploadFileAsync(
                         updateDto.IconFile, 
@@ -2441,7 +2455,14 @@ namespace Api_Vapp.Services
             {
                 try
                 {
-                    // استفاده از userId به عنوان entityId موقت
+                    var iconError = SecureFileValidator.ValidateImage(
+                        createDto.IconFile,
+                        SecureFileValidator.IconMaxBytes,
+                        "۲ مگابایت");
+                    if (iconError != null)
+                        return ApiResponse<TemplateGroupResponseDto>.BadRequest(iconError);
+
+// استفاده از userId به عنوان entityId موقت
                     // فایل در پوشه template-group/{userId}/icons ذخیره می‌شود
                     uploadedIconPath = await _fileUploadService.UploadFileAsync(
                         createDto.IconFile, 
@@ -2781,7 +2802,14 @@ namespace Api_Vapp.Services
             {
                 try
                 {
-                    // استفاده از id به عنوان entityId
+                    var iconError = SecureFileValidator.ValidateImage(
+                        updateDto.IconFile,
+                        SecureFileValidator.IconMaxBytes,
+                        "۲ مگابایت");
+                    if (iconError != null)
+                        return ApiResponse<TemplateGroupResponseDto>.BadRequest(iconError);
+
+// استفاده از id به عنوان entityId
                     // فایل در پوشه template-group/{id}/icons ذخیره می‌شود
                     uploadedIconPath = await _fileUploadService.UploadFileAsync(
                         updateDto.IconFile, 

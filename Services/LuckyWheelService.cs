@@ -544,6 +544,132 @@ namespace Api_Vapp.Services
             }
         }
 
+        public async Task<ApiResponse<LuckyWheelParticipantsPageDto>> GetParticipantsAsync(
+            int id,
+            int userId,
+            int pageNumber = 1,
+            int pageSize = 10,
+            string? searchTerm = null)
+        {
+            try
+            {
+                if (pageNumber < 1)
+                {
+                    return ApiResponse<LuckyWheelParticipantsPageDto>.BadRequest(
+                        "شماره صفحه باید بزرگتر از صفر باشد",
+                        errorCode: ErrorCodes.InvalidInput);
+                }
+
+                if (pageSize < 1 || pageSize > 100)
+                {
+                    return ApiResponse<LuckyWheelParticipantsPageDto>.BadRequest(
+                        "تعداد در هر صفحه باید بین 1 تا 100 باشد",
+                        errorCode: ErrorCodes.InvalidInput);
+                }
+
+                var wheel = await _luckyWheelRepository.GetOwnedWheelAsync(id, userId, tracked: false);
+                if (wheel == null)
+                {
+                    return ApiResponse<LuckyWheelParticipantsPageDto>.NotFound("گردونه یافت نشد");
+                }
+
+                var participantCount = await _luckyWheelRepository.GetParticipantCountAsync(id);
+                var (items, totalCount) = await _luckyWheelRepository.GetParticipantsPagedAsync(
+                    id,
+                    pageNumber,
+                    pageSize,
+                    searchTerm);
+
+                var mapped = items.Select(p => new LuckyWheelParticipantListItemDto
+                {
+                    Id = p.Id,
+                    ParticipantFullName = p.ParticipantFullName,
+                    ParticipantMobile = p.ParticipantMobile,
+                    CreatedAt = EnsureUtc(p.CreatedAt),
+                    WonItemId = p.WonLuckyWheelItemId,
+                    WonItemName = p.WonItem?.Name ?? string.Empty,
+                    PrizeCode = p.PrizeCode
+                }).ToList();
+
+                return ApiResponse<LuckyWheelParticipantsPageDto>.CreateSuccess(new LuckyWheelParticipantsPageDto
+                {
+                    WheelTitle = wheel.Title,
+                    ParticipantCount = participantCount,
+                    PrizeAwardedCount = participantCount,
+                    Participants = PagedResponse<LuckyWheelParticipantListItemDto>.Create(
+                        mapped,
+                        totalCount,
+                        pageNumber,
+                        pageSize)
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error listing lucky wheel participants {WheelId} for user {UserId}", id, userId);
+                return ApiResponse<LuckyWheelParticipantsPageDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
+        public async Task<ApiResponse<LuckyWheelParticipantVerifyDto>> VerifyParticipantAsync(
+            int id,
+            int userId,
+            string query)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(query))
+                {
+                    return ApiResponse<LuckyWheelParticipantVerifyDto>.BadRequest(
+                        "شماره موبایل یا کد جایزه الزامی است",
+                        errorCode: ErrorCodes.ValidationFailed);
+                }
+
+                var wheel = await _luckyWheelRepository.GetOwnedWheelAsync(id, userId, tracked: false);
+                if (wheel == null)
+                {
+                    return ApiResponse<LuckyWheelParticipantVerifyDto>.NotFound("گردونه یافت نشد");
+                }
+
+                var raw = query.Trim();
+                LuckyWheelParticipant? participant;
+
+                if (BookingMobileHelper.IsValidIranianMobile(raw))
+                {
+                    var mobile = BookingMobileHelper.Normalize(raw);
+                    participant = await _luckyWheelRepository.FindParticipantByMobileAsync(id, mobile);
+                }
+                else
+                {
+                    var prizeCode = raw.ToUpperInvariant();
+                    participant = await _luckyWheelRepository.FindParticipantByPrizeCodeAsync(id, prizeCode);
+                }
+
+                if (participant == null)
+                {
+                    return ApiResponse<LuckyWheelParticipantVerifyDto>.NotFound(
+                        "شرکت‌کننده‌ای با این مشخصات یافت نشد");
+                }
+
+                return ApiResponse<LuckyWheelParticipantVerifyDto>.CreateSuccess(new LuckyWheelParticipantVerifyDto
+                {
+                    Id = participant.Id,
+                    WheelTitle = wheel.Title,
+                    ParticipantFullName = participant.ParticipantFullName,
+                    ParticipantMobile = participant.ParticipantMobile,
+                    CreatedAt = EnsureUtc(participant.CreatedAt),
+                    WonItemId = participant.WonLuckyWheelItemId,
+                    WonItemName = participant.WonItem?.Name ?? string.Empty,
+                    PrizeCode = participant.PrizeCode,
+                    ContactId = participant.ContactId
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error verifying lucky wheel participant {WheelId} for user {UserId}", id, userId);
+                return ApiResponse<LuckyWheelParticipantVerifyDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
         public async Task<ApiResponse<bool>> DeleteAsync(int id, int userId)
         {
             _logger.LogInformation("Deleting lucky wheel {WheelId} for user {UserId}", id, userId);
