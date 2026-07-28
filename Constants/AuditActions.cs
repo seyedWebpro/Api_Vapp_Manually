@@ -59,6 +59,9 @@ namespace Api_Vapp.Constants
         // —— Content modules (فاز ۲ اولویت ۸)
         public const string BookingSystemStatusChanged = "BookingSystem.StatusChanged";
         public const string BusinessCardStatusChanged = "BusinessCard.StatusChanged";
+        public const string BusinessCardCreated = "BusinessCard.Created";
+        public const string BusinessCardUpdated = "BusinessCard.Updated";
+        public const string BusinessCardDeleted = "BusinessCard.Deleted";
         public const string UserFormStatusChanged = "UserForm.StatusChanged";
         public const string SupportTicketReplied = "SupportTicket.Replied";
         public const string SupportTicketStatusChanged = "SupportTicket.StatusChanged";
@@ -66,12 +69,71 @@ namespace Api_Vapp.Constants
         public const string EducationalVideoUpdated = "EducationalVideo.Updated";
         public const string EducationalVideoDeleted = "EducationalVideo.Deleted";
         public const string LuckyWheelStatusChanged = "LuckyWheel.StatusChanged";
+        public const string LuckyWheelCreated = "LuckyWheel.Created";
+        public const string LuckyWheelUpdated = "LuckyWheel.Updated";
+        public const string LuckyWheelDeleted = "LuckyWheel.Deleted";
         public const string ReferralProgramUpdated = "ReferralProgram.Updated";
+        public const string ReferralProgramCreated = "ReferralProgram.Created";
+        public const string ReferralProgramDeleted = "ReferralProgram.Deleted";
+        public const string ReferralProgramActivated = "ReferralProgram.Activated";
 
         // —— Auth (فاز ۲ اولویت ۹)
         public const string AdminLoginSucceeded = "Auth.AdminLoginSucceeded";
         public const string AdminLoginFailed = "Auth.AdminLoginFailed";
         public const string UserLoginSucceeded = "Auth.UserLoginSucceeded";
         public const string UserLoginFailed = "Auth.UserLoginFailed";
+
+        // —— NumberSeeker (فاز ۳)
+        public const string NumberSeekerTaskCreated = "NumberSeeker.TaskCreated";
+        public const string NumberSeekerTaskCompleted = "NumberSeeker.TaskCompleted";
+        public const string NumberSeekerTaskFailed = "NumberSeeker.TaskFailed";
+        public const string NumberSeekerTaskCancelled = "NumberSeeker.TaskCancelled";
+        public const string NumberSeekerTaskImported = "NumberSeeker.TaskImported";
+
+        // —— Subscription feature / discount (فاز ۳)
+        public const string SubscriptionFeatureCreated = "SubscriptionFeature.Created";
+        public const string SubscriptionFeatureDeleted = "SubscriptionFeature.Deleted";
+        public const string DiscountCodeDeleted = "SubscriptionDiscountCode.Deleted";
+
+        // —— Booking appointment (فاز ۳)
+        public const string BookingAppointmentCreated = "BookingAppointment.Created";
+        public const string BookingAppointmentUpdated = "BookingAppointment.Updated";
+        public const string BookingAppointmentStatusChanged = "BookingAppointment.StatusChanged";
+        public const string BookingAppointmentCancelled = "BookingAppointment.Cancelled";
+
+        // —— Role (فاز ۳)
+        public const string RoleCreated = "Role.Created";
+        public const string RoleUpdated = "Role.Updated";
+        public const string RoleDeleted = "Role.Deleted";
+
+        // —— QuickAction (فاز ۳)
+        public const string QuickActionCreated = "QuickAction.Created";
+        public const string QuickActionUpdated = "QuickAction.Updated";
+        public const string QuickActionDeleted = "QuickAction.Deleted";
+
+        // —— SpecialOccasion (فاز ۳)
+        public const string SpecialOccasionCreated = "SpecialOccasion.Created";
+        public const string SpecialOccasionUpdated = "SpecialOccasion.Updated";
+        public const string SpecialOccasionDeleted = "SpecialOccasion.Deleted";
+
+        // —— ContactNotebook (فاز ۳)
+        public const string ContactNotebookCreated = "ContactNotebook.Created";
+        public const string ContactNotebookUpdated = "ContactNotebook.Updated";
+        public const string ContactNotebookDeleted = "ContactNotebook.Deleted";
+
+        // —— Contact (فاز ۳)
+        public const string ContactCreated = "Contact.Created";
+        public const string ContactUpdated = "Contact.Updated";
+        public const string ContactDeleted = "Contact.Deleted";
+
+        // —— Support ticket (کاربر) (فاز ۳)
+        public const string SupportTicketCreated = "SupportTicket.Created";
+        public const string SupportTicketUserReplied = "SupportTicket.UserReplied";
+        public const string SupportTicketUserDeleted = "SupportTicket.UserDeleted";
+
+        // —— Background jobs (فاز ۳)
+        public const string CampaignAutoSent = "MessageCampaign.AutoSent";
+        public const string MessageAutoSent = "Message.AutoSent";
+        public const string AutomatedMessageQueued = "AutomatedMessage.Queued";
     }
 }

@@ -174,12 +174,13 @@ internal sealed class LuckyWheelTestContext : IDisposable
             PublicBaseUrl = "https://app.com/wheel"
         });
 
-        return new LuckyWheelService(
-            repository,
-            context,
-            options,
-            new FakeFileUploadService(),
-            NullLogger<LuckyWheelService>.Instance);
+            return new LuckyWheelService(
+                repository,
+                context,
+                options,
+                new FakeFileUploadService(),
+                new Api_Vapp.Tests.Shared.NoOpAuditService(),
+                NullLogger<LuckyWheelService>.Instance);
     }
 
     private async Task SeedAsync()

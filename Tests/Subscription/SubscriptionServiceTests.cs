@@ -248,6 +248,22 @@ public class SubscriptionServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task HasFeature_ActivePlus_DoesNotGrantGoldOnlyFeatures()
+    {
+        await ActivatePlusPlanForUserAsync();
+
+        var hasBusinessCard = await _ctx.EntitlementService.HasFeatureAsync(
+            _ctx.UserId,
+            SubscriptionFeatureCodes.BusinessCard);
+        var hasBulkCampaign = await _ctx.EntitlementService.HasFeatureAsync(
+            _ctx.UserId,
+            SubscriptionFeatureCodes.BulkCampaign);
+
+        Assert.False(hasBusinessCard);
+        Assert.False(hasBulkCampaign);
+    }
+
+    [Fact]
     public async Task HasFeature_UnknownCode_ReturnsFalse()
     {
         var result = await _ctx.EntitlementService.HasFeatureAsync(_ctx.UserId, "unknown_feature_xyz");

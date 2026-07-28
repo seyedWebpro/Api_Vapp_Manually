@@ -4,6 +4,8 @@ using Api_Vapp.DTOs.Sms;
 using Api_Vapp.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Api_Vapp.Attributes;
+using Api_Vapp.Constants;
 
 namespace Api_Vapp.Controller
 {
@@ -13,6 +15,7 @@ namespace Api_Vapp.Controller
     [ApiController]
     [Route("api/sms/delivery-reports")]
     [Authorize]
+    [RequireSubscriptionFeature(SubscriptionFeatureCodes.AdvancedAnalytics)]
     [Produces("application/json")]
     public class SmsDeliveryReportController : VappControllerBase
     {

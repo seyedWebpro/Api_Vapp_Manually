@@ -233,6 +233,7 @@ namespace Api_Vapp.Services
                     OrderId = payment.OrderId,
                     RefId = payment.RefId,
                     RedirectUrl = redirectUrl,
+                    GatewayUrl = redirectUrl,
                     Checkout = checkout
                 }, SubscriptionMessages.RedirectToGateway);
             }

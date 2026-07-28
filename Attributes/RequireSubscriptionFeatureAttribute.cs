@@ -1,17 +1,19 @@
+using Api_Vapp.Constants;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
-using Microsoft.Extensions.Configuration;
 using System.Security.Claims;
 
 namespace Api_Vapp.Attributes
 {
     /// <summary>
-    /// محدودیت دسترسی بر اساس امکان اشتراک فعال کاربر.
+    /// محدودیت دسترسی endpoint بر اساس امکان اشتراک مؤثر کاربر.
+    /// روی endpointهای AllowAnonymous اعمال نمی‌شود (صفحات عمومی مشتری نهایی).
     /// </summary>
     [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method, AllowMultiple = true)]
-    public class RequireSubscriptionFeatureAttribute : Attribute, IAsyncActionFilter
+    public sealed class RequireSubscriptionFeatureAttribute : Attribute, IAsyncActionFilter
     {
         private readonly string _featureCode;
 
@@ -22,6 +24,13 @@ namespace Api_Vapp.Attributes
 
         public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
         {
+            var endpoint = context.HttpContext.GetEndpoint();
+            if (endpoint?.Metadata.GetMetadata<IAllowAnonymous>() != null)
+            {
+                await next();
+                return;
+            }
+
             var services = context.HttpContext.RequestServices;
             var entitlementService = services.GetRequiredService<ISubscriptionEntitlementService>();
             var configuration = services.GetRequiredService<IConfiguration>();
@@ -39,7 +48,9 @@ namespace Api_Vapp.Attributes
             if (!await entitlementService.HasFeatureAsync(userId, _featureCode))
             {
                 context.Result = new ObjectResult(
-                    ApiResponse<object>.Forbidden(Constants.SubscriptionMessages.FeatureNotAvailable))
+                    ApiResponse<object>.Forbidden(
+                        SubscriptionMessages.FeatureNotAvailable,
+                        ErrorCodes.Forbidden))
                 {
                     StatusCode = StatusCodes.Status403Forbidden
                 };
@@ -58,7 +69,7 @@ namespace Api_Vapp.Attributes
             if (!string.IsNullOrEmpty(userIdClaim) && int.TryParse(userIdClaim, out var parsed))
                 return (true, parsed);
 
-            var disableAuth = configuration.GetValue<bool>("Development:DisableAuth", false);
+            var disableAuth = configuration.GetValue("Development:DisableAuth", false);
             if (!disableAuth)
                 return (false, 0);
 

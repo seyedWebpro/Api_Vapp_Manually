@@ -91,7 +91,10 @@ else
   COMPRESS_NAME="gzip"
 fi
 
-TMP_TAR=$(mktemp "/tmp/vapp-api-XXXXXX.tar.${EXT}")
+# macOS mktemp requires XXXXXX at the end of the template (before any extension).
+_tmp_base=$(mktemp "${TMPDIR:-/tmp}/vapp-api.XXXXXX")
+TMP_TAR="${_tmp_base}.tar.${EXT}"
+mv "$_tmp_base" "$TMP_TAR"
 REMOTE_TAR="/tmp/vapp-api-upload-$(date +%s).tar.${EXT}"
 
 deploy_step "Save and compress image ($COMPRESS_NAME)"

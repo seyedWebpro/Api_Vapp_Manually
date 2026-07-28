@@ -1,9 +1,11 @@
+using Api_Vapp.Constants;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.DTOs.Contact;
 using Api_Vapp.DTOs.File;
 using Api_Vapp.DTOs.Message;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
+using Api_Vapp.Services.Audit;
 using Api_Vapp.Utilities;
 using ClosedXML.Excel;
 using Microsoft.EntityFrameworkCore;
@@ -20,6 +22,7 @@ namespace Api_Vapp.Services
         private readonly IContactRepository _contactRepository;
         private readonly IContactNotebookRepository _notebookRepository;
         private readonly Api_Vapp.Data.Api_Context _context;
+        private readonly IAuditService _audit;
         private readonly ILogger<ContactService> _logger;
         private readonly IFileUploadService _fileUploadService;
 
@@ -27,12 +30,14 @@ namespace Api_Vapp.Services
             IContactRepository contactRepository,
             IContactNotebookRepository notebookRepository,
             Api_Vapp.Data.Api_Context context,
+            IAuditService audit,
             ILogger<ContactService> logger,
             IFileUploadService fileUploadService)
         {
             _contactRepository = contactRepository;
             _notebookRepository = notebookRepository;
             _context = context;
+            _audit = audit;
             _logger = logger;
             _fileUploadService = fileUploadService;
         }
@@ -277,6 +282,16 @@ namespace Api_Vapp.Services
 
                     // بارگذاری مجدد با اطلاعات تکمیلی
                     var contactWithInfo = await _contactRepository.GetByIdWithAdditionalInfoAsync(contact.Id);
+
+                    await _audit.WriteAsync(new AuditEntry
+                    {
+                        Category = AuditCategories.Contact,
+                        Action = AuditActions.ContactCreated,
+                        EntityType = AuditEntityTypes.Contact,
+                        EntityId = contact.Id.ToString(),
+                        ActorUserId = userId,
+                        After = new { contactNotebookId = contact.ContactNotebookId, fullName = contact.FullName }
+                    });
 
                     return ApiResponse<ContactResponseDto>.CreateSuccess(
                         await MapToContactResponseDtoAsync(contactWithInfo!),
@@ -764,6 +779,16 @@ namespace Api_Vapp.Services
 
                 _logger.LogInformation("Contact updated successfully with ID: {ContactId}", id);
 
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Contact,
+                    Action = AuditActions.ContactUpdated,
+                    EntityType = AuditEntityTypes.Contact,
+                    EntityId = contact.Id.ToString(),
+                    ActorUserId = userId,
+                    After = new { fullName = contact.FullName }
+                });
+
                 // بارگذاری مجدد با اطلاعات تکمیلی
                 var updatedContactWithInfo = await _contactRepository.GetByIdWithAdditionalInfoAsync(id);
 
@@ -810,6 +835,15 @@ namespace Api_Vapp.Services
                     notebook.UpdatedAt = DateTime.UtcNow;
                     await _notebookRepository.UpdateAsync(notebook);
                 }
+
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Contact,
+                    Action = AuditActions.ContactDeleted,
+                    EntityType = AuditEntityTypes.Contact,
+                    EntityId = contact.Id.ToString(),
+                    ActorUserId = userId
+                });
 
                 _logger.LogInformation("Contact soft deleted successfully with ID: {ContactId}", id);
 

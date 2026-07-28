@@ -40,8 +40,15 @@ namespace Api_Vapp.DTOs.Audit
         public DateTime? FromUtc { get; set; }
         public DateTime? ToUtc { get; set; }
 
-        /// <summary>جستجوی متنی ساده روی Action / EntityId / Metadata / ErrorMessage</summary>
+        /// <summary>جستجوی متنی روی Action / EntityId / CorrelationId / ErrorMessage</summary>
         public string? Q { get; set; }
+
+        /// <summary>
+        /// جستجو داخل OldValue/NewValue/Metadata (JSON).
+        /// کندتر است؛ برای کیس‌هایی مثل «قیمت ۱۹ میلیون» استفاده شود.
+        /// اگر Full-Text فعال باشد از CONTAINS استفاده می‌شود.
+        /// </summary>
+        public bool SearchInJson { get; set; }
 
         public int Page { get; set; } = 1;
         public int PageSize { get; set; } = 50;

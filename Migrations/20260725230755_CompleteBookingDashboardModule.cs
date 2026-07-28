@@ -55,7 +55,7 @@ namespace Api_Vapp.Migrations
                 table: "BookingAppointments",
                 columns: new[] { "BookingServiceItemId", "StartUtc" },
                 unique: true,
-                filter: "[IsDeleted] = 0 AND ([Status] = 'Confirmed' OR [Status] = 'Pending')");
+                filter: "[IsDeleted] = 0 AND [Status] IN ('Confirmed', 'Pending')");
 
             migrationBuilder.CreateIndex(
                 name: "IX_BookingSlotBlocks_BookingSystemId_SlotStartUtc",

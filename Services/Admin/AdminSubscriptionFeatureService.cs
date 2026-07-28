@@ -4,6 +4,7 @@ using Api_Vapp.DTOs.Admin;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
+using Api_Vapp.Services.Audit;
 using Microsoft.EntityFrameworkCore;
 
 namespace Api_Vapp.Services.Admin
@@ -11,10 +12,12 @@ namespace Api_Vapp.Services.Admin
     public class AdminSubscriptionFeatureService : IAdminSubscriptionFeatureService
     {
         private readonly Api_Context _context;
+        private readonly IAuditService _audit;
 
-        public AdminSubscriptionFeatureService(Api_Context context)
+        public AdminSubscriptionFeatureService(Api_Context context, IAuditService audit)
         {
             _context = context;
+            _audit = audit;
         }
 
         public async Task<ApiResponse<List<SubscriptionFeatureResponseDto>>> GetAllAsync(bool includeInactive = true)
@@ -50,6 +53,9 @@ namespace Api_Vapp.Services.Admin
             if (!SubscriptionFeatureCodes.IsKnown(feature.Code))
                 return ApiResponse<SubscriptionFeatureResponseDto>.BadRequest("این امکان قابل ویرایش نیست");
 
+            var previousName = feature.Name;
+            var previousIsActive = feature.IsActive;
+
             feature.Name = dto.Name.Trim();
             feature.Description = dto.Description?.Trim();
             feature.SortOrder = dto.SortOrder;
@@ -57,6 +63,17 @@ namespace Api_Vapp.Services.Admin
             feature.UpdatedAt = DateTime.UtcNow;
 
             await _context.SaveChangesAsync();
+
+            await _audit.WriteAsync(new AuditEntry
+            {
+                Category = AuditCategories.Admin,
+                Action = AuditActions.SubscriptionFeatureUpdated,
+                EntityType = AuditEntityTypes.SubscriptionFeature,
+                EntityId = feature.Id.ToString(),
+                Before = new { name = previousName, isActive = previousIsActive },
+                After = new { name = feature.Name, isActive = feature.IsActive }
+            });
+
             return ApiResponse<SubscriptionFeatureResponseDto>.CreateSuccess(Map(feature), "امکان اشتراک به‌روزرسانی شد");
         }
 

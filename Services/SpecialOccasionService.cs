@@ -1,7 +1,9 @@
+using Api_Vapp.Constants;
 using Api_Vapp.DTOs.Automation;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
+using Api_Vapp.Services.Audit;
 using Api_Vapp.Utilities;
 
 namespace Api_Vapp.Services
@@ -12,10 +14,12 @@ namespace Api_Vapp.Services
     public class SpecialOccasionService : ISpecialOccasionService
     {
         private readonly ISpecialOccasionRepository _specialOccasionRepository;
+        private readonly IAuditService _audit;
 
-        public SpecialOccasionService(ISpecialOccasionRepository specialOccasionRepository)
+        public SpecialOccasionService(ISpecialOccasionRepository specialOccasionRepository, IAuditService audit)
         {
             _specialOccasionRepository = specialOccasionRepository;
+            _audit = audit;
         }
 
         public async Task<ApiResponse<SpecialOccasionResponseDto>> CreateSpecialOccasionAsync(int userId, CreateSpecialOccasionDto createDto)
@@ -36,6 +40,16 @@ namespace Api_Vapp.Services
                 };
 
                 await _specialOccasionRepository.AddAsync(occasion);
+
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Message,
+                    Action = AuditActions.SpecialOccasionCreated,
+                    EntityType = AuditEntityTypes.SpecialOccasion,
+                    EntityId = occasion.Id.ToString(),
+                    ActorUserId = userId,
+                    After = new { name = occasion.Name, type = occasion.Type, occasionDate = occasion.OccasionDate }
+                });
 
                 return ApiResponse<SpecialOccasionResponseDto>.CreateSuccess(
                     MapToDto(occasion),
@@ -119,6 +133,16 @@ namespace Api_Vapp.Services
 
                 await _specialOccasionRepository.UpdateAsync(occasion);
 
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Message,
+                    Action = AuditActions.SpecialOccasionUpdated,
+                    EntityType = AuditEntityTypes.SpecialOccasion,
+                    EntityId = occasion.Id.ToString(),
+                    ActorUserId = userId,
+                    After = new { name = occasion.Name, type = occasion.Type, isActive = occasion.IsActive }
+                });
+
                 return ApiResponse<SpecialOccasionResponseDto>.CreateSuccess(
                     MapToDto(occasion),
                     "مناسبت با موفقیت به‌روزرسانی شد"
@@ -154,6 +178,15 @@ namespace Api_Vapp.Services
                 occasion.UpdatedAt = DateTime.UtcNow;
 
                 await _specialOccasionRepository.UpdateAsync(occasion);
+
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Message,
+                    Action = AuditActions.SpecialOccasionDeleted,
+                    EntityType = AuditEntityTypes.SpecialOccasion,
+                    EntityId = occasion.Id.ToString(),
+                    ActorUserId = userId
+                });
 
                 return ApiResponse<bool>.CreateSuccess(true, "مناسبت با موفقیت حذف شد");
             }

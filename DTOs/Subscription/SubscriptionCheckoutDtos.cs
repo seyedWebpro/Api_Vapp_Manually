@@ -57,6 +57,15 @@ namespace Api_Vapp.DTOs.Subscription
         public string? RedirectUrl { get; set; }
 
         /// <summary>
+        /// همان RedirectUrl — برای هم‌خوانی با پاسخ شارژ کیف پول (GatewayUrl)
+        /// </summary>
+        public string? GatewayUrl
+        {
+            get => RedirectUrl;
+            set => RedirectUrl = value;
+        }
+
+        /// <summary>
         /// نوع پرداخت — همیشه Subscription در خرید اشتراک
         /// </summary>
         public string PaymentType { get; set; } = PaymentTypes.Subscription;

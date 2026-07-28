@@ -348,7 +348,7 @@ namespace Api_Vapp.Migrations
 
                     b.HasIndex("BookingServiceItemId", "StartUtc")
                         .IsUnique()
-                        .HasFilter("[IsDeleted] = 0 AND ([Status] = 'Confirmed' OR [Status] = 'Pending')");
+                        .HasFilter("[IsDeleted] = 0 AND [Status] IN ('Confirmed', 'Pending')");
 
                     b.HasIndex("Status", "StartUtc", "ReminderSentAt");
 

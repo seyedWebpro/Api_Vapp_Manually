@@ -1,8 +1,10 @@
+using Api_Vapp.Constants;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.DTOs.File;
 using Api_Vapp.DTOs.LuckyWheel;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
+using Api_Vapp.Services.Audit;
 using Api_Vapp.Utilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -19,6 +21,7 @@ namespace Api_Vapp.Services
         private readonly Api_Vapp.Data.Api_Context _context;
         private readonly LuckyWheelOptions _luckyWheelOptions;
         private readonly IFileUploadService _fileUploadService;
+        private readonly IAuditService _audit;
         private readonly ILogger<LuckyWheelService> _logger;
 
         public LuckyWheelService(
@@ -26,12 +29,14 @@ namespace Api_Vapp.Services
             Api_Vapp.Data.Api_Context context,
             IOptions<LuckyWheelOptions> luckyWheelOptions,
             IFileUploadService fileUploadService,
+            IAuditService audit,
             ILogger<LuckyWheelService> logger)
         {
             _luckyWheelRepository = luckyWheelRepository;
             _context = context;
             _luckyWheelOptions = luckyWheelOptions.Value;
             _fileUploadService = fileUploadService;
+            _audit = audit;
             _logger = logger;
         }
 
@@ -66,6 +71,16 @@ namespace Api_Vapp.Services
 
                 await _context.LuckyWheels.AddAsync(wheel);
                 await _context.SaveChangesAsync();
+
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.LuckyWheel,
+                    Action = AuditActions.LuckyWheelCreated,
+                    EntityType = AuditEntityTypes.LuckyWheel,
+                    EntityId = wheel.Id.ToString(),
+                    ActorUserId = userId,
+                    After = new { title = wheel.Title, status = wheel.Status.ToString() }
+                });
 
                 _logger.LogInformation("Lucky wheel draft created with ID {WheelId} for user {UserId}", wheel.Id, userId);
 
@@ -186,6 +201,16 @@ namespace Api_Vapp.Services
 
                 wheel.UpdatedAt = DateTime.UtcNow;
                 await _context.SaveChangesAsync();
+
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.LuckyWheel,
+                    Action = AuditActions.LuckyWheelUpdated,
+                    EntityType = AuditEntityTypes.LuckyWheel,
+                    EntityId = wheel.Id.ToString(),
+                    ActorUserId = userId,
+                    After = new { title = wheel.Title, status = wheel.Status.ToString() }
+                });
 
                 return ApiResponse<LuckyWheelResponseDto>.CreateSuccess(
                     MapToResponseDto(wheel),
@@ -449,6 +474,16 @@ namespace Api_Vapp.Services
 
                 await _context.SaveChangesAsync();
 
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.LuckyWheel,
+                    Action = AuditActions.LuckyWheelStatusChanged,
+                    EntityType = AuditEntityTypes.LuckyWheel,
+                    EntityId = wheel.Id.ToString(),
+                    ActorUserId = userId,
+                    After = new { status = wheel.Status.ToString(), slug = wheel.Slug }
+                });
+
                 _logger.LogInformation("Lucky wheel {WheelId} published with slug {Slug}", id, slug);
 
                 return ApiResponse<LuckyWheelResponseDto>.CreateSuccess(
@@ -706,6 +741,15 @@ namespace Api_Vapp.Services
                     _logger.LogWarning(ex, "Error deleting files for lucky wheel {WheelId}", id);
                 }
 
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.LuckyWheel,
+                    Action = AuditActions.LuckyWheelDeleted,
+                    EntityType = AuditEntityTypes.LuckyWheel,
+                    EntityId = wheel.Id.ToString(),
+                    ActorUserId = userId
+                });
+
                 _logger.LogInformation("Lucky wheel {WheelId} soft-deleted for user {UserId}", id, userId);
 
                 return ApiResponse<bool>.CreateSuccess(true, "گردونه با موفقیت حذف شد");
@@ -756,6 +800,16 @@ namespace Api_Vapp.Services
                 wheel.IsActive = isActive;
                 wheel.UpdatedAt = DateTime.UtcNow;
                 await _context.SaveChangesAsync();
+
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.LuckyWheel,
+                    Action = AuditActions.LuckyWheelStatusChanged,
+                    EntityType = AuditEntityTypes.LuckyWheel,
+                    EntityId = wheel.Id.ToString(),
+                    ActorUserId = userId,
+                    After = new { isActive = wheel.IsActive }
+                });
 
                 var refreshed = await _luckyWheelRepository.GetByIdWithDetailsReadOnlyAsync(id);
 

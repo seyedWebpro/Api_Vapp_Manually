@@ -9,6 +9,7 @@ using Api_Vapp.Tests.Shared;
 using Api_Vapp.Tests.UserForm;
 using Api_Vapp.Utilities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Xunit;
@@ -202,16 +203,19 @@ internal sealed class BusinessCardTestContext : IAsyncDisposable
             PublicBaseUrl = "https://ok-sms.ir/card"
         });
 
+        var cache = new MemoryCache(new MemoryCacheOptions());
         var service = new BusinessCardService(
             repo,
             context,
             optionsMonitor,
             fileUpload,
             new NoOpAuditService(),
+            cache,
             NullLogger<BusinessCardService>.Instance);
 
         var publicService = new BusinessCardPublicService(
             repo,
+            cache,
             NullLogger<BusinessCardPublicService>.Instance);
 
         return new BusinessCardTestContext(context)

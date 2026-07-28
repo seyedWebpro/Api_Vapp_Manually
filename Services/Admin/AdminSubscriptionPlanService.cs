@@ -56,7 +56,7 @@ namespace Api_Vapp.Services.Admin
                 return ApiResponse<SubscriptionPlanResponseDto>.BadRequest("کد سطح اشتراک تکراری است");
 
             var featureIds = dto.FeatureIds?.Distinct().ToList() ?? new List<int>();
-            var featuresResult = await ValidateAndLoadFeaturesAsync(featureIds);
+            var featuresResult = await ValidateAndLoadFeaturesAsync(featureIds, previouslyAssignedFeatureIds: null);
             if (featuresResult.Error != null)
                 return featuresResult.Error;
 
@@ -153,7 +153,8 @@ namespace Api_Vapp.Services.Admin
             }
 
             var featureIds = dto.FeatureIds?.Distinct().ToList() ?? new List<int>();
-            var featuresResult = await ValidateAndLoadFeaturesAsync(featureIds);
+            var previouslyAssigned = plan.PlanFeatures.Select(pf => pf.SubscriptionFeatureId).ToList();
+            var featuresResult = await ValidateAndLoadFeaturesAsync(featureIds, previouslyAssigned);
             if (featuresResult.Error != null)
                 return featuresResult.Error;
 
@@ -276,19 +277,31 @@ namespace Api_Vapp.Services.Admin
             return ApiResponse<List<SubscriptionPlanResponseDto>>.CreateSuccess(plans.Select(MapPlan).ToList());
         }
 
-        private async Task<(List<SubscriptionFeature>? Features, ApiResponse<SubscriptionPlanResponseDto>? Error)> ValidateAndLoadFeaturesAsync(List<int> featureIds)
+        private async Task<(List<SubscriptionFeature>? Features, ApiResponse<SubscriptionPlanResponseDto>? Error)> ValidateAndLoadFeaturesAsync(
+            List<int> featureIds,
+            IReadOnlyCollection<int>? previouslyAssignedFeatureIds)
         {
             if (featureIds.Count == 0)
                 return (new List<SubscriptionFeature>(), null);
 
-            // امکانات از قبل روی پلن بوده‌اند حتی در حالت غیرفعال قابل نگه‌داری‌اند؛
-            // امکانات جدید فقط اگر فعال باشند اضافه می‌شوند (در UI مدیریت می‌شود).
             var features = await _context.SubscriptionFeatures
                 .Where(f => featureIds.Contains(f.Id) && !f.IsDeleted)
                 .ToListAsync();
 
             if (features.Count != featureIds.Count)
                 return (null, ApiResponse<SubscriptionPlanResponseDto>.BadRequest("یک یا چند امکان انتخاب‌شده معتبر نیست"));
+
+            var allowedInactive = previouslyAssignedFeatureIds ?? Array.Empty<int>();
+            var illegalInactive = features
+                .Where(f => !f.IsActive && !allowedInactive.Contains(f.Id))
+                .Select(f => f.Name)
+                .ToList();
+
+            if (illegalInactive.Count > 0)
+            {
+                return (null, ApiResponse<SubscriptionPlanResponseDto>.BadRequest(
+                    $"امکان غیرفعال قابل تخصیص جدید نیست: {string.Join("، ", illegalInactive)}"));
+            }
 
             features = featureIds
                 .Select(id => features.First(f => f.Id == id))

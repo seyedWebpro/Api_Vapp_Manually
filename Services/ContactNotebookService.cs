@@ -1,8 +1,10 @@
+using Api_Vapp.Constants;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.DTOs.Contact;
 using Api_Vapp.DTOs.File;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
+using Api_Vapp.Services.Audit;
 using Api_Vapp.Utilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -16,17 +18,20 @@ namespace Api_Vapp.Services
     {
         private readonly IContactNotebookRepository _notebookRepository;
         private readonly Api_Vapp.Data.Api_Context _context;
+        private readonly IAuditService _audit;
         private readonly ILogger<ContactNotebookService> _logger;
         private readonly IFileUploadService _fileUploadService;
 
         public ContactNotebookService(
             IContactNotebookRepository notebookRepository,
             Api_Vapp.Data.Api_Context context,
+            IAuditService audit,
             ILogger<ContactNotebookService> logger,
             IFileUploadService fileUploadService)
         {
             _notebookRepository = notebookRepository;
             _context = context;
+            _audit = audit;
             _logger = logger;
             _fileUploadService = fileUploadService;
         }
@@ -94,6 +99,16 @@ namespace Api_Vapp.Services
 
                     // بارگذاری مجدد با آیکون
                     var notebookWithIcon = await _notebookRepository.GetByIdAsync(notebook.Id);
+
+                    await _audit.WriteAsync(new AuditEntry
+                    {
+                        Category = AuditCategories.Contact,
+                        Action = AuditActions.ContactNotebookCreated,
+                        EntityType = AuditEntityTypes.ContactNotebook,
+                        EntityId = notebook.Id.ToString(),
+                        ActorUserId = userId,
+                        After = new { name = notebook.Name, isActive = notebook.IsActive }
+                    });
 
                     return ApiResponse<ContactNotebookResponseDto>.CreateSuccess(
                         await MapToNotebookResponseDtoAsync(notebookWithIcon!),
@@ -270,6 +285,16 @@ namespace Api_Vapp.Services
 
                 var updatedNotebook = await _notebookRepository.UpdateAsync(notebook);
 
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Contact,
+                    Action = AuditActions.ContactNotebookUpdated,
+                    EntityType = AuditEntityTypes.ContactNotebook,
+                    EntityId = updatedNotebook.Id.ToString(),
+                    ActorUserId = userId,
+                    After = new { name = updatedNotebook.Name, isActive = updatedNotebook.IsActive }
+                });
+
                 _logger.LogInformation("Contact notebook updated successfully with ID: {NotebookId}", id);
 
                 return ApiResponse<ContactNotebookResponseDto>.CreateSuccess(
@@ -319,6 +344,15 @@ namespace Api_Vapp.Services
                 notebook.IsDeleted = true;
                 notebook.UpdatedAt = DateTime.UtcNow;
                 await _notebookRepository.UpdateAsync(notebook);
+
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Contact,
+                    Action = AuditActions.ContactNotebookDeleted,
+                    EntityType = AuditEntityTypes.ContactNotebook,
+                    EntityId = notebook.Id.ToString(),
+                    ActorUserId = userId
+                });
 
                 _logger.LogInformation("Contact notebook soft deleted successfully with ID: {NotebookId}", id);
 

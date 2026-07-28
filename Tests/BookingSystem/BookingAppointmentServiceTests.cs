@@ -147,6 +147,47 @@ public class BookingAppointmentServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task UpdateAppointment_ChangeNameAndTime_Returns200()
+    {
+        var (systemId, _) = await _ctx.CreateConfirmedSystemAsync();
+        var system = await _ctx.SystemService.GetByIdAsync(systemId, _ctx.OwnerUserId);
+        var serviceId = system.Data!.Services.First().Id;
+        var slug = system.Data.Slug;
+        var date = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(10));
+        var slots = (await _ctx.AppointmentService.GetAvailableSlotsAsync(slug, serviceId, date)).Data!.Slots;
+        Assert.True(slots.Count >= 2);
+
+        var manual = await _ctx.AppointmentService.CreateManualBookingAsync(systemId, _ctx.OwnerUserId, new CreateManualBookingDto
+        {
+            ServiceId = serviceId,
+            StartUtc = slots[0].StartUtc,
+            CustomerFullName = "قبل از ویرایش",
+            CustomerMobile = "09125555555"
+        });
+        BookingApiAssertions.AssertSuccess(manual, 201);
+
+        var result = await _ctx.AppointmentService.UpdateAppointmentAsync(
+            systemId,
+            manual.Data!.Id,
+            _ctx.OwnerUserId,
+            new UpdateBookingAppointmentDto
+            {
+                CustomerFullName = "kkk",
+                CustomerMobile = "09917032705",
+                CustomerNote = null,
+                ServiceId = serviceId,
+                StartUtc = slots[1].StartUtc
+            });
+
+        BookingApiAssertions.AssertSuccess(result);
+        Assert.Equal("kkk", result.Data!.CustomerFullName);
+        Assert.Equal("09917032705", result.Data.CustomerMobile);
+        Assert.Equal(slots[1].StartUtc, result.Data.StartUtc);
+        Assert.Equal(serviceId, result.Data.ServiceId);
+        Assert.False(string.IsNullOrEmpty(result.Data.ServiceTitle));
+    }
+
+    [Fact]
     public async Task ConfirmAppointment_Pending_ReturnsConfirmed()
     {
         var (systemId, _) = await _ctx.CreateConfirmedSystemAsync();

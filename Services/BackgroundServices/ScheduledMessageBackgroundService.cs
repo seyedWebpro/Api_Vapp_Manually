@@ -1,6 +1,8 @@
+using Api_Vapp.Constants;
 using Api_Vapp.Data;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
+using Api_Vapp.Services.Audit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -58,6 +60,7 @@ namespace Api_Vapp.Services.BackgroundServices
             var context = scope.ServiceProvider.GetRequiredService<Api_Context>();
             var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
             var sessionRepository = scope.ServiceProvider.GetRequiredService<IMessageSessionRepository>();
+            var auditService = scope.ServiceProvider.GetRequiredService<IAuditService>();
 
             var now = DateTime.UtcNow;
 
@@ -207,6 +210,17 @@ namespace Api_Vapp.Services.BackgroundServices
                         session.IsUsed = true;
                         session.UpdatedAt = DateTime.UtcNow;
                         await sessionRepository.UpdateAsync(session);
+
+                        await auditService.WriteAsync(new AuditEntry
+                        {
+                            Category = AuditCategories.Message,
+                            Action = AuditActions.MessageAutoSent,
+                            EntityType = AuditEntityTypes.Message,
+                            EntityId = session.MessageId.ToString(),
+                            ActorUserId = session.UserId,
+                            Source = AuditSources.Background,
+                            After = new { sentCount = result.Data.SentCount, failedCount = result.Data.FailedCount, totalCost = result.Data.TotalCost }
+                        }, cancellationToken);
 
                         var processingEndTime = DateTime.UtcNow;
                         var totalProcessingDuration = (processingEndTime - processingStartTime).TotalSeconds;

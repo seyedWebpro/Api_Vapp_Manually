@@ -1692,7 +1692,7 @@ namespace Api_Vapp.Data
                 entity.HasIndex(a => new { a.Status, a.StartUtc, a.ReminderSentAt });
                 entity.HasIndex(a => new { a.BookingServiceItemId, a.StartUtc })
                     .IsUnique()
-                    .HasFilter("[IsDeleted] = 0 AND ([Status] = 'Confirmed' OR [Status] = 'Pending')");
+                    .HasFilter("[IsDeleted] = 0 AND [Status] IN ('Confirmed', 'Pending')");
             });
 
             modelBuilder.Entity<BookingSlotBlock>(entity =>

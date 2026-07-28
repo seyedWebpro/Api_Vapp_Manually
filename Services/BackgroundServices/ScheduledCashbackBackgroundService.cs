@@ -4,6 +4,7 @@ using Api_Vapp.DTOs.Common;
 using Api_Vapp.DTOs.Sms;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
+using Api_Vapp.Services.Audit;
 using Api_Vapp.Utilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -89,6 +90,7 @@ namespace Api_Vapp.Services.BackgroundServices
             var walletService = scope.ServiceProvider.GetRequiredService<IWalletService>();
             var smsService = scope.ServiceProvider.GetRequiredService<ISmsService>();
             var deliveryTracking = scope.ServiceProvider.GetRequiredService<ISmsDeliveryTrackingService>();
+            var auditService = scope.ServiceProvider.GetRequiredService<IAuditService>();
 
             var now = DateTime.UtcNow;
 
@@ -175,6 +177,23 @@ namespace Api_Vapp.Services.BackgroundServices
 
                     if (result.Success)
                     {
+                        await auditService.WriteAsync(new AuditEntry
+                        {
+                            Category = AuditCategories.Cashback,
+                            Action = AuditActions.CashbackApplied,
+                            EntityType = AuditEntityTypes.Cashback,
+                            EntityId = cashback.Id.ToString(),
+                            ActorUserId = cashback.UserId,
+                            Source = AuditSources.Background,
+                            After = new
+                            {
+                                totalContacts = result.TotalContacts,
+                                successCount = result.SuccessCount,
+                                failedCount = result.FailedCount,
+                                totalAmount = result.TotalCashbackAmount
+                            }
+                        }, cancellationToken);
+
                         _logger.LogInformation("=== کش‌بک زمان‌بندی شده با موفقیت پردازش شد ===");
                         _logger.LogInformation("CashbackId: {CashbackId}, کل مخاطبین: {Total}, موفق: {Success}, ناموفق: {Failed}, مبلغ کل: {Amount:N0} تومان, مدت زمان: {Duration:F2} ثانیه",
                             cashback.Id, result.TotalContacts, result.SuccessCount, result.FailedCount, result.TotalCashbackAmount, duration);
@@ -432,6 +451,7 @@ namespace Api_Vapp.Services.BackgroundServices
             var walletService = scope.ServiceProvider.GetRequiredService<IWalletService>();
             var smsService = scope.ServiceProvider.GetRequiredService<ISmsService>();
             var deliveryTracking = scope.ServiceProvider.GetRequiredService<ISmsDeliveryTrackingService>();
+            var auditService = scope.ServiceProvider.GetRequiredService<IAuditService>();
 
             var now = DateTime.UtcNow;
 
@@ -551,6 +571,19 @@ namespace Api_Vapp.Services.BackgroundServices
                             MessageText = message
                         });
 
+                        await context.SaveChangesAsync(cancellationToken);
+
+                        await auditService.WriteAsync(new AuditEntry
+                        {
+                            Category = AuditCategories.Cashback,
+                            Action = AuditActions.CashbackApplied,
+                            EntityType = AuditEntityTypes.Cashback,
+                            EntityId = transaction.CashbackId.ToString(),
+                            ActorUserId = transaction.Cashback.UserId,
+                            Source = AuditSources.Background,
+                            After = new { transactionId = transaction.Id, amount = transaction.Amount, contactId = transaction.ContactId }
+                        }, cancellationToken);
+
                         _logger.LogInformation("تراکنش کش‌بک {TransactionId} با موفقیت پردازش شد - Mobile: {Mobile}",
                             transaction.Id, normalizedMobile);
                     }
@@ -561,9 +594,9 @@ namespace Api_Vapp.Services.BackgroundServices
                         
                         _logger.LogWarning("خطا در ارسال تراکنش کش‌بک {TransactionId}: {Error}",
                             transaction.Id, smsResult.Message);
-                    }
 
-                    await context.SaveChangesAsync(cancellationToken);
+                        await context.SaveChangesAsync(cancellationToken);
+                    }
                 }
                 catch (Exception ex)
                 {

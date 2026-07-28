@@ -7,6 +7,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
+using Api_Vapp.Attributes;
+using Api_Vapp.Constants;
 
 namespace Api_Vapp.Controller
 {
@@ -27,6 +29,7 @@ namespace Api_Vapp.Controller
     [ApiController]
     [Route("api/[controller]")]
     [Authorize]
+    [RequireSubscriptionFeature(SubscriptionFeatureCodes.FreeQuickSend)]
     [Produces("application/json")]
     public class QuickActionController : VappControllerBase
     {

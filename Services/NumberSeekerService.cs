@@ -1,9 +1,11 @@
 using Api_Vapp.Configuration;
+using Api_Vapp.Constants;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.DTOs.Contact;
 using Api_Vapp.DTOs.NumberSeeker;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
+using Api_Vapp.Services.Audit;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -35,6 +37,7 @@ namespace Api_Vapp.Services
         private readonly IContactService _contactService;
         private readonly INumberSeekerRateLimiter _rateLimiter;
         private readonly NumberSeekerOptions _options;
+        private readonly IAuditService _audit;
         private readonly ILogger<NumberSeekerService> _logger;
 
         public NumberSeekerService(
@@ -43,6 +46,7 @@ namespace Api_Vapp.Services
             IContactService contactService,
             INumberSeekerRateLimiter rateLimiter,
             IOptions<NumberSeekerOptions> options,
+            IAuditService audit,
             ILogger<NumberSeekerService> logger)
         {
             _scraperClient = scraperClient;
@@ -50,6 +54,7 @@ namespace Api_Vapp.Services
             _contactService = contactService;
             _rateLimiter = rateLimiter;
             _options = options.Value;
+            _audit = audit;
             _logger = logger;
         }
 
@@ -112,6 +117,16 @@ namespace Api_Vapp.Services
                 }
 
                 await _rateLimiter.RecordScrapeAsync(userId);
+
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.NumberSeeker,
+                    Action = AuditActions.NumberSeekerTaskCreated,
+                    EntityType = AuditEntityTypes.NumberSeekerTask,
+                    EntityId = ownedTask.ScraperTaskId,
+                    ActorUserId = userId,
+                    After = new { source = ownedTask.Source, city = ownedTask.City, category = ownedTask.Category, targetCount = ownedTask.TargetCount }
+                });
 
                 created.PollUrl = $"/api/NumberSeeker/task/{created.TaskId}";
 
@@ -203,6 +218,15 @@ namespace Api_Vapp.Services
                 ownedTask.CompletedAt = DateTime.UtcNow;
                 ownedTask.Message = result.Message;
                 await _taskRepository.UpdateAsync(ownedTask);
+
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.NumberSeeker,
+                    Action = AuditActions.NumberSeekerTaskCancelled,
+                    EntityType = AuditEntityTypes.NumberSeekerTask,
+                    EntityId = ownedTask.ScraperTaskId,
+                    ActorUserId = userId
+                });
 
                 return ApiResponse<NumberSeekerCancelResultDto>.CreateSuccess(result, result.Message);
             }
@@ -314,6 +338,16 @@ namespace Api_Vapp.Services
             ownedTask.ImportedCount = importResult.Data?.SuccessCount ?? 0;
             ownedTask.ImportedNotebookId = request.ContactNotebookId;
             await _taskRepository.UpdateAsync(ownedTask);
+
+            await _audit.WriteAsync(new AuditEntry
+            {
+                Category = AuditCategories.NumberSeeker,
+                Action = AuditActions.NumberSeekerTaskImported,
+                EntityType = AuditEntityTypes.NumberSeekerTask,
+                EntityId = ownedTask.ScraperTaskId,
+                ActorUserId = userId,
+                After = new { importedCount = ownedTask.ImportedCount, notebookId = request.ContactNotebookId }
+            });
 
             var data = importResult.Data!;
             var result = new NumberSeekerImportResultDto

@@ -5,7 +5,6 @@ using Api_Vapp.DTOs.Subscription;
 using Api_Vapp.Exceptions;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
-using Api_Vapp.Utilities;
 using Microsoft.EntityFrameworkCore;
 
 namespace Api_Vapp.Services
@@ -22,7 +21,7 @@ namespace Api_Vapp.Services
         public async Task<UserSubscriptionEntitlementSnapshot> GetEntitlementSnapshotAsync(int userId)
         {
             var active = await GetActiveSubscriptionAsync(userId);
-            // IsActive فقط فروش/کاتالوگ را کنترل می‌کند؛ اشتراک فعال کاربر قطع نمی‌شود.
+            // IsActive پلن فقط فروش/کاتالوگ را کنترل می‌کند؛ اشتراک فعال کاربر قطع نمی‌شود.
             if (active?.Plan is { IsDeleted: false })
             {
                 return new UserSubscriptionEntitlementSnapshot
@@ -44,6 +43,7 @@ namespace Api_Vapp.Services
 
         public async Task<UserSubscription?> GetActiveSubscriptionAsync(int userId)
         {
+            var now = DateTime.UtcNow;
             return await _context.UserSubscriptions
                 .AsNoTracking()
                 .Include(us => us.Plan)
@@ -53,7 +53,7 @@ namespace Api_Vapp.Services
                     us.UserId == userId
                     && !us.IsDeleted
                     && us.Status == "Active"
-                    && us.ExpiresAt > DateTime.UtcNow)
+                    && us.ExpiresAt > now)
                 .OrderByDescending(us => us.ExpiresAt)
                 .FirstOrDefaultAsync();
         }
@@ -70,6 +70,11 @@ namespace Api_Vapp.Services
             return snapshot.FeatureCodes;
         }
 
+        /// <summary>
+        /// بررسی امکان برای پلن مؤثر کاربر.
+        /// اگر اشتراک پولی فعال باشد فقط امکانات همان پلن؛ وگرنه امکانات پلن رایگان.
+        /// (برخلاف OR با رایگان وقتی پلن پولی فعال است.)
+        /// </summary>
         public async Task<bool> HasFeatureAsync(int userId, string featureCode)
         {
             if (!SubscriptionFeatureCodes.IsKnown(featureCode))
@@ -78,7 +83,7 @@ namespace Api_Vapp.Services
             var normalizedCode = featureCode.Trim();
             var now = DateTime.UtcNow;
 
-            var hasViaActiveSubscription = await _context.UserSubscriptions
+            var activePlanId = await _context.UserSubscriptions
                 .AsNoTracking()
                 .Where(us =>
                     us.UserId == userId
@@ -86,25 +91,39 @@ namespace Api_Vapp.Services
                     && us.Status == "Active"
                     && us.ExpiresAt > now
                     && !us.Plan.IsDeleted)
-                .SelectMany(us => us.Plan.PlanFeatures)
-                .AnyAsync(pf =>
-                    pf.Feature!.Code == normalizedCode
-                    && !pf.Feature.IsDeleted);
+                .OrderByDescending(us => us.ExpiresAt)
+                .Select(us => (int?)us.SubscriptionPlanId)
+                .FirstOrDefaultAsync();
 
-            if (hasViaActiveSubscription)
-                return true;
+            if (activePlanId.HasValue)
+            {
+                return await PlanHasFeatureAsync(activePlanId.Value, normalizedCode);
+            }
 
-            return await _context.SubscriptionPlans
+            var freePlanId = await _context.SubscriptionPlans
                 .AsNoTracking()
                 .Where(p =>
                     p.TierCode == SubscriptionPlanTierCodes.Free
                     && p.IsActive
                     && !p.IsDeleted)
-                .SelectMany(p => p.PlanFeatures)
-                .AnyAsync(pf =>
-                    pf.Feature!.Code == normalizedCode
-                    && !pf.Feature.IsDeleted);
+                .OrderBy(p => p.SortOrder)
+                .Select(p => (int?)p.Id)
+                .FirstOrDefaultAsync();
+
+            if (!freePlanId.HasValue)
+                throw AppException.Internal(ErrorCodes.Unexpected, SubscriptionMessages.FreePlanNotConfigured);
+
+            return await PlanHasFeatureAsync(freePlanId.Value, normalizedCode);
         }
+
+        private Task<bool> PlanHasFeatureAsync(int planId, string normalizedFeatureCode) =>
+            _context.SubscriptionPlanFeatures
+                .AsNoTracking()
+                .AnyAsync(pf =>
+                    pf.SubscriptionPlanId == planId
+                    && pf.Feature != null
+                    && !pf.Feature.IsDeleted
+                    && pf.Feature.Code == normalizedFeatureCode);
 
         private async Task<SubscriptionPlan> GetDefaultFreePlanAsync()
         {

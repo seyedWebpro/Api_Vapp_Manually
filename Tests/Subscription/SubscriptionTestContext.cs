@@ -138,7 +138,7 @@ internal sealed class SubscriptionTestContext : IDisposable
     private async Task InitializeAsync()
     {
         EntitlementService = new SubscriptionEntitlementService(_context);
-        DiscountService = new SubscriptionDiscountService(_context);
+        DiscountService = new SubscriptionDiscountService(_context, new NoOpAuditService());
         ActivationService = new SubscriptionActivationService(_context, new NoOpAuditService(), NullLogger<SubscriptionActivationService>.Instance);
 
         var config = new ConfigurationBuilder()

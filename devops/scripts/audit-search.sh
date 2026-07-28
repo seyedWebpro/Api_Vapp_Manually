@@ -6,7 +6,8 @@
 #   bash devops/scripts/audit-search.sh --action SubscriptionPlan.PriceUpdated
 #   bash devops/scripts/audit-search.sh --actor 5 --from 2026-07-25
 #   bash devops/scripts/audit-search.sh --correlation-id 0HN...
-#   bash devops/scripts/audit-search.sh --q "PriceUpdated"   # فقط Action/EntityId/Correlation/Error (سریع)
+#   bash devops/scripts/audit-search.sh --q "PriceUpdated"   # سریع: Action/EntityId/...
+#   bash devops/scripts/audit-search.sh --q-json "10890000" # داخل Old/New/Metadata
 #   bash devops/scripts/audit-search.sh --category payment --lines 100
 #   bash devops/scripts/audit-search.sh --sql-only   # فقط چاپ SQL
 #
@@ -20,11 +21,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 CATEGORY="" ACTION="" ENTITY_TYPE="" ENTITY_ID=""
-ACTOR="" TARGET="" CORRELATION="" SOURCE="" Q=""
+ACTOR="" TARGET="" CORRELATION="" SOURCE="" Q="" Q_JSON=""
 FROM_UTC="" TO_UTC="" LINES=50 SQL_ONLY=0
 CONNECTION_STRING="${AUDIT_SQL_CONNECTION:-}"
 
-usage() { sed -n '2,16p' "$0"; exit 1; }
+usage() { sed -n '2,18p' "$0"; exit 1; }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -37,6 +38,7 @@ while [[ $# -gt 0 ]]; do
     --correlation-id) CORRELATION="$2"; shift 2 ;;
     --source) SOURCE="$2"; shift 2 ;;
     --q) Q="$2"; shift 2 ;;
+    --q-json) Q_JSON="$2"; shift 2 ;;
     --from) FROM_UTC="$2"; shift 2 ;;
     --to) TO_UTC="$2"; shift 2 ;;
     --lines|-n) LINES="$2"; shift 2 ;;
@@ -62,7 +64,11 @@ WHERE="1=1"
 [[ -n "$TO_UTC" ]] && WHERE+=" AND CreatedAt <= '$(sql_escape "$TO_UTC")'"
 if [[ -n "$Q" ]]; then
   QE="$(sql_escape "$Q")"
-  WHERE+=" AND (Action LIKE N'%${QE}%' OR EntityId LIKE N'%${QE}%' OR ISNULL(OldValue,'') LIKE N'%${QE}%' OR ISNULL(NewValue,'') LIKE N'%${QE}%' OR ISNULL(Metadata,'') LIKE N'%${QE}%' OR ISNULL(ErrorMessage,'') LIKE N'%${QE}%')"
+  WHERE+=" AND (Action LIKE N'%${QE}%' OR EntityId LIKE N'%${QE}%' OR ISNULL(CorrelationId,'') LIKE N'%${QE}%' OR ISNULL(ErrorMessage,'') LIKE N'%${QE}%')"
+fi
+if [[ -n "$Q_JSON" ]]; then
+  QJ="$(sql_escape "$Q_JSON")"
+  WHERE+=" AND (ISNULL(OldValue,'') LIKE N'%${QJ}%' OR ISNULL(NewValue,'') LIKE N'%${QJ}%' OR ISNULL(Metadata,'') LIKE N'%${QJ}%')"
 fi
 
 SQL=$(cat <<EOF
@@ -137,13 +143,18 @@ if command -v sqlcmd >/dev/null 2>&1 && [[ -n "$CONNECTION_STRING" ]]; then
   exit 0
 fi
 
-# Docker fallback (local SQL container)
+# Docker fallback (local/prod SQL container)
 if command -v docker >/dev/null 2>&1; then
   CNAME="$(docker ps --format '{{.Names}}' 2>/dev/null | grep -iE 'sql|mssql' | head -1 || true)"
   if [[ -n "$CNAME" ]]; then
-    DB_NAME="VappDb"
+    DB_NAME="DbVapp"
     [[ -n "$CONNECTION_STRING" ]] && DB_NAME="$(parse_cs "$CONNECTION_STRING" | sed -n '2p')"
-    PASS="${MSSQL_SA_PASSWORD:-Your_password123}"
+    [[ -z "$DB_NAME" ]] && DB_NAME="DbVapp"
+    PASS="${MSSQL_SA_PASSWORD:-}"
+    if [[ -z "$PASS" && -f "$ROOT_DIR/docker/.env" ]]; then
+      PASS="$(grep '^SA_PASSWORD=' "$ROOT_DIR/docker/.env" | cut -d= -f2- || true)"
+    fi
+    [[ -z "$PASS" ]] && PASS="Vapp@Secure2025!"
     echo "Using docker exec: $CNAME (db=$DB_NAME)"
     for TOOL in /opt/mssql-tools18/bin/sqlcmd /opt/mssql-tools/bin/sqlcmd; do
       if docker exec "$CNAME" test -x "$TOOL" 2>/dev/null; then

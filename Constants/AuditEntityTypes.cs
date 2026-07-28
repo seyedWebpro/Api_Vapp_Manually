@@ -14,6 +14,7 @@ namespace Api_Vapp.Constants
         public const string WalletTransaction = "WalletTransaction";
         public const string Cashback = "Cashback";
         public const string CashbackDraft = "CashbackDraft";
+        public const string Message = "Message";
         public const string MessageCampaign = "MessageCampaign";
         public const string MessageTemplate = "MessageTemplate";
         public const string SmsApprovalRequest = "SmsApprovalRequest";
@@ -25,5 +26,11 @@ namespace Api_Vapp.Constants
         public const string UserForm = "UserForm";
         public const string ReferralProgram = "ReferralProgram";
         public const string LuckyWheel = "LuckyWheel";
+        public const string NumberSeekerTask = "NumberSeekerTask";
+        public const string Contact = "Contact";
+        public const string ContactNotebook = "ContactNotebook";
+        public const string QuickAction = "QuickAction";
+        public const string SpecialOccasion = "SpecialOccasion";
+        public const string AutomatedMessage = "AutomatedMessage";
     }
 }

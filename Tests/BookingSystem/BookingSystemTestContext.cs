@@ -276,15 +276,16 @@ internal sealed class BookingSystemTestContext : IDisposable
 
     private static IBookingAppointmentService CreateAppointmentService(Api_Context context)
     {
-        return new BookingAppointmentService(
-            context,
-            new BookingAppointmentRepository(context),
-            new BookingSystemRepository(context),
-            new PublicPhonebookService(context),
-            new FakeSmsService(),
-            new FakeDeliveryTrackingService(),
-            Microsoft.Extensions.Options.Options.Create(new BookingSystemOptions()),
-            NullLogger<BookingAppointmentService>.Instance);
+            return new BookingAppointmentService(
+                context,
+                new BookingAppointmentRepository(context),
+                new BookingSystemRepository(context),
+                new PublicPhonebookService(context),
+                new FakeSmsService(),
+                new FakeDeliveryTrackingService(),
+                Microsoft.Extensions.Options.Options.Create(new BookingSystemOptions()),
+                new Api_Vapp.Tests.Shared.NoOpAuditService(),
+                NullLogger<BookingAppointmentService>.Instance);
     }
 
     private sealed class FakeSmsService : ISmsService

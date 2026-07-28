@@ -5,6 +5,7 @@ using Api_Vapp.DTOs.Common;
 using Api_Vapp.DTOs.Sms;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
+using Api_Vapp.Services.Audit;
 using Api_Vapp.Utilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -19,6 +20,7 @@ namespace Api_Vapp.Services
         private readonly PublicPhonebookService _phonebookService;
         private readonly ISmsService _smsService;
         private readonly ISmsDeliveryTrackingService _deliveryTracking;
+        private readonly IAuditService _audit;
         private readonly ILogger<BookingAppointmentService> _logger;
         private readonly BookingSystemOptions _options;
 
@@ -33,6 +35,7 @@ namespace Api_Vapp.Services
             ISmsService smsService,
             ISmsDeliveryTrackingService deliveryTracking,
             Microsoft.Extensions.Options.IOptions<BookingSystemOptions> options,
+            IAuditService audit,
             ILogger<BookingAppointmentService> logger)
         {
             _context = context;
@@ -42,6 +45,7 @@ namespace Api_Vapp.Services
             _smsService = smsService;
             _deliveryTracking = deliveryTracking;
             _options = options.Value;
+            _audit = audit;
             _logger = logger;
         }
 
@@ -420,6 +424,16 @@ namespace Api_Vapp.Services
 
                 await transaction.CommitAsync();
 
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Booking,
+                    Action = AuditActions.BookingAppointmentCreated,
+                    EntityType = AuditEntityTypes.BookingAppointment,
+                    EntityId = created.Appointment!.Id.ToString(),
+                    ActorUserId = userId,
+                    After = new { status = created.Appointment.Status, startUtc = created.Appointment.StartUtc }
+                });
+
                 return ApiResponse<BookingAppointmentDto>.CreateSuccess(
                     MapToDto(created.Appointment!),
                     "نوبت دستی با موفقیت ثبت شد",
@@ -461,6 +475,7 @@ namespace Api_Vapp.Services
                 var system = await _systemRepository.GetByIdAndUserIdAsync(systemId, userId);
                 if (system == null)
                 {
+                    await transaction.RollbackAsync();
                     return ApiResponse<BookingAppointmentDto>.NotFound("سیستم رزرو یافت نشد");
                 }
 
@@ -473,11 +488,13 @@ namespace Api_Vapp.Services
 
                 if (appointment == null)
                 {
+                    await transaction.RollbackAsync();
                     return ApiResponse<BookingAppointmentDto>.NotFound("نوبت یافت نشد");
                 }
 
                 if (appointment.Status == BookingAppointmentStatuses.Cancelled)
                 {
+                    await transaction.RollbackAsync();
                     return ApiResponse<BookingAppointmentDto>.BadRequest(
                         "نوبت لغو شده قابل ویرایش نیست",
                         errorCode: ErrorCodes.ValidationFailed);
@@ -487,6 +504,7 @@ namespace Api_Vapp.Services
                 {
                     if (string.IsNullOrWhiteSpace(dto.CustomerFullName))
                     {
+                        await transaction.RollbackAsync();
                         return ApiResponse<BookingAppointmentDto>.BadRequest("نام نمی‌تواند خالی باشد");
                     }
 
@@ -498,6 +516,7 @@ namespace Api_Vapp.Services
                     var mobile = BookingMobileHelper.Normalize(dto.CustomerMobile);
                     if (!BookingMobileHelper.IsValidIranianMobile(mobile))
                     {
+                        await transaction.RollbackAsync();
                         return ApiResponse<BookingAppointmentDto>.BadRequest(
                             "شماره موبایل نامعتبر است",
                             errorCode: ErrorCodes.ValidationFailed);
@@ -516,16 +535,20 @@ namespace Api_Vapp.Services
                 var serviceId = dto.ServiceId ?? appointment.BookingServiceItemId;
                 var startUtc = dto.StartUtc.HasValue
                     ? NormalizeUtc(dto.StartUtc.Value)
-                    : appointment.StartUtc;
+                    : EnsureUtc(appointment.StartUtc);
 
+                var currentStartUtc = EnsureUtc(appointment.StartUtc);
                 var serviceChanged = serviceId != appointment.BookingServiceItemId;
-                var timeChanged = startUtc != appointment.StartUtc;
+                var timeChanged = startUtc != currentStartUtc;
 
                 if (serviceChanged || timeChanged)
                 {
+                    // AsNoTracking — فقط برای اعتبارسنجی/مدت؛ به navigation انتساب نده
+                    // (در غیر این صورت با Include قبلی conflict tracking و 500 می‌شود)
                     var service = await _appointmentRepository.GetServiceForBookingAsync(systemId, serviceId);
                     if (service == null)
                     {
+                        await transaction.RollbackAsync();
                         return ApiResponse<BookingAppointmentDto>.NotFound("خدمت یافت نشد");
                     }
 
@@ -536,25 +559,28 @@ namespace Api_Vapp.Services
 
                     if (!BookingSlotCalculator.IsSlotAvailable(service, startUtc, existing, blocked))
                     {
+                        await transaction.RollbackAsync();
                         return ApiResponse<BookingAppointmentDto>.BadRequest(
                             "این زمان دیگر در دسترس نیست",
                             errorCode: ErrorCodes.ValidationFailed);
                     }
 
-                    appointment.BookingServiceItemId = serviceId;
+                    if (serviceChanged)
+                    {
+                        // قطع navigation قدیمی تا EF فقط FK را آپدیت کند
+                        appointment.BookingServiceItem = null!;
+                        appointment.BookingServiceItemId = serviceId;
+                    }
+
                     appointment.StartUtc = startUtc;
                     appointment.EndUtc = startUtc.AddMinutes(service.DurationMinutes);
-                    appointment.BookingServiceItem = service;
                 }
 
                 appointment.UpdatedAt = DateTime.UtcNow;
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
 
-                if (appointment.BookingServiceItem == null)
-                {
-                    await _context.Entry(appointment).Reference(a => a.BookingServiceItem).LoadAsync();
-                }
+                await _context.Entry(appointment).Reference(a => a.BookingServiceItem).LoadAsync();
 
                 return ApiResponse<BookingAppointmentDto>.CreateSuccess(MapToDto(appointment), "نوبت به‌روزرسانی شد");
             }
@@ -607,9 +633,21 @@ namespace Api_Vapp.Services
                         errorCode: ErrorCodes.ValidationFailed);
                 }
 
+                var previousStatus = appointment.Status;
                 appointment.Status = BookingAppointmentStatuses.Confirmed;
                 appointment.UpdatedAt = DateTime.UtcNow;
                 await _context.SaveChangesAsync();
+
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Booking,
+                    Action = AuditActions.BookingAppointmentStatusChanged,
+                    EntityType = AuditEntityTypes.BookingAppointment,
+                    EntityId = appointment.Id.ToString(),
+                    ActorUserId = userId,
+                    Before = new { status = previousStatus },
+                    After = new { status = appointment.Status }
+                });
 
                 return ApiResponse<BookingAppointmentDto>.CreateSuccess(MapToDto(appointment), "نوبت تأیید شد");
             }
@@ -658,11 +696,23 @@ namespace Api_Vapp.Services
                         errorCode: ErrorCodes.ValidationFailed);
                 }
 
+                var previousStatus = appointment.Status;
                 appointment.Status = BookingAppointmentStatuses.Cancelled;
                 appointment.CancelledAt = DateTime.UtcNow;
                 appointment.CancellationReason = string.IsNullOrWhiteSpace(dto?.Reason) ? null : dto.Reason.Trim();
                 appointment.UpdatedAt = DateTime.UtcNow;
                 await _context.SaveChangesAsync();
+
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Booking,
+                    Action = AuditActions.BookingAppointmentCancelled,
+                    EntityType = AuditEntityTypes.BookingAppointment,
+                    EntityId = appointment.Id.ToString(),
+                    ActorUserId = userId,
+                    Before = new { status = previousStatus },
+                    After = new { status = appointment.Status, reason = appointment.CancellationReason }
+                });
 
                 return ApiResponse<BookingAppointmentDto>.CreateSuccess(MapToDto(appointment), "نوبت لغو شد");
             }

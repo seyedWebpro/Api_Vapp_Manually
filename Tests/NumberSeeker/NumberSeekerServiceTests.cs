@@ -151,6 +151,7 @@ public class NumberSeekerServiceTests
             new FakeContactService(),
             rateLimiter,
             Options.Create(new NumberSeekerOptions()),
+            new Api_Vapp.Tests.Shared.NoOpAuditService(),
             NullLogger<NumberSeekerService>.Instance);
     }
 

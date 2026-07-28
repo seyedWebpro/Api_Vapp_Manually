@@ -5,6 +5,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using System.Security.Claims;
+using Api_Vapp.Attributes;
+using Api_Vapp.Constants;
 
 namespace Api_Vapp.Controller
 {
@@ -28,6 +30,7 @@ namespace Api_Vapp.Controller
     [ApiController]
     [Route("api/[controller]")]
     [Authorize]
+    [RequireSubscriptionFeature(SubscriptionFeatureCodes.Messaging)]
     [Produces("application/json")]
     public class MessageController : VappControllerBase
     {
@@ -302,6 +305,7 @@ namespace Api_Vapp.Controller
         /// <response code="404">مخاطب یافت نشد</response>
         /// <response code="500">خطای سرور</response>
         [HttpPost("quick-send")]
+        [RequireSubscriptionFeature(SubscriptionFeatureCodes.FreeQuickSend)]
         [ProducesResponseType(typeof(ApiResponse<DirectSendResultDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<DirectSendResultDto>), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(typeof(ApiResponse<DirectSendResultDto>), StatusCodes.Status403Forbidden)]
@@ -346,6 +350,7 @@ namespace Api_Vapp.Controller
         /// <response code="404">پیام یافت نشد</response>
         /// <response code="500">خطای سرور</response>
         [HttpGet("{messageId}/campaign/summary")]
+        [RequireSubscriptionFeature(SubscriptionFeatureCodes.BulkCampaign)]
         [ProducesResponseType(typeof(ApiResponse<CampaignSummaryDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<CampaignSummaryDto>), StatusCodes.Status404NotFound)]
         [ProducesResponseType(typeof(ApiResponse<CampaignSummaryDto>), StatusCodes.Status500InternalServerError)]
@@ -378,6 +383,7 @@ namespace Api_Vapp.Controller
         /// <response code="402">موجودی کیف پول کافی نیست</response>
         /// <response code="500">خطای سرور</response>
         [HttpPost("campaign/calculate-summary")]
+        [RequireSubscriptionFeature(SubscriptionFeatureCodes.BulkCampaign)]
         [ProducesResponseType(typeof(ApiResponse<CampaignSummaryDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<CampaignSummaryDto>), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(typeof(ApiResponse<CampaignSummaryDto>), StatusCodes.Status402PaymentRequired)]
@@ -437,6 +443,7 @@ namespace Api_Vapp.Controller
         /// <response code="404">پیام یا گیرندگان یافت نشدند</response>
         /// <response code="500">خطای سرور</response>
         [HttpPost("campaign")]
+        [RequireSubscriptionFeature(SubscriptionFeatureCodes.BulkCampaign)]
         [ProducesResponseType(typeof(ApiResponse<CampaignResponseDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<CampaignResponseDto>), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(typeof(ApiResponse<CampaignResponseDto>), StatusCodes.Status404NotFound)]
@@ -472,6 +479,7 @@ namespace Api_Vapp.Controller
         /// <response code="404">کمپین یافت نشد</response>
         /// <response code="500">خطای سرور</response>
         [HttpGet("campaign/{id}")]
+        [RequireSubscriptionFeature(SubscriptionFeatureCodes.BulkCampaign)]
         [ProducesResponseType(typeof(ApiResponse<CampaignResponseDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<CampaignResponseDto>), StatusCodes.Status404NotFound)]
         [ProducesResponseType(typeof(ApiResponse<CampaignResponseDto>), StatusCodes.Status500InternalServerError)]
@@ -502,6 +510,7 @@ namespace Api_Vapp.Controller
         /// <response code="400">پارامترهای ورودی نامعتبر است</response>
         /// <response code="500">خطای سرور</response>
         [HttpGet("campaign")]
+        [RequireSubscriptionFeature(SubscriptionFeatureCodes.BulkCampaign)]
         [ProducesResponseType(typeof(ApiResponse<CampaignListResponseDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<CampaignListResponseDto>), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(typeof(ApiResponse<CampaignListResponseDto>), StatusCodes.Status500InternalServerError)]
@@ -540,6 +549,7 @@ namespace Api_Vapp.Controller
         /// <response code="404">کمپین یافت نشد</response>
         /// <response code="500">خطای سرور</response>
         [HttpPost("campaign/{id}/confirm-and-send")]
+        [RequireSubscriptionFeature(SubscriptionFeatureCodes.BulkCampaign)]
         [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status402PaymentRequired)]
@@ -570,6 +580,7 @@ namespace Api_Vapp.Controller
         /// <response code="404">کمپین یافت نشد</response>
         /// <response code="500">خطای سرور</response>
         [HttpPost("campaign/{id}/cancel")]
+        [RequireSubscriptionFeature(SubscriptionFeatureCodes.BulkCampaign)]
         [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status404NotFound)]
@@ -599,6 +610,7 @@ namespace Api_Vapp.Controller
         /// <response code="404">کمپین یافت نشد</response>
         /// <response code="500">خطای سرور</response>
         [HttpPost("campaign/{id}/toggle-status")]
+        [RequireSubscriptionFeature(SubscriptionFeatureCodes.BulkCampaign)]
         [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status404NotFound)]
         [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status500InternalServerError)]
@@ -807,6 +819,7 @@ namespace Api_Vapp.Controller
         /// <response code="400">تعداد درخواستی نامعتبر است</response>
         /// <response code="500">خطای سرور</response>
         [HttpGet("report/latest-campaigns")]
+        [RequireSubscriptionFeature(SubscriptionFeatureCodes.MessageAutomation)]
         [ProducesResponseType(typeof(ApiResponse<List<LatestCampaignsDto>>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<List<LatestCampaignsDto>>), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(typeof(ApiResponse<List<LatestCampaignsDto>>), StatusCodes.Status500InternalServerError)]
@@ -839,6 +852,7 @@ namespace Api_Vapp.Controller
         /// <response code="200">گزارش جامع با موفقیت برگردانده شد</response>
         /// <response code="500">خطای سرور</response>
         [HttpGet("report/comprehensive")]
+        [RequireSubscriptionFeature(SubscriptionFeatureCodes.AdvancedAnalytics)]
         [ProducesResponseType(typeof(ApiResponse<ComprehensiveReportDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<ComprehensiveReportDto>), StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<ApiResponse<ComprehensiveReportDto>>> GetComprehensiveReport()

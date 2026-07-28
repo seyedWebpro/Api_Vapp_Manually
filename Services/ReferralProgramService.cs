@@ -5,6 +5,7 @@ using Api_Vapp.DTOs.ReferralProgram;
 using Api_Vapp.DTOs.Sms;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
+using Api_Vapp.Services.Audit;
 using Api_Vapp.Utilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -21,6 +22,7 @@ namespace Api_Vapp.Services
         private readonly IReferralUsageRepository _usageRepository;
         private readonly ISmsService _smsService;
         private readonly ISmsDeliveryTrackingService _deliveryTracking;
+        private readonly IAuditService _audit;
         private readonly ILogger<ReferralProgramService> _logger;
 
         private const int DraftExpirationHours = 24;
@@ -35,6 +37,7 @@ namespace Api_Vapp.Services
             IReferralUsageRepository usageRepository,
             ISmsService smsService,
             ISmsDeliveryTrackingService deliveryTracking,
+            IAuditService audit,
             ILogger<ReferralProgramService> logger)
         {
             _context = context;
@@ -43,6 +46,7 @@ namespace Api_Vapp.Services
             _usageRepository = usageRepository;
             _smsService = smsService;
             _deliveryTracking = deliveryTracking;
+            _audit = audit;
             _logger = logger;
         }
 
@@ -121,6 +125,16 @@ namespace Api_Vapp.Services
             program.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 
+            await _audit.WriteAsync(new AuditEntry
+            {
+                Category = AuditCategories.Referral,
+                Action = AuditActions.ReferralProgramActivated,
+                EntityType = AuditEntityTypes.ReferralProgram,
+                EntityId = program.Id.ToString(),
+                ActorUserId = userId,
+                After = new { isActive = program.IsActive }
+            });
+
             var statusText = program.IsActive ? "فعال" : "غیرفعال";
             return ApiResponse<ReferralProgramDto>.CreateSuccess(MapToDto(program), $"برنامه پاداش {statusText} شد");
         }
@@ -136,6 +150,15 @@ namespace Api_Vapp.Services
             program.IsDeleted = true;
             program.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
+
+            await _audit.WriteAsync(new AuditEntry
+            {
+                Category = AuditCategories.Referral,
+                Action = AuditActions.ReferralProgramDeleted,
+                EntityType = AuditEntityTypes.ReferralProgram,
+                EntityId = program.Id.ToString(),
+                ActorUserId = userId
+            });
 
             return ApiResponse<bool>.CreateSuccess(true, "برنامه پاداش حذف شد");
         }
@@ -425,6 +448,16 @@ namespace Api_Vapp.Services
             await _context.SaveChangesAsync();
 
             await _draftRepository.DeleteAsync(request.DraftId, userId);
+
+            await _audit.WriteAsync(new AuditEntry
+            {
+                Category = AuditCategories.Referral,
+                Action = AuditActions.ReferralProgramCreated,
+                EntityType = AuditEntityTypes.ReferralProgram,
+                EntityId = program.Id.ToString(),
+                ActorUserId = userId,
+                After = new { title = program.Title, publicCode = program.PublicCode, isActive = program.IsActive }
+            });
 
             _logger.LogInformation("برنامه پاداش {ProgramId} با کد {PublicCode} برای کاربر {UserId} ایجاد شد",
                 program.Id, program.PublicCode, userId);
@@ -777,6 +810,16 @@ namespace Api_Vapp.Services
 
                 program.UpdatedAt = DateTime.UtcNow;
                 await _context.SaveChangesAsync();
+
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Referral,
+                    Action = AuditActions.ReferralProgramUpdated,
+                    EntityType = AuditEntityTypes.ReferralProgram,
+                    EntityId = program.Id.ToString(),
+                    ActorUserId = userId,
+                    After = new { title = program.Title, isActive = program.IsActive }
+                });
 
                 return ApiResponse<ReferralProgramDto>.CreateSuccess(MapToDto(program), "برنامه پاداش با موفقیت به‌روزرسانی شد");
             }

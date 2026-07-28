@@ -62,9 +62,11 @@ namespace Api_Vapp.Services
                 throw AppException.BadRequest(ErrorCodes.PaymentFailed, ControlledErrorHelper.PaymentFailed);
             }
 
+            // پلن پرداخت‌شده را حتی اگر بعداً از فروش خارج شده باشد فعال می‌کنیم
+            // (IsActive فقط کاتالوگ/فروش جدید را کنترل می‌کند)
             var plan = await _context.SubscriptionPlans
                 .AsNoTracking()
-                .FirstOrDefaultAsync(p => p.Id == metadata.SubscriptionPlanId && !p.IsDeleted && p.IsActive);
+                .FirstOrDefaultAsync(p => p.Id == metadata.SubscriptionPlanId && !p.IsDeleted);
 
             if (plan == null)
             {
@@ -128,18 +130,25 @@ namespace Api_Vapp.Services
                         && us.ExpiresAt > now)
                     .ToListAsync();
 
+                // روزهای باقی‌مانده اشتراک قبلی به دوره پلن جدید اضافه می‌شود (ارتقا/تعویض پلن)
+                var carriedDays = 0;
                 foreach (var existing in activeSubscriptions)
                 {
+                    var remaining = (int)Math.Ceiling((existing.ExpiresAt - now).TotalDays);
+                    if (remaining > carriedDays)
+                        carriedDays = remaining;
+
                     existing.Status = "Cancelled";
                     existing.UpdatedAt = now;
                 }
 
+                var totalDays = plan.DurationDays + Math.Max(0, carriedDays);
                 var subscription = new UserSubscription
                 {
                     UserId = userId,
                     SubscriptionPlanId = plan.Id,
                     StartDate = now,
-                    ExpiresAt = now.AddDays(plan.DurationDays),
+                    ExpiresAt = now.AddDays(totalDays),
                     Status = "Active",
                     SourcePaymentId = paymentId,
                     CreatedAt = now

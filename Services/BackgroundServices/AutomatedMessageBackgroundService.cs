@@ -2,6 +2,7 @@ using Api_Vapp.Constants;
 using Api_Vapp.Data;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
+using Api_Vapp.Services.Audit;
 using Api_Vapp.Utilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -60,6 +61,7 @@ namespace Api_Vapp.Services.BackgroundServices
             var context = scope.ServiceProvider.GetRequiredService<Api_Context>();
             var automatedMessageRepository = scope.ServiceProvider.GetRequiredService<IAutomatedMessageRepository>();
             var contactRepository = scope.ServiceProvider.GetRequiredService<IContactRepository>();
+            var auditService = scope.ServiceProvider.GetRequiredService<IAuditService>();
 
             // دریافت تمام پیام‌های خودکار فعال (فقط خواندنی - بدون Tracking)
             var allAutomatedMessages = await context.AutomatedMessages
@@ -92,7 +94,7 @@ namespace Api_Vapp.Services.BackgroundServices
                     if (automatedMessage == null)
                         continue;
 
-                    await ProcessSingleAutomatedMessageAsync(context, automatedMessage, contactRepository, cancellationToken);
+                    await ProcessSingleAutomatedMessageAsync(context, automatedMessage, contactRepository, auditService, cancellationToken);
                 }
                 catch (Exception ex)
                 {
@@ -106,6 +108,7 @@ namespace Api_Vapp.Services.BackgroundServices
             Api_Context context,
             AutomatedMessage automatedMessage,
             IContactRepository contactRepository,
+            IAuditService auditService,
             CancellationToken cancellationToken)
         {
             var today = DateTime.UtcNow.Date;
@@ -113,7 +116,7 @@ namespace Api_Vapp.Services.BackgroundServices
             switch (automatedMessage.AutomationType)
             {
                 case "Birthday":
-                    await ProcessBirthdayAutomationAsync(context, automatedMessage, contactRepository, today, cancellationToken);
+                    await ProcessBirthdayAutomationAsync(context, automatedMessage, contactRepository, auditService, today, cancellationToken);
                     break;
 
                 case "CashbackExpiry":
@@ -129,7 +132,7 @@ namespace Api_Vapp.Services.BackgroundServices
                     break;
 
                 case "SpecialOccasion":
-                    await ProcessSpecialOccasionAutomationAsync(context, automatedMessage, contactRepository, today, cancellationToken);
+                    await ProcessSpecialOccasionAutomationAsync(context, automatedMessage, contactRepository, auditService, today, cancellationToken);
                     break;
 
                 case "Custom":
@@ -142,6 +145,7 @@ namespace Api_Vapp.Services.BackgroundServices
             Api_Context context,
             AutomatedMessage automatedMessage,
             IContactRepository contactRepository,
+            IAuditService auditService,
             DateTime today,
             CancellationToken cancellationToken)
         {
@@ -236,7 +240,7 @@ namespace Api_Vapp.Services.BackgroundServices
                 try
                 {
                     queuedCount = await EnqueueAutomatedBatchForAdminApprovalAsync(
-                        context, automatedMessage, contactsToQueue, cancellationToken);
+                        context, automatedMessage, contactsToQueue, auditService, cancellationToken);
                     _logger.LogInformation(
                         "Birthday automation {Id} queued {Count} recipients for admin approval",
                         automatedMessage.Id, queuedCount);
@@ -294,6 +298,7 @@ namespace Api_Vapp.Services.BackgroundServices
             Api_Context context,
             AutomatedMessage automatedMessage,
             IContactRepository contactRepository,
+            IAuditService auditService,
             DateTime today,
             CancellationToken cancellationToken)
         {
@@ -362,7 +367,7 @@ namespace Api_Vapp.Services.BackgroundServices
             if (contactsToQueue.Count > 0)
             {
                 queuedCount = await EnqueueAutomatedBatchForAdminApprovalAsync(
-                    context, automatedMessage, contactsToQueue, cancellationToken);
+                    context, automatedMessage, contactsToQueue, auditService, cancellationToken);
             }
 
             _logger.LogInformation("SpecialOccasion automation {Id} completed: {QueuedCount} queued for approval, {SkippedCount} skipped", 
@@ -390,6 +395,7 @@ namespace Api_Vapp.Services.BackgroundServices
             Api_Context context,
             AutomatedMessage automatedMessage,
             List<Contact> contacts,
+            IAuditService auditService,
             CancellationToken cancellationToken)
         {
             if (contacts.Count == 0)
@@ -466,6 +472,7 @@ namespace Api_Vapp.Services.BackgroundServices
                 var previewContent = messageContent.Length > 4000 ? messageContent[..4000] : messageContent;
 
                 MessageCampaign campaign;
+                var isNewCampaign = existingCampaign == null;
                 if (existingCampaign != null)
                 {
                     campaign = existingCampaign;
@@ -557,6 +564,17 @@ namespace Api_Vapp.Services.BackgroundServices
 
                 await context.SaveChangesAsync(cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
+
+                await auditService.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Message,
+                    Action = isNewCampaign ? AuditActions.CampaignAutoSent : AuditActions.AutomatedMessageQueued,
+                    EntityType = AuditEntityTypes.MessageCampaign,
+                    EntityId = campaign.Id.ToString(),
+                    ActorUserId = automatedMessage.UserId,
+                    Source = AuditSources.Background,
+                    After = new { automatedMessageId = automatedMessage.Id, addedRecipients = contacts.Count, totalRecipients = campaign.RecipientsCount }
+                }, cancellationToken);
 
                 _logger.LogInformation(
                     "Queued automated message {AutomationId} as campaign {CampaignId} (+{Added} recipients, total {Total}) for admin approval",

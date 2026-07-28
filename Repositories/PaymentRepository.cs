@@ -58,9 +58,10 @@ namespace Api_Vapp.Repositories
         public async Task<bool> HasPendingPaymentAsync(int userId)
         {
             var recentCutoff = DateTime.UtcNow.AddMinutes(-15); // پرداخت‌های 15 دقیقه اخیر
+            // Pending و Processing هر دو «در جریان» هستند (توکن شبیه‌سازی/درگاه → Processing)
             return await _dbSet
-                .AnyAsync(p => p.UserId == userId && 
-                         p.Status == PaymentStatuses.Pending &&
+                .AnyAsync(p => p.UserId == userId &&
+                         (p.Status == PaymentStatuses.Pending || p.Status == PaymentStatuses.Processing) &&
                          p.CreatedAt >= recentCutoff);
         }
 

@@ -4,6 +4,8 @@ using Api_Vapp.DTOs.User;
 using Api_Vapp.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Api_Vapp.Attributes;
+using Api_Vapp.Constants;
 
 namespace Api_Vapp.Controller
 {
@@ -17,6 +19,7 @@ namespace Api_Vapp.Controller
     [ApiController]
     [Route("api/[controller]")]
     [Authorize]
+    [RequireSubscriptionFeature(SubscriptionFeatureCodes.BusinessCard)]
     [Produces("application/json")]
     public class BusinessCardController : VappControllerBase
     {
@@ -37,8 +40,15 @@ namespace Api_Vapp.Controller
         [HttpPost]
         [ProducesResponseType(typeof(ApiResponse<BusinessCardResponseDto>), StatusCodes.Status201Created)]
         [ProducesResponseType(typeof(ApiResponse<BusinessCardResponseDto>), StatusCodes.Status400BadRequest)]
-        public async Task<ActionResult<ApiResponse<BusinessCardResponseDto>>> CreateDraft([FromBody] CreateBusinessCardDto createDto)
+        public async Task<ActionResult<ApiResponse<BusinessCardResponseDto>>> CreateDraft([FromBody] CreateBusinessCardDto? createDto)
         {
+            if (createDto == null)
+            {
+                return StatusCode(400, ApiResponse<BusinessCardResponseDto>.BadRequest(
+                    "داده‌های ورودی نامعتبر است",
+                    errorCode: ErrorCodes.ValidationFailed));
+            }
+
             var invalid = InvalidModelStateResponse<BusinessCardResponseDto>();
             if (invalid != null)
             {

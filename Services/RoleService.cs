@@ -1,7 +1,9 @@
+using Api_Vapp.Constants;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.DTOs.Role;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
+using Api_Vapp.Services.Audit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -14,12 +16,18 @@ namespace Api_Vapp.Services
     {
         private readonly IRoleRepository _roleRepository;
         private readonly Api_Vapp.Data.Api_Context _context;
+        private readonly IAuditService _audit;
         private readonly ILogger<RoleService> _logger;
 
-        public RoleService(IRoleRepository roleRepository, Api_Vapp.Data.Api_Context context, ILogger<RoleService> logger)
+        public RoleService(
+            IRoleRepository roleRepository,
+            Api_Vapp.Data.Api_Context context,
+            IAuditService audit,
+            ILogger<RoleService> logger)
         {
             _roleRepository = roleRepository;
             _context = context;
+            _audit = audit;
             _logger = logger;
         }
 
@@ -46,6 +54,15 @@ namespace Api_Vapp.Services
                 };
 
                 var createdRole = await _roleRepository.AddAsync(role);
+
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Role,
+                    Action = AuditActions.RoleCreated,
+                    EntityType = AuditEntityTypes.Role,
+                    EntityId = createdRole.Id.ToString(),
+                    After = new { name = createdRole.Name, displayName = createdRole.DisplayName, isActive = createdRole.IsActive }
+                });
 
                 _logger.LogInformation("Role created successfully with ID: {RoleId}", createdRole.Id);
 
@@ -194,6 +211,15 @@ namespace Api_Vapp.Services
 
                 var updatedRole = await _roleRepository.UpdateAsync(role);
 
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Role,
+                    Action = AuditActions.RoleUpdated,
+                    EntityType = AuditEntityTypes.Role,
+                    EntityId = updatedRole.Id.ToString(),
+                    After = new { name = updatedRole.Name, displayName = updatedRole.DisplayName, isActive = updatedRole.IsActive }
+                });
+
                 _logger.LogInformation("Role updated successfully with ID: {RoleId}", id);
 
                 return ApiResponse<RoleResponseDto>.CreateSuccess(
@@ -234,6 +260,14 @@ namespace Api_Vapp.Services
                 role.IsDeleted = true;
                 role.UpdatedAt = DateTime.UtcNow;
                 await _roleRepository.UpdateAsync(role);
+
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Role,
+                    Action = AuditActions.RoleDeleted,
+                    EntityType = AuditEntityTypes.Role,
+                    EntityId = role.Id.ToString()
+                });
 
                 _logger.LogInformation("Role soft deleted successfully with ID: {RoleId}", id);
 
@@ -290,6 +324,15 @@ namespace Api_Vapp.Services
 
                     await transaction.CommitAsync();
 
+                    await _audit.WriteAsync(new AuditEntry
+                    {
+                        Category = AuditCategories.Role,
+                        Action = AuditActions.RoleDeleted,
+                        EntityType = AuditEntityTypes.Role,
+                        EntityId = id.ToString(),
+                        After = new { hardDelete = true, removedUserRoleCount = userRoles.Count }
+                    });
+
                     _logger.LogWarning("Role hard deleted successfully with ID: {RoleId}. UserRoles: {UserRoleCount}", 
                         id, userRoles.Count);
 
@@ -325,6 +368,15 @@ namespace Api_Vapp.Services
                 role.IsActive = isActive;
                 role.UpdatedAt = DateTime.UtcNow;
                 var updatedRole = await _roleRepository.UpdateAsync(role);
+
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Role,
+                    Action = AuditActions.RoleUpdated,
+                    EntityType = AuditEntityTypes.Role,
+                    EntityId = updatedRole.Id.ToString(),
+                    After = new { isActive = updatedRole.IsActive }
+                });
 
                 var message = isActive ? "نقش با موفقیت فعال شد" : "نقش با موفقیت غیرفعال شد";
 

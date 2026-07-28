@@ -43,7 +43,7 @@ namespace Api_Vapp.Services
 
                 var catalog = new SubscriptionCatalogDto
                 {
-                    DurationLabel = "اشتراک ۳۰ روزه",
+                    DurationLabel = $"اشتراک {entitlement.EffectivePlan.DurationDays} روزه",
                     CurrentSubscription = MapCurrentSubscription(
                         entitlement.ActiveSubscription,
                         entitlement.EffectivePlan,

@@ -8,6 +8,7 @@ using Api_Vapp.Services.Audit;
 using Api_Vapp.Utilities;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 
 namespace Api_Vapp.Services
@@ -22,6 +23,7 @@ namespace Api_Vapp.Services
         private readonly BusinessCardOptions _options;
         private readonly IFileUploadService _fileUploadService;
         private readonly IAuditService _audit;
+        private readonly IMemoryCache _cache;
         private readonly ILogger<BusinessCardService> _logger;
 
         public BusinessCardService(
@@ -30,6 +32,7 @@ namespace Api_Vapp.Services
             IOptions<BusinessCardOptions> options,
             IFileUploadService fileUploadService,
             IAuditService audit,
+            IMemoryCache cache,
             ILogger<BusinessCardService> logger)
         {
             _businessCardRepository = businessCardRepository;
@@ -37,6 +40,7 @@ namespace Api_Vapp.Services
             _options = options.Value;
             _fileUploadService = fileUploadService;
             _audit = audit;
+            _cache = cache;
             _logger = logger;
         }
 
@@ -44,6 +48,8 @@ namespace Api_Vapp.Services
         {
             try
             {
+                _logger.LogInformation("شروع ایجاد پیش‌نویس کارت ویزیت — UserId: {UserId}", userId);
+
                 var sectionErrors = ValidateSectionsPayload(
                     createDto.SliderImages,
                     createDto.ServiceItems,
@@ -99,7 +105,17 @@ namespace Api_Vapp.Services
                 await _context.BusinessCards.AddAsync(card);
                 await _context.SaveChangesAsync();
 
-                _logger.LogInformation("Business card draft created with ID {CardId} for user {UserId}", card.Id, userId);
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.BusinessCard,
+                    Action = AuditActions.BusinessCardCreated,
+                    EntityType = AuditEntityTypes.BusinessCard,
+                    EntityId = card.Id.ToString(),
+                    ActorUserId = userId,
+                    After = new { title = card.Title, templateKey = card.TemplateKey, status = card.Status.ToString() }
+                });
+
+                _logger.LogInformation("پایان ایجاد پیش‌نویس کارت ویزیت — CardId: {CardId}, UserId: {UserId}", card.Id, userId);
 
                 return ApiResponse<BusinessCardResponseDto>.CreateSuccess(
                     MapToResponseDto(card),
@@ -121,6 +137,8 @@ namespace Api_Vapp.Services
         {
             try
             {
+                _logger.LogInformation("شروع به‌روزرسانی اطلاعات کارت — CardId: {CardId}, UserId: {UserId}", id, userId);
+
                 if (updateDto == null || !HasAnyInfoChanges(updateDto))
                 {
                     return ApiResponse<BusinessCardResponseDto>.BadRequest(
@@ -171,7 +189,19 @@ namespace Api_Vapp.Services
                 card.UpdatedAt = DateTime.UtcNow;
                 await _context.SaveChangesAsync();
 
-                _logger.LogInformation("Business card info updated — CardId: {CardId}", id);
+                BusinessCardPublicService.InvalidatePublicCache(_cache, card.Slug);
+
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.BusinessCard,
+                    Action = AuditActions.BusinessCardUpdated,
+                    EntityType = AuditEntityTypes.BusinessCard,
+                    EntityId = card.Id.ToString(),
+                    ActorUserId = userId,
+                    After = new { title = card.Title, slug = card.Slug, logoUrl = card.LogoUrl }
+                });
+
+                _logger.LogInformation("پایان به‌روزرسانی اطلاعات کارت — CardId: {CardId}", id);
 
                 return ApiResponse<BusinessCardResponseDto>.CreateSuccess(
                     MapToResponseDto(card),
@@ -192,6 +222,8 @@ namespace Api_Vapp.Services
         {
             try
             {
+                _logger.LogInformation("شروع به‌روزرسانی بخش‌های کارت — CardId: {CardId}, UserId: {UserId}", id, userId);
+
                 if (updateDto == null || !HasAnySectionChanges(updateDto))
                 {
                     return ApiResponse<BusinessCardResponseDto>.BadRequest(
@@ -266,7 +298,26 @@ namespace Api_Vapp.Services
                 card.UpdatedAt = DateTime.UtcNow;
                 await _context.SaveChangesAsync();
 
-                _logger.LogInformation("Business card sections updated — CardId: {CardId}", id);
+                BusinessCardPublicService.InvalidatePublicCache(_cache, card.Slug);
+
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.BusinessCard,
+                    Action = AuditActions.BusinessCardUpdated,
+                    EntityType = AuditEntityTypes.BusinessCard,
+                    EntityId = card.Id.ToString(),
+                    ActorUserId = userId,
+                    After = new
+                    {
+                        sliderEnabled = card.SliderEnabled,
+                        descriptionEnabled = card.DescriptionEnabled,
+                        servicesEnabled = card.ServicesEnabled,
+                        mapEnabled = card.MapEnabled,
+                        contactEnabled = card.ContactEnabled
+                    }
+                });
+
+                _logger.LogInformation("پایان به‌روزرسانی بخش‌های کارت — CardId: {CardId}", id);
 
                 return ApiResponse<BusinessCardResponseDto>.CreateSuccess(
                     MapToResponseDto(card),
@@ -287,6 +338,8 @@ namespace Api_Vapp.Services
         {
             try
             {
+                _logger.LogInformation("شروع انتشار کارت ویزیت — CardId: {CardId}, UserId: {UserId}", id, userId);
+
                 var card = await _businessCardRepository.GetByIdWithDetailsTrackedAsync(id);
                 if (card == null)
                 {
@@ -316,6 +369,8 @@ namespace Api_Vapp.Services
 
                 await _context.SaveChangesAsync();
 
+                BusinessCardPublicService.InvalidatePublicCache(_cache, card.Slug);
+
                 await _audit.WriteAsync(new AuditEntry
                 {
                     Category = AuditCategories.BusinessCard,
@@ -327,7 +382,7 @@ namespace Api_Vapp.Services
                     After = new { status = card.Status.ToString(), isActive = card.IsActive, slug = card.Slug }
                 });
 
-                _logger.LogInformation("Business card {CardId} published with slug {Slug}", id, card.Slug);
+                _logger.LogInformation("پایان انتشار کارت ویزیت — CardId: {CardId}, Slug: {Slug}", id, card.Slug);
 
                 return ApiResponse<BusinessCardResponseDto>.CreateSuccess(
                     MapToResponseDto(card),
@@ -348,6 +403,8 @@ namespace Api_Vapp.Services
         {
             try
             {
+                _logger.LogInformation("شروع لیست کارت‌های ویزیت — UserId: {UserId}, Page: {PageNumber}", userId, pageNumber);
+
                 if (pageNumber < 1)
                 {
                     return ApiResponse<BusinessCardListResponseDto>.BadRequest(
@@ -419,16 +476,31 @@ namespace Api_Vapp.Services
         {
             try
             {
+                _logger.LogInformation("شروع حذف کارت ویزیت — CardId: {CardId}, UserId: {UserId}", id, userId);
+
                 var card = await _businessCardRepository.GetOwnedCardAsync(id, userId, tracked: true);
                 if (card == null)
                 {
                     return ApiResponse<bool>.NotFound("کارت ویزیت یافت نشد");
                 }
 
+                var previousSlug = card.Slug;
                 card.IsDeleted = true;
                 card.Slug = null;
                 card.UpdatedAt = DateTime.UtcNow;
                 await _context.SaveChangesAsync();
+
+                BusinessCardPublicService.InvalidatePublicCache(_cache, previousSlug);
+
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.BusinessCard,
+                    Action = AuditActions.BusinessCardDeleted,
+                    EntityType = AuditEntityTypes.BusinessCard,
+                    EntityId = id.ToString(),
+                    ActorUserId = userId,
+                    Before = new { title = card.Title, slug = previousSlug }
+                });
 
                 try
                 {
@@ -449,7 +521,7 @@ namespace Api_Vapp.Services
                     _logger.LogWarning(ex, "Error deleting files for business card {CardId}", id);
                 }
 
-                _logger.LogInformation("Business card {CardId} soft-deleted for user {UserId}", id, userId);
+                _logger.LogInformation("پایان حذف کارت ویزیت — CardId: {CardId}, UserId: {UserId}", id, userId);
 
                 return ApiResponse<bool>.CreateSuccess(true, "کارت ویزیت با موفقیت حذف شد");
             }
@@ -499,6 +571,8 @@ namespace Api_Vapp.Services
                 card.IsActive = isActive;
                 card.UpdatedAt = DateTime.UtcNow;
                 await _context.SaveChangesAsync();
+
+                BusinessCardPublicService.InvalidatePublicCache(_cache, card.Slug);
 
                 await _audit.WriteAsync(new AuditEntry
                 {

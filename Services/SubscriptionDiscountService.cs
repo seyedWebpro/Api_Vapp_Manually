@@ -4,6 +4,7 @@ using Api_Vapp.DTOs.Admin;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
+using Api_Vapp.Services.Audit;
 using Microsoft.EntityFrameworkCore;
 
 namespace Api_Vapp.Services
@@ -11,10 +12,12 @@ namespace Api_Vapp.Services
     public class SubscriptionDiscountService : ISubscriptionDiscountService
     {
         private readonly Api_Context _context;
+        private readonly IAuditService _audit;
 
-        public SubscriptionDiscountService(Api_Context context)
+        public SubscriptionDiscountService(Api_Context context, IAuditService audit)
         {
             _context = context;
+            _audit = audit;
         }
 
         public async Task<ApiResponse<List<SubscriptionDiscountCodeResponseDto>>> GetAllAsync(bool includeInactive = true)
@@ -78,6 +81,16 @@ namespace Api_Vapp.Services
             await _context.SaveChangesAsync();
 
             await _context.Entry(entity).Reference(e => e.SubscriptionPlan).LoadAsync();
+
+            await _audit.WriteAsync(new AuditEntry
+            {
+                Category = AuditCategories.Admin,
+                Action = AuditActions.DiscountCodeCreated,
+                EntityType = AuditEntityTypes.SubscriptionDiscountCode,
+                EntityId = entity.Id.ToString(),
+                After = new { code = entity.Code, discountType = entity.DiscountType, value = entity.Value, isActive = entity.IsActive }
+            });
+
             return ApiResponse<SubscriptionDiscountCodeResponseDto>.CreateSuccess(Map(entity), "کد تخفیف ایجاد شد", 201);
         }
 
@@ -118,6 +131,16 @@ namespace Api_Vapp.Services
             entity.UpdatedAt = DateTime.UtcNow;
 
             await _context.SaveChangesAsync();
+
+            await _audit.WriteAsync(new AuditEntry
+            {
+                Category = AuditCategories.Admin,
+                Action = AuditActions.DiscountCodeUpdated,
+                EntityType = AuditEntityTypes.SubscriptionDiscountCode,
+                EntityId = entity.Id.ToString(),
+                After = new { code = entity.Code, discountType = entity.DiscountType, value = entity.Value, isActive = entity.IsActive }
+            });
+
             return ApiResponse<SubscriptionDiscountCodeResponseDto>.CreateSuccess(Map(entity), "کد تخفیف به‌روزرسانی شد");
         }
 
@@ -131,6 +154,15 @@ namespace Api_Vapp.Services
             entity.IsActive = false;
             entity.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
+
+            await _audit.WriteAsync(new AuditEntry
+            {
+                Category = AuditCategories.Admin,
+                Action = AuditActions.DiscountCodeDeleted,
+                EntityType = AuditEntityTypes.SubscriptionDiscountCode,
+                EntityId = entity.Id.ToString()
+            });
+
             return ApiResponse<bool>.CreateSuccess(true, "کد تخفیف حذف شد");
         }
 

@@ -211,8 +211,23 @@ namespace Api_Vapp.Services
                 }
 
                 // بررسی وضعیت پرداخت — تأیید مجدد امن (idempotent)
+                // اگر قبلاً Verified شده ولی fulfill اشتراک جا مانده باشد، دوباره تلاش می‌کنیم
                 if (payment.Status == PaymentStatuses.Verified)
                 {
+                    if (payment.PaymentType == PaymentTypes.Subscription)
+                    {
+                        try
+                        {
+                            await _subscriptionActivationService.FulfillVerifiedPaymentAsync(payment);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex,
+                                "Idempotent subscription fulfill failed for already-verified payment {PaymentId}",
+                                payment.Id);
+                        }
+                    }
+
                     return ApiResponse<PaymentResultDto>.CreateSuccess(
                         await BuildVerifiedResultAsync(payment),
                         "این پرداخت قبلاً تأیید شده است");
@@ -479,9 +494,17 @@ namespace Api_Vapp.Services
 
                 if (payment.Status == PaymentStatuses.Verified)
                 {
-                    return ApiResponse<PaymentResultDto>.CreateSuccess(
-                        await BuildVerifiedResultAsync(payment),
-                        "این پرداخت قبلاً تأیید شده است");
+                    // همان مسیر idempotent verify — برای اشتراک، fulfill را دوباره چک می‌کند
+                    return await VerifyPaymentAsync(payment.UserId, new VerifyPaymentRequestDto
+                    {
+                        PaymentId = payment.Id,
+                        OrderId = payment.OrderId,
+                        RefId = payment.RefId,
+                        ResCode = "0",
+                        SaleReferenceId = payment.ReferenceNumber,
+                        TransactionId = payment.TransactionId,
+                        CardNumber = payment.CardNumber
+                    });
                 }
 
                 if (payment.Status is not (PaymentStatuses.Pending or PaymentStatuses.Processing))
@@ -520,9 +543,9 @@ namespace Api_Vapp.Services
                     return ApiResponse<bool>.NotFound("پرداخت یافت نشد");
                 }
 
-                if (payment.Status != PaymentStatuses.Pending)
+                if (payment.Status is not (PaymentStatuses.Pending or PaymentStatuses.Processing))
                 {
-                    return ApiResponse<bool>.BadRequest("فقط پرداخت‌های در انتظار قابل لغو هستند");
+                    return ApiResponse<bool>.BadRequest("فقط پرداخت‌های در انتظار یا در حال پردازش قابل لغو هستند");
                 }
 
                 payment.Status = PaymentStatuses.Cancelled;
@@ -604,7 +627,8 @@ namespace Api_Vapp.Services
 
             if (payment.PaymentType == PaymentTypes.Subscription)
             {
-                var active = await _subscriptionEntitlementService.GetActiveSubscriptionAsync(payment.UserId);
+                var snapshot = await _subscriptionEntitlementService.GetEntitlementSnapshotAsync(payment.UserId);
+                var active = snapshot.ActiveSubscription;
                 if (active?.Plan != null)
                 {
                     var remainingDays = Math.Max(0, (int)Math.Ceiling((active.ExpiresAt - DateTime.UtcNow).TotalDays));
@@ -618,7 +642,8 @@ namespace Api_Vapp.Services
                         ExpiresAt = active.ExpiresAt,
                         RemainingDays = remainingDays,
                         IsActive = true,
-                        IsFreePlan = false
+                        IsFreePlan = false,
+                        FeatureCodes = snapshot.FeatureCodes.ToList()
                     };
                 }
             }

@@ -24,7 +24,6 @@ namespace Api_Vapp.Services.Audit
             request ??= new AuditSearchRequestDto();
 
             var page = request.Page < 1 ? 1 : request.Page;
-            // استاندارد پروژه: حداکثر 100
             var pageSize = request.PageSize < 1 ? 50 : Math.Min(request.PageSize, 100);
 
             var query = _db.AdminAuditLogs.AsNoTracking();
@@ -62,15 +61,29 @@ namespace Api_Vapp.Services.Audit
             if (request.ToUtc.HasValue)
                 query = query.Where(x => x.CreatedAt <= request.ToUtc.Value);
 
-            // فقط ستون‌های کوتاه/ایندکس‌دار — جستجو روی nvarchar(max) کند است
             if (!string.IsNullOrWhiteSpace(request.Q))
             {
                 var q = request.Q.Trim();
-                query = query.Where(x =>
-                    x.Action.Contains(q)
-                    || (x.EntityId != null && x.EntityId.Contains(q))
-                    || (x.CorrelationId != null && x.CorrelationId.Contains(q))
-                    || (x.ErrorMessage != null && x.ErrorMessage.Contains(q)));
+                if (request.SearchInJson)
+                {
+                    // اختیاری و کندتر — برای جستجوی داخل JSON (مثل قیمت)
+                    query = query.Where(x =>
+                        x.Action.Contains(q)
+                        || (x.EntityId != null && x.EntityId.Contains(q))
+                        || (x.CorrelationId != null && x.CorrelationId.Contains(q))
+                        || (x.ErrorMessage != null && x.ErrorMessage.Contains(q))
+                        || (x.OldValue != null && x.OldValue.Contains(q))
+                        || (x.NewValue != null && x.NewValue.Contains(q))
+                        || (x.Metadata != null && x.Metadata.Contains(q)));
+                }
+                else
+                {
+                    query = query.Where(x =>
+                        x.Action.Contains(q)
+                        || (x.EntityId != null && x.EntityId.Contains(q))
+                        || (x.CorrelationId != null && x.CorrelationId.Contains(q))
+                        || (x.ErrorMessage != null && x.ErrorMessage.Contains(q)));
+                }
             }
 
             var total = await query.CountAsync(cancellationToken);
@@ -105,9 +118,7 @@ namespace Api_Vapp.Services.Audit
                 .ToListAsync(cancellationToken);
 
             foreach (var item in items)
-            {
                 item.CreatedAtTehran = ToTehran(item.CreatedAt);
-            }
 
             return ApiResponse<PagedResponse<AuditLogDto>>.CreateSuccess(
                 PagedResponse<AuditLogDto>.Create(items, total, page, pageSize),

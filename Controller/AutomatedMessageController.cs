@@ -5,6 +5,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using System.Security.Claims;
+using Api_Vapp.Attributes;
+using Api_Vapp.Constants;
 
 namespace Api_Vapp.Controller
 {
@@ -32,6 +34,7 @@ namespace Api_Vapp.Controller
     [ApiController]
     [Route("api/[controller]")]
     [Authorize]
+    [RequireSubscriptionFeature(SubscriptionFeatureCodes.MessageAutomation)]
     [Produces("application/json")]
     public class AutomatedMessageController : VappControllerBase
     {

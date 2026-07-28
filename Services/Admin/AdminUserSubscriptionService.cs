@@ -47,14 +47,36 @@ namespace Api_Vapp.Services.Admin
                 return ApiResponse<UserSubscriptionResponseDto>.NotFound("پلن اشتراک یافت نشد");
 
             var startDate = dto.StartDate?.ToUniversalTime() ?? DateTime.UtcNow;
+            var now = DateTime.UtcNow;
+
+            // یک اشتراک مؤثر برای کاربر — قبلی‌های فعال لغو می‌شوند (هم‌راستا با خرید)
+            var activeSubscriptions = await _context.UserSubscriptions
+                .Where(us =>
+                    us.UserId == dto.UserId
+                    && !us.IsDeleted
+                    && us.Status == "Active"
+                    && us.ExpiresAt > now)
+                .ToListAsync();
+
+            var carriedDays = 0;
+            foreach (var existing in activeSubscriptions)
+            {
+                var remaining = (int)Math.Ceiling((existing.ExpiresAt - now).TotalDays);
+                if (remaining > carriedDays)
+                    carriedDays = remaining;
+
+                existing.Status = "Cancelled";
+                existing.UpdatedAt = now;
+            }
+
             var subscription = new UserSubscription
             {
                 UserId = dto.UserId,
                 SubscriptionPlanId = dto.SubscriptionPlanId,
                 StartDate = startDate,
-                ExpiresAt = startDate.AddDays(plan.DurationDays),
+                ExpiresAt = startDate.AddDays(plan.DurationDays + Math.Max(0, carriedDays)),
                 Status = "Active",
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = now
             };
 
             _context.UserSubscriptions.Add(subscription);

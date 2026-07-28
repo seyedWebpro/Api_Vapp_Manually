@@ -151,14 +151,15 @@ internal sealed class ReferralProgramTestContext : IDisposable
 
     private static IReferralProgramService CreateService(Api_Context context)
     {
-        return new ReferralProgramService(
-            context,
-            new ReferralProgramRepository(context),
-            new ReferralProgramDraftRepository(context),
-            new ReferralUsageRepository(context),
-            new FakeSmsService(),
-            new FakeDeliveryTrackingService(),
-            NullLogger<ReferralProgramService>.Instance);
+            return new ReferralProgramService(
+                context,
+                new ReferralProgramRepository(context),
+                new ReferralProgramDraftRepository(context),
+                new ReferralUsageRepository(context),
+                new FakeSmsService(),
+                new FakeDeliveryTrackingService(),
+                new Api_Vapp.Tests.Shared.NoOpAuditService(),
+                NullLogger<ReferralProgramService>.Instance);
     }
 
     private async Task SeedAsync()

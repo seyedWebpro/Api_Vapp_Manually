@@ -6,6 +6,7 @@ using Api_Vapp.DTOs.File;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
 using Api_Vapp.Services.Admin;
+using Api_Vapp.Services.Audit;
 using Api_Vapp.Utilities;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -16,15 +17,18 @@ namespace Api_Vapp.Services
     {
         private readonly Api_Context _context;
         private readonly IFileUploadService _fileUploadService;
+        private readonly IAuditService _audit;
         private readonly ILogger<UserSupportTicketService> _logger;
 
         public UserSupportTicketService(
             Api_Context context,
             IFileUploadService fileUploadService,
+            IAuditService audit,
             ILogger<UserSupportTicketService> logger)
         {
             _context = context;
             _fileUploadService = fileUploadService;
+            _audit = audit;
             _logger = logger;
         }
 
@@ -220,6 +224,16 @@ namespace Api_Vapp.Services
 
                 await transaction.CommitAsync();
 
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Admin,
+                    Action = AuditActions.SupportTicketCreated,
+                    EntityType = AuditEntityTypes.SupportTicket,
+                    EntityId = ticket.Id.ToString(),
+                    ActorUserId = userId,
+                    After = new { subject = ticket.Subject, module = ticket.Module, priority = ticket.Priority, hasAttachment }
+                });
+
                 var reloaded = await LoadUserTicketAsync(userId, ticket.Id);
                 _logger.LogInformation("Support ticket created — {TicketId} for user {UserId}", ticket.Id, userId);
                 return ApiResponse<SupportTicketResponseDto>.CreateSuccess(
@@ -299,6 +313,16 @@ namespace Api_Vapp.Services
                 ticket.UpdatedAt = DateTime.UtcNow;
                 await _context.SaveChangesAsync();
 
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Admin,
+                    Action = AuditActions.SupportTicketUserReplied,
+                    EntityType = AuditEntityTypes.SupportTicket,
+                    EntityId = ticket.Id.ToString(),
+                    ActorUserId = userId,
+                    After = new { hasAttachment, status = ticket.Status }
+                });
+
                 var reloaded = await LoadUserTicketAsync(userId, ticketId);
                 return ApiResponse<SupportTicketResponseDto>.CreateSuccess(
                     AdminSupportTicketService.MapTicket(reloaded!),
@@ -338,6 +362,15 @@ namespace Api_Vapp.Services
 
                 // پاک‌سازی فایل‌های دیسک بعد از soft-delete موفق
                 await SafeDeleteTicketFilesAsync(ticketId);
+
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Admin,
+                    Action = AuditActions.SupportTicketUserDeleted,
+                    EntityType = AuditEntityTypes.SupportTicket,
+                    EntityId = ticket.Id.ToString(),
+                    ActorUserId = userId
+                });
 
                 _logger.LogInformation("User {UserId} deleted ticket {TicketId} with file cleanup", userId, ticketId);
                 return ApiResponse<bool>.CreateSuccess(true, "تیکت حذف شد");

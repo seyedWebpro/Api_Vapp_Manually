@@ -194,14 +194,7 @@ namespace Api_Vapp.Data
             {
                 if (existingByCode.TryGetValue(definition.Code, out var feature))
                 {
-                    if (SubscriptionFeatureCodes.IsKnown(feature.Code))
-                    {
-                        feature.Name = definition.Name;
-                        feature.Description = definition.Description;
-                        feature.SortOrder = definition.SortOrder;
-                        feature.UpdatedAt = DateTime.UtcNow;
-                    }
-
+                    // امکانات سیستمی از قبل وجود دارند؛ ویرایش ادمین را بازنویسی نکن
                     continue;
                 }
 

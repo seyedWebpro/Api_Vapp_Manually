@@ -1,5 +1,8 @@
+using Api_Vapp.Constants;
 using Api_Vapp.Data;
 using Api_Vapp.Interfaces;
+using Api_Vapp.Models;
+using Api_Vapp.Services.Audit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -55,6 +58,7 @@ namespace Api_Vapp.Services.BackgroundServices
             using var scope = _serviceProvider.CreateScope();
             var context = scope.ServiceProvider.GetRequiredService<Api_Context>();
             var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
+            var auditService = scope.ServiceProvider.GetRequiredService<IAuditService>();
 
             var now = DateTime.UtcNow;
 
@@ -88,6 +92,16 @@ namespace Api_Vapp.Services.BackgroundServices
                     
                     if (result.Success)
                     {
+                        await auditService.WriteAsync(new AuditEntry
+                        {
+                            Category = AuditCategories.Message,
+                            Action = AuditActions.CampaignAutoSent,
+                            EntityType = AuditEntityTypes.MessageCampaign,
+                            EntityId = c.Id.ToString(),
+                            ActorUserId = c.UserId,
+                            Source = AuditSources.Background
+                        }, cancellationToken);
+
                         _logger.LogInformation("Scheduled campaign {CampaignId} sent successfully", c.Id);
                     }
                     else

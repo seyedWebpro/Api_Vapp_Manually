@@ -459,14 +459,15 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.IFileUploadService, Api_Vapp.Serv
 
 #region dbContext
 var connectionString = SqlServerConnectionConfiguration.GetConnectionString(builder.Configuration);
+// EF Core 9: ثبت همزمان Factory + AddDbContext باعث خطای
+// "Cannot resolve scoped IDbContextOptionsConfiguration from root provider" می‌شود.
+// الگوی صحیح: فقط Factory + Scoped wrapper برای Api_Context.
 builder.Services.AddDbContextFactory<Api_Context>(options =>
 {
     options.UseSqlServer(connectionString);
 });
-builder.Services.AddDbContext<Api_Context>(options =>
-{
-    options.UseSqlServer(connectionString);
-});
+builder.Services.AddScoped<Api_Context>(sp =>
+    sp.GetRequiredService<IDbContextFactory<Api_Context>>().CreateDbContext());
 #endregion
 
 #region Cache Configuration

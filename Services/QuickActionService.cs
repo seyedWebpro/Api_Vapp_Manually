@@ -1,9 +1,11 @@
+using Api_Vapp.Constants;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.DTOs.QuickAction;
 using Api_Vapp.DTOs.Message;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
 using Api_Vapp.Data;
+using Api_Vapp.Services.Audit;
 using Api_Vapp.Utilities;
 using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore;
@@ -20,6 +22,7 @@ namespace Api_Vapp.Services
         private readonly IContactNotebookRepository _notebookRepository;
         private readonly IMessageService _messageService;
         private readonly Api_Context _context;
+        private readonly IAuditService _audit;
         private readonly ILogger<QuickActionService> _logger;
         private readonly IFileUploadService _fileUploadService;
 
@@ -29,6 +32,7 @@ namespace Api_Vapp.Services
             IContactNotebookRepository notebookRepository,
             IMessageService messageService,
             Api_Context context,
+            IAuditService audit,
             ILogger<QuickActionService> logger,
             IFileUploadService fileUploadService)
         {
@@ -37,6 +41,7 @@ namespace Api_Vapp.Services
             _notebookRepository = notebookRepository;
             _messageService = messageService;
             _context = context;
+            _audit = audit;
             _logger = logger;
             _fileUploadService = fileUploadService;
         }
@@ -83,6 +88,16 @@ namespace Api_Vapp.Services
                         tempQuickAction.UpdatedAt = DateTime.UtcNow;
                         await _quickActionRepository.UpdateAsync(tempQuickAction);
 
+                        await _audit.WriteAsync(new AuditEntry
+                        {
+                            Category = AuditCategories.Message,
+                            Action = AuditActions.QuickActionCreated,
+                            EntityType = AuditEntityTypes.QuickAction,
+                            EntityId = tempQuickAction.Id.ToString(),
+                            ActorUserId = userId,
+                            After = new { name = tempQuickAction.Name, actionType = tempQuickAction.ActionType }
+                        });
+
                         _logger.LogInformation("Quick action created successfully with ID: {Id} by user: {UserId}", 
                             tempQuickAction.Id, userId);
 
@@ -117,6 +132,16 @@ namespace Api_Vapp.Services
 
                     await _quickActionRepository.AddAsync(quickAction);
                     // SaveChangesAsync is called inside AddAsync
+
+                    await _audit.WriteAsync(new AuditEntry
+                    {
+                        Category = AuditCategories.Message,
+                        Action = AuditActions.QuickActionCreated,
+                        EntityType = AuditEntityTypes.QuickAction,
+                        EntityId = quickAction.Id.ToString(),
+                        ActorUserId = userId,
+                        After = new { name = quickAction.Name, actionType = quickAction.ActionType }
+                    });
 
                     _logger.LogInformation("Quick action created successfully with ID: {Id} by user: {UserId}", 
                         quickAction.Id, userId);
@@ -269,6 +294,16 @@ namespace Api_Vapp.Services
                 await _quickActionRepository.UpdateAsync(action);
                 // SaveChangesAsync is called inside UpdateAsync
 
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Message,
+                    Action = AuditActions.QuickActionUpdated,
+                    EntityType = AuditEntityTypes.QuickAction,
+                    EntityId = action.Id.ToString(),
+                    ActorUserId = userId,
+                    After = new { name = action.Name, actionType = action.ActionType, isActive = action.IsActive }
+                });
+
                 _logger.LogInformation("Quick action updated successfully with ID: {Id}", id);
 
                 return ApiResponse<QuickActionResponseDto>.CreateSuccess(
@@ -312,6 +347,15 @@ namespace Api_Vapp.Services
 
                 await _quickActionRepository.UpdateAsync(action);
                 // SaveChangesAsync is called inside UpdateAsync
+
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Message,
+                    Action = AuditActions.QuickActionDeleted,
+                    EntityType = AuditEntityTypes.QuickAction,
+                    EntityId = action.Id.ToString(),
+                    ActorUserId = userId
+                });
 
                 _logger.LogInformation("Quick action deleted successfully with ID: {Id}", id);
 

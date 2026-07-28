@@ -16,5 +16,10 @@ namespace Api_Vapp.Constants
         public const string BusinessCard = "business_card";
         public const string Form = "form";
         public const string System = "system";
+        public const string LuckyWheel = "lucky_wheel";
+        public const string Referral = "referral";
+        public const string NumberSeeker = "number_seeker";
+        public const string Contact = "contact";
+        public const string Role = "role";
     }
 }
