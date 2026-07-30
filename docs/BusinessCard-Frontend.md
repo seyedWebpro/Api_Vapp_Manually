@@ -163,7 +163,37 @@ Public URL مثال: `https://ok-sms.ir/card/{slug}` (از `BusinessCard:PublicB
 
 ## آپلود فایل
 
-از همان `IFileUploadService` با `entityType = "businesscard"` استفاده کنید.
+الگوی مشابه Contact/User:
+
+`POST /api/BusinessCard/{id}/upload-image`  
+`Content-Type: multipart/form-data`  
+`Authorization: Bearer <jwt>`
+
+فیلدها:
+- `imageFile` (الزامی)
+- `imageType` (اختیاری): `logo` | `slider` | `service` | `image`
+
+رفتار:
+- اعتبارسنجی با `SecureFileValidator` (فقط تصویر، حداکثر ۱۰MB)
+- پوشه: `uploads/businesscard/{id}/{logo|slider|service|images}/...`
+- پاسخ `data` = URL قابل نمایش (`GetFileUrl`) مثل بقیه ماژول‌ها
+- `imageType=logo` → لوگوی قبلی حذف و مسیر در DB ذخیره می‌شود
+- `slider` / `service` → فقط آپلود؛ URL را در `update-sections` ذخیره کنید
+
+نمونه پاسخ:
+
+```json
+{
+  "success": true,
+  "message": "لوگو با موفقیت آپلود شد",
+  "data": "/uploads/businesscard/12/logo/7f4d1f....png"
+}
+```
+
+نگاشت:
+- لوگو → همین endpoint با `imageType=logo` (نیازی به update-info جدا برای لوگو نیست)
+- بنر اسلایدر → `imageType=slider` سپس `sliderImages[].imageUrl`
+- عکس تعرفه → `imageType=service` سپس `serviceItems[].imageUrl`
 
 ---
 

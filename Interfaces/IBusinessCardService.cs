@@ -1,5 +1,6 @@
 using Api_Vapp.DTOs.BusinessCard;
 using Api_Vapp.DTOs.Common;
+using Microsoft.AspNetCore.Http;
 
 namespace Api_Vapp.Interfaces
 {
@@ -20,5 +21,7 @@ namespace Api_Vapp.Interfaces
         Task<ApiResponse<bool>> DeleteAsync(int id, int userId);
 
         Task<ApiResponse<BusinessCardResponseDto>> SetActiveStatusAsync(int id, int userId, bool isActive);
+
+        Task<ApiResponse<string>> UploadImageAsync(int id, int userId, IFormFile imageFile, string? imageType = null);
     }
 }

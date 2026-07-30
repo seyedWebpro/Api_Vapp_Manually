@@ -417,8 +417,12 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.INumberSeekerTaskRepository, Api_
 builder.Services.AddSingleton<Api_Vapp.Interfaces.INumberSeekerRateLimiter, Api_Vapp.Services.NumberSeekerRateLimiter>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.INumberSeekerService, Api_Vapp.Services.NumberSeekerService>();
 
-// ثبت سرویس تنظیمات اعلان‌ها
+// ثبت سرویس تنظیمات اعلان‌ها و FCM
+builder.Services.Configure<Api_Vapp.Configuration.FirebaseOptions>(
+    builder.Configuration.GetSection(Api_Vapp.Configuration.FirebaseOptions.SectionName));
 builder.Services.AddScoped<Api_Vapp.Interfaces.INotificationSettingsService, Api_Vapp.Services.NotificationSettingsService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IUserDeviceService, Api_Vapp.Services.UserDeviceService>();
+builder.Services.AddSingleton<Api_Vapp.Interfaces.IPushNotificationService, Api_Vapp.Services.PushNotificationService>();
 
 // ثبت سرویس‌های پنل ادمین
 builder.Services.AddScoped<Api_Vapp.Interfaces.ISubscriptionEntitlementService, Api_Vapp.Services.SubscriptionEntitlementService>();

@@ -34,6 +34,7 @@ namespace Api_Vapp.Data
         public DbSet<CashbackTransaction> CashbackTransactions { get; set; }
         public DbSet<CashbackDraft> CashbackDrafts { get; set; }
         public DbSet<UserNotificationSettings> UserNotificationSettings { get; set; }
+        public DbSet<UserDevice> UserDevices { get; set; }
         public DbSet<ContactCashbackBalance> ContactCashbackBalances { get; set; }
         public DbSet<ManualCashbackTransaction> ManualCashbackTransactions { get; set; }
 
@@ -950,6 +951,37 @@ namespace Api_Vapp.Data
 
                 // ایندکس‌ها
                 entity.HasIndex(uns => uns.UserId).IsUnique();
+            });
+
+            // تنظیمات UserDevice (FCM)
+            modelBuilder.Entity<UserDevice>(entity =>
+            {
+                entity.HasKey(d => d.Id);
+                entity.Property(d => d.Id).ValueGeneratedOnAdd();
+
+                entity.Property(d => d.UserId).IsRequired();
+
+                entity.Property(d => d.FcmToken)
+                    .IsRequired()
+                    .HasMaxLength(512);
+
+                entity.Property(d => d.IsActive)
+                    .HasDefaultValue(true);
+
+                entity.Property(d => d.CreatedAt)
+                    .HasDefaultValueSql("GETUTCDATE()");
+
+                entity.Property(d => d.LastSeenAt)
+                    .HasDefaultValueSql("GETUTCDATE()");
+
+                entity.HasOne(d => d.User)
+                    .WithMany()
+                    .HasForeignKey(d => d.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasIndex(d => d.FcmToken).IsUnique();
+                entity.HasIndex(d => d.UserId);
+                entity.HasIndex(d => new { d.UserId, d.IsActive });
             });
 
             // تنظیمات ContactCashbackBalance

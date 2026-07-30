@@ -78,6 +78,21 @@ namespace Api_Vapp.DTOs.File
         public const string SubFolder_Images = "images";
 
         /// <summary>
+        /// لوگوی کارت ویزیت
+        /// </summary>
+        public const string SubFolder_Logo = "logo";
+
+        /// <summary>
+        /// تصاویر اسلایدر کارت ویزیت
+        /// </summary>
+        public const string SubFolder_Slider = "slider";
+
+        /// <summary>
+        /// تصاویر تعرفه / سرویس کارت ویزیت
+        /// </summary>
+        public const string SubFolder_Service = "service";
+
+        /// <summary>
         /// ویدیوها
         /// </summary>
         public const string SubFolder_Videos = "videos";

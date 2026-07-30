@@ -141,6 +141,44 @@ namespace Api_Vapp.Controller
         }
 
         /// <summary>
+        /// آپلود تصویر کارت ویزیت (لوگو / اسلایدر / تعرفه)
+        /// </summary>
+        /// <remarks>
+        /// الگوی مشابه Contact/User:
+        /// - multipart/form-data
+        /// - فیلد فایل: imageFile
+        /// - imageType اختیاری: logo | slider | service | image
+        /// - برای logo مسیر در DB ذخیره می‌شود (جایگزین لوگوی قبلی)
+        /// - برای slider/service فقط URL برمی‌گردد؛ کلاینت در update-sections ذخیره می‌کند
+        /// </remarks>
+        [HttpPost("{id}/upload-image")]
+        [Consumes("multipart/form-data")]
+        [ProducesResponseType(typeof(ApiResponse<string>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<string>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(ApiResponse<string>), StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(typeof(ApiResponse<string>), StatusCodes.Status404NotFound)]
+        [ProducesResponseType(typeof(ApiResponse<string>), StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<ApiResponse<string>>> UploadImage(int id, [FromForm] UploadBusinessCardImageDto dto)
+        {
+            if (dto == null || dto.ImageFile == null)
+            {
+                return StatusCode(400, ApiResponse<string>.BadRequest(
+                    "فایل عکس ارسال نشده است. لطفاً یک فایل تصویری انتخاب کنید",
+                    errorCode: ErrorCodes.ValidationFailed));
+            }
+
+            if (!ModelState.IsValid)
+            {
+                var errors = ExtractModelStateErrors();
+                return StatusCode(400, ApiResponse<string>.BadRequest("داده‌های ورودی نامعتبر است", errors));
+            }
+
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _businessCardService.UploadImageAsync(id, userId, dto.ImageFile, dto.ImageType);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        /// <summary>
         /// انتشار کارت ویزیت و دریافت لینک عمومی
         /// </summary>
         [HttpPost("{id}/publish")]

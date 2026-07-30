@@ -6,6 +6,7 @@ using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
 using Api_Vapp.Services.Audit;
 using Api_Vapp.Utilities;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
@@ -78,7 +79,7 @@ namespace Api_Vapp.Services
                 {
                     UserId = userId,
                     Title = createDto.Title?.Trim() ?? string.Empty,
-                    LogoUrl = NormalizeOptionalText(createDto.LogoUrl),
+                    LogoUrl = NormalizeStoredFilePath(createDto.LogoUrl),
                     Slug = slug,
                     TemplateKey = NormalizeOptionalText(createDto.TemplateKey),
                     Status = BusinessCardStatus.Draft,
@@ -179,11 +180,27 @@ namespace Api_Vapp.Services
 
                 if (updateDto.ClearLogo == true)
                 {
+                    if (!string.IsNullOrWhiteSpace(card.LogoUrl))
+                    {
+                        try
+                        {
+                            await _fileUploadService.DeleteFileAsync(
+                                card.LogoUrl,
+                                FileUploadConstants.EntityType_BusinessCard,
+                                id,
+                                FileUploadConstants.SubFolder_Logo);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "خطا در حذف فایل لوگوی کارت {CardId}", id);
+                        }
+                    }
+
                     card.LogoUrl = null;
                 }
                 else if (updateDto.LogoUrl != null)
                 {
-                    card.LogoUrl = NormalizeOptionalText(updateDto.LogoUrl);
+                    card.LogoUrl = NormalizeStoredFilePath(updateDto.LogoUrl);
                 }
 
                 card.UpdatedAt = DateTime.UtcNow;
@@ -425,7 +442,7 @@ namespace Api_Vapp.Services
                 {
                     Id = card.Id,
                     Title = card.Title,
-                    LogoUrl = card.LogoUrl,
+                    LogoUrl = ToPublicFileUrl(card.LogoUrl),
                     Slug = card.Slug,
                     Status = card.Status.ToString(),
                     IsActive = GetEffectiveIsActive(card),
@@ -600,6 +617,152 @@ namespace Api_Vapp.Services
             }
         }
 
+        public async Task<ApiResponse<string>> UploadImageAsync(int id, int userId, IFormFile imageFile, string? imageType = null)
+        {
+            try
+            {
+                var validationError = SecureFileValidator.ValidateImage(
+                    imageFile,
+                    SecureFileValidator.ContactImageMaxBytes,
+                    "۱۰ مگابایت");
+                if (validationError != null)
+                {
+                    return ApiResponse<string>.BadRequest(validationError, errorCode: ErrorCodes.ValidationFailed);
+                }
+
+                var imageSubFolder = ResolveImageSubFolder(imageType);
+                if (imageSubFolder == null)
+                {
+                    return ApiResponse<string>.BadRequest(
+                        "imageType نامعتبر است (مقادیر مجاز: logo, slider, service, image)",
+                        errorCode: ErrorCodes.ValidationFailed);
+                }
+
+                var isLogoUpload = string.Equals(
+                    imageSubFolder,
+                    FileUploadConstants.SubFolder_Logo,
+                    StringComparison.Ordinal);
+
+                if (isLogoUpload)
+                {
+                    return await UploadAndPersistLogoAsync(id, userId, imageFile);
+                }
+
+                var ownershipError = await EnsureCardOwnedAsync(id, userId);
+                if (ownershipError != null)
+                {
+                    return ownershipError;
+                }
+
+                var relativePath = await _fileUploadService.UploadFileAsync(
+                    imageFile,
+                    FileUploadConstants.EntityType_BusinessCard,
+                    id,
+                    imageSubFolder);
+
+                var imageUrl = _fileUploadService.GetFileUrl(relativePath);
+                _logger.LogInformation(
+                    "تصویر کارت ویزیت آپلود شد — CardId: {CardId}, SubFolder: {SubFolder}",
+                    id,
+                    imageSubFolder);
+
+                return ApiResponse<string>.CreateSuccess(imageUrl, "تصویر با موفقیت آپلود شد");
+            }
+            catch (ArgumentException ex)
+            {
+                return ApiResponse<string>.BadRequest(
+                    ControlledErrorHelper.SanitizeArgumentMessage(ex.Message, ControlledErrorHelper.FileUploadFailed),
+                    errorCode: ErrorCodes.ValidationFailed);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error uploading business card image for card {CardId} and user {UserId}", id, userId);
+                return ApiResponse<string>.InternalServerError(ControlledErrorHelper.FileUploadFailed);
+            }
+        }
+
+        private async Task<ApiResponse<string>> UploadAndPersistLogoAsync(int id, int userId, IFormFile imageFile)
+        {
+            var cardResult = await GetTrackedCardForUserAsync(id, userId);
+            if (cardResult.Error != null)
+            {
+                return ConvertCardErrorToStringResponse(cardResult.Error);
+            }
+
+            var card = cardResult.Card!;
+
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(card.LogoUrl))
+                {
+                    try
+                    {
+                        await _fileUploadService.DeleteFileAsync(
+                            card.LogoUrl,
+                            FileUploadConstants.EntityType_BusinessCard,
+                            id,
+                            FileUploadConstants.SubFolder_Logo);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "خطا در حذف لوگوی قبلی کارت {CardId}", id);
+                    }
+                }
+
+                var relativePath = await _fileUploadService.UploadFileAsync(
+                    imageFile,
+                    FileUploadConstants.EntityType_BusinessCard,
+                    id,
+                    FileUploadConstants.SubFolder_Logo);
+
+                card.LogoUrl = relativePath;
+                card.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                BusinessCardPublicService.InvalidatePublicCache(_cache, card.Slug);
+
+                var imageUrl = _fileUploadService.GetFileUrl(relativePath);
+                _logger.LogInformation("لوگوی کارت ویزیت آپلود شد — CardId: {CardId}", id);
+
+                return ApiResponse<string>.CreateSuccess(imageUrl, "لوگو با موفقیت آپلود شد");
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                _logger.LogError(ex, "خطا در آپلود لوگوی کارت {CardId}", id);
+
+                if (ex is ArgumentException)
+                {
+                    return ApiResponse<string>.BadRequest(
+                        ControlledErrorHelper.SanitizeArgumentMessage(ex.Message, ControlledErrorHelper.FileUploadFailed),
+                        errorCode: ErrorCodes.ValidationFailed);
+                }
+
+                throw;
+            }
+        }
+
+        private async Task<ApiResponse<string>?> EnsureCardOwnedAsync(int id, int userId)
+        {
+            var owned = await _businessCardRepository.GetOwnedCardAsync(id, userId);
+            if (owned != null)
+            {
+                return null;
+            }
+
+            var anyCard = await _businessCardRepository.GetByIdAsync(id);
+            if (anyCard == null)
+            {
+                return ApiResponse<string>.NotFound("کارت ویزیت یافت نشد");
+            }
+
+            return ApiResponse<string>.Forbidden(
+                ControlledErrorHelper.Unauthorized,
+                ErrorCodes.Forbidden);
+        }
+
         private async Task<ApiResponse<BusinessCardResponseDto>?> ValidateAndApplyPublishAsync(
             BusinessCard card,
             int cardId,
@@ -677,6 +840,39 @@ namespace Api_Vapp.Services
                 ErrorCodes.Forbidden));
         }
 
+        private static ApiResponse<string> ConvertCardErrorToStringResponse(ApiResponse<BusinessCardResponseDto> errorResponse)
+        {
+            if (errorResponse.StatusCode == 404)
+            {
+                return ApiResponse<string>.NotFound(errorResponse.Message);
+            }
+
+            if (errorResponse.StatusCode == 403)
+            {
+                return ApiResponse<string>.Forbidden(errorResponse.Message, errorResponse.ErrorCode);
+            }
+
+            return ApiResponse<string>.BadRequest(errorResponse.Message, errorResponse.Errors, errorResponse.ErrorCode);
+        }
+
+        private static string? ResolveImageSubFolder(string? imageType)
+        {
+            var normalized = NormalizeOptionalText(imageType);
+            if (string.IsNullOrEmpty(normalized))
+            {
+                return FileUploadConstants.SubFolder_Images;
+            }
+
+            return normalized.ToLowerInvariant() switch
+            {
+                "logo" => FileUploadConstants.SubFolder_Logo,
+                "slider" => FileUploadConstants.SubFolder_Slider,
+                "service" => FileUploadConstants.SubFolder_Service,
+                "image" => FileUploadConstants.SubFolder_Images,
+                _ => null
+            };
+        }
+
         private async Task<(string? NormalizedSlug, ApiResponse<BusinessCardResponseDto>? Error)> ValidateSlugAsync(
             string slug,
             int? excludeCardId)
@@ -722,7 +918,7 @@ namespace Api_Vapp.Services
             var order = 0;
             foreach (var image in images.OrderBy(i => i.DisplayOrder))
             {
-                var url = NormalizeOptionalText(image.ImageUrl);
+                var url = NormalizeStoredFilePath(image.ImageUrl);
                 if (url == null)
                 {
                     continue;
@@ -745,7 +941,7 @@ namespace Api_Vapp.Services
                 {
                     Title = item.Title.Trim(),
                     Price = item.Price,
-                    ImageUrl = NormalizeOptionalText(item.ImageUrl),
+                    ImageUrl = NormalizeStoredFilePath(item.ImageUrl),
                     DisplayOrder = order++
                 });
             }
@@ -843,7 +1039,7 @@ namespace Api_Vapp.Services
             {
                 Id = card.Id,
                 Title = card.Title,
-                LogoUrl = card.LogoUrl,
+                LogoUrl = ToPublicFileUrl(card.LogoUrl),
                 Slug = card.Slug,
                 TemplateKey = card.TemplateKey,
                 TemplateId = card.TemplateId,
@@ -867,7 +1063,7 @@ namespace Api_Vapp.Services
                     .OrderBy(i => i.DisplayOrder)
                     .Select(i => new BusinessCardSliderImageDto
                     {
-                        ImageUrl = i.ImageUrl,
+                        ImageUrl = ToPublicFileUrl(i.ImageUrl) ?? i.ImageUrl,
                         DisplayOrder = i.DisplayOrder
                     })
                     .ToList(),
@@ -878,7 +1074,7 @@ namespace Api_Vapp.Services
                         Id = i.Id,
                         Title = i.Title,
                         Price = i.Price,
-                        ImageUrl = i.ImageUrl,
+                        ImageUrl = ToPublicFileUrl(i.ImageUrl),
                         DisplayOrder = i.DisplayOrder
                     })
                     .ToList(),
@@ -886,6 +1082,39 @@ namespace Api_Vapp.Services
                 UpdatedAt = EnsureUtc(card.UpdatedAt),
                 PublishedAt = EnsureUtc(card.PublishedAt)
             };
+        }
+
+        private string? ToPublicFileUrl(string? storedPath)
+        {
+            if (string.IsNullOrWhiteSpace(storedPath))
+            {
+                return null;
+            }
+
+            return _fileUploadService.GetFileUrl(storedPath);
+        }
+
+        /// <summary>
+        /// مسیر ذخیره‌شده باید نسبی بماند (مثل Contact/User)، نه URL کامل پاسخ GetFileUrl.
+        /// </summary>
+        private static string? NormalizeStoredFilePath(string? value)
+        {
+            var normalized = NormalizeOptionalText(value);
+            if (normalized == null)
+            {
+                return null;
+            }
+
+            if (normalized.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+                || normalized.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            {
+                if (Uri.TryCreate(normalized, UriKind.Absolute, out var uri))
+                {
+                    normalized = uri.AbsolutePath.TrimStart('/');
+                }
+            }
+
+            return normalized.TrimStart('/');
         }
 
         private string? BuildPublicUrl(string? slug)
