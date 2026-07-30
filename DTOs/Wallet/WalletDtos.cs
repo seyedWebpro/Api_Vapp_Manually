@@ -158,7 +158,7 @@ namespace Api_Vapp.DTOs.Wallet
     public class ChargeWalletRequestDto
     {
         /// <summary>
-        /// مبلغ شارژ (تومان) - حداقل 10,000 تومان
+        /// مبلغ درخواستی شارژ کیف پول (تومان) — همین مبلغ پس از پرداخت موفق به کیف پول واریز می‌شود
         /// </summary>
         [Required(ErrorMessage = "مبلغ شارژ الزامی است")]
         [Range(10000, 100000000, ErrorMessage = "مبلغ شارژ باید بین 10,000 تا 100,000,000 تومان باشد")]
@@ -174,6 +174,12 @@ namespace Api_Vapp.DTOs.Wallet
         /// URL بازگشت بعد از پرداخت
         /// </summary>
         public string? CallbackUrl { get; set; }
+
+        /// <summary>
+        /// کد معرفی اختیاری (مثلاً @ali1254) — در صورت اعتبار، تخفیف روی مبلغ درگاه اعمال می‌شود
+        /// </summary>
+        [MaxLength(50, ErrorMessage = "کد معرفی نمی‌تواند بیشتر از ۵۰ کاراکتر باشد")]
+        public string? ReferralCode { get; set; }
     }
 
     /// <summary>
@@ -192,9 +198,34 @@ namespace Api_Vapp.DTOs.Wallet
         public string OrderId { get; set; } = string.Empty;
 
         /// <summary>
-        /// مبلغ پرداخت (تومان)
+        /// مبلغ قابل پرداخت در درگاه (تومان) — پس از اعمال تخفیف رفرال
         /// </summary>
         public decimal Amount { get; set; }
+
+        /// <summary>
+        /// مبلغ درخواستی شارژ (مبلغی که به کیف پول واریز می‌شود)
+        /// </summary>
+        public decimal RequestedAmount { get; set; }
+
+        /// <summary>
+        /// مبلغ تخفیف اعمال‌شده
+        /// </summary>
+        public decimal DiscountAmount { get; set; }
+
+        /// <summary>
+        /// درصد تخفیف
+        /// </summary>
+        public decimal DiscountPercent { get; set; }
+
+        /// <summary>
+        /// آیا کد معرفی اعمال شد؟
+        /// </summary>
+        public bool ReferralApplied { get; set; }
+
+        /// <summary>
+        /// کد معرفی نرمال‌شده (در صورت اعمال)
+        /// </summary>
+        public string? ReferralCode { get; set; }
 
         /// <summary>
         /// URL انتقال به درگاه پرداخت

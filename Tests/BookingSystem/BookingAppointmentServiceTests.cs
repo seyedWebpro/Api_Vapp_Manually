@@ -71,6 +71,52 @@ public class BookingAppointmentServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task LookupPublicBookingStatus_Valid_ReturnsPending()
+    {
+        var (systemId, _) = await _ctx.CreateConfirmedSystemAsync();
+        var system = await _ctx.SystemService.GetByIdAsync(systemId, _ctx.OwnerUserId);
+        var serviceId = system.Data!.Services.First().Id;
+        var slug = system.Data.Slug;
+        var date = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(7));
+        var startUtc = (await _ctx.AppointmentService.GetAvailableSlotsAsync(slug, serviceId, date)).Data!.Slots.First().StartUtc;
+
+        var created = await _ctx.AppointmentService.CreatePublicBookingAsync(slug, new CreatePublicBookingDto
+        {
+            ServiceId = serviceId,
+            StartUtc = startUtc,
+            CustomerFullName = "علی تست",
+            CustomerMobile = "09123456789"
+        });
+
+        var lookup = await _ctx.AppointmentService.LookupPublicBookingStatusAsync(slug, new LookupPublicBookingDto
+        {
+            AppointmentNumber = created.Data!.Appointment.AppointmentNumber,
+            CustomerMobile = "09123456789"
+        });
+
+        BookingApiAssertions.AssertSuccess(lookup);
+        Assert.Equal(BookingAppointmentStatuses.Pending, lookup.Data!.Status);
+        Assert.Equal("در انتظار تأیید", lookup.Data.StatusTitle);
+        Assert.Equal("0912***6789", lookup.Data.CustomerMobileMasked);
+    }
+
+    [Fact]
+    public async Task LookupPublicBookingStatus_WrongMobile_Returns404()
+    {
+        var (systemId, _) = await _ctx.CreateConfirmedSystemAsync();
+        var appointmentId = await BookSampleAsync(systemId);
+        var slug = (await _ctx.SystemService.GetByIdAsync(systemId, _ctx.OwnerUserId)).Data!.Slug;
+
+        var lookup = await _ctx.AppointmentService.LookupPublicBookingStatusAsync(slug, new LookupPublicBookingDto
+        {
+            AppointmentNumber = appointmentId,
+            CustomerMobile = "09120000000"
+        });
+
+        BookingApiAssertions.AssertFailure(lookup, 404);
+    }
+
+    [Fact]
     public async Task CreatePublicBooking_DuplicateSlot_Returns400()
     {
         var (systemId, _) = await _ctx.CreateConfirmedSystemAsync();

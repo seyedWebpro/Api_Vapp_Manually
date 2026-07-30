@@ -563,3 +563,52 @@ POST {{Api_Vapp_HostAddress}}/api/BusinessCard/1/delete
 
 ### عمومی
 GET {{Api_Vapp_HostAddress}}/api/BusinessCardPublic/zahra-salon-test
+
+############################################
+### Wallet Referral (معرفی شارژ کیف پول)
+############################################
+
+### اطلاعات رفرال کاربر
+GET {{Api_Vapp_HostAddress}}/api/Wallet/referral
+Authorization: Bearer {{token}}
+
+### اعتبارسنجی کد معرفی + پیش‌نمایش مبالغ
+POST {{Api_Vapp_HostAddress}}/api/Wallet/referral/validate
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "amount": 1500000,
+  "referralCode": "@u2"
+}
+
+### شارژ کیف پول با کد معرفی
+POST {{Api_Vapp_HostAddress}}/api/Wallet/charge
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "amount": 1500000,
+  "gateway": "Behpardakht",
+  "referralCode": "@u2"
+}
+
+### پروفایل (شامل referralCode)
+GET {{Api_Vapp_HostAddress}}/api/User/profile
+Authorization: Bearer {{token}}
+
+### ادمین — تنظیمات رفرال
+GET {{Api_Vapp_HostAddress}}/api/Admin/WalletReferralSetting
+Authorization: Bearer {{adminToken}}
+
+### ادمین — به‌روزرسانی تنظیمات
+POST {{Api_Vapp_HostAddress}}/api/Admin/WalletReferralSetting/update
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "isEnabled": true,
+  "discountPercent": 10,
+  "bonusPercent": 10,
+  "descriptionTemplate": "کافیه کاربر معرفی‌شده این کد رو موقع شارژ کیف پول وارد کنه؛ در این صورت {DiscountPercent}٪ تخفیف براشون اعمال می‌شه و {BonusPercent}٪ پاداش هم به شما واریز می‌شه."
+}

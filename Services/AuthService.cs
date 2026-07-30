@@ -23,6 +23,7 @@ namespace Api_Vapp.Services
         private readonly ITokenBlacklistService _tokenBlacklistService;
         private readonly IMemoryCache _cache;
         private readonly Api_Context _context;
+        private readonly IWalletReferralService _walletReferralService;
         private readonly IAuditService _audit;
         private readonly ILogger<AuthService> _logger;
         
@@ -41,6 +42,7 @@ namespace Api_Vapp.Services
             ITokenBlacklistService tokenBlacklistService,
             IMemoryCache cache,
             Api_Context context,
+            IWalletReferralService walletReferralService,
             IAuditService audit,
             ILogger<AuthService> logger)
         {
@@ -52,6 +54,7 @@ namespace Api_Vapp.Services
             _tokenBlacklistService = tokenBlacklistService;
             _cache = cache;
             _context = context;
+            _walletReferralService = walletReferralService;
             _audit = audit;
             _logger = logger;
         }
@@ -534,6 +537,7 @@ namespace Api_Vapp.Services
                     };
 
                     await _userRepository.AddAsync(user);
+                    await _walletReferralService.EnsureReferralCodeAsync(user);
 
                     // تولید توکن‌ها
                     var accessToken = await GenerateAccessTokenWithRolesAsync(user);

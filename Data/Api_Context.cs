@@ -30,6 +30,8 @@ namespace Api_Vapp.Data
         // کیف پول و مالی
         public DbSet<WalletTransaction> WalletTransactions { get; set; }
         public DbSet<Payment> Payments { get; set; }
+        public DbSet<WalletReferralSetting> WalletReferralSettings { get; set; }
+        public DbSet<WalletReferralReward> WalletReferralRewards { get; set; }
         public DbSet<Cashback> Cashbacks { get; set; }
         public DbSet<CashbackTransaction> CashbackTransactions { get; set; }
         public DbSet<CashbackDraft> CashbackDrafts { get; set; }
@@ -114,12 +116,16 @@ namespace Api_Vapp.Data
                     .HasPrecision(18, 2)
                     .HasDefaultValue(0);
 
+                entity.Property(u => u.ReferralCode)
+                    .HasMaxLength(50);
+
                 entity.Property(u => u.ProfileImagePath)
                     .HasMaxLength(500);
 
                 // ایندکس‌ها
                 entity.HasIndex(u => u.PhoneNumber).IsUnique();
                 entity.HasIndex(u => u.NationalId).IsUnique().HasFilter("[NationalId] IS NOT NULL");
+                entity.HasIndex(u => u.ReferralCode).IsUnique().HasFilter("[ReferralCode] IS NOT NULL");
                 entity.HasIndex(u => u.IsActive);
                 entity.HasIndex(u => u.IsDeleted);
             });
@@ -1922,6 +1928,62 @@ namespace Api_Vapp.Data
                 entity.HasIndex(e => new { e.EntityType, e.EntityId });
                 entity.HasIndex(e => new { e.Category, e.CreatedAt });
                 entity.HasIndex(e => new { e.ActorUserId, e.CreatedAt });
+            });
+
+            // تنظیمات سیستم معرفی کیف پول
+            modelBuilder.Entity<WalletReferralSetting>(entity =>
+            {
+                entity.ToTable("WalletReferralSettings");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).ValueGeneratedOnAdd();
+                entity.Property(e => e.DiscountPercent).HasPrecision(5, 2);
+                entity.Property(e => e.BonusPercent).HasPrecision(5, 2);
+                entity.Property(e => e.DescriptionTemplate).IsRequired().HasMaxLength(1000);
+                entity.Property(e => e.IsEnabled).HasDefaultValue(true);
+                entity.Property(e => e.IsDeleted).HasDefaultValue(false);
+                entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+                entity.HasIndex(e => e.IsDeleted);
+            });
+
+            modelBuilder.Entity<WalletReferralReward>(entity =>
+            {
+                entity.ToTable("WalletReferralRewards");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).ValueGeneratedOnAdd();
+                entity.Property(e => e.ReferralCode).IsRequired().HasMaxLength(50);
+                entity.Property(e => e.RequestedAmount).HasPrecision(18, 2);
+                entity.Property(e => e.PayableAmount).HasPrecision(18, 2);
+                entity.Property(e => e.DiscountAmount).HasPrecision(18, 2);
+                entity.Property(e => e.DiscountPercent).HasPrecision(5, 2);
+                entity.Property(e => e.BonusAmount).HasPrecision(18, 2);
+                entity.Property(e => e.BonusPercent).HasPrecision(5, 2);
+                entity.Property(e => e.IsDeleted).HasDefaultValue(false);
+                entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+                entity.HasOne(e => e.Payment)
+                    .WithMany()
+                    .HasForeignKey(e => e.PaymentId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(e => e.BeneficiaryUser)
+                    .WithMany()
+                    .HasForeignKey(e => e.BeneficiaryUserId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(e => e.ReferrerUser)
+                    .WithMany()
+                    .HasForeignKey(e => e.ReferrerUserId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(e => e.ReferrerWalletTransaction)
+                    .WithMany()
+                    .HasForeignKey(e => e.ReferrerWalletTransactionId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasIndex(e => e.PaymentId).IsUnique();
+                entity.HasIndex(e => e.ReferrerUserId);
+                entity.HasIndex(e => e.BeneficiaryUserId);
+                entity.HasIndex(e => e.CreatedAt);
             });
         }
     }

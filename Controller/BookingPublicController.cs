@@ -71,5 +71,26 @@ namespace Api_Vapp.Controller
             var result = await _appointmentService.CreatePublicBookingAsync(slug, dto);
             return StatusCode(result.StatusCode, result);
         }
+
+        /// <summary>
+        /// استعلام وضعیت نوبت با شماره نوبت + موبایل
+        /// </summary>
+        [HttpPost("{slug}/status")]
+        [ProducesResponseType(typeof(ApiResponse<PublicBookingStatusDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<PublicBookingStatusDto>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(ApiResponse<PublicBookingStatusDto>), StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<ApiResponse<PublicBookingStatusDto>>> LookupStatus(
+            string slug,
+            [FromBody] LookupPublicBookingDto dto)
+        {
+            var invalid = InvalidModelStateResponse<PublicBookingStatusDto>();
+            if (invalid != null)
+            {
+                return invalid;
+            }
+
+            var result = await _appointmentService.LookupPublicBookingStatusAsync(slug, dto);
+            return StatusCode(result.StatusCode, result);
+        }
     }
 }

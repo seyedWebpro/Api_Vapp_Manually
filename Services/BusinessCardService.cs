@@ -775,11 +775,13 @@ namespace Api_Vapp.Services
                     errorCode: ErrorCodes.ValidationFailed);
             }
 
-            if (!HasAtLeastOneActiveSection(card))
+            var contentErrors = GetPublishContentErrors(card);
+            if (contentErrors.Count > 0)
             {
                 return ApiResponse<BusinessCardResponseDto>.BadRequest(
-                    "حداقل یک بخش فعال برای انتشار لازم است",
-                    errorCode: ErrorCodes.ValidationFailed);
+                    contentErrors[0],
+                    contentErrors,
+                    ErrorCodes.ValidationFailed);
             }
 
             string slug;
@@ -817,6 +819,49 @@ namespace Api_Vapp.Services
                    || card.ServicesEnabled
                    || card.MapEnabled
                    || card.ContactEnabled;
+        }
+
+        /// <summary>
+        /// قوانین محتوایی انتشار — هم‌تراز BusinessCardSectionValidator موبایل
+        /// </summary>
+        private static List<string> GetPublishContentErrors(BusinessCard card)
+        {
+            var errors = new List<string>();
+
+            if (card.SliderEnabled && card.SliderImages.Count == 0)
+            {
+                errors.Add("برای بخش اسلایدر، حداقل یک تصویر انتخاب کنید");
+            }
+
+            if (card.DescriptionEnabled && string.IsNullOrWhiteSpace(card.DescriptionText))
+            {
+                errors.Add("برای بخش توضیحات، متن را وارد کنید");
+            }
+
+            if (card.ServicesEnabled && card.ServiceItems.Count == 0)
+            {
+                errors.Add("برای بخش تعرفه خدمات، حداقل یک مورد اضافه کنید");
+            }
+
+            if (card.MapEnabled && (!card.MapLatitude.HasValue || !card.MapLongitude.HasValue))
+            {
+                errors.Add("موقعیت روی نقشه را انتخاب کنید");
+            }
+
+            if (card.ContactEnabled
+                && string.IsNullOrWhiteSpace(card.ContactPhone)
+                && string.IsNullOrWhiteSpace(card.ContactEmail)
+                && string.IsNullOrWhiteSpace(card.ContactInstagram))
+            {
+                errors.Add("برای بخش تماس، حداقل یک کانال ارتباطی وارد کنید");
+            }
+
+            if (!HasAtLeastOneActiveSection(card))
+            {
+                errors.Add("حداقل یک بخش باید فعال باشد");
+            }
+
+            return errors;
         }
 
         private async Task<(BusinessCard? Card, ApiResponse<BusinessCardResponseDto>? Error)> GetTrackedCardForUserAsync(

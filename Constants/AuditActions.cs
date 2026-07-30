@@ -45,6 +45,8 @@ namespace Api_Vapp.Constants
         public const string CashbackApplied = "Cashback.Applied";
         public const string CashbackDraftApproved = "CashbackDraft.Approved";
         public const string CashbackDraftRejected = "CashbackDraft.Rejected";
+        public const string WalletReferralRewardPaid = "WalletReferral.RewardPaid";
+        public const string WalletReferralSettingUpdated = "WalletReferralSetting.Updated";
 
         // —— Subscription checkout (فاز ۲ اولویت ۶)
         public const string SubscriptionPurchased = "Subscription.Purchased";

@@ -200,5 +200,10 @@ Public URL مثال: `https://ok-sms.ir/card/{slug}` (از `BusinessCard:PublicB
 ## Public_Vapp
 
 - مسیر: `/card/:slug`
+- دمو قالب: `/card/demo`
 - بدون OTP — فقط نمایش عمومی
 - سرویس: `GET /api/BusinessCardPublic/{slug}`
+- قالب‌ها سمت وب (هم‌تراز موبایل): `classic` | `shop` | `personal` | `corporate` | `creative`
+- Alias: `templateKey=business` → قالب `creative` (مثل Flutter)
+- `descriptionTitle` → tagline در هیرو
+- اکشن‌بار پایین صفحه: تماس / ایمیل / اینستاگرام / اشتراک لینک

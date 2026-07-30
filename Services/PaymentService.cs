@@ -27,6 +27,7 @@ namespace Api_Vapp.Services
         private readonly IPaymentRepository _paymentRepository;
         private readonly IUserRepository _userRepository;
         private readonly IWalletService _walletService;
+        private readonly IWalletReferralService _walletReferralService;
         private readonly ISubscriptionActivationService _subscriptionActivationService;
         private readonly ISubscriptionEntitlementService _subscriptionEntitlementService;
         private readonly IConfiguration _configuration;
@@ -48,6 +49,7 @@ namespace Api_Vapp.Services
             IPaymentRepository paymentRepository,
             IUserRepository userRepository,
             IWalletService walletService,
+            IWalletReferralService walletReferralService,
             ISubscriptionActivationService subscriptionActivationService,
             ISubscriptionEntitlementService subscriptionEntitlementService,
             IConfiguration configuration,
@@ -59,6 +61,7 @@ namespace Api_Vapp.Services
             _paymentRepository = paymentRepository;
             _userRepository = userRepository;
             _walletService = walletService;
+            _walletReferralService = walletReferralService;
             _subscriptionActivationService = subscriptionActivationService;
             _subscriptionEntitlementService = subscriptionEntitlementService;
             _configuration = configuration;
@@ -211,7 +214,7 @@ namespace Api_Vapp.Services
                 }
 
                 // بررسی وضعیت پرداخت — تأیید مجدد امن (idempotent)
-                // اگر قبلاً Verified شده ولی fulfill اشتراک جا مانده باشد، دوباره تلاش می‌کنیم
+                // اگر قبلاً Verified شده ولی fulfill اشتراک/رفرال جا مانده باشد، دوباره تلاش می‌کنیم
                 if (payment.Status == PaymentStatuses.Verified)
                 {
                     if (payment.PaymentType == PaymentTypes.Subscription)
@@ -224,6 +227,19 @@ namespace Api_Vapp.Services
                         {
                             _logger.LogWarning(ex,
                                 "Idempotent subscription fulfill failed for already-verified payment {PaymentId}",
+                                payment.Id);
+                        }
+                    }
+                    else if (payment.PaymentType == PaymentTypes.WalletCharge)
+                    {
+                        try
+                        {
+                            await _walletReferralService.FulfillWalletChargeWithReferralAsync(payment);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex,
+                                "Idempotent wallet referral fulfill failed for already-verified payment {PaymentId}",
                                 payment.Id);
                         }
                     }
@@ -302,18 +318,22 @@ namespace Api_Vapp.Services
 
                         await _context.SaveChangesAsync();
 
-                        // اضافه کردن موجودی به کیف پول
+                        // اضافه کردن موجودی به کیف پول (+ پاداش رفرال در صورت وجود)
                         if (payment.PaymentType == PaymentTypes.WalletCharge)
                         {
-                            await _walletService.AddBalanceAsync(
-                                payment.UserId,
-                                payment.Amount,
-                                WalletTransactionTypes.Deposit,
-                                "شارژ کیف پول",
-                                $"پرداخت از طریق {GetGatewayName(payment.Gateway)}",
-                                payment.Id,
-                                null,
-                                payment.ReferenceNumber);
+                            try
+                            {
+                                await _walletReferralService.FulfillWalletChargeWithReferralAsync(payment);
+                            }
+                            catch (AppException)
+                            {
+                                throw;
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogError(ex, "Wallet charge fulfillment failed for payment {PaymentId}", payment.Id);
+                                throw AppException.Internal(ErrorCodes.PaymentFailed, ControlledErrorHelper.PaymentFailed);
+                            }
                         }
                         else if (payment.PaymentType == PaymentTypes.Subscription)
                         {

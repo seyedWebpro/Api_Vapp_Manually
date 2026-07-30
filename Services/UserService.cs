@@ -23,6 +23,7 @@ namespace Api_Vapp.Services
         private readonly ILogger<UserService> _logger;
         private readonly IFileUploadService _fileUploadService;
         private readonly IRefreshTokenService _refreshTokenService;
+        private readonly IWalletReferralService _walletReferralService;
         private readonly IAuditService _audit;
 
         public UserService(
@@ -31,6 +32,7 @@ namespace Api_Vapp.Services
             ILogger<UserService> logger,
             IFileUploadService fileUploadService,
             IRefreshTokenService refreshTokenService,
+            IWalletReferralService walletReferralService,
             IAuditService audit)
         {
             _userRepository = userRepository;
@@ -38,6 +40,7 @@ namespace Api_Vapp.Services
             _logger = logger;
             _fileUploadService = fileUploadService;
             _refreshTokenService = refreshTokenService;
+            _walletReferralService = walletReferralService;
             _audit = audit;
         }
 
@@ -87,6 +90,7 @@ namespace Api_Vapp.Services
                 };
 
                 var createdUser = await _userRepository.AddAsync(user);
+                await _walletReferralService.EnsureReferralCodeAsync(createdUser);
 
                 _logger.LogInformation("User created successfully with ID: {UserId}", createdUser.Id);
 
@@ -497,6 +501,9 @@ namespace Api_Vapp.Services
                     // در صورت خطا، URL null باقی می‌ماند
                 }
 
+                var referralCode = await _walletReferralService.EnsureReferralCodeAsync(user);
+                var referralInfo = await _walletReferralService.GetReferralInfoAsync(userId);
+
                 var profileDto = new UserProfileDto
                 {
                     Id = user.Id,
@@ -508,6 +515,11 @@ namespace Api_Vapp.Services
                     ProfileImageUrl = profileImageUrl,
                     WalletBalance = walletBalance,
                     FormattedWalletBalance = $"{walletBalance:N0} تومان",
+                    ReferralCode = referralCode,
+                    ReferralEnabled = referralInfo.Data?.IsEnabled ?? false,
+                    ReferralDiscountPercent = referralInfo.Data?.DiscountPercent ?? 0,
+                    ReferralBonusPercent = referralInfo.Data?.BonusPercent ?? 0,
+                    ReferralDescription = referralInfo.Data?.Description,
                     IsActive = user.IsActive,
                     IsPhoneVerified = user.IsPhoneVerified,
                     CreatedAt = user.CreatedAt,

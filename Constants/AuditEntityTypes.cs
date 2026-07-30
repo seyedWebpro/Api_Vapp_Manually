@@ -12,6 +12,8 @@ namespace Api_Vapp.Constants
         public const string UserRole = "UserRole";
         public const string Payment = "Payment";
         public const string WalletTransaction = "WalletTransaction";
+        public const string WalletReferralSetting = "WalletReferralSetting";
+        public const string WalletReferralReward = "WalletReferralReward";
         public const string Cashback = "Cashback";
         public const string CashbackDraft = "CashbackDraft";
         public const string Message = "Message";

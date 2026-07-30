@@ -32,6 +32,11 @@ namespace Api_Vapp.Models
         // موجودی کیف پول
         public decimal WalletBalance { get; set; } = 0;
 
+        /// <summary>
+        /// کد یکتای معرفی کاربر (مثلاً @ali1254) — برای شارژ کیف پول با رفرال
+        /// </summary>
+        public string? ReferralCode { get; set; }
+
         // مسیر عکس پروفایل
         public string? ProfileImagePath { get; set; }
 

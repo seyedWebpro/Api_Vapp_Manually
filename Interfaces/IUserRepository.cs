@@ -43,6 +43,16 @@ namespace Api_Vapp.Interfaces
         /// یافتن اولین کاربر فعال یا ایجاد کاربر پیش‌فرض (برای حالت DisableAuth)
         /// </summary>
         Task<User> GetOrCreateDefaultUserAsync();
+
+        /// <summary>
+        /// یافتن کاربر بر اساس کد معرفی
+        /// </summary>
+        Task<User?> GetByReferralCodeAsync(string referralCode);
+
+        /// <summary>
+        /// بررسی وجود کد معرفی
+        /// </summary>
+        Task<bool> ExistsByReferralCodeAsync(string referralCode);
     }
 }
 

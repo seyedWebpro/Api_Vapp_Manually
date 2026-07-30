@@ -14,15 +14,18 @@ namespace Api_Vapp.Services
         private static readonly TimeSpan PublicCacheTtl = TimeSpan.FromMinutes(10);
 
         private readonly IBusinessCardRepository _businessCardRepository;
+        private readonly IFileUploadService _fileUploadService;
         private readonly IMemoryCache _cache;
         private readonly ILogger<BusinessCardPublicService> _logger;
 
         public BusinessCardPublicService(
             IBusinessCardRepository businessCardRepository,
+            IFileUploadService fileUploadService,
             IMemoryCache cache,
             ILogger<BusinessCardPublicService> logger)
         {
             _businessCardRepository = businessCardRepository;
+            _fileUploadService = fileUploadService;
             _cache = cache;
             _logger = logger;
         }
@@ -90,12 +93,12 @@ namespace Api_Vapp.Services
 
         private static string BuildCacheKey(string normalizedSlug) => $"businesscard_public_{normalizedSlug}";
 
-        private static BusinessCardPublicDto MapToPublicDto(Models.BusinessCard card)
+        private BusinessCardPublicDto MapToPublicDto(Models.BusinessCard card)
         {
             return new BusinessCardPublicDto
             {
                 Title = card.Title,
-                LogoUrl = card.LogoUrl,
+                LogoUrl = ToPublicFileUrl(card.LogoUrl),
                 TemplateKey = card.TemplateKey,
                 SliderEnabled = card.SliderEnabled,
                 DescriptionEnabled = card.DescriptionEnabled,
@@ -115,7 +118,7 @@ namespace Api_Vapp.Services
                         .OrderBy(i => i.DisplayOrder)
                         .Select(i => new BusinessCardSliderImageDto
                         {
-                            ImageUrl = i.ImageUrl,
+                            ImageUrl = ToPublicFileUrl(i.ImageUrl) ?? i.ImageUrl,
                             DisplayOrder = i.DisplayOrder
                         })
                         .ToList()
@@ -128,12 +131,22 @@ namespace Api_Vapp.Services
                             Id = i.Id,
                             Title = i.Title,
                             Price = i.Price,
-                            ImageUrl = i.ImageUrl,
+                            ImageUrl = ToPublicFileUrl(i.ImageUrl),
                             DisplayOrder = i.DisplayOrder
                         })
                         .ToList()
                     : new List<BusinessCardServiceItemDto>()
             };
+        }
+
+        private string? ToPublicFileUrl(string? storedPath)
+        {
+            if (string.IsNullOrWhiteSpace(storedPath))
+            {
+                return null;
+            }
+
+            return _fileUploadService.GetFileUrl(storedPath);
         }
     }
 }

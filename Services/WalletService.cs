@@ -24,6 +24,7 @@ namespace Api_Vapp.Services
         private readonly IWalletRepository _walletRepository;
         private readonly IUserRepository _userRepository;
         private readonly ICashbackRepository _cashbackRepository;
+        private readonly IWalletReferralService _walletReferralService;
         private readonly IServiceProvider _serviceProvider;
         private readonly IConfiguration _configuration;
         private readonly IAuditService _audit;
@@ -34,6 +35,7 @@ namespace Api_Vapp.Services
             IWalletRepository walletRepository,
             IUserRepository userRepository,
             ICashbackRepository cashbackRepository,
+            IWalletReferralService walletReferralService,
             IServiceProvider serviceProvider,
             IConfiguration configuration,
             IAuditService audit,
@@ -43,6 +45,7 @@ namespace Api_Vapp.Services
             _walletRepository = walletRepository;
             _userRepository = userRepository;
             _cashbackRepository = cashbackRepository;
+            _walletReferralService = walletReferralService;
             _serviceProvider = serviceProvider;
             _configuration = configuration;
             _audit = audit;
@@ -141,6 +144,23 @@ namespace Api_Vapp.Services
                     return ApiResponse<ChargeWalletResponseDto>.BadRequest("درگاه پرداخت پشتیبانی نمی‌شود");
                 }
 
+                var requestedAmount = request.Amount;
+                var referralResolve = await _walletReferralService.ResolveReferralForChargeAsync(
+                    userId, requestedAmount, request.ReferralCode);
+
+                if (!referralResolve.Success)
+                {
+                    return ApiResponse<ChargeWalletResponseDto>.BadRequest(
+                        referralResolve.Message,
+                        referralResolve.Errors,
+                        referralResolve.ErrorCode);
+                }
+
+                var referralMeta = referralResolve.Data;
+                var payableAmount = referralMeta?.PayableAmount ?? requestedAmount;
+                var discountAmount = referralMeta?.DiscountAmount ?? 0m;
+                var discountPercent = referralMeta?.DiscountPercent ?? 0m;
+
                 var useSimulation = _configuration.GetValue("Payment:UseSimulation", true);
                 var orderId = GenerateOrderId();
                 var callbackUrl = request.CallbackUrl
@@ -152,17 +172,22 @@ namespace Api_Vapp.Services
                     ? $"SIMREF{DateTime.UtcNow:yyyyMMddHHmmss}{Random.Shared.Next(1000, 9999)}"
                     : null;
 
+                var description = referralMeta != null
+                    ? $"شارژ کیف پول با کد معرفی {referralMeta.ReferralCode}"
+                    : "شارژ کیف پول";
+
                 var payment = new Payment
                 {
                     UserId = userId,
-                    Amount = request.Amount,
+                    Amount = payableAmount,
                     PaymentType = PaymentTypes.WalletCharge,
                     Gateway = PaymentGateways.Behpardakht,
                     OrderId = orderId,
                     RefId = refId,
                     Status = useSimulation ? PaymentStatuses.Processing : PaymentStatuses.Pending,
                     CallbackUrl = callbackUrl,
-                    Description = "شارژ کیف پول",
+                    Description = description,
+                    MetaData = WalletReferralService.SerializeChargeMeta(referralMeta),
                     CreatedAt = DateTime.UtcNow
                 };
 
@@ -173,7 +198,12 @@ namespace Api_Vapp.Services
                 {
                     PaymentId = payment.Id,
                     OrderId = orderId,
-                    Amount = request.Amount,
+                    Amount = payableAmount,
+                    RequestedAmount = requestedAmount,
+                    DiscountAmount = discountAmount,
+                    DiscountPercent = discountPercent,
+                    ReferralApplied = referralMeta != null,
+                    ReferralCode = referralMeta?.ReferralCode,
                     GatewayUrl = BuildGatewayUrl(payment.Id),
                     Gateway = payment.Gateway,
                     PaymentType = PaymentTypes.WalletCharge,
@@ -183,8 +213,8 @@ namespace Api_Vapp.Services
                 };
 
                 _logger.LogInformation(
-                    "درخواست شارژ کیف پول ایجاد شد. کاربر: {UserId}, مبلغ: {Amount}, سفارش: {OrderId}, Simulation: {IsSimulation}",
-                    userId, request.Amount, orderId, useSimulation);
+                    "درخواست شارژ کیف پول ایجاد شد. کاربر: {UserId}, مبلغ درخواستی: {RequestedAmount}, قابل پرداخت: {PayableAmount}, رفرال: {ReferralCode}, سفارش: {OrderId}, Simulation: {IsSimulation}",
+                    userId, requestedAmount, payableAmount, referralMeta?.ReferralCode, orderId, useSimulation);
 
                 return ApiResponse<ChargeWalletResponseDto>.CreateSuccess(response, "درخواست پرداخت با موفقیت ایجاد شد", 201);
             }

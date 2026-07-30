@@ -16,6 +16,22 @@ namespace Api_Vapp.DTOs.User
         public string? ProfileImageUrl { get; set; }
         public decimal WalletBalance { get; set; }
         public string FormattedWalletBalance { get; set; } = string.Empty;
+
+        /// <summary>کد یکتای معرفی کاربر (مثلاً @ali1254)</summary>
+        public string? ReferralCode { get; set; }
+
+        /// <summary>آیا سیستم معرفی فعال است؟</summary>
+        public bool ReferralEnabled { get; set; }
+
+        /// <summary>درصد تخفیف برای کاربر معرفی‌شده</summary>
+        public decimal ReferralDiscountPercent { get; set; }
+
+        /// <summary>درصد پاداش برای صاحب کد</summary>
+        public decimal ReferralBonusPercent { get; set; }
+
+        /// <summary>متن توضیحات بخش رفرال برای نمایش در اپ</summary>
+        public string? ReferralDescription { get; set; }
+
         public bool IsActive { get; set; }
         public bool IsPhoneVerified { get; set; }
         public DateTime CreatedAt { get; set; }

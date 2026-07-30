@@ -12,6 +12,14 @@ namespace Api_Vapp.Interfaces
         Task<List<DateTime>> GetBlockedStartsForSystemOnDateAsync(int systemId, DateOnly dateUtc);
         Task<List<BookingAppointment>> GetPendingRemindersAsync(DateTime utcNow, int maxReminderOffsetMinutes);
         Task<BookingAppointment?> GetByIdAndSystemIdAsync(int appointmentId, int systemId);
+
+        /// <summary>
+        /// نوبت عمومی برای استعلام وضعیت — باید با slug سیستم و موبایل نرمال‌شده مطابقت داشته باشد
+        /// </summary>
+        Task<BookingAppointment?> GetPublicByNumberAndMobileAsync(
+            string slug,
+            int appointmentNumber,
+            string normalizedMobile);
         Task<(List<BookingAppointment> Items, int TotalCount)> GetBySystemIdAsync(
             int systemId,
             int pageNumber,

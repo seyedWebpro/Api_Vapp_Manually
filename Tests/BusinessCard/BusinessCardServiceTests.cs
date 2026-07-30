@@ -215,6 +215,7 @@ internal sealed class BusinessCardTestContext : IAsyncDisposable
 
         var publicService = new BusinessCardPublicService(
             repo,
+            fileUpload,
             cache,
             NullLogger<BusinessCardPublicService>.Instance);
 

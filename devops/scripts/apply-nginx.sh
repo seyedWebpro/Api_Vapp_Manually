@@ -66,7 +66,13 @@ if [[ -n "$PUBLIC_STATIC_ROOT" ]]; then
         access_log off;
     }
 
-    location ~ ^/(form|wheel)(/.*)?$ {
+    location ~ ^/(salon-profile|booking-reservation|lottery-result|service-info|service-pricing|reservation-success|wheel)/ {
+        root ${PUBLIC_STATIC_ROOT};
+        expires 7d;
+        access_log off;
+    }
+
+    location ~ ^/(form|wheel|card|book)(/.*)?$ {
         root ${PUBLIC_STATIC_ROOT};
         try_files \$uri \$uri/ @public_vapp;
     }
@@ -93,7 +99,15 @@ else
         proxy_set_header X-Forwarded-Proto \$forwarded_proto;
     }
 
-    location ~ ^/(form|wheel)(/|\$) {
+    location ~ ^/(salon-profile|booking-reservation|lottery-result|service-info|service-pricing|reservation-success|wheel)/ {
+        proxy_pass http://127.0.0.1:${PUBLIC_PORT};
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Forwarded-Host \$host;
+        proxy_set_header X-Forwarded-Proto \$forwarded_proto;
+    }
+
+    location ~ ^/(form|wheel|card|book)(/|\$) {
         proxy_pass http://127.0.0.1:${PUBLIC_PORT};
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
@@ -233,7 +247,7 @@ else
   echo "OK: nginx admin docker → 127.0.0.1:3005"
 fi
 if [[ -n "$PUBLIC_STATIC_ROOT" ]]; then
-  echo "OK: nginx public static → $PUBLIC_STATIC_ROOT (/form, /wheel)"
+  echo "OK: nginx public static → $PUBLIC_STATIC_ROOT (/form, /wheel, /card, /book)"
 else
   echo "OK: nginx public docker → 127.0.0.1:${PUBLIC_PORT} (/form, /wheel)"
 fi

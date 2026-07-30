@@ -76,6 +76,7 @@ namespace Api_Vapp.Models
         public const string Cashback = "Cashback";         // کش‌بک
         public const string Purchase = "Purchase";         // خرید (مثلاً خرید اشتراک پیامک)
         public const string Refund = "Refund";             // استرداد
+        public const string ReferralBonus = "ReferralBonus"; // پاداش معرفی (رفرال)
     }
 
     /// <summary>

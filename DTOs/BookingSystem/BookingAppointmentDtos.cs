@@ -100,6 +100,31 @@ namespace Api_Vapp.DTOs.BookingSystem
         public BookingAppointmentDto Appointment { get; set; } = new();
     }
 
+    /// <summary>استعلام وضعیت نوبت توسط مشتری (بدون Auth)</summary>
+    public class LookupPublicBookingDto
+    {
+        [Required(ErrorMessage = "شماره نوبت الزامی است")]
+        [Range(1, int.MaxValue, ErrorMessage = "شماره نوبت نامعتبر است")]
+        public int AppointmentNumber { get; set; }
+
+        [Required(ErrorMessage = "شماره موبایل الزامی است")]
+        [MaxLength(20, ErrorMessage = "شماره موبایل نامعتبر است")]
+        public string CustomerMobile { get; set; } = string.Empty;
+    }
+
+    public class PublicBookingStatusDto
+    {
+        public int AppointmentNumber { get; set; }
+        public string Status { get; set; } = string.Empty;
+        public string StatusTitle { get; set; } = string.Empty;
+        public string BusinessTitle { get; set; } = string.Empty;
+        public string ServiceTitle { get; set; } = string.Empty;
+        public string CustomerFullName { get; set; } = string.Empty;
+        public string CustomerMobileMasked { get; set; } = string.Empty;
+        public DateTime StartUtc { get; set; }
+        public DateTime EndUtc { get; set; }
+    }
+
     // ─── Dashboard ───────────────────────────────────────────────────
 
     public class BookingDashboardDto

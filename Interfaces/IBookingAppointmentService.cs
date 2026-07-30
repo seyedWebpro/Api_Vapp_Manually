@@ -9,6 +9,10 @@ namespace Api_Vapp.Interfaces
         Task<ApiResponse<BookingAvailableSlotsDto>> GetAvailableSlotsAsync(string slug, int serviceId, DateOnly date);
         Task<ApiResponse<CreatePublicBookingResponseDto>> CreatePublicBookingAsync(string slug, CreatePublicBookingDto dto);
 
+        Task<ApiResponse<PublicBookingStatusDto>> LookupPublicBookingStatusAsync(
+            string slug,
+            LookupPublicBookingDto dto);
+
         Task<ApiResponse<BookingDashboardDto>> GetDashboardAsync(int systemId, int userId, DateOnly? dateUtc = null);
 
         Task<ApiResponse<BookingCalendarMonthDto>> GetCalendarAsync(

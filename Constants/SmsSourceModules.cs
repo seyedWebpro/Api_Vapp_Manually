@@ -12,6 +12,7 @@ namespace Api_Vapp.Constants
         public const string ReferralProgram = "ReferralProgram";
         public const string AutomatedMessage = "AutomatedMessage";
         public const string BookingReminder = "BookingReminder";
+        public const string BookingStatus = "BookingStatus";
         public const string Manual = "Manual";
 
         public static readonly IReadOnlyDictionary<string, string> PersianLabels = new Dictionary<string, string>
@@ -23,6 +24,7 @@ namespace Api_Vapp.Constants
             [ReferralProgram] = "برنامه پاداش",
             [AutomatedMessage] = "پیام خودکار",
             [BookingReminder] = "یادآوری نوبت",
+            [BookingStatus] = "وضعیت نوبت",
             [Manual] = "ارسال دستی"
         };
 

@@ -197,6 +197,55 @@ namespace Api_Vapp.Services
             }
         }
 
+        public async Task<ApiResponse<PublicBookingStatusDto>> LookupPublicBookingStatusAsync(
+            string slug,
+            LookupPublicBookingDto dto)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(slug))
+                {
+                    return ApiResponse<PublicBookingStatusDto>.BadRequest(
+                        "لینک نامعتبر است",
+                        errorCode: ErrorCodes.InvalidInput);
+                }
+
+                if (dto.AppointmentNumber <= 0)
+                {
+                    return ApiResponse<PublicBookingStatusDto>.BadRequest(
+                        "شماره نوبت نامعتبر است",
+                        errorCode: ErrorCodes.ValidationFailed);
+                }
+
+                var mobile = BookingMobileHelper.Normalize(dto.CustomerMobile);
+                if (!BookingMobileHelper.IsValidIranianMobile(mobile))
+                {
+                    return ApiResponse<PublicBookingStatusDto>.BadRequest(
+                        "شماره موبایل نامعتبر است",
+                        errorCode: ErrorCodes.ValidationFailed);
+                }
+
+                var normalizedSlug = slug.Trim().ToLowerInvariant();
+                var appointment = await _appointmentRepository.GetPublicByNumberAndMobileAsync(
+                    normalizedSlug,
+                    dto.AppointmentNumber,
+                    mobile);
+
+                if (appointment == null)
+                {
+                    return ApiResponse<PublicBookingStatusDto>.NotFound(
+                        "نوبتی با این مشخصات یافت نشد");
+                }
+
+                return ApiResponse<PublicBookingStatusDto>.CreateSuccess(MapToPublicStatusDto(appointment));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error looking up public booking status for slug {Slug}", slug);
+                return ApiResponse<PublicBookingStatusDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
         public async Task<ApiResponse<BookingDashboardDto>> GetDashboardAsync(
             int systemId, int userId, DateOnly? dateUtc = null)
         {
@@ -611,6 +660,7 @@ namespace Api_Vapp.Services
 
                 var appointment = await _context.BookingAppointments
                     .Include(a => a.BookingServiceItem)
+                    .Include(a => a.BookingSystem)
                     .FirstOrDefaultAsync(a =>
                         a.Id == appointmentId &&
                         a.BookingSystemId == systemId &&
@@ -649,6 +699,8 @@ namespace Api_Vapp.Services
                     After = new { status = appointment.Status }
                 });
 
+                await TrySendStatusSmsAsync(appointment, isConfirmed: true);
+
                 return ApiResponse<BookingAppointmentDto>.CreateSuccess(MapToDto(appointment), "نوبت تأیید شد");
             }
             catch (DbUpdateException dbEx)
@@ -679,6 +731,7 @@ namespace Api_Vapp.Services
 
                 var appointment = await _context.BookingAppointments
                     .Include(a => a.BookingServiceItem)
+                    .Include(a => a.BookingSystem)
                     .FirstOrDefaultAsync(a =>
                         a.Id == appointmentId &&
                         a.BookingSystemId == systemId &&
@@ -713,6 +766,8 @@ namespace Api_Vapp.Services
                     Before = new { status = previousStatus },
                     After = new { status = appointment.Status, reason = appointment.CancellationReason }
                 });
+
+                await TrySendStatusSmsAsync(appointment, isConfirmed: false);
 
                 return ApiResponse<BookingAppointmentDto>.CreateSuccess(MapToDto(appointment), "نوبت لغو شد");
             }
@@ -1157,6 +1212,106 @@ namespace Api_Vapp.Services
             CreatedAt = EnsureUtc(appointment.CreatedAt)
         };
 
+        private static PublicBookingStatusDto MapToPublicStatusDto(BookingAppointment appointment) => new()
+        {
+            AppointmentNumber = appointment.Id,
+            Status = appointment.Status,
+            StatusTitle = GetStatusTitle(appointment.Status),
+            BusinessTitle = appointment.BookingSystem?.Title ?? string.Empty,
+            ServiceTitle = appointment.BookingServiceItem?.Title ?? string.Empty,
+            CustomerFullName = appointment.CustomerFullName,
+            CustomerMobileMasked = MaskMobile(appointment.CustomerMobile),
+            StartUtc = EnsureUtc(appointment.StartUtc),
+            EndUtc = EnsureUtc(appointment.EndUtc)
+        };
+
+        private static string GetStatusTitle(string status) => status switch
+        {
+            BookingAppointmentStatuses.Pending => "در انتظار تأیید",
+            BookingAppointmentStatuses.Confirmed => "تأیید شده",
+            BookingAppointmentStatuses.Cancelled => "لغو شده",
+            BookingAppointmentStatuses.Completed => "انجام شده",
+            _ => status
+        };
+
+        private static string MaskMobile(string? mobile)
+        {
+            var normalized = BookingMobileHelper.Normalize(mobile);
+            if (normalized.Length < 8)
+            {
+                return "***";
+            }
+
+            return $"{normalized[..4]}***{normalized[^4..]}";
+        }
+
+        private async Task TrySendStatusSmsAsync(BookingAppointment appointment, bool isConfirmed)
+        {
+            try
+            {
+                var system = appointment.BookingSystem;
+                var service = appointment.BookingServiceItem;
+                if (system == null || service == null || string.IsNullOrWhiteSpace(appointment.CustomerMobile))
+                {
+                    return;
+                }
+
+                var whenLocal = FormatTehranDateTime(appointment.StartUtc);
+                var message = isConfirmed
+                    ? $"نوبت شما تأیید شد\n" +
+                      $"{system.Title}\n" +
+                      $"شماره نوبت: #{appointment.Id}\n" +
+                      $"خدمت: {service.Title}\n" +
+                      $"زمان: {whenLocal}"
+                    : $"نوبت شما لغو شد\n" +
+                      $"{system.Title}\n" +
+                      $"شماره نوبت: #{appointment.Id}\n" +
+                      $"خدمت: {service.Title}\n" +
+                      $"زمان: {whenLocal}";
+
+                var smsResult = await _smsService.SendSmsAsync(new SendSmsRequestDto
+                {
+                    Mobile = appointment.CustomerMobile,
+                    Message = message
+                });
+
+                var isSuccess = smsResult.Success && smsResult.Data != null &&
+                                (smsResult.Data.Sid > 0 || smsResult.Data.Status > 0);
+
+                if (!isSuccess)
+                {
+                    _logger.LogWarning(
+                        "Booking status SMS failed for appointment {AppointmentId} confirmed={IsConfirmed}",
+                        appointment.Id,
+                        isConfirmed);
+                    return;
+                }
+
+                await _deliveryTracking.TrackSuccessfulSendAsync(new SmsDeliveryTrackRequestDto
+                {
+                    UserId = system.UserId,
+                    SourceModule = SmsSourceModules.BookingStatus,
+                    SourceEntityId = appointment.Id,
+                    SourceEntityLabel = system.Title,
+                    Mobile = appointment.CustomerMobile,
+                    Sid = smsResult.Data!.Sid,
+                    MessageText = message
+                });
+
+                _logger.LogInformation(
+                    "Booking status SMS sent for appointment {AppointmentId} confirmed={IsConfirmed}",
+                    appointment.Id,
+                    isConfirmed);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "Failed to send booking status SMS for appointment {AppointmentId}",
+                    appointment.Id);
+            }
+        }
+
         private string BuildPublicUrl(string slug)
         {
             var baseUrl = string.IsNullOrWhiteSpace(_options.PublicBaseUrl)
@@ -1173,7 +1328,27 @@ namespace Api_Vapp.Services
             return $"یادآوری نوبت\n" +
                    $"{system.Title}\n" +
                    $"خدمت: {service.Title}\n" +
-                   $"زمان: {appointment.StartUtc:yyyy-MM-dd HH:mm} UTC";
+                   $"زمان: {FormatTehranDateTime(appointment.StartUtc)}";
+        }
+
+        private static string FormatTehranDateTime(DateTime utc)
+        {
+            var local = TimeZoneInfo.ConvertTimeFromUtc(EnsureUtc(utc), TehranTimeZone);
+            return local.ToString("yyyy/MM/dd HH:mm");
+        }
+
+        private static readonly TimeZoneInfo TehranTimeZone = ResolveTehranTimeZone();
+
+        private static TimeZoneInfo ResolveTehranTimeZone()
+        {
+            try
+            {
+                return TimeZoneInfo.FindSystemTimeZoneById("Asia/Tehran");
+            }
+            catch (TimeZoneNotFoundException)
+            {
+                return TimeZoneInfo.FindSystemTimeZoneById("Iran Standard Time");
+            }
         }
 
         private static DateTime NormalizeUtc(DateTime value) =>

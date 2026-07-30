@@ -130,6 +130,25 @@ namespace Api_Vapp.Repositories
                     !a.IsDeleted);
         }
 
+        public async Task<BookingAppointment?> GetPublicByNumberAndMobileAsync(
+            string slug,
+            int appointmentNumber,
+            string normalizedMobile)
+        {
+            return await _dbSet
+                .AsNoTracking()
+                .Include(a => a.BookingServiceItem)
+                .Include(a => a.BookingSystem)
+                .FirstOrDefaultAsync(a =>
+                    a.Id == appointmentNumber &&
+                    !a.IsDeleted &&
+                    a.CustomerMobile == normalizedMobile &&
+                    a.BookingSystem.Slug == slug &&
+                    !a.BookingSystem.IsDeleted &&
+                    a.BookingSystem.IsActive &&
+                    a.BookingSystem.Status == BookingSystemStatus.Published);
+        }
+
         public async Task<(List<BookingAppointment> Items, int TotalCount)> GetBySystemIdAsync(
             int systemId,
             int pageNumber,

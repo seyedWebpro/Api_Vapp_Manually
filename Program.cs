@@ -405,6 +405,7 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.ISpecialOccasionService, Api_Vapp
 
 // ثبت سرویس‌های مالی و کیف پول
 builder.Services.AddScoped<Api_Vapp.Interfaces.IWalletService, Api_Vapp.Services.WalletService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IWalletReferralService, Api_Vapp.Services.WalletReferralService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IPaymentService, Api_Vapp.Services.PaymentService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.ICashbackService, Api_Vapp.Services.CashbackService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IReferralProgramService, Api_Vapp.Services.ReferralProgramService>();

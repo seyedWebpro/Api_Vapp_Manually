@@ -280,6 +280,7 @@ Base: `/api/BookingPublic` — **AllowAnonymous**
 | صفحه عمومی رزرو | `GET /{slug}` |
 | اسلات‌های خالی | `GET /{slug}/services/{serviceId}/slots?date=2026-07-01` |
 | ثبت نوبت | `POST /{slug}/book` |
+| پیگیری وضعیت نوبت | `POST /{slug}/status` |
 
 ### `GET /{slug}`
 
@@ -315,6 +316,36 @@ Base: `/api/BookingPublic` — **AllowAnonymous**
 - `customerNote` اختیاری
 - اگر `saveToPhonebook=true` → شماره در دفترچه‌های انتخاب‌شده ذخیره می‌شود
 - `startUtc` باید دقیقاً یکی از اسلات‌های برگشتی باشد
+
+### `POST /{slug}/status` — پیگیری وضعیت
+
+```json
+{
+  "appointmentNumber": 5,
+  "customerMobile": "09121234567"
+}
+```
+
+پاسخ نمونه:
+
+```json
+{
+  "appointmentNumber": 5,
+  "status": "Pending",
+  "statusTitle": "در انتظار تأیید",
+  "businessTitle": "سالن زیبایی آناهیتا",
+  "serviceTitle": "کوتاهی و استایل",
+  "customerFullName": "علی رضایی",
+  "customerMobileMasked": "0912***4567",
+  "startUtc": "2026-07-31T08:15:00Z",
+  "endUtc": "2026-07-31T09:00:00Z"
+}
+```
+
+- بدون Auth — فقط با **شماره نوبت + موبایل** همان سیستم
+- اگر مطابقت نباشد → `404`
+- وضعیت‌ها: `Pending` | `Confirmed` | `Cancelled` | `Completed`
+- بعد از **تأیید / لغو** توسط مالک اپ، SMS وضعیت برای مشتری ارسال می‌شود (ماژول `BookingStatus`)
 
 ---
 

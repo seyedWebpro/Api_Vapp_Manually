@@ -28,14 +28,17 @@ namespace Api_Vapp.Controller
     public class WalletController : VappControllerBase
     {
         private readonly IWalletService _walletService;
+        private readonly IWalletReferralService _walletReferralService;
 
         public WalletController(
             IWalletService walletService,
+            IWalletReferralService walletReferralService,
             IConfiguration configuration,
             IUserRepository userRepository)
             : base(configuration, userRepository)
         {
             _walletService = walletService;
+            _walletReferralService = walletReferralService;
         }
 
         /// <summary>
@@ -213,11 +216,45 @@ namespace Api_Vapp.Controller
             if (!ModelState.IsValid)
             {
                 var errors = ExtractModelStateErrors();
-                return StatusCode(400, ApiResponse<ChargeWalletResponseDto>.BadRequest("داده‌های ورودی نامعتبر است", errors));
+                return StatusCode(400, ApiResponse<ChargeWalletResponseDto>.BadRequest(
+                    "داده‌های ورودی نامعتبر است", errors, ErrorCodes.ValidationFailed));
             }
 
             var userId = await GetCurrentUserIdAsync();
             var result = await _walletService.ChargeWalletAsync(userId, request);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        /// <summary>
+        /// دریافت اطلاعات بخش معرفی (کد رفرال + درصدها + متن توضیحات)
+        /// </summary>
+        [HttpGet("referral")]
+        [ProducesResponseType(typeof(ApiResponse<WalletReferralInfoDto>), StatusCodes.Status200OK)]
+        public async Task<ActionResult<ApiResponse<WalletReferralInfoDto>>> GetReferralInfo()
+        {
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _walletReferralService.GetReferralInfoAsync(userId);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        /// <summary>
+        /// اعتبارسنجی کد معرفی و پیش‌نمایش مبلغ قابل پرداخت / تخفیف / پاداش
+        /// </summary>
+        [HttpPost("referral/validate")]
+        [ProducesResponseType(typeof(ApiResponse<ValidateWalletReferralResponseDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<ValidateWalletReferralResponseDto>), StatusCodes.Status400BadRequest)]
+        public async Task<ActionResult<ApiResponse<ValidateWalletReferralResponseDto>>> ValidateReferral(
+            [FromBody] ValidateWalletReferralRequestDto request)
+        {
+            if (!ModelState.IsValid)
+            {
+                var errors = ExtractModelStateErrors();
+                return StatusCode(400, ApiResponse<ValidateWalletReferralResponseDto>.BadRequest(
+                    "داده‌های ورودی نامعتبر است", errors, ErrorCodes.ValidationFailed));
+            }
+
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _walletReferralService.ValidateReferralAsync(userId, request);
             return StatusCode(result.StatusCode, result);
         }
 

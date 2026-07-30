@@ -89,6 +89,36 @@ namespace Api_Vapp.Repositories
             return await _dbSet
                 .FirstOrDefaultAsync(u => u.Id == id && !u.IsDeleted);
         }
+
+        public async Task<User?> GetByReferralCodeAsync(string referralCode)
+        {
+            if (string.IsNullOrWhiteSpace(referralCode))
+                return null;
+
+            var normalized = referralCode.Trim().ToLowerInvariant();
+            if (!normalized.StartsWith('@'))
+                normalized = "@" + normalized.TrimStart('@');
+
+            return await _dbSet
+                .FirstOrDefaultAsync(u =>
+                    u.ReferralCode == normalized
+                    && !u.IsDeleted);
+        }
+
+        public async Task<bool> ExistsByReferralCodeAsync(string referralCode)
+        {
+            if (string.IsNullOrWhiteSpace(referralCode))
+                return false;
+
+            var normalized = referralCode.Trim().ToLowerInvariant();
+            if (!normalized.StartsWith('@'))
+                normalized = "@" + normalized.TrimStart('@');
+
+            return await _dbSet
+                .AnyAsync(u =>
+                    u.ReferralCode == normalized
+                    && !u.IsDeleted);
+        }
     }
 }
 
