@@ -12,8 +12,16 @@
 #   API_BRANCH=main bash devops/scripts/sync-api-repo-safe.sh
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-API_REPO_DIR="${API_REPO_DIR:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
+# When piped via `bash -s` (Mac → server deploy), BASH_SOURCE is unset.
+# Prefer explicit API_REPO_DIR from the caller in that case.
+if [[ -z "${API_REPO_DIR:-}" ]]; then
+  if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    API_REPO_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+  else
+    API_REPO_DIR="$(pwd)"
+  fi
+fi
 API_BRANCH="${API_BRANCH:-main}"
 ENV_FILE="${ENV_FILE:-$API_REPO_DIR/docker/.env}"
 
