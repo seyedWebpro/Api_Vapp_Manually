@@ -87,11 +87,12 @@ bash devops/scripts/deploy-from-mac.sh api
 
 **ادمین:** `admin` / `admin-fast` فایل‌های `dist` را می‌فرستد و nginx را روی static تنظیم می‌کند (سریع‌تر از build Docker روی سرور ایران).
 
-**اگر `git pull` روی سرور conflict داد** (مثلاً `docker-compose`):
+**گیت سرور:** `deploy-api-upload-image.sh` دیگر `git pull` ساده نمی‌زند؛ با `sync-api-repo-safe.sh` ریپو را به `origin/main` reset می‌کند و `docker/.env` / `secrets/` / `wwwroot/uploads/` / `log/` را نگه می‌دارد. Health بعد از restart چند بار retry می‌شود تا `API:000` لحظه‌ای false alarm ندهد.
+
+اگر دستی لازم شد:
 ```bash
-ssh vapp-prod 'cd ~/Api_Vapp_Manually && git stash push -m server-local -- docker/docker-compose.production.yml && git pull origin main'
+ssh vapp-prod 'bash /root/Api_Vapp_Manually/devops/scripts/sync-api-repo-safe.sh'
 ```
-برای deploy فعلی اگر image از Mac آمده، `api-restart` کافی است.
 
 ---
 
@@ -101,6 +102,7 @@ ssh vapp-prod 'cd ~/Api_Vapp_Manually && git stash push -m server-local -- docke
 |------|-----|
 | `scripts/deploy-from-mac.sh` | ورودی اصلی |
 | `scripts/deploy-api-upload-image.sh` | build API روی Mac |
+| `scripts/sync-api-repo-safe.sh` | sync امن گیت روی سرور (بدون conflict) |
 | `scripts/deploy-front-upload-dist.sh` | build Admin روی Mac |
 | `scripts/deploy-public-front-upload-dist.sh` | build Public_Vapp روی Mac |
 | `PUBLIC-VAPP.md` | راهنمای کامل فرم/گردونه عمومی |

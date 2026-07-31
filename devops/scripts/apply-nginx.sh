@@ -66,7 +66,8 @@ if [[ -n "$PUBLIC_STATIC_ROOT" ]]; then
         access_log off;
     }
 
-    location ~ ^/(salon-profile|booking-reservation|lottery-result|service-info|service-pricing|reservation-success|wheel)/ {
+    # توجه: wheel اینجا نباشد — مسیر SPA است (/wheel/:slug)، نه پوشه استاتیک
+    location ~ ^/(salon-profile|booking-reservation|lottery-result|service-info|service-pricing|reservation-success)/ {
         root ${PUBLIC_STATIC_ROOT};
         expires 7d;
         access_log off;
@@ -74,7 +75,8 @@ if [[ -n "$PUBLIC_STATIC_ROOT" ]]; then
 
     location ~ ^/(form|wheel|card|book)(/.*)?$ {
         root ${PUBLIC_STATIC_ROOT};
-        try_files \$uri \$uri/ @public_vapp;
+        # بدون \$uri/ تا پوشه خالی هم‌نام مسیر SPA باعث 403 نشود
+        try_files \$uri @public_vapp;
     }
 
     location @public_vapp {
@@ -99,7 +101,8 @@ else
         proxy_set_header X-Forwarded-Proto \$forwarded_proto;
     }
 
-    location ~ ^/(salon-profile|booking-reservation|lottery-result|service-info|service-pricing|reservation-success|wheel)/ {
+    # توجه: wheel اینجا نباشد — مسیر SPA است (/wheel/:slug)، نه پوشه استاتیک
+    location ~ ^/(salon-profile|booking-reservation|lottery-result|service-info|service-pricing|reservation-success)/ {
         proxy_pass http://127.0.0.1:${PUBLIC_PORT};
         proxy_http_version 1.1;
         proxy_set_header Host \$host;

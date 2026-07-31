@@ -60,6 +60,7 @@ services:
       - Frontend__PublicBaseUrl=${PUBLIC_FRONTEND_URL:-https://ok-sms.ir}
       - FormBuilder__PublicBaseUrl=${FORM_PUBLIC_BASE_URL:-https://ok-sms.ir/form}
       - LuckyWheel__PublicBaseUrl=${WHEEL_PUBLIC_BASE_URL:-https://ok-sms.ir/wheel}
+      - BusinessCard__PublicBaseUrl=${CARD_PUBLIC_BASE_URL:-https://ok-sms.ir/card}
       - BookingSystem__PublicBaseUrl=${BOOKING_PUBLIC_BASE_URL:-https://ok-sms.ir/book}
       # Sms__ApiKey / Sms__SenderNumber: only set in docker/.env when overriding appsettings.json.
       # Do NOT pass empty defaults — ASP.NET Core env vars override appsettings and break OTP/SMS.

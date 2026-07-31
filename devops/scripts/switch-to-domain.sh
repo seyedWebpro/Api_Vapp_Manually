@@ -65,6 +65,7 @@ PUBLIC_API_BASE_URL=http://${SERVER_IP}
 PUBLIC_FRONTEND_URL=http://${SERVER_IP}
 FORM_PUBLIC_BASE_URL=http://${SERVER_IP}/form
 WHEEL_PUBLIC_BASE_URL=http://${SERVER_IP}/wheel
+CARD_PUBLIC_BASE_URL=http://${SERVER_IP}/card
 BOOKING_PUBLIC_BASE_URL=http://${SERVER_IP}/book
 Jwt__Secret=${SEC_JWT}
 EOF
@@ -81,6 +82,7 @@ PUBLIC_API_BASE_URL=${scheme}://${DOMAIN_HOST}
 PUBLIC_FRONTEND_URL=${scheme}://${DOMAIN_HOST}
 FORM_PUBLIC_BASE_URL=${scheme}://${DOMAIN_HOST}/form
 WHEEL_PUBLIC_BASE_URL=${scheme}://${DOMAIN_HOST}/wheel
+CARD_PUBLIC_BASE_URL=${scheme}://${DOMAIN_HOST}/card
 BOOKING_PUBLIC_BASE_URL=${scheme}://${DOMAIN_HOST}/book
 Jwt__Secret=${SEC_JWT}
 EOF
@@ -142,4 +144,4 @@ esac
 bash "$SCRIPT_DIR/health-check.sh" $([[ "$MODE" != "ip" ]] && echo --with-domain)
 echo ""
 echo "OK: mode=$MODE domain=${DOMAIN_HOST:-—}"
-docker exec vapp_api_prod printenv 2>/dev/null | grep -E 'PublicBaseUrl|FORM_|WHEEL_' | sort || true
+docker exec vapp_api_prod printenv 2>/dev/null | grep -E 'PublicBaseUrl|FORM_|WHEEL_|CARD_|BOOKING_' | sort || true

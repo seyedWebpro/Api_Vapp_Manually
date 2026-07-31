@@ -34,9 +34,10 @@ if [[ ! -f "$ENV_FILE" ]]; then
   fi
 fi
 
-deploy_step "git pull ($API_BRANCH)"
+deploy_step "git sync safe ($API_BRANCH)"
 if [[ -d "$API_REPO_DIR/.git" ]]; then
-  git pull origin "$API_BRANCH"
+  API_REPO_DIR="$API_REPO_DIR" API_BRANCH="$API_BRANCH" ENV_FILE="$ENV_FILE" \
+    bash "$SCRIPT_DIR/sync-api-repo-safe.sh"
 fi
 
 deploy_step "Determine build pull strategy"

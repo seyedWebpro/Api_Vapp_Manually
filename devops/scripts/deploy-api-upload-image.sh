@@ -198,16 +198,33 @@ fi
 WATCHDOG_PID=""
 
 if [[ "$DEPLOY_AFTER_LOAD" == "1" ]]; then
+  deploy_step "Sync API repo on server (safe reset)"
+  # Pipe local script so sync works even before the new file exists on the server.
+  # Preserves docker/.env, secrets/, wwwroot/uploads/, log/
+  API_REPO_DIR="$REMOTE_API_DIR" API_BRANCH="${API_BRANCH:-main}" \
+    ssh "${SSH_OPTS[@]}" "$SERVER" \
+    "API_REPO_DIR=$REMOTE_API_DIR API_BRANCH=${API_BRANCH:-main} bash -s" \
+    < "$SCRIPT_DIR/sync-api-repo-safe.sh" || {
+      deploy_log "ERROR: safe git sync on server failed"
+      exit 1
+    }
+
   deploy_step "Restart API container on server"
   deploy_start_heartbeat "deploy/restart API" 15
-  ssh "${SSH_OPTS[@]}" "$SERVER" "cd $REMOTE_API_DIR && (git pull origin main || echo 'WARN: git pull failed — continuing with uploaded image') && docker compose -f $COMPOSE_FILE --env-file $ENV_FILE up -d --no-deps --force-recreate --no-build api" || {
+  ssh "${SSH_OPTS[@]}" "$SERVER" \
+    "cd $REMOTE_API_DIR && docker compose -f $COMPOSE_FILE --env-file $ENV_FILE up -d --no-deps --force-recreate --no-build api" || {
     deploy_log "ERROR: container restart failed"
     exit 1
   }
   deploy_stop_heartbeat
 
   deploy_step "Health check on server"
-  ssh "${SSH_OPTS[@]}" "$SERVER" "bash $REMOTE_API_DIR/devops/scripts/health-check.sh" || true
+  # Retry here so it works even if the remote health-check.sh is still the old one-shot version.
+  ssh "${SSH_OPTS[@]}" "$SERVER" \
+    "ok=0; for i in \$(seq 1 ${HEALTH_ATTEMPTS:-8}); do
+       if HEALTH_ATTEMPTS=1 bash $REMOTE_API_DIR/devops/scripts/health-check.sh; then ok=1; break; fi
+       echo \"health retry \$i/${HEALTH_ATTEMPTS:-8} — waiting ${HEALTH_SLEEP:-8}s\"; sleep ${HEALTH_SLEEP:-8}
+     done; [[ \$ok -eq 1 ]]" || true
 fi
 
 deploy_log "✓ API image uploaded${DEPLOY_AFTER_LOAD:+ and deployed} successfully in $(_deploy_elapsed "$upload_start")"
