@@ -60,6 +60,10 @@ namespace Api_Vapp.Repositories
                 !f.IsDeleted);
         }
 
+        /// <summary>
+        /// فرم منتشرشده و حذف‌نشده — بدون فیلتر IsActive.
+        /// لایهٔ عمومی باید IsActive را جداگانه اعمال کند تا پیام RESOURCE_INACTIVE برگردد.
+        /// </summary>
         public async Task<UserForm?> GetBySlugReadOnlyAsync(string slug)
         {
             return await _dbSet
@@ -69,8 +73,7 @@ namespace Api_Vapp.Repositories
                 .FirstOrDefaultAsync(f =>
                     f.Slug == slug &&
                     !f.IsDeleted &&
-                    f.Status == UserFormStatus.Published &&
-                    f.IsActive);
+                    f.Status == UserFormStatus.Published);
         }
 
         public async Task<bool> SlugExistsAsync(string slug, int? excludeFormId = null)

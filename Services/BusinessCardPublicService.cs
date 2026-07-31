@@ -54,7 +54,14 @@ namespace Api_Vapp.Services
                 var card = await _businessCardRepository.GetBySlugReadOnlyAsync(normalizedSlug);
                 if (card == null)
                 {
-                    return ApiResponse<BusinessCardPublicDto>.NotFound("کارت ویزیت یافت نشد یا غیرفعال است");
+                    return ApiResponse<BusinessCardPublicDto>.NotFound("کارت ویزیت یافت نشد");
+                }
+
+                if (!card.IsActive)
+                {
+                    return ApiResponse<BusinessCardPublicDto>.Forbidden(
+                        "این کارت ویزیت در حال حاضر فعال نیست",
+                        ErrorCodes.ResourceInactive);
                 }
 
                 var dto = MapToPublicDto(card);

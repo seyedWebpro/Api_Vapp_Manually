@@ -51,12 +51,13 @@ namespace Api_Vapp.Services
                 }
 
                 var wheel = await _luckyWheelRepository.GetBySlugReadOnlyAsync(normalizedSlug);
-                if (wheel == null)
+                var availabilityError = EnsurePubliclyAvailable<LuckyWheelPublicDto>(wheel);
+                if (availabilityError != null)
                 {
-                    return ApiResponse<LuckyWheelPublicDto>.NotFound("گردونه یافت نشد یا غیرفعال است");
+                    return availabilityError;
                 }
 
-                return ApiResponse<LuckyWheelPublicDto>.CreateSuccess(MapToPublicDto(wheel));
+                return ApiResponse<LuckyWheelPublicDto>.CreateSuccess(MapToPublicDto(wheel!));
             }
             catch (Exception ex)
             {
@@ -86,16 +87,17 @@ namespace Api_Vapp.Services
                 }
 
                 var wheel = await _luckyWheelRepository.GetBySlugReadOnlyAsync(normalizedSlug);
-                if (wheel == null)
+                var availabilityError = EnsurePubliclyAvailable<RegisterPublicParticipantResponseDto>(wheel);
+                if (availabilityError != null)
                 {
-                    return ApiResponse<RegisterPublicParticipantResponseDto>.NotFound("گردونه یافت نشد یا غیرفعال است");
+                    return availabilityError;
                 }
 
                 if (AllowTestReplay(normalizedSlug))
                 {
-                    await ResetParticipationForTestAsync(wheel.Id, identity.Mobile);
+                    await ResetParticipationForTestAsync(wheel!.Id, identity.Mobile);
                 }
-                else if (await _luckyWheelRepository.HasParticipantWithMobileAsync(wheel.Id, identity.Mobile))
+                else if (await _luckyWheelRepository.HasParticipantWithMobileAsync(wheel!.Id, identity.Mobile))
                 {
                     return ApiResponse<RegisterPublicParticipantResponseDto>.BadRequest(
                         "این شماره قبلاً در این گردونه شرکت کرده است",
@@ -170,16 +172,16 @@ namespace Api_Vapp.Services
         {
             try
             {
-                var wheel = await ResolvePublishedWheelAsync(slug);
-                if (wheel == null)
+                var (wheel, availabilityError) = await ResolvePubliclyAvailableWheelAsync<PublicParticipantOtpResponseDto>(slug);
+                if (availabilityError != null)
                 {
-                    return ApiResponse<PublicParticipantOtpResponseDto>.NotFound("گردونه یافت نشد یا غیرفعال است");
+                    return availabilityError;
                 }
 
                 var sessionResult = await _sessionService.ValidateActiveAsync(
                     dto.AccessToken,
                     PublicParticipantResourceType.LuckyWheel,
-                    wheel.Id);
+                    wheel!.Id);
 
                 if (!sessionResult.Success || sessionResult.Data == null)
                 {
@@ -237,16 +239,16 @@ namespace Api_Vapp.Services
         {
             try
             {
-                var wheel = await ResolvePublishedWheelAsync(slug);
-                if (wheel == null)
+                var (wheel, availabilityError) = await ResolvePubliclyAvailableWheelAsync<PublicParticipantOtpResponseDto>(slug);
+                if (availabilityError != null)
                 {
-                    return ApiResponse<PublicParticipantOtpResponseDto>.NotFound("گردونه یافت نشد یا غیرفعال است");
+                    return availabilityError;
                 }
 
                 var sessionResult = await _sessionService.ValidateActiveAsync(
                     dto.AccessToken,
                     PublicParticipantResourceType.LuckyWheel,
-                    wheel.Id);
+                    wheel!.Id);
 
                 if (!sessionResult.Success || sessionResult.Data == null)
                 {
@@ -304,12 +306,12 @@ namespace Api_Vapp.Services
                     .FirstOrDefaultAsync(w =>
                         w.Slug == normalizedSlug &&
                         !w.IsDeleted &&
-                        w.Status == LuckyWheelStatus.Published &&
-                        w.IsActive);
+                        w.Status == LuckyWheelStatus.Published);
 
-                if (wheel == null)
+                var availabilityError = EnsurePubliclyAvailable<SpinLuckyWheelPublicResponseDto>(wheel);
+                if (availabilityError != null || wheel is null)
                 {
-                    return ApiResponse<SpinLuckyWheelPublicResponseDto>.NotFound("گردونه یافت نشد یا غیرفعال است");
+                    return availabilityError ?? ApiResponse<SpinLuckyWheelPublicResponseDto>.NotFound(WheelNotFoundMessage);
                 }
 
                 if (wheel.Items.Count == 0)
@@ -468,15 +470,34 @@ namespace Api_Vapp.Services
             }
         }
 
-        private async Task<LuckyWheel?> ResolvePublishedWheelAsync(string slug)
+        private const string WheelNotFoundMessage = "گردونه یافت نشد";
+        private const string WheelInactiveMessage = "این گردونه در حال حاضر فعال نیست و امکان شرکت در آن وجود ندارد";
+
+        private static ApiResponse<T>? EnsurePubliclyAvailable<T>(LuckyWheel? wheel)
+        {
+            if (wheel == null)
+            {
+                return ApiResponse<T>.NotFound(WheelNotFoundMessage);
+            }
+
+            if (!wheel.IsActive)
+            {
+                return ApiResponse<T>.Forbidden(WheelInactiveMessage, ErrorCodes.ResourceInactive);
+            }
+
+            return null;
+        }
+
+        private async Task<(LuckyWheel? Wheel, ApiResponse<T>? Error)> ResolvePubliclyAvailableWheelAsync<T>(string slug)
         {
             var normalizedSlug = NormalizeSlug(slug);
             if (normalizedSlug == null)
             {
-                return null;
+                return (null, ApiResponse<T>.BadRequest("لینک نامعتبر است", errorCode: ErrorCodes.InvalidInput));
             }
 
-            return await _luckyWheelRepository.GetBySlugReadOnlyAsync(normalizedSlug);
+            var wheel = await _luckyWheelRepository.GetBySlugReadOnlyAsync(normalizedSlug);
+            return (wheel, EnsurePubliclyAvailable<T>(wheel));
         }
 
         private async Task<string> GenerateUniquePrizeCodeAsync(int wheelId)

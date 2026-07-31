@@ -12,6 +12,10 @@ namespace Api_Vapp.DTOs.Common
         public const string Unauthorized = "UNAUTHORIZED";
         public const string Forbidden = "FORBIDDEN";
         public const string NotFound = "NOT_FOUND";
+        /// <summary>
+        /// منبع منتشرشده وجود دارد ولی برای دسترسی عمومی غیرفعال است (مثلاً فرم/گردونه)
+        /// </summary>
+        public const string ResourceInactive = "RESOURCE_INACTIVE";
         public const string DatabaseError = "DATABASE_ERROR";
         public const string TokenExpired = "TOKEN_EXPIRED";
         public const string TokenInvalid = "TOKEN_INVALID";

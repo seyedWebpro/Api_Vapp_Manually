@@ -62,12 +62,13 @@ namespace Api_Vapp.Services
 
                 var normalizedSlug = slug.Trim().ToLowerInvariant();
                 var system = await _appointmentRepository.GetActiveSystemBySlugAsync(normalizedSlug);
-                if (system == null)
+                var availabilityError = EnsurePubliclyAvailable<BookingPublicSystemDto>(system);
+                if (availabilityError != null)
                 {
-                    return ApiResponse<BookingPublicSystemDto>.NotFound("صفحه رزرو یافت نشد یا غیرفعال است");
+                    return availabilityError;
                 }
 
-                return ApiResponse<BookingPublicSystemDto>.CreateSuccess(MapToPublicDto(system));
+                return ApiResponse<BookingPublicSystemDto>.CreateSuccess(MapToPublicDto(system!));
             }
             catch (Exception ex)
             {
@@ -93,6 +94,12 @@ namespace Api_Vapp.Services
                 if (service == null)
                 {
                     return ApiResponse<BookingAvailableSlotsDto>.NotFound("خدمت یافت نشد");
+                }
+
+                var availabilityError = EnsurePubliclyAvailable<BookingAvailableSlotsDto>(service.BookingSystem);
+                if (availabilityError != null)
+                {
+                    return availabilityError;
                 }
 
                 if (date < DateOnly.FromDateTime(DateTime.UtcNow))
@@ -144,12 +151,12 @@ namespace Api_Vapp.Services
                     .FirstOrDefaultAsync(b =>
                         b.Slug == normalizedSlug &&
                         !b.IsDeleted &&
-                        b.IsActive &&
                         b.Status == BookingSystemStatus.Published);
 
-                if (system == null)
+                var availabilityError = EnsurePubliclyAvailable<CreatePublicBookingResponseDto>(system);
+                if (availabilityError != null || system is null)
                 {
-                    return ApiResponse<CreatePublicBookingResponseDto>.NotFound("صفحه رزرو یافت نشد");
+                    return availabilityError ?? ApiResponse<CreatePublicBookingResponseDto>.NotFound(BookingNotFoundMessage);
                 }
 
                 var created = await CreateAppointmentInternalAsync(
@@ -1168,6 +1175,24 @@ namespace Api_Vapp.Services
                 Date = date,
                 Slots = managed
             };
+        }
+
+        private const string BookingNotFoundMessage = "صفحه رزرو یافت نشد";
+        private const string BookingInactiveMessage = "این صفحه رزرو در حال حاضر فعال نیست و امکان ثبت نوبت وجود ندارد";
+
+        private static ApiResponse<T>? EnsurePubliclyAvailable<T>(BookingSystem? system)
+        {
+            if (system == null)
+            {
+                return ApiResponse<T>.NotFound(BookingNotFoundMessage);
+            }
+
+            if (!system.IsActive)
+            {
+                return ApiResponse<T>.Forbidden(BookingInactiveMessage, ErrorCodes.ResourceInactive);
+            }
+
+            return null;
         }
 
         private static BookingPublicSystemDto MapToPublicDto(BookingSystem system) => new()

@@ -32,6 +32,7 @@ namespace Api_Vapp.Controller
         /// </summary>
         [HttpGet("{slug}")]
         [ProducesResponseType(typeof(ApiResponse<FormPublicDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<FormPublicDto>), StatusCodes.Status403Forbidden)]
         [ProducesResponseType(typeof(ApiResponse<FormPublicDto>), StatusCodes.Status404NotFound)]
         public async Task<ActionResult<ApiResponse<FormPublicDto>>> GetForm(string slug)
         {

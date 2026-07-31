@@ -52,12 +52,13 @@ namespace Api_Vapp.Services
                 }
 
                 var form = await _userFormRepository.GetBySlugReadOnlyAsync(normalizedSlug);
-                if (form == null)
+                var availabilityError = EnsurePubliclyAvailable<FormPublicDto>(form);
+                if (availabilityError != null)
                 {
-                    return ApiResponse<FormPublicDto>.NotFound("فرم یافت نشد یا غیرفعال است");
+                    return availabilityError;
                 }
 
-                return ApiResponse<FormPublicDto>.CreateSuccess(MapToPublicDto(form));
+                return ApiResponse<FormPublicDto>.CreateSuccess(MapToPublicDto(form!));
             }
             catch (Exception ex)
             {
@@ -87,12 +88,13 @@ namespace Api_Vapp.Services
                 }
 
                 var form = await _userFormRepository.GetBySlugReadOnlyAsync(normalizedSlug);
-                if (form == null)
+                var availabilityError = EnsurePubliclyAvailable<RegisterPublicParticipantResponseDto>(form);
+                if (availabilityError != null)
                 {
-                    return ApiResponse<RegisterPublicParticipantResponseDto>.NotFound("فرم یافت نشد یا غیرفعال است");
+                    return availabilityError;
                 }
 
-                if (await _userFormRepository.HasSubmissionWithMobileAsync(form.Id, identity.Mobile))
+                if (await _userFormRepository.HasSubmissionWithMobileAsync(form!.Id, identity.Mobile))
                 {
                     return ApiResponse<RegisterPublicParticipantResponseDto>.BadRequest(
                         "این شماره قبلاً این فرم را پر کرده است",
@@ -167,16 +169,16 @@ namespace Api_Vapp.Services
         {
             try
             {
-                var form = await ResolvePublishedFormAsync(slug);
-                if (form == null)
+                var (form, availabilityError) = await ResolvePubliclyAvailableFormAsync<PublicParticipantOtpResponseDto>(slug);
+                if (availabilityError != null)
                 {
-                    return ApiResponse<PublicParticipantOtpResponseDto>.NotFound("فرم یافت نشد یا غیرفعال است");
+                    return availabilityError;
                 }
 
                 var sessionResult = await _sessionService.ValidateActiveAsync(
                     dto.AccessToken,
                     PublicParticipantResourceType.UserForm,
-                    form.Id);
+                    form!.Id);
 
                 if (!sessionResult.Success || sessionResult.Data == null)
                 {
@@ -234,16 +236,16 @@ namespace Api_Vapp.Services
         {
             try
             {
-                var form = await ResolvePublishedFormAsync(slug);
-                if (form == null)
+                var (form, availabilityError) = await ResolvePubliclyAvailableFormAsync<PublicParticipantOtpResponseDto>(slug);
+                if (availabilityError != null)
                 {
-                    return ApiResponse<PublicParticipantOtpResponseDto>.NotFound("فرم یافت نشد یا غیرفعال است");
+                    return availabilityError;
                 }
 
                 var sessionResult = await _sessionService.ValidateActiveAsync(
                     dto.AccessToken,
                     PublicParticipantResourceType.UserForm,
-                    form.Id);
+                    form!.Id);
 
                 if (!sessionResult.Success || sessionResult.Data == null)
                 {
@@ -302,12 +304,12 @@ namespace Api_Vapp.Services
                     .FirstOrDefaultAsync(f =>
                         f.Slug == normalizedSlug &&
                         !f.IsDeleted &&
-                        f.Status == UserFormStatus.Published &&
-                        f.IsActive);
+                        f.Status == UserFormStatus.Published);
 
-                if (form == null)
+                var availabilityError = EnsurePubliclyAvailable<SubmitFormPublicResponseDto>(form);
+                if (availabilityError != null || form is null)
                 {
-                    return ApiResponse<SubmitFormPublicResponseDto>.NotFound("فرم یافت نشد یا غیرفعال است");
+                    return availabilityError ?? ApiResponse<SubmitFormPublicResponseDto>.NotFound(FormNotFoundMessage);
                 }
 
                 var sessionResult = await _sessionService.ValidateActiveAsync(
@@ -425,15 +427,37 @@ namespace Api_Vapp.Services
             }
         }
 
-        private async Task<UserForm?> ResolvePublishedFormAsync(string slug)
+        private const string FormNotFoundMessage = "فرم یافت نشد";
+        private const string FormInactiveMessage = "این فرم در حال حاضر فعال نیست و امکان تکمیل آن وجود ندارد";
+
+        /// <summary>
+        /// دسترسی عمومی فقط برای فرم Published + Active. غیرفعال = RESOURCE_INACTIVE.
+        /// </summary>
+        private static ApiResponse<T>? EnsurePubliclyAvailable<T>(UserForm? form)
+        {
+            if (form == null)
+            {
+                return ApiResponse<T>.NotFound(FormNotFoundMessage);
+            }
+
+            if (!form.IsActive)
+            {
+                return ApiResponse<T>.Forbidden(FormInactiveMessage, ErrorCodes.ResourceInactive);
+            }
+
+            return null;
+        }
+
+        private async Task<(UserForm? Form, ApiResponse<T>? Error)> ResolvePubliclyAvailableFormAsync<T>(string slug)
         {
             var normalizedSlug = NormalizeSlug(slug);
             if (normalizedSlug == null)
             {
-                return null;
+                return (null, ApiResponse<T>.BadRequest("لینک نامعتبر است", errorCode: ErrorCodes.InvalidInput));
             }
 
-            return await _userFormRepository.GetBySlugReadOnlyAsync(normalizedSlug);
+            var form = await _userFormRepository.GetBySlugReadOnlyAsync(normalizedSlug);
+            return (form, EnsurePubliclyAvailable<T>(form));
         }
 
         private static void InjectContactFieldValues(

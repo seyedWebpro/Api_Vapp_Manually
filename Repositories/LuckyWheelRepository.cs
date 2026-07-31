@@ -111,6 +111,9 @@ namespace Api_Vapp.Repositories
             return (items, totalCount);
         }
 
+        /// <summary>
+        /// گردونه Published و حذف‌نشده — بدون فیلتر IsActive (لایه سرویس تشخیص RESOURCE_INACTIVE می‌دهد).
+        /// </summary>
         public async Task<LuckyWheel?> GetBySlugReadOnlyAsync(string slug)
         {
             return await _dbSet
@@ -121,8 +124,7 @@ namespace Api_Vapp.Repositories
                 .FirstOrDefaultAsync(w =>
                     w.Slug == slug &&
                     !w.IsDeleted &&
-                    w.Status == LuckyWheelStatus.Published &&
-                    w.IsActive);
+                    w.Status == LuckyWheelStatus.Published);
         }
 
         public async Task<int> GetParticipantCountAsync(int luckyWheelId)

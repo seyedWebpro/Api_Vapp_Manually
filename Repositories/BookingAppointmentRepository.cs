@@ -12,6 +12,9 @@ namespace Api_Vapp.Repositories
         {
         }
 
+        /// <summary>
+        /// سیستم رزرو Published و حذف‌نشده — بدون فیلتر IsActive (لایه سرویس تشخیص RESOURCE_INACTIVE می‌دهد).
+        /// </summary>
         public async Task<BookingSystem?> GetActiveSystemBySlugAsync(string slug)
         {
             return await _context.BookingSystems
@@ -20,7 +23,6 @@ namespace Api_Vapp.Repositories
                 .FirstOrDefaultAsync(b =>
                     b.Slug == slug &&
                     !b.IsDeleted &&
-                    b.IsActive &&
                     b.Status == BookingSystemStatus.Published);
         }
 
@@ -29,13 +31,13 @@ namespace Api_Vapp.Repositories
             return await _context.BookingServiceItems
                 .Include(s => s.DaySchedules)
                 .Include(s => s.ScheduleExceptions.Where(e => !e.IsDeleted))
+                .Include(s => s.BookingSystem)
                 .AsNoTracking()
                 .Where(s =>
                     s.Id == serviceId &&
                     !s.IsDeleted &&
                     s.BookingSystem.Slug == slug &&
                     !s.BookingSystem.IsDeleted &&
-                    s.BookingSystem.IsActive &&
                     s.BookingSystem.Status == BookingSystemStatus.Published)
                 .FirstOrDefaultAsync();
         }
@@ -145,7 +147,6 @@ namespace Api_Vapp.Repositories
                     a.CustomerMobile == normalizedMobile &&
                     a.BookingSystem.Slug == slug &&
                     !a.BookingSystem.IsDeleted &&
-                    a.BookingSystem.IsActive &&
                     a.BookingSystem.Status == BookingSystemStatus.Published);
         }
 

@@ -228,6 +228,7 @@ Alias سازگار: `POST /{id}/toggle-status`
 - برای گرفتن لینک عمومی همیشه اول `POST /{id}/publish` بزنید
 - body خالی یا بدون `isActive` → `400`
 - `GET /{id}` → در Draft مقدار `isActive` برابر `false` است (هنوز عمومی نیست)
+- وقتی `isActive: false` باشد، همهٔ endpointهای عمومی (`GET/POST /api/FormPublic/{slug}/...`) با `403` و `errorCode: RESOURCE_INACTIVE` بسته می‌شوند (پیام: «این فرم غیرفعال شده و دیگر قابل دسترسی نیست»). لینک `publicUrl` ممکن است هنوز برگردانده شود، ولی صفحهٔ عمومی نباید UI ثبت را نشان دهد.
 
 پاسخ موفق: همان `UserFormResponseDto` + `isActive` به‌روز
 

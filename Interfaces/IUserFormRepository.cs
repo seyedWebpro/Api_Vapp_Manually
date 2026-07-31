@@ -13,6 +13,9 @@ namespace Api_Vapp.Interfaces
 
         Task<UserForm?> GetOwnedFormAsync(int id, int userId, bool tracked = false);
 
+        /// <summary>
+        /// فرم Published و حذف‌نشده (IsActive را فیلتر نمی‌کند — برای تشخیص غیرفعال بودن در لایه سرویس)
+        /// </summary>
         Task<UserForm?> GetBySlugReadOnlyAsync(string slug);
 
         Task<bool> SlugExistsAsync(string slug, int? excludeFormId = null);

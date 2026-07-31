@@ -60,6 +60,9 @@ namespace Api_Vapp.Repositories
                 !c.IsDeleted);
         }
 
+        /// <summary>
+        /// کارت Published و حذف‌نشده — بدون فیلتر IsActive (لایه سرویس تشخیص RESOURCE_INACTIVE می‌دهد).
+        /// </summary>
         public async Task<BusinessCard?> GetBySlugReadOnlyAsync(string slug)
         {
             return await _dbSet
@@ -70,8 +73,7 @@ namespace Api_Vapp.Repositories
                 .FirstOrDefaultAsync(c =>
                     c.Slug == slug &&
                     !c.IsDeleted &&
-                    c.Status == BusinessCardStatus.Published &&
-                    c.IsActive);
+                    c.Status == BusinessCardStatus.Published);
         }
 
         public async Task<bool> SlugExistsAsync(string slug, int? excludeCardId = null)
