@@ -1,87 +1,120 @@
-using Api_Vapp.Data;
 using Api_Vapp.DTOs.Common;
+using Api_Vapp.DTOs.Device;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
-using Microsoft.EntityFrameworkCore;
+using Api_Vapp.Utilities;
 using Microsoft.Extensions.Logging;
 
 namespace Api_Vapp.Services
 {
     public class UserDeviceService : IUserDeviceService
     {
-        private readonly Api_Context _context;
+        private readonly IUserDeviceRepository _deviceRepository;
         private readonly IUserRepository _userRepository;
         private readonly ILogger<UserDeviceService> _logger;
 
         public UserDeviceService(
-            Api_Context context,
+            IUserDeviceRepository deviceRepository,
             IUserRepository userRepository,
             ILogger<UserDeviceService> logger)
         {
-            _context = context;
+            _deviceRepository = deviceRepository;
             _userRepository = userRepository;
             _logger = logger;
         }
 
         public async Task<ApiResponse<object>> RegisterFcmTokenAsync(int userId, string token)
         {
-            if (userId <= 0)
-                return ApiResponse<object>.BadRequest("شناسه کاربر نامعتبر است");
+            _logger.LogInformation("شروع ثبت توکن FCM — UserId={UserId}", userId);
 
-            var normalized = token?.Trim() ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(normalized))
-                return ApiResponse<object>.BadRequest("توکن الزامی است");
-
-            if (normalized.Length > 512)
-                return ApiResponse<object>.BadRequest("توکن بیش از حد طولانی است");
-
-            var user = await _userRepository.GetByIdAsync(userId);
-            if (user == null || user.IsDeleted)
-                return ApiResponse<object>.NotFound("کاربر یافت نشد");
-
-            var now = DateTime.UtcNow;
-
-            // اگر همین توکن قبلاً ثبت شده: به کاربر فعلی وصل و فعال کن (بدون ارور)
-            var byToken = await _context.UserDevices
-                .FirstOrDefaultAsync(d => d.FcmToken == normalized);
-
-            if (byToken != null)
+            try
             {
-                byToken.UserId = userId;
-                byToken.IsActive = true;
-                byToken.LastSeenAt = now;
-                byToken.UpdatedAt = now;
-                await _context.SaveChangesAsync();
+                if (userId <= 0)
+                {
+                    return ApiResponse<object>.BadRequest(
+                        ControlledErrorHelper.InvalidInput,
+                        errorCode: ErrorCodes.InvalidUserId);
+                }
+
+                var normalized = token?.Trim() ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(normalized))
+                {
+                    return ApiResponse<object>.BadRequest(
+                        "توکن الزامی است",
+                        errorCode: ErrorCodes.ValidationFailed);
+                }
+
+                if (normalized.Length > 512)
+                {
+                    return ApiResponse<object>.BadRequest(
+                        "توکن بیش از حد طولانی است",
+                        errorCode: ErrorCodes.InvalidInput);
+                }
+
+                var user = await _userRepository.GetByIdAsync(userId);
+                if (user == null || user.IsDeleted)
+                {
+                    _logger.LogWarning("ثبت توکن FCM برای کاربر نامعتبر — UserId={UserId}", userId);
+                    return ApiResponse<object>.NotFound(ControlledErrorHelper.NotFound, ErrorCodes.NotFound);
+                }
+
+                var tokenPrefix = TokenPrefix(normalized);
+                var now = DateTime.UtcNow;
+                var existing = await _deviceRepository.GetByTokenAsync(normalized);
+
+                if (existing != null)
+                {
+                    var previousUserId = existing.UserId;
+                    existing.UserId = userId;
+                    existing.IsActive = true;
+                    existing.IsDeleted = false;
+                    existing.LastSeenAt = now;
+
+                    await _deviceRepository.UpdateAsync(existing);
+
+                    _logger.LogInformation(
+                        "پایان ثبت توکن FCM (به‌روزرسانی) — UserId={UserId}, DeviceId={DeviceId}, TokenPrefix={TokenPrefix}, PreviousUserId={PreviousUserId}",
+                        userId, existing.Id, tokenPrefix, previousUserId);
+
+                    return ApiResponse<object>.CreateSuccess(
+                        new { id = existing.Id, updated = true },
+                        "توکن با موفقیت به‌روزرسانی شد");
+                }
+
+                var device = new UserDevice
+                {
+                    UserId = userId,
+                    FcmToken = normalized,
+                    IsActive = true,
+                    IsDeleted = false,
+                    CreatedAt = now,
+                    LastSeenAt = now
+                };
+
+                await _deviceRepository.AddAsync(device);
 
                 _logger.LogInformation(
-                    "FCM token upserted (existing) for user {UserId}, device {DeviceId}",
-                    userId, byToken.Id);
+                    "پایان ثبت توکن FCM (جدید) — UserId={UserId}, DeviceId={DeviceId}, TokenPrefix={TokenPrefix}",
+                    userId, device.Id, tokenPrefix);
 
                 return ApiResponse<object>.CreateSuccess(
-                    new { id = byToken.Id },
-                    "توکن با موفقیت به‌روزرسانی شد");
+                    new { id = device.Id, updated = false },
+                    "توکن با موفقیت ثبت شد");
             }
-
-            // توکن جدید برای این کاربر
-            var device = new UserDevice
+            catch (Exception ex)
             {
-                UserId = userId,
-                FcmToken = normalized,
-                IsActive = true,
-                CreatedAt = now,
-                LastSeenAt = now
-            };
+                _logger.LogError(ex, "خطا در ثبت توکن FCM — UserId={UserId}", userId);
+                return ApiResponse<object>.InternalServerError(
+                    ControlledErrorHelper.Database,
+                    ErrorCodes.DatabaseError);
+            }
+        }
 
-            await _context.UserDevices.AddAsync(device);
-            await _context.SaveChangesAsync();
-
-            _logger.LogInformation(
-                "FCM token registered (new) for user {UserId}, device {DeviceId}",
-                userId, device.Id);
-
-            return ApiResponse<object>.CreateSuccess(
-                new { id = device.Id },
-                "توکن با موفقیت ثبت شد");
+        private static string TokenPrefix(string token)
+        {
+            if (string.IsNullOrEmpty(token))
+                return "(empty)";
+            return token.Length <= 12 ? token : token[..12];
         }
     }
 }

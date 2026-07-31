@@ -17,17 +17,20 @@ namespace Api_Vapp.Services
 
         private readonly ISmsDeliveryRecordRepository _repository;
         private readonly ISmsDeliveryTrackingService _deliveryTracking;
+        private readonly ISmsPricingService _smsPricing;
         private readonly ILogger<SmsReportService> _logger;
         private readonly string _senderNumber;
 
         public SmsReportService(
             ISmsDeliveryRecordRepository repository,
             ISmsDeliveryTrackingService deliveryTracking,
+            ISmsPricingService smsPricing,
             IConfiguration configuration,
             ILogger<SmsReportService> logger)
         {
             _repository = repository;
             _deliveryTracking = deliveryTracking;
+            _smsPricing = smsPricing;
             _logger = logger;
             _senderNumber = configuration["Sms:SenderNumber"] ?? string.Empty;
         }
@@ -63,6 +66,7 @@ namespace Api_Vapp.Services
                 var partsMap = await LoadPartsMapAsync(items);
                 var messageTexts = await _repository.GetSampleMessageTextsBySidsAsync(
                     userId, items.Select(i => i.Sid));
+                var pricingRules = (await _smsPricing.GetRuntimeAsync()).Rules;
 
                 var dtoItems = items.Select(item =>
                 {
@@ -78,7 +82,7 @@ namespace Api_Vapp.Services
                         SendTypeLabel = sendTypeLabel,
                         SourceEntityId = item.SourceEntityId,
                         SendCount = item.SendCount,
-                        PartsCount = ResolvePartsCount(item, partsMap, sampleMessage),
+                        PartsCount = ResolvePartsCount(item, partsMap, sampleMessage, pricingRules),
                         SentAt = item.SentAt
                     };
                 }).ToList();
@@ -120,6 +124,7 @@ namespace Api_Vapp.Services
                 var partsMap = await LoadPartsMapAsync(new[] { batch });
                 var messageText = await ResolveBatchMessageTextAsync(userId, batch);
                 var (sendType, sendTypeLabel) = MapSendType(batch.SourceModule);
+                var pricingRules = (await _smsPricing.GetRuntimeAsync()).Rules;
 
                 var dto = new SmsSendBatchDetailDto
                 {
@@ -132,7 +137,7 @@ namespace Api_Vapp.Services
                     SourceEntityId = batch.SourceEntityId,
                     SenderNumber = _senderNumber,
                     SendCount = batch.SendCount,
-                    PartsCount = ResolvePartsCount(batch, partsMap, messageText),
+                    PartsCount = ResolvePartsCount(batch, partsMap, messageText, pricingRules),
                     SentAt = batch.SentAt,
                     MessageText = messageText,
                     Summary = summary
@@ -346,7 +351,8 @@ namespace Api_Vapp.Services
         private static int ResolvePartsCount(
             SmsSendBatchProjection item,
             IReadOnlyDictionary<int, int> partsMap,
-            string? messageText = null)
+            string? messageText = null,
+            SmsPartsRules? rules = null)
         {
             if (item.SourceModule == SmsSourceModules.MessageCampaign &&
                 item.SourceEntityId.HasValue &&
@@ -360,7 +366,7 @@ namespace Api_Vapp.Services
             {
                 try
                 {
-                    return SmsPartsCalculator.CalculateParts(messageText);
+                    return SmsPartsCalculator.CalculateParts(messageText, rules ?? SmsPartsRules.Defaults);
                 }
                 catch (ArgumentException)
                 {

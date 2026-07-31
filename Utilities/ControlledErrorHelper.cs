@@ -17,6 +17,9 @@ namespace Api_Vapp.Utilities
         public const string PaymentFailed = "مشکلی در پردازش پرداخت پیش آمد. لطفاً دوباره تلاش کنید.";
         public const string SmsFailed = "مشکلی در ارسال پیامک پیش آمد. لطفاً دوباره تلاش کنید. اگر مشکل ادامه داشت، با پشتیبانی پیگیری کنید.";
         public const string FileUploadFailed = "مشکلی در آپلود فایل پیش آمد. لطفاً دوباره تلاش کنید.";
+        public const string PushFailed = "مشکلی در ارسال اعلان پیش آمد. لطفاً دوباره تلاش کنید.";
+        public const string PushNotConfigured = "سرویس اعلان در حال حاضر در دسترس نیست. لطفاً بعداً تلاش کنید.";
+        public const string PushNoDevice = "دستگاه فعالی برای دریافت اعلان ثبت نشده است. ابتدا وارد اپ شوید و اجازه اعلان را فعال کنید.";
         public const string ExcelReadFailed = "مشکلی در خواندن فایل اکسل پیش آمد. لطفاً فرمت فایل را بررسی کنید.";
         public const string InactiveUserAccount = "حساب کاربری شما غیرفعال هست با پشتیبانی تماس بگیرید.";
         public const string AdminPanelAccessDenied = "شما دسترسی به پنل مدیریت ندارید. با پشتیبانی تماس بگیرید.";

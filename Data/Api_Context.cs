@@ -32,6 +32,7 @@ namespace Api_Vapp.Data
         public DbSet<Payment> Payments { get; set; }
         public DbSet<WalletReferralSetting> WalletReferralSettings { get; set; }
         public DbSet<WalletReferralReward> WalletReferralRewards { get; set; }
+        public DbSet<SmsPricingSetting> SmsPricingSettings { get; set; }
         public DbSet<Cashback> Cashbacks { get; set; }
         public DbSet<CashbackTransaction> CashbackTransactions { get; set; }
         public DbSet<CashbackDraft> CashbackDrafts { get; set; }
@@ -974,6 +975,9 @@ namespace Api_Vapp.Data
                 entity.Property(d => d.IsActive)
                     .HasDefaultValue(true);
 
+                entity.Property(d => d.IsDeleted)
+                    .HasDefaultValue(false);
+
                 entity.Property(d => d.CreatedAt)
                     .HasDefaultValueSql("GETUTCDATE()");
 
@@ -988,6 +992,7 @@ namespace Api_Vapp.Data
                 entity.HasIndex(d => d.FcmToken).IsUnique();
                 entity.HasIndex(d => d.UserId);
                 entity.HasIndex(d => new { d.UserId, d.IsActive });
+                entity.HasIndex(d => d.IsDeleted);
             });
 
             // تنظیمات ContactCashbackBalance
@@ -1940,6 +1945,20 @@ namespace Api_Vapp.Data
                 entity.Property(e => e.BonusPercent).HasPrecision(5, 2);
                 entity.Property(e => e.DescriptionTemplate).IsRequired().HasMaxLength(1000);
                 entity.Property(e => e.IsEnabled).HasDefaultValue(true);
+                entity.Property(e => e.IsDeleted).HasDefaultValue(false);
+                entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+                entity.HasIndex(e => e.IsDeleted);
+            });
+
+            // تعرفه و قواعد محاسبه پارت پیامک
+            modelBuilder.Entity<SmsPricingSetting>(entity =>
+            {
+                entity.ToTable("SmsPricingSettings");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).ValueGeneratedOnAdd();
+                entity.Property(e => e.CostPerPart).HasPrecision(18, 2);
+                entity.Property(e => e.OptOutSuffix).IsRequired().HasMaxLength(50);
+                entity.Property(e => e.IsBillingEnabled).HasDefaultValue(false);
                 entity.Property(e => e.IsDeleted).HasDefaultValue(false);
                 entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
                 entity.HasIndex(e => e.IsDeleted);

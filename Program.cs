@@ -341,6 +341,7 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.IMessageCampaignRepository, Api_V
 builder.Services.AddScoped<Api_Vapp.Interfaces.IMessageTemplateRepository, Api_Vapp.Repositories.MessageTemplateRepository>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IMessageSessionRepository, Api_Vapp.Repositories.MessageSessionRepository>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IQuickActionRepository, Api_Vapp.Repositories.QuickActionRepository>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.ISocialMediaLinkRepository, Api_Vapp.Repositories.SocialMediaLinkRepository>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IUserFormRepository, Api_Vapp.Repositories.UserFormRepository>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.ILuckyWheelRepository, Api_Vapp.Repositories.LuckyWheelRepository>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IBusinessCardRepository, Api_Vapp.Repositories.BusinessCardRepository>();
@@ -386,6 +387,7 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.IUserRoleService, Api_Vapp.Servic
 builder.Services.AddScoped<Api_Vapp.Interfaces.IContactNotebookService, Api_Vapp.Services.ContactNotebookService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IContactService, Api_Vapp.Services.ContactService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IQuickActionService, Api_Vapp.Services.QuickActionService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.ISocialMediaLinkService, Api_Vapp.Services.SocialMediaLinkService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IUserFormService, Api_Vapp.Services.UserFormService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.ILuckyWheelService, Api_Vapp.Services.LuckyWheelService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IBusinessCardService, Api_Vapp.Services.BusinessCardService>();
@@ -406,6 +408,7 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.ISpecialOccasionService, Api_Vapp
 // ثبت سرویس‌های مالی و کیف پول
 builder.Services.AddScoped<Api_Vapp.Interfaces.IWalletService, Api_Vapp.Services.WalletService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IWalletReferralService, Api_Vapp.Services.WalletReferralService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.ISmsPricingService, Api_Vapp.Services.SmsPricingService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IPaymentService, Api_Vapp.Services.PaymentService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.ICashbackService, Api_Vapp.Services.CashbackService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IReferralProgramService, Api_Vapp.Services.ReferralProgramService>();
@@ -422,6 +425,7 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.INumberSeekerService, Api_Vapp.Se
 builder.Services.Configure<Api_Vapp.Configuration.FirebaseOptions>(
     builder.Configuration.GetSection(Api_Vapp.Configuration.FirebaseOptions.SectionName));
 builder.Services.AddScoped<Api_Vapp.Interfaces.INotificationSettingsService, Api_Vapp.Services.NotificationSettingsService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IUserDeviceRepository, Api_Vapp.Repositories.UserDeviceRepository>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IUserDeviceService, Api_Vapp.Services.UserDeviceService>();
 builder.Services.AddSingleton<Api_Vapp.Interfaces.IPushNotificationService, Api_Vapp.Services.PushNotificationService>();
 
@@ -574,6 +578,12 @@ if (app.Environment.IsProduction() || app.Environment.EnvironmentName == "Docker
 
         await DatabaseSeeder.SeedAsync(context, logger);
         logger.LogInformation("Database seed completed successfully.");
+
+        var push = services.GetRequiredService<Api_Vapp.Interfaces.IPushNotificationService>();
+        if (push.TryInitialize())
+            logger.LogInformation("Firebase Admin SDK آماده است — Push فعال.");
+        else
+            logger.LogWarning("Firebase Admin SDK آماده نیست — تا تنظیم اعتبارنامه، Push ارسال نمی‌شود.");
     }
     catch (Exception ex)
     {

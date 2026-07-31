@@ -1,10 +1,12 @@
 using Api_Vapp.Configuration;
 using Api_Vapp.Data;
+using Api_Vapp.DTOs.Device;
 using Api_Vapp.Interfaces;
 using FirebaseAdmin;
 using FirebaseAdmin.Messaging;
 using Google.Apis.Auth.OAuth2;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace Api_Vapp.Services
@@ -13,6 +15,7 @@ namespace Api_Vapp.Services
     {
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly FirebaseOptions _options;
+        private readonly IHostEnvironment _environment;
         private readonly ILogger<PushNotificationService> _logger;
         private readonly object _initLock = new();
         private bool _initialized;
@@ -21,52 +24,96 @@ namespace Api_Vapp.Services
         public PushNotificationService(
             IServiceScopeFactory scopeFactory,
             IOptions<FirebaseOptions> options,
+            IHostEnvironment environment,
             ILogger<PushNotificationService> logger)
         {
             _scopeFactory = scopeFactory;
             _options = options.Value;
+            _environment = environment;
             _logger = logger;
         }
 
-        public async Task<int> SendToUserAsync(int userId, string title, string body, CancellationToken cancellationToken = default)
-        {
-            if (!EnsureInitialized())
-                return 0;
+        public bool TryInitialize() => EnsureInitialized();
 
-            List<string> tokens;
+        public async Task<PushDeliveryResultDto> SendToUserAsync(
+            int userId,
+            string title,
+            string body,
+            CancellationToken cancellationToken = default)
+        {
+            _logger.LogInformation("شروع ارسال Push — UserId={UserId}", userId);
+
+            var result = new PushDeliveryResultDto();
+
+            if (!EnsureInitialized())
+            {
+                result.FirebaseReady = false;
+                _logger.LogWarning("ارسال Push لغو شد — Firebase آماده نیست — UserId={UserId}", userId);
+                return result;
+            }
+
+            result.FirebaseReady = true;
+
+            List<(int DeviceId, string Token)> devices;
             using (var scope = _scopeFactory.CreateScope())
             {
                 var db = scope.ServiceProvider.GetRequiredService<Api_Context>();
-                tokens = await db.UserDevices
+                devices = await db.UserDevices
                     .AsNoTracking()
-                    .Where(d => d.UserId == userId && d.IsActive)
-                    .Select(d => d.FcmToken)
+                    .Where(d => d.UserId == userId && d.IsActive && !d.IsDeleted)
+                    .Select(d => new ValueTuple<int, string>(d.Id, d.FcmToken))
                     .ToListAsync(cancellationToken);
             }
 
-            if (tokens.Count == 0)
+            result.DeviceCount = devices.Count;
+            if (devices.Count == 0)
             {
-                _logger.LogDebug("No active FCM tokens for user {UserId}", userId);
-                return 0;
+                _logger.LogInformation(
+                    "پایان ارسال Push — دستگاه فعالی نیست — UserId={UserId}",
+                    userId);
+                return result;
             }
 
-            var sent = 0;
-            foreach (var token in tokens)
+            foreach (var (deviceId, token) in devices)
             {
-                if (await SendToTokenAsync(token, title, body, cancellationToken))
-                    sent++;
+                var ok = await SendToTokenInternalAsync(userId, deviceId, token, title, body, cancellationToken);
+                if (ok)
+                    result.SentCount++;
+                else
+                    result.FailedCount++;
             }
 
-            return sent;
+            _logger.LogInformation(
+                "پایان ارسال Push — UserId={UserId}, DeviceCount={DeviceCount}, SentCount={SentCount}, FailedCount={FailedCount}",
+                userId, result.DeviceCount, result.SentCount, result.FailedCount);
+
+            return result;
         }
 
-        public async Task<bool> SendToTokenAsync(string fcmToken, string title, string body, CancellationToken cancellationToken = default)
+        public async Task<bool> SendToTokenAsync(
+            string fcmToken,
+            string title,
+            string body,
+            CancellationToken cancellationToken = default)
+        {
+            return await SendToTokenInternalAsync(null, null, fcmToken, title, body, cancellationToken);
+        }
+
+        private async Task<bool> SendToTokenInternalAsync(
+            int? userId,
+            int? deviceId,
+            string fcmToken,
+            string title,
+            string body,
+            CancellationToken cancellationToken)
         {
             if (!EnsureInitialized())
                 return false;
 
             if (string.IsNullOrWhiteSpace(fcmToken))
                 return false;
+
+            var tokenPrefix = TokenPrefix(fcmToken);
 
             try
             {
@@ -81,20 +128,31 @@ namespace Api_Vapp.Services
                 };
 
                 var messageId = await FirebaseMessaging.DefaultInstance.SendAsync(message, cancellationToken);
-                _logger.LogInformation("FCM sent successfully: {MessageId}", messageId);
+
+                _logger.LogInformation(
+                    "Push ارسال شد — UserId={UserId}, DeviceId={DeviceId}, TokenPrefix={TokenPrefix}, FcmMessageId={FcmMessageId}",
+                    userId, deviceId, tokenPrefix, messageId);
+
                 return true;
             }
             catch (FirebaseMessagingException ex) when (
                 ex.MessagingErrorCode == MessagingErrorCode.Unregistered ||
                 ex.MessagingErrorCode == MessagingErrorCode.InvalidArgument)
             {
-                _logger.LogWarning(ex, "Invalid/unregistered FCM token; deactivating");
+                _logger.LogWarning(
+                    ex,
+                    "توکن FCM نامعتبر/حذف‌شده — غیرفعال‌سازی — UserId={UserId}, DeviceId={DeviceId}, TokenPrefix={TokenPrefix}, MessagingErrorCode={MessagingErrorCode}",
+                    userId, deviceId, tokenPrefix, ex.MessagingErrorCode);
+
                 await DeactivateTokenAsync(fcmToken);
                 return false;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to send FCM to token");
+                _logger.LogError(
+                    ex,
+                    "خطا در ارسال Push — UserId={UserId}, DeviceId={DeviceId}, TokenPrefix={TokenPrefix}",
+                    userId, deviceId, tokenPrefix);
                 return false;
             }
         }
@@ -118,27 +176,29 @@ namespace Api_Vapp.Services
                         if (!string.IsNullOrWhiteSpace(_options.CredentialsJson))
                         {
                             credential = GoogleCredential.FromJson(_options.CredentialsJson);
+                            _logger.LogInformation("اعتبارنامه Firebase از CredentialsJson بارگذاری شد");
                         }
                         else if (!string.IsNullOrWhiteSpace(_options.CredentialsPath))
                         {
-                            var path = _options.CredentialsPath;
-                            if (!Path.IsPathRooted(path))
-                                path = Path.Combine(Directory.GetCurrentDirectory(), path);
-
-                            if (!File.Exists(path))
+                            var path = ResolveCredentialsPath(_options.CredentialsPath);
+                            if (path == null)
                             {
-                                _logger.LogWarning("Firebase credentials file not found: {Path}", path);
+                                _logger.LogWarning(
+                                    "فایل اعتبارنامه Firebase یافت نشد — ContentRoot={ContentRoot}, Cwd={Cwd}, ConfiguredPath={ConfiguredPath}",
+                                    _environment.ContentRootPath,
+                                    Directory.GetCurrentDirectory(),
+                                    _options.CredentialsPath);
                                 _available = false;
                                 _initialized = true;
                                 return false;
                             }
 
                             credential = GoogleCredential.FromFile(path);
+                            _logger.LogInformation("اعتبارنامه Firebase بارگذاری شد — Path={Path}", path);
                         }
                         else
                         {
-                            _logger.LogWarning(
-                                "Firebase is not configured. Set Firebase:CredentialsPath or Firebase:CredentialsJson.");
+                            _logger.LogWarning("Firebase پیکربندی نشده است (CredentialsPath/CredentialsJson خالی است)");
                             _available = false;
                             _initialized = true;
                             return false;
@@ -148,11 +208,11 @@ namespace Api_Vapp.Services
                     }
 
                     _available = true;
-                    _logger.LogInformation("Firebase Admin SDK initialized");
+                    _logger.LogInformation("Firebase Admin SDK آماده است");
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed to initialize Firebase Admin SDK");
+                    _logger.LogError(ex, "خطا در راه‌اندازی Firebase Admin SDK");
                     _available = false;
                 }
 
@@ -161,32 +221,49 @@ namespace Api_Vapp.Services
             }
         }
 
+        private string? ResolveCredentialsPath(string configuredPath)
+        {
+            if (Path.IsPathRooted(configuredPath) && File.Exists(configuredPath))
+                return configuredPath;
+
+            var candidates = new[]
+            {
+                Path.Combine(_environment.ContentRootPath, configuredPath),
+                Path.Combine(Directory.GetCurrentDirectory(), configuredPath),
+                configuredPath
+            };
+
+            return candidates.FirstOrDefault(File.Exists);
+        }
+
         private async Task DeactivateTokenAsync(string fcmToken)
         {
             try
             {
                 using var scope = _scopeFactory.CreateScope();
-                var db = scope.ServiceProvider.GetRequiredService<Api_Context>();
-                var devices = await db.UserDevices
-                    .Where(d => d.FcmToken == fcmToken && d.IsActive)
-                    .ToListAsync();
-
-                if (devices.Count == 0)
+                var repo = scope.ServiceProvider.GetRequiredService<IUserDeviceRepository>();
+                var device = await repo.GetByTokenAsync(fcmToken);
+                if (device == null)
                     return;
 
-                var now = DateTime.UtcNow;
-                foreach (var device in devices)
-                {
-                    device.IsActive = false;
-                    device.UpdatedAt = now;
-                }
+                device.IsActive = false;
+                await repo.UpdateAsync(device);
 
-                await db.SaveChangesAsync();
+                _logger.LogInformation(
+                    "دستگاه FCM غیرفعال شد — DeviceId={DeviceId}, UserId={UserId}, TokenPrefix={TokenPrefix}",
+                    device.Id, device.UserId, TokenPrefix(fcmToken));
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to deactivate invalid FCM token");
+                _logger.LogError(ex, "خطا در غیرفعال‌سازی توکن FCM — TokenPrefix={TokenPrefix}", TokenPrefix(fcmToken));
             }
+        }
+
+        private static string TokenPrefix(string token)
+        {
+            if (string.IsNullOrEmpty(token))
+                return "(empty)";
+            return token.Length <= 12 ? token : token[..12];
         }
     }
 }

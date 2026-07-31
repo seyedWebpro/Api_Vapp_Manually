@@ -437,14 +437,19 @@ namespace Api_Vapp.Services.BackgroundServices
 
                 if (message == null)
                 {
+                    await using var pricingScope = _serviceProvider.CreateAsyncScope();
+                    var pricing = await pricingScope.ServiceProvider
+                        .GetRequiredService<ISmsPricingService>()
+                        .GetRuntimeAsync(cancellationToken);
+
                     int partsCount;
                     try
                     {
-                        partsCount = SmsPartsCalculator.CalculateParts(messageContent);
+                        partsCount = SmsPartsCalculator.CalculateParts(messageContent, pricing.Rules);
                     }
                     catch (ArgumentException)
                     {
-                        partsCount = 10;
+                        partsCount = pricing.Rules.MaxPages;
                     }
 
                     message = new Message
@@ -452,7 +457,7 @@ namespace Api_Vapp.Services.BackgroundServices
                         UserId = automatedMessage.UserId,
                         Title = automatedMessage.Title ?? $"پیام خودکار #{automatedMessage.Id}",
                         Content = messageContent,
-                        CharacterCount = messageContent.Length,
+                        CharacterCount = SmsPartsCalculator.CountMessageCharacters(messageContent, pricing.Rules),
                         PartsCount = partsCount,
                         IsPersonalized = true,
                         Status = "Ready",

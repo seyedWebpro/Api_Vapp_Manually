@@ -47,6 +47,7 @@ namespace Api_Vapp.Constants
         public const string CashbackDraftRejected = "CashbackDraft.Rejected";
         public const string WalletReferralRewardPaid = "WalletReferral.RewardPaid";
         public const string WalletReferralSettingUpdated = "WalletReferralSetting.Updated";
+        public const string SmsPricingSettingUpdated = "SmsPricingSetting.Updated";
 
         // —— Subscription checkout (فاز ۲ اولویت ۶)
         public const string SubscriptionPurchased = "Subscription.Purchased";
@@ -112,6 +113,12 @@ namespace Api_Vapp.Constants
         public const string QuickActionCreated = "QuickAction.Created";
         public const string QuickActionUpdated = "QuickAction.Updated";
         public const string QuickActionDeleted = "QuickAction.Deleted";
+
+        // —— SocialMediaLink
+        public const string SocialMediaLinkCreated = "SocialMediaLink.Created";
+        public const string SocialMediaLinkUpdated = "SocialMediaLink.Updated";
+        public const string SocialMediaLinkDeleted = "SocialMediaLink.Deleted";
+        public const string SocialMediaLinkSetDefault = "SocialMediaLink.SetDefault";
 
         // —— SpecialOccasion (فاز ۳)
         public const string SpecialOccasionCreated = "SpecialOccasion.Created";

@@ -10,10 +10,24 @@ namespace Api_Vapp.Interfaces
     {
         Task<IEnumerable<SocialMediaLink>> GetByUserIdAsync(int userId);
         Task<IEnumerable<SocialMediaLink>> GetActiveByUserIdAsync(int userId);
+
+        /// <summary>
+        /// لیست صفحه‌بندی‌شده لینک‌های کاربر (فقط خواندنی، در سطح دیتابیس)
+        /// </summary>
+        Task<(List<SocialMediaLink> Items, int TotalCount)> GetPagedByUserIdAsync(
+            int userId,
+            int pageNumber,
+            int pageSize,
+            CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// دریافت لینک متعلق به کاربر (بدون tracking برای خواندن)
+        /// </summary>
+        Task<SocialMediaLink?> GetOwnedByIdAsync(int id, int userId, bool asNoTracking = true);
+
+        /// <summary>
+        /// تعداد لینک‌های فعال و حذف‌نشده کاربر
+        /// </summary>
+        Task<int> CountActiveByUserIdAsync(int userId, CancellationToken cancellationToken = default);
     }
 }
-
-
-
-
-

@@ -1,4 +1,5 @@
 using Api_Vapp.Constants;
+using Api_Vapp.DTOs.Admin;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.DTOs.Sms;
 using Api_Vapp.Interfaces;
@@ -156,8 +157,24 @@ public class SmsReportServiceTests
         return new SmsReportService(
             repository,
             new FakeTrackingService(),
+            new FakeSmsPricingService(),
             config,
             NullLogger<SmsReportService>.Instance);
+    }
+
+    private sealed class FakeSmsPricingService : ISmsPricingService
+    {
+        public Task<SmsPricingRuntime> GetRuntimeAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(SmsPricingRuntime.Defaults);
+
+        public Task<ApiResponse<SmsPricingSettingResponseDto>> GetAdminSettingsAsync() =>
+            Task.FromResult(ApiResponse<SmsPricingSettingResponseDto>.CreateSuccess(new SmsPricingSettingResponseDto()));
+
+        public Task<ApiResponse<SmsPricingSettingResponseDto>> UpdateAdminSettingsAsync(UpdateSmsPricingSettingDto dto) =>
+            Task.FromResult(ApiResponse<SmsPricingSettingResponseDto>.CreateSuccess(new SmsPricingSettingResponseDto()));
+
+        public Task<ApiResponse<SmsPricingPreviewResponseDto>> PreviewAsync(SmsPricingPreviewRequestDto dto) =>
+            Task.FromResult(ApiResponse<SmsPricingPreviewResponseDto>.CreateSuccess(new SmsPricingPreviewResponseDto()));
     }
 
     private sealed class FakeTrackingService : ISmsDeliveryTrackingService

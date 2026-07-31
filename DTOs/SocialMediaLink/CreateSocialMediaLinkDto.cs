@@ -19,12 +19,11 @@ namespace Api_Vapp.DTOs.SocialMediaLink
         /// </summary>
         [Required(ErrorMessage = "آدرس لینک الزامی است")]
         [MaxLength(500, ErrorMessage = "آدرس لینک نمی‌تواند بیشتر از 500 کاراکتر باشد")]
-        [Url(ErrorMessage = "آدرس لینک باید معتبر باشد")]
         public string LinkUrl { get; set; } = string.Empty;
+
+        /// <summary>
+        /// اگر true باشد، این لینک به‌عنوان پیش‌فرض تنظیم می‌شود
+        /// </summary>
+        public bool? IsDefault { get; set; }
     }
 }
-
-
-
-
-

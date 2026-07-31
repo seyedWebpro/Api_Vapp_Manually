@@ -34,18 +34,7 @@ namespace Api_Vapp.Services
         private readonly IHostEnvironment _hostEnvironment;
         private readonly IServiceProvider _serviceProvider;
         private readonly IAuditService _audit;
-
-        // هزینه هر قسمت پیام (قابل تنظیم از appsettings)
-        private readonly decimal _costPerPart = 160; // تومان
-
-        /// <summary>
-        /// بررسی اینکه آیا چک کردن کیف پول غیرفعال است یا نه
-        /// </summary>
-        private bool IsWalletCheckDisabled()
-        {
-            var environmentName = _hostEnvironment.EnvironmentName;
-            return _configuration.GetValue<bool>($"{environmentName}:DisableWalletCheck", false);
-        }
+        private readonly ISmsPricingService _smsPricing;
 
         public AutomatedMessageService(
             IAutomatedMessageRepository automatedMessageRepository,
@@ -61,7 +50,8 @@ namespace Api_Vapp.Services
             IConfiguration configuration,
             IHostEnvironment hostEnvironment,
             IServiceProvider serviceProvider,
-            IAuditService audit)
+            IAuditService audit,
+            ISmsPricingService smsPricing)
         {
             _automatedMessageRepository = automatedMessageRepository;
             _messageRepository = messageRepository;
@@ -77,6 +67,7 @@ namespace Api_Vapp.Services
             _hostEnvironment = hostEnvironment;
             _serviceProvider = serviceProvider;
             _audit = audit;
+            _smsPricing = smsPricing;
         }
 
         public Task<ApiResponse<AutomationTypeListResponseDto>> GetAutomationTypesAsync(int pageNumber = 1, int pageSize = 10)
@@ -2128,8 +2119,9 @@ namespace Api_Vapp.Services
 
                 // به‌روزرسانی محتوا
                 message.Content = contentDto.Content.Trim();
-                message.CharacterCount = SmsPartsCalculator.CountMessageCharacters(message.Content);
-                message.PartsCount = SmsPartsCalculator.CalculateParts(message.Content);
+                var pricingForParts = await _smsPricing.GetRuntimeAsync();
+                message.CharacterCount = SmsPartsCalculator.CountMessageCharacters(message.Content, pricingForParts.Rules);
+                message.PartsCount = SmsPartsCalculator.CalculateParts(message.Content, pricingForParts.Rules);
                 message.IsPersonalized = ContainsPlaceholders(message.Content);
                 message.Placeholders = ExtractPlaceholders(message.Content);
                 message.UpdatedAt = DateTime.UtcNow;
@@ -2314,12 +2306,12 @@ namespace Api_Vapp.Services
 
                 // محاسبه هزینه بر اساس eligibleRecipientsCount
                 var partsCount = message.PartsCount;
-                var estimatedTotalCost = eligibleRecipientsCount * partsCount * _costPerPart;
+                var pricing = await _smsPricing.GetRuntimeAsync();
+                var estimatedTotalCost = eligibleRecipientsCount * partsCount * pricing.CostPerPart;
 
                 // بررسی موجودی کیف پول
                 var user = await _userRepository.GetByIdAsync(userId);
-                var disableWalletCheck = IsWalletCheckDisabled();
-                var walletStatus = disableWalletCheck || (user?.WalletBalance >= estimatedTotalCost) ? "Sufficient" : "Insufficient";
+                var walletStatus = !pricing.IsBillingEffectivelyEnabled || (user?.WalletBalance >= estimatedTotalCost) ? "Sufficient" : "Insufficient";
 
                 // ایجاد ExecutionTime بر اساس نوع پیام خودکار
                 var executionTime = GetExecutionTimeDescription(automatedMessage);
@@ -2339,7 +2331,7 @@ namespace Api_Vapp.Services
                     EligibleRecipientsCount = eligibleRecipientsCount,
                     IneligibleRecipientsCount = ineligibleRecipientsCount,
                     EligibilityInfo = eligibilityInfo,
-                    CostPerPart = _costPerPart,
+                    CostPerPart = pricing.CostPerPart,
                     EstimatedTotalCost = estimatedTotalCost,
                     WalletStatus = walletStatus,
                     WalletBalance = user?.WalletBalance ?? 0,
@@ -2460,12 +2452,12 @@ namespace Api_Vapp.Services
 
                 // محاسبه هزینه بر اساس eligibleRecipientsCount
                 var partsCount = message.PartsCount;
-                var estimatedTotalCost = eligibleRecipientsCount * partsCount * _costPerPart;
+                var pricing = await _smsPricing.GetRuntimeAsync();
+                var estimatedTotalCost = eligibleRecipientsCount * partsCount * pricing.CostPerPart;
 
                 // بررسی موجودی کیف پول
                 var user = await _userRepository.GetByIdAsync(userId);
-                var disableWalletCheck = IsWalletCheckDisabled();
-                var walletStatus = disableWalletCheck || (user?.WalletBalance >= estimatedTotalCost) ? "Sufficient" : "Insufficient";
+                var walletStatus = !pricing.IsBillingEffectivelyEnabled || (user?.WalletBalance >= estimatedTotalCost) ? "Sufficient" : "Insufficient";
 
                 // ایجاد ExecutionTime بر اساس نوع پیام خودکار
                 var executionTime = GetExecutionTimeDescription(automatedMessage);
@@ -2485,7 +2477,7 @@ namespace Api_Vapp.Services
                     EligibleRecipientsCount = eligibleRecipientsCount,
                     IneligibleRecipientsCount = ineligibleRecipientsCount,
                     EligibilityInfo = eligibilityInfo,
-                    CostPerPart = _costPerPart,
+                    CostPerPart = pricing.CostPerPart,
                     EstimatedTotalCost = estimatedTotalCost,
                     WalletStatus = walletStatus,
                     WalletBalance = user?.WalletBalance ?? 0,
@@ -2611,12 +2603,12 @@ namespace Api_Vapp.Services
 
                 // محاسبه هزینه بر اساس eligibleRecipientsCount
                 var partsCount = message.PartsCount;
-                var estimatedTotalCost = eligibleRecipientsCount * partsCount * _costPerPart;
+                var pricing = await _smsPricing.GetRuntimeAsync();
+                var estimatedTotalCost = eligibleRecipientsCount * partsCount * pricing.CostPerPart;
 
                 // بررسی موجودی کیف پول
                 var user = await _userRepository.GetByIdAsync(userId);
-                var disableWalletCheck = IsWalletCheckDisabled();
-                var walletStatus = disableWalletCheck || (user?.WalletBalance >= estimatedTotalCost) ? "Sufficient" : "Insufficient";
+                var walletStatus = !pricing.IsBillingEffectivelyEnabled || (user?.WalletBalance >= estimatedTotalCost) ? "Sufficient" : "Insufficient";
 
                 // ایجاد ExecutionTime بر اساس نوع پیام خودکار
                 var executionTime = GetExecutionTimeDescription(automatedMessage);
@@ -2684,16 +2676,13 @@ namespace Api_Vapp.Services
                     _logger.LogWarning(warningMessage);
                 }
 
-                // بررسی موجودی کیف پول (دوباره با تعداد دقیق)
-                // غیرفعال شده - دیگر کیف پول چک نمی‌شود
-                /*
-                if (!disableWalletCheck && (user == null || user.WalletBalance < estimatedTotalCost))
+                                if (pricing.IsBillingEffectivelyEnabled && (user == null || user.WalletBalance < estimatedTotalCost))
                 {
                     await transaction.RollbackAsync();
                     return ApiResponse<AutomatedMessageSummaryResponseDto>.BadRequest(
                         $"موجودی کیف پول کافی نیست. موجودی: {user?.WalletBalance ?? 0} تومان، هزینه تخمینی: {estimatedTotalCost} تومان");
                 }
-                */
+
 
                 // ایجاد MessageCampaign
                 // Title بر اساس AutomationType تنظیم می‌شود
@@ -2711,7 +2700,7 @@ namespace Api_Vapp.Services
                     Status = "Active",
                     RecipientsCount = eligibleRecipients.Count,
                     PartsCount = partsCount,
-                    CostPerPart = _costPerPart,
+                    CostPerPart = pricing.CostPerPart,
                     EstimatedTotalCost = estimatedTotalCost,
                     CreatedAt = DateTime.UtcNow
                 };
@@ -2775,7 +2764,7 @@ namespace Api_Vapp.Services
                     EligibleRecipientsCount = eligibleRecipientsCount,
                     IneligibleRecipientsCount = ineligibleRecipientsCount,
                     EligibilityInfo = eligibilityInfo,
-                    CostPerPart = _costPerPart,
+                    CostPerPart = pricing.CostPerPart,
                     EstimatedTotalCost = estimatedTotalCost,
                     WalletStatus = walletStatus,
                     WalletBalance = user?.WalletBalance ?? 0,

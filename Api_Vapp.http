@@ -612,3 +612,108 @@ Content-Type: application/json
   "bonusPercent": 10,
   "descriptionTemplate": "کافیه کاربر معرفی‌شده این کد رو موقع شارژ کیف پول وارد کنه؛ در این صورت {DiscountPercent}٪ تخفیف براشون اعمال می‌شه و {BonusPercent}٪ پاداش هم به شما واریز می‌شه."
 }
+
+### ادمین — تعرفه پیامک
+GET {{Api_Vapp_HostAddress}}/api/Admin/SmsPricingSetting
+Authorization: Bearer {{adminToken}}
+
+### ادمین — به‌روزرسانی تعرفه پیامک
+POST {{Api_Vapp_HostAddress}}/api/Admin/SmsPricingSetting/update
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "isBillingEnabled": false,
+  "costPerPart": 160,
+  "persianFirstPageChars": 70,
+  "persianSecondPageChars": 64,
+  "persianOtherPagesChars": 67,
+  "englishFirstPageChars": 160,
+  "englishOtherPagesChars": 153,
+  "maxPages": 10,
+  "regularCharWeight": 1,
+  "spaceCharWeight": 1,
+  "emojiCharWeight": 3,
+  "trimContentBeforeCount": true,
+  "countLeadingTrailingSpaces": true,
+  "languageDetectionSampleLength": 50,
+  "defaultLanguageIsPersian": true,
+  "includeOptOutSuffixInCalculation": true,
+  "optOutSuffix": "لغو11"
+}
+
+### ادمین — پیش‌نمایش هزینه پیامک
+POST {{Api_Vapp_HostAddress}}/api/Admin/SmsPricingSetting/preview
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "content": "سلام مشتری عزیز، تخفیف ویژه فقط امروز",
+  "recipientsCount": 10,
+  "draftSettings": {
+    "isBillingEnabled": true,
+    "costPerPart": 200,
+    "persianFirstPageChars": 70,
+    "persianSecondPageChars": 64,
+    "persianOtherPagesChars": 67,
+    "englishFirstPageChars": 160,
+    "englishOtherPagesChars": 153,
+    "maxPages": 10,
+    "regularCharWeight": 1,
+    "spaceCharWeight": 1,
+    "emojiCharWeight": 3,
+    "trimContentBeforeCount": true,
+    "countLeadingTrailingSpaces": true,
+    "languageDetectionSampleLength": 50,
+    "defaultLanguageIsPersian": true,
+    "includeOptOutSuffixInCalculation": true,
+    "optOutSuffix": "لغو11"
+  }
+}
+
+### ========== Device / FCM Push ==========
+
+### ثبت توکن FCM (بعد از لاگین)
+POST {{Api_Vapp_HostAddress}}/api/Device/fcm-token
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "token": "REPLACE_WITH_FCM_TOKEN"
+}
+
+### ارسال دوباره همان توکن (باید upsert بدون ارور)
+POST {{Api_Vapp_HostAddress}}/api/Device/fcm-token
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "token": "REPLACE_WITH_FCM_TOKEN"
+}
+
+### ثبت توکن — بدون JWT (باید 401)
+POST {{Api_Vapp_HostAddress}}/api/Device/fcm-token
+Content-Type: application/json
+
+{
+  "token": "test"
+}
+
+### ثبت توکن — body خالی (باید 400 VALIDATION_FAILED)
+POST {{Api_Vapp_HostAddress}}/api/Device/fcm-token
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "token": ""
+}
+
+### نوتیفیکیشن تستی به دستگاه‌های کاربر جاری
+POST {{Api_Vapp_HostAddress}}/api/Device/test-push
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "title": "تست وپ",
+  "body": "این یک نوتیفیکیشن تستی است"
+}

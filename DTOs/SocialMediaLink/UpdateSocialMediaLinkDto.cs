@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations;
 namespace Api_Vapp.DTOs.SocialMediaLink
 {
     /// <summary>
-    /// DTO برای به‌روزرسانی لینک شبکه‌های اجتماعی
+    /// DTO برای به‌روزرسانی لینک شبکه‌های اجتماعی (فقط فیلدهای ارسال‌شده تغییر می‌کنند)
     /// </summary>
     public class UpdateSocialMediaLinkDto
     {
@@ -17,7 +17,6 @@ namespace Api_Vapp.DTOs.SocialMediaLink
         /// آدرس لینک (URL)
         /// </summary>
         [MaxLength(500, ErrorMessage = "آدرس لینک نمی‌تواند بیشتر از 500 کاراکتر باشد")]
-        [Url(ErrorMessage = "آدرس لینک باید معتبر باشد")]
         public string? LinkUrl { get; set; }
 
         /// <summary>
@@ -26,8 +25,3 @@ namespace Api_Vapp.DTOs.SocialMediaLink
         public bool? IsActive { get; set; }
     }
 }
-
-
-
-
-

@@ -76,6 +76,8 @@ services:
     volumes:
       - ../wwwroot/uploads:/app/wwwroot/uploads
       - ../log:/app/log
+      # Firebase Admin SDK service account (do not commit the JSON)
+      - ../secrets/firebase-service-account.json:/app/secrets/firebase-service-account.json:ro
     networks:
       - vapp_network_prod
     restart: unless-stopped

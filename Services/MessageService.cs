@@ -36,18 +36,8 @@ namespace Api_Vapp.Services
         private readonly IHostEnvironment _hostEnvironment;
         private readonly IFileUploadService? _fileUploadService;
         private readonly IAuditService _audit;
-
-        // هزینه هر پارت پیام (قابل تنظیم از appsettings)
-        private readonly decimal _costPerPart = 160; // تومان
-
-        /// <summary>
-        /// بررسی اینکه آیا چک کردن کیف پول غیرفعال است یا نه
-        /// </summary>
-        private bool IsWalletCheckDisabled()
-        {
-            var environmentName = _hostEnvironment.EnvironmentName;
-            return _configuration.GetValue<bool>($"{environmentName}:DisableWalletCheck", false);
-        }
+        private readonly ISmsPricingService _smsPricing;
+        private readonly IWalletService _walletService;
 
         public MessageService(
             IMessageRepository messageRepository,
@@ -64,6 +54,8 @@ namespace Api_Vapp.Services
             IConfiguration configuration,
             IHostEnvironment hostEnvironment,
             IAuditService audit,
+            ISmsPricingService smsPricing,
+            IWalletService walletService,
             IFileUploadService? fileUploadService = null)
         {
             _messageRepository = messageRepository;
@@ -78,6 +70,8 @@ namespace Api_Vapp.Services
             _context = context;
             _logger = logger;
             _configuration = configuration;
+            _smsPricing = smsPricing;
+            _walletService = walletService;
             _hostEnvironment = hostEnvironment;
             _audit = audit;
             _fileUploadService = fileUploadService;
@@ -92,12 +86,13 @@ namespace Api_Vapp.Services
                 // محتوای پیام (می‌تواند خالی باشد و بعداً به‌روزرسانی شود)
                 var content = string.IsNullOrWhiteSpace(createDto.Content) ? "" : createDto.Content.Trim();
 
+                var pricing = await _smsPricing.GetRuntimeAsync();
                 var message = new Message
                 {
                     UserId = userId,
                     Content = content,
-                    CharacterCount = SmsPartsCalculator.CountMessageCharacters(content),
-                    PartsCount = SmsPartsCalculator.CalculateParts(content),
+                    CharacterCount = SmsPartsCalculator.CountMessageCharacters(content, pricing.Rules),
+                    PartsCount = SmsPartsCalculator.CalculateParts(content, pricing.Rules),
                     IsPersonalized = ContainsPlaceholders(content),
                     Placeholders = ExtractPlaceholders(content),
                     Status = "Draft",
@@ -235,8 +230,9 @@ namespace Api_Vapp.Services
                 if (!string.IsNullOrWhiteSpace(updateDto.Content))
                 {
                     message.Content = updateDto.Content.Trim();
-                    message.CharacterCount = SmsPartsCalculator.CountMessageCharacters(message.Content);
-                    message.PartsCount = SmsPartsCalculator.CalculateParts(message.Content);
+                    var pricing = await _smsPricing.GetRuntimeAsync();
+                    message.CharacterCount = SmsPartsCalculator.CountMessageCharacters(message.Content, pricing.Rules);
+                    message.PartsCount = SmsPartsCalculator.CalculateParts(message.Content, pricing.Rules);
                     message.IsPersonalized = ContainsPlaceholders(message.Content);
                     message.Placeholders = ExtractPlaceholders(message.Content);
                     hasChanges = true;
@@ -418,12 +414,12 @@ namespace Api_Vapp.Services
 
                 var recipientsCount = recipients.Count;
                 var partsCount = message.PartsCount;
-                var totalCost = recipientsCount * partsCount * _costPerPart;
+                var pricing = await _smsPricing.GetRuntimeAsync();
+                var totalCost = recipientsCount * partsCount * pricing.CostPerPart;
 
                 // بررسی موجودی کیف پول
                 var user = await _userRepository.GetByIdAsync(userId);
-                var disableWalletCheck = IsWalletCheckDisabled();
-                var walletStatus = disableWalletCheck || (user?.WalletBalance >= totalCost) ? "Sufficient" : "Insufficient";
+                var walletStatus = !pricing.IsBillingEffectivelyEnabled || (user?.WalletBalance >= totalCost) ? "Sufficient" : "Insufficient";
 
                 var summary = new CampaignSummaryDto
                 {
@@ -435,7 +431,7 @@ namespace Api_Vapp.Services
                     SelectedTagIds = selectedTagIds,
                     RecipientsCount = recipientsCount,
                     PartsCount = partsCount,
-                    CostPerPart = _costPerPart,
+                    CostPerPart = pricing.CostPerPart,
                     EstimatedTotalCost = totalCost,
                     WalletStatus = walletStatus,
                     WalletBalance = user?.WalletBalance ?? 0
@@ -493,12 +489,12 @@ namespace Api_Vapp.Services
 
                 var recipientsCount = recipients.Count;
                 var partsCount = message.PartsCount;
-                var totalCost = recipientsCount * partsCount * _costPerPart;
+                var pricing = await _smsPricing.GetRuntimeAsync();
+                var totalCost = recipientsCount * partsCount * pricing.CostPerPart;
 
                 // بررسی موجودی کیف پول
                 var user = await _userRepository.GetByIdAsync(userId);
-                var disableWalletCheck = IsWalletCheckDisabled();
-                var walletStatus = disableWalletCheck || (user?.WalletBalance >= totalCost) ? "Sufficient" : "Insufficient";
+                var walletStatus = !pricing.IsBillingEffectivelyEnabled || (user?.WalletBalance >= totalCost) ? "Sufficient" : "Insufficient";
 
                 var summary = new CampaignSummaryDto
                 {
@@ -510,7 +506,7 @@ namespace Api_Vapp.Services
                     SelectedTagIds = campaignDto.SelectedTagIds,
                     RecipientsCount = recipientsCount,
                     PartsCount = partsCount,
-                    CostPerPart = _costPerPart,
+                    CostPerPart = pricing.CostPerPart,
                     EstimatedTotalCost = totalCost,
                     WalletStatus = walletStatus,
                     WalletBalance = user?.WalletBalance ?? 0
@@ -1125,14 +1121,11 @@ namespace Api_Vapp.Services
                     }
                 }
 
-                // بررسی موجودی کیف پول
-                // غیرفعال شده - دیگر کیف پول چک نمی‌شود
-                /*
-                if (user.WalletBalance < campaign.EstimatedTotalCost)
+                var pricing = await _smsPricing.GetRuntimeAsync();
+                if (pricing.IsBillingEffectivelyEnabled && user.WalletBalance < campaign.EstimatedTotalCost)
                 {
                     return ApiResponse<bool>.BadRequest("موجودی کیف پول کافی نیست");
                 }
-                */
 
                 campaign.Status = "Sending";
                 campaign.UpdatedAt = DateTime.UtcNow;
@@ -1167,21 +1160,22 @@ namespace Api_Vapp.Services
                             messageContent = recipient.PersonalizedContent;
                         }
 
-                        // اضافه کردن 'لغو11' در انتهای پیامک (الزام API)
-                        if (!messageContent.TrimEnd().EndsWith("لغو11"))
+                        // اضافه کردن پسوند لغو در انتهای پیامک (الزام API / قابل تنظیم ادمین)
+                        var optOut = string.IsNullOrWhiteSpace(pricing.Rules.OptOutSuffix) ? "لغو11" : pricing.Rules.OptOutSuffix.Trim();
+                        if (!messageContent.TrimEnd().EndsWith(optOut, StringComparison.Ordinal))
                         {
-                            messageContent = $"{messageContent.TrimEnd()}\nلغو11";
+                            messageContent = $"{messageContent.TrimEnd()}\n{optOut}";
                         }
 
-                        // محاسبه دقیق تعداد پارت‌ها برای پیام نهایی (با در نظر گیری شخصی‌سازی و 'لغو11')
+                        // محاسبه دقیق تعداد پارت‌ها برای پیام نهایی (با در نظر گیری شخصی‌سازی و پسوند لغو)
                         int actualPartsCount;
                         try
                         {
-                            actualPartsCount = SmsPartsCalculator.CalculateParts(messageContent);
+                            actualPartsCount = SmsPartsCalculator.CalculateParts(messageContent, pricing.Rules);
                         }
                         catch (ArgumentException ex)
                         {
-                            // پیام بیش از 10 صفحه است
+                            // پیام بیش از حداکثر صفحات است
                             recipient.Status = "Failed";
                             recipient.ErrorMessage = ControlledErrorHelper.SendFailed;
                             recipient.RetryCount++;
@@ -1212,7 +1206,7 @@ namespace Api_Vapp.Services
                             recipient.SmsServiceId = smsResult.Data!.Sid.ToString();
                             recipient.ErrorMessage = null;
                             sentCount++;
-                            actualCost += campaign.CostPerPart * actualPartsCount;
+                            actualCost += pricing.CostPerPart * actualPartsCount;
 
                             await _deliveryTracking.TrackSuccessfulSendAsync(new SmsDeliveryTrackRequestDto
                             {
@@ -1278,12 +1272,26 @@ namespace Api_Vapp.Services
 
                 await _campaignRepository.UpdateAsync(campaign);
 
-                // کسر از کیف پول (فقط برای پیام‌های موفق)
-                // غیرفعال شده - دیگر از کیف پول کسر نمی‌شود
-                /*
-                user.WalletBalance -= actualCost;
-                await _userRepository.UpdateAsync(user);
-                */
+                if (pricing.IsBillingEffectivelyEnabled && actualCost > 0)
+                {
+                    var deductResult = await _walletService.DeductBalanceAsync(
+                        userId,
+                        actualCost,
+                        "ارسال کمپین پیامک",
+                        $"هزینه ارسال کمپین #{campaignId} — {sentCount} پیام موفق");
+                    if (!deductResult.Success)
+                    {
+                        _logger.LogWarning(
+                            "کسر کیف پول کمپین ناموفق — CampaignId: {CampaignId}, Cost: {Cost}, Message: {Message}",
+                            campaignId, actualCost, deductResult.Message);
+                    }
+                }
+                else if (actualCost > 0)
+                {
+                    _logger.LogInformation(
+                        "صورتحساب پیامک غیرفعال — CampaignId: {CampaignId}, Cost: {Cost} (not deducted)",
+                        campaignId, actualCost);
+                }
 
                 await _audit.WriteAsync(new AuditEntry
                 {
@@ -3816,23 +3824,19 @@ namespace Api_Vapp.Services
                 // محاسبه مجدد هزینه (مشکل 4.3) - با تعداد گیرندگان به‌روزرسانی شده
                 var recipientsCount = recipients.Count;
                 var partsCount = message.PartsCount;
-                var totalCost = recipientsCount * partsCount * _costPerPart;
+                var pricing = await _smsPricing.GetRuntimeAsync();
+                var totalCost = recipientsCount * partsCount * pricing.CostPerPart;
 
-                // بررسی موجودی کیف پول
-                // غیرفعال شده - دیگر کیف پول چک نمی‌شود
-                /*
                 var user = await _userRepository.GetByIdAsync(userId);
                 if (user == null)
                 {
                     return ApiResponse<DirectSendResultDto>.NotFound("کاربر یافت نشد");
                 }
 
-                var disableWalletCheck = IsWalletCheckDisabled();
-                if (!disableWalletCheck && user.WalletBalance < totalCost)
+                if (pricing.IsBillingEffectivelyEnabled && user.WalletBalance < totalCost)
                 {
                     return ApiResponse<DirectSendResultDto>.BadRequest("موجودی کیف پول کافی نیست");
                 }
-                */
 
                 // اگر ارسال زمان‌بندی شده است، باید یک Background Job ایجاد شود
                 // فعلاً فقط ارسال فوری را پشتیبانی می‌کنیم
@@ -3847,9 +3851,8 @@ namespace Api_Vapp.Services
                 int failedCount = 0;
                 decimal actualCost = 0;
                 var failedNumbers = new List<string>();
-                // غیرفعال شده - دیگر استفاده نمی‌شوند
-                // decimal deductedAmount = 0; // برای Compensation در صورت خطا
-                // bool walletDeducted = false; // برای ردیابی اینکه آیا موجودی کسر شده است
+                decimal deductedAmount = 0;
+                bool walletDeducted = false;
                 
                 _logger.LogInformation("=== شروع ارسال به {RecipientsCount} گیرنده ===", recipients.Count);
                 _logger.LogInformation("گیرندگان: {Recipients}", 
@@ -3880,18 +3883,18 @@ namespace Api_Vapp.Services
                             }
                         }
 
-                        // اضافه کردن 'لغو11' در انتهای پیامک (الزام API)
-                        if (!messageContent.TrimEnd().EndsWith("لغو11"))
+                        var optOut = string.IsNullOrWhiteSpace(pricing.Rules.OptOutSuffix) ? "لغو11" : pricing.Rules.OptOutSuffix.Trim();
+                        if (!messageContent.TrimEnd().EndsWith(optOut, StringComparison.Ordinal))
                         {
-                            messageContent = $"{messageContent.TrimEnd()}\nلغو11";
-                            _logger.LogDebug("متن 'لغو11' به پیام اضافه شد برای {Mobile}", recipient.MobileNumber);
+                            messageContent = $"{messageContent.TrimEnd()}\n{optOut}";
+                            _logger.LogDebug("پسوند لغو به پیام اضافه شد برای {Mobile}", recipient.MobileNumber);
                         }
 
                         // محاسبه دقیق تعداد پارت‌ها برای پیام نهایی (با در نظر گیری شخصی‌سازی و 'لغو11')
                         int actualPartsCount;
                         try
                         {
-                            actualPartsCount = SmsPartsCalculator.CalculateParts(messageContent);
+                            actualPartsCount = SmsPartsCalculator.CalculateParts(messageContent, pricing.Rules);
                         }
                         catch (ArgumentException ex)
                         {
@@ -3923,7 +3926,7 @@ namespace Api_Vapp.Services
                         {
                             // ارسال موفق
                             sentCount++;
-                            actualCost += _costPerPart * actualPartsCount;
+                            actualCost += pricing.CostPerPart * actualPartsCount;
 
                             await _deliveryTracking.TrackSuccessfulSendAsync(new SmsDeliveryTrackRequestDto
                             {
@@ -3961,134 +3964,54 @@ namespace Api_Vapp.Services
                     }
                 }
 
-                    // کسر هزینه از کیف پول با Transaction و Lock (فقط برای پیام‌های موفق)
-                // غیرفعال شده - دیگر از کیف پول کسر نمی‌شود
-                /*
-                if (actualCost > 0 && !disableWalletCheck)
-                {
-                        using var walletTransaction = await _context.Database.BeginTransactionAsync();
-                        try
-                        {
-                            // خواندن مجدد User با Lock برای بررسی موجودی
-                            var userWithLock = await _context.Users
-                                .FromSqlRaw("SELECT * FROM Users WITH (UPDLOCK, ROWLOCK) WHERE Id = {0}", userId)
-                                .FirstOrDefaultAsync();
-
-                            if (userWithLock == null)
-                            {
-                                await walletTransaction.RollbackAsync();
-                                return ApiResponse<DirectSendResultDto>.NotFound("کاربر یافت نشد");
-                            }
-
-                            // بررسی مجدد موجودی (با Lock)
-                            if (userWithLock.WalletBalance < actualCost)
-                            {
-                                await walletTransaction.RollbackAsync();
-                                return ApiResponse<DirectSendResultDto>.BadRequest("موجودی کیف پول کافی نیست");
-                            }
-
-                            var balanceBefore = userWithLock.WalletBalance;
-                            userWithLock.WalletBalance -= actualCost;
-                            deductedAmount = actualCost;
-                            walletDeducted = true;
-                            await _context.SaveChangesAsync();
-
-                    // ثبت تراکنش کیف پول
-                            var walletTransactionRecord = new Models.WalletTransaction
+                    if (pricing.IsBillingEffectivelyEnabled && actualCost > 0)
                     {
-                        UserId = userId,
-                        Amount = -actualCost,
-                        BalanceBefore = balanceBefore,
-                                BalanceAfter = userWithLock.WalletBalance,
-                        TransactionType = "SmsSend",
-                        Title = "ارسال پیام مستقیم",
-                        Description = $"ارسال پیام مستقیم - پیام ID: {messageId}",
-                        CreatedAt = DateTime.UtcNow
-                    };
-                            await _context.WalletTransactions.AddAsync(walletTransactionRecord);
-                    await _context.SaveChangesAsync();
-
-                            await walletTransaction.CommitAsync();
-
-                    _logger.LogInformation("Wallet balance deducted - UserId: {UserId}, Amount: {Amount}, Remaining: {Remaining}", 
-                                userId, actualCost, userWithLock.WalletBalance);
-                        }
-                        catch (Exception ex)
+                        var deductResult = await _walletService.DeductBalanceAsync(
+                            userId,
+                            actualCost,
+                            "ارسال پیام مستقیم",
+                            $"هزینه ارسال پیام مستقیم — پیام #{messageId}");
+                        if (!deductResult.Success)
                         {
-                            await walletTransaction.RollbackAsync();
-                            _logger.LogError(ex, "Error deducting wallet balance - UserId: {UserId}, Amount: {Amount}", userId, actualCost);
-                            // در صورت خطا در کسر موجودی، خطا را برمی‌گردانیم
-                            throw;
+                            _logger.LogWarning(
+                                "کسر کیف پول پیام مستقیم ناموفق — MessageId: {MessageId}, Cost: {Cost}, Message: {Message}",
+                                messageId, actualCost, deductResult.Message);
+                            return ApiResponse<DirectSendResultDto>.BadRequest(
+                                deductResult.Message ?? "موجودی کیف پول کافی نیست");
                         }
-                }
-                else if (actualCost > 0 && disableWalletCheck)
-                {
-                    _logger.LogInformation("Wallet check disabled - UserId: {UserId}, Cost: {Cost} (not deducted)", 
-                        userId, actualCost);
-                }
-                */
-                _logger.LogInformation("Wallet check disabled - UserId: {UserId}, Cost: {Cost} (not deducted)", 
-                    userId, actualCost);
+
+                        deductedAmount = actualCost;
+                        walletDeducted = true;
+                        _logger.LogInformation(
+                            "Wallet balance deducted - UserId: {UserId}, Amount: {Amount}",
+                            userId, actualCost);
+                    }
+                    else if (actualCost > 0)
+                    {
+                        _logger.LogInformation(
+                            "صورتحساب پیامک غیرفعال — UserId: {UserId}, Cost: {Cost} (not deducted)",
+                            userId, actualCost);
+                    }
                 }
                 catch (Exception ex)
                 {
-                    // Compensation Pattern: برگشت موجودی در صورت خطا (مشکل 6.1)
-                    // غیرفعال شده - دیگر موجودی برگشت داده نمی‌شود
-                    /*
-                    if (walletDeducted && deductedAmount > 0 && !disableWalletCheck)
+                    if (walletDeducted && deductedAmount > 0 && pricing.IsBillingEffectivelyEnabled)
                     {
                         try
                         {
                             _logger.LogWarning("Compensating wallet balance - UserId: {UserId}, Amount: {Amount}", userId, deductedAmount);
-                            
-                            using var compensationTransaction = await _context.Database.BeginTransactionAsync();
-                            try
-                            {
-                                var userForCompensation = await _context.Users
-                                    .FromSqlRaw("SELECT * FROM Users WITH (UPDLOCK, ROWLOCK) WHERE Id = {0}", userId)
-                                    .FirstOrDefaultAsync();
-
-                                if (userForCompensation != null)
-                                {
-                                    var balanceBefore = userForCompensation.WalletBalance;
-                                    userForCompensation.WalletBalance += deductedAmount;
-                                    await _context.SaveChangesAsync();
-
-                                    // ثبت تراکنش Compensation
-                                    var compensationTransactionRecord = new Models.WalletTransaction
-                                    {
-                                        UserId = userId,
-                                        Amount = deductedAmount,
-                                        BalanceBefore = balanceBefore,
-                                        BalanceAfter = userForCompensation.WalletBalance,
-                                        TransactionType = "SmsSendCompensation",
-                                        Title = "برگشت موجودی - خطا در ارسال",
-                                        Description = $"برگشت موجودی به دلیل خطا در ارسال پیام - پیام ID: {messageId}",
-                                        CreatedAt = DateTime.UtcNow
-                                    };
-                                    await _context.WalletTransactions.AddAsync(compensationTransactionRecord);
-                                    await _context.SaveChangesAsync();
-
-                                    await compensationTransaction.CommitAsync();
-
-                                    _logger.LogInformation("Wallet balance compensated - UserId: {UserId}, Amount: {Amount}, New Balance: {Balance}", 
-                                        userId, deductedAmount, userForCompensation.WalletBalance);
-                                }
-                            }
-                            catch (Exception compensationEx)
-                            {
-                                await compensationTransaction.RollbackAsync();
-                                _logger.LogError(compensationEx, "Error compensating wallet balance - UserId: {UserId}, Amount: {Amount}", 
-                                    userId, deductedAmount);
-                                // خطا در Compensation را لاگ می‌کنیم اما خطای اصلی را throw می‌کنیم
-                            }
+                            await _walletService.AddBalanceAsync(
+                                userId,
+                                deductedAmount,
+                                "SmsSendCompensation",
+                                "برگشت موجودی - خطا در ارسال",
+                                $"برگشت موجودی به دلیل خطا در ارسال پیام - پیام ID: {messageId}");
                         }
                         catch (Exception compensationEx)
                         {
                             _logger.LogError(compensationEx, "Critical error in compensation - UserId: {UserId}", userId);
                         }
                     }
-                    */
 
                     // Re-throw خطای اصلی
                     _logger.LogError(ex, "Error during SMS sending - MessageId: {MessageId}, UserId: {UserId}", messageId, userId);
@@ -4482,8 +4405,9 @@ namespace Api_Vapp.Services
                 if (saveToMessage)
                 {
                     message.Content = personalizedContent;
-                    message.CharacterCount = SmsPartsCalculator.CountMessageCharacters(personalizedContent);
-                    message.PartsCount = SmsPartsCalculator.CalculateParts(personalizedContent);
+                    var pricing = await _smsPricing.GetRuntimeAsync();
+                    message.CharacterCount = SmsPartsCalculator.CountMessageCharacters(personalizedContent, pricing.Rules);
+                    message.PartsCount = SmsPartsCalculator.CalculateParts(personalizedContent, pricing.Rules);
                     message.IsPersonalized = false; // دیگر placeholder ندارد
                     message.Placeholders = null; // همه placeholder ها جایگزین شده‌اند
                     message.UpdatedAt = DateTime.UtcNow;

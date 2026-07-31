@@ -15,4 +15,16 @@ namespace Api_Vapp.DTOs.Device
         [MaxLength(512, ErrorMessage = "توکن بیش از حد طولانی است")]
         public string Token { get; set; } = string.Empty;
     }
+
+    /// <summary>
+    /// ارسال نوتیفیکیشن تستی به دستگاه‌های کاربر جاری
+    /// </summary>
+    public class TestPushDto
+    {
+        [MaxLength(200)]
+        public string? Title { get; set; }
+
+        [MaxLength(1000)]
+        public string? Body { get; set; }
+    }
 }

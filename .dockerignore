@@ -61,6 +61,12 @@ Thumbs.db
 # Environment files
 .env
 
+# Secrets (Firebase service account — mount at runtime, never bake into image)
+secrets/
+**/firebase-service-account*.json
+**/google-services.json
+**/GoogleService-Info.plist
+
 # Tests (not needed in production image)
 tests/
 Tests/

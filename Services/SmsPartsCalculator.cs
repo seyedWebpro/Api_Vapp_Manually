@@ -1,245 +1,277 @@
-using System;
-using System.Text;
-using System.Text.RegularExpressions;
+using System.Globalization;
 
 namespace Api_Vapp.Services
 {
     /// <summary>
-    /// کلاس کمکی برای محاسبه دقیق تعداد پارت‌های پیامک
-    /// بر اساس نوع زبان (فارسی/انگلیسی) و قوانین اپراتور
+    /// محاسبه دقیق تعداد پارت‌های پیامک بر اساس قواعد قابل تنظیم ادمین.
+    /// فاصله‌ها، ایموجی و ظرفیت صفحات با وزن‌های تعریف‌شده شمرده می‌شوند.
     /// </summary>
     public static class SmsPartsCalculator
     {
-        // محدودیت‌های پیامک فارسی
-        private const int PERSIAN_FIRST_PAGE_CHARS = 70;
-        private const int PERSIAN_SECOND_PAGE_CHARS = 64;
-        private const int PERSIAN_OTHER_PAGES_CHARS = 67;
+        /// <summary>
+        /// محاسبه تعداد پارت‌ها. در صورت عبور از MaxPages استثنا پرتاب می‌شود.
+        /// </summary>
+        public static int CalculateParts(string content, SmsPartsRules? rules = null)
+        {
+            rules ??= SmsPartsRules.Defaults;
+            var analysis = Analyze(content, rules, throwOnMaxPages: true);
+            return analysis.PartsCount;
+        }
 
-        // محدودیت‌های پیامک انگلیسی
-        private const int ENGLISH_FIRST_PAGE_CHARS = 160;
-        private const int ENGLISH_OTHER_PAGES_CHARS = 153;
+        /// <summary>شمارش وزن‌دار کاراکترها (فاصله/ایموجی با وزن تنظیم‌شده)</summary>
+        public static int CountMessageCharacters(string content, SmsPartsRules? rules = null)
+        {
+            rules ??= SmsPartsRules.Defaults;
+            return Analyze(content, rules, throwOnMaxPages: false).WeightedCharacterCount;
+        }
 
-        // حداکثر تعداد صفحات مجاز
-        private const int MAX_PAGES = 10;
+        /// <summary>تشخیص فارسی بودن متن بر اساس نمونه ابتدایی</summary>
+        public static bool IsPersian(string content, SmsPartsRules? rules = null)
+        {
+            rules ??= SmsPartsRules.Defaults;
+            var prepared = PrepareContent(content, rules, applyOptOut: false);
+            if (string.IsNullOrEmpty(prepared))
+                return rules.DefaultLanguageIsPersian;
+
+            return DetectLanguage(prepared, rules);
+        }
 
         /// <summary>
-        /// محاسبه تعداد پارت‌های پیامک بر اساس محتوا
+        /// تحلیل کامل برای preview و گزارش: زبان، کاراکترها، پارت، جزئیات فاصله/ایموجی.
         /// </summary>
-        /// <param name="content">محتوی پیامک</param>
-        /// <returns>تعداد پارت‌های پیامک</returns>
-        /// <exception cref="ArgumentException">اگر تعداد صفحات بیشتر از 10 باشد</exception>
-        public static int CalculateParts(string content)
+        public static SmsPartsAnalysis Analyze(
+            string? content,
+            SmsPartsRules rules,
+            bool throwOnMaxPages,
+            bool? includeOptOutOverride = null)
         {
-            if (string.IsNullOrEmpty(content))
-                return 1;
+            rules ??= SmsPartsRules.Defaults;
+            var applyOptOut = includeOptOutOverride ?? rules.IncludeOptOutSuffixInCalculation;
+            var prepared = PrepareContent(content, rules, applyOptOut);
 
-            var trimmedContent = content.Trim();
-            if (string.IsNullOrEmpty(trimmedContent))
-                return 1;
+            if (string.IsNullOrEmpty(prepared))
+            {
+                return new SmsPartsAnalysis
+                {
+                    PreparedContent = string.Empty,
+                    IsPersian = rules.DefaultLanguageIsPersian,
+                    WeightedCharacterCount = 0,
+                    RawTextElementCount = 0,
+                    SpaceElementCount = 0,
+                    EmojiElementCount = 0,
+                    RegularElementCount = 0,
+                    PartsCount = 1,
+                    MaxPages = rules.MaxPages,
+                    ExceedsMaxPages = false,
+                    OptOutApplied = false
+                };
+            }
 
-            // تشخیص زبان بر اساس ابتدای پیام
-            bool isPersian = DetectLanguage(trimmedContent);
+            var counts = CountElements(prepared, rules);
+            var isPersian = DetectLanguage(prepared, rules);
+            var pages = isPersian
+                ? CalculatePersianPages(counts.WeightedTotal, rules)
+                : CalculateEnglishPages(counts.WeightedTotal, rules);
 
-            // شمارش دقیق کاراکترها (با در نظر گیری ایموجی و فاصله)
-            int totalChars = CountCharactersInternal(trimmedContent);
-
-            // محاسبه تعداد صفحات
-            int pages = CalculatePages(totalChars, isPersian);
-
-            // اعتبارسنجی حداکثر صفحات
-            if (pages > MAX_PAGES)
+            var exceeds = pages > rules.MaxPages;
+            if (exceeds && throwOnMaxPages)
             {
                 throw new ArgumentException(
-                    $"تعداد صفحات پیامک ({pages}) از حداکثر مجاز ({MAX_PAGES} صفحه) بیشتر است. لطفاً محتوا را کوتاه کنید.",
+                    $"تعداد صفحات پیامک ({pages}) از حداکثر مجاز ({rules.MaxPages} صفحه) بیشتر است. لطفاً محتوا را کوتاه کنید.",
                     nameof(content));
             }
 
-            return pages;
+            return new SmsPartsAnalysis
+            {
+                PreparedContent = prepared,
+                IsPersian = isPersian,
+                WeightedCharacterCount = counts.WeightedTotal,
+                RawTextElementCount = counts.RawElements,
+                SpaceElementCount = counts.Spaces,
+                EmojiElementCount = counts.Emojis,
+                RegularElementCount = counts.Regular,
+                PartsCount = Math.Max(1, pages),
+                MaxPages = rules.MaxPages,
+                ExceedsMaxPages = exceeds,
+                OptOutApplied = applyOptOut && !string.IsNullOrWhiteSpace(rules.OptOutSuffix)
+                    && prepared.Contains(rules.OptOutSuffix.Trim(), StringComparison.Ordinal)
+            };
         }
 
-        /// <summary>
-        /// محاسبه تعداد صفحات پیامک بر اساس تعداد کاراکترها و نوع زبان
-        /// </summary>
-        private static int CalculatePages(int totalChars, bool isPersian)
+        /// <summary>متن نهایی برای محاسبه (Trim / فاصله لبه / پسوند لغو)</summary>
+        public static string PrepareContent(string? content, SmsPartsRules rules, bool applyOptOut)
         {
-            if (isPersian)
+            content ??= string.Empty;
+
+            string prepared;
+            if (rules.TrimContentBeforeCount)
             {
-                return CalculatePersianPages(totalChars);
+                prepared = content.Trim();
+            }
+            else if (!rules.CountLeadingTrailingSpaces)
+            {
+                prepared = content.Trim();
             }
             else
             {
-                return CalculateEnglishPages(totalChars);
+                prepared = content;
             }
+
+            if (!applyOptOut || string.IsNullOrWhiteSpace(rules.OptOutSuffix))
+                return prepared;
+
+            var suffix = rules.OptOutSuffix.Trim();
+            if (string.IsNullOrEmpty(suffix))
+                return prepared;
+
+            if (prepared.TrimEnd().EndsWith(suffix, StringComparison.Ordinal))
+                return prepared;
+
+            if (string.IsNullOrEmpty(prepared))
+                return suffix;
+
+            return $"{prepared.TrimEnd()}\n{suffix}";
         }
 
-        /// <summary>
-        /// محاسبه تعداد صفحات پیامک فارسی
-        /// صفحه اول: 70 کاراکتر
-        /// صفحه دوم: 64 کاراکتر
-        /// صفحات بعدی: 67 کاراکتر
-        /// </summary>
-        private static int CalculatePersianPages(int totalChars)
+        private static int CalculatePersianPages(int totalChars, SmsPartsRules rules)
         {
-            if (totalChars <= PERSIAN_FIRST_PAGE_CHARS)
+            var first = Math.Max(1, rules.PersianFirstPageChars);
+            var second = Math.Max(1, rules.PersianSecondPageChars);
+            var other = Math.Max(1, rules.PersianOtherPagesChars);
+
+            if (totalChars <= first)
                 return 1;
 
-            // کم کردن کاراکترهای صفحه اول
-            int remainingChars = totalChars - PERSIAN_FIRST_PAGE_CHARS;
-            int pages = 1;
-
-            if (remainingChars <= PERSIAN_SECOND_PAGE_CHARS)
+            var remaining = totalChars - first;
+            if (remaining <= second)
                 return 2;
 
-            // کم کردن کاراکترهای صفحه دوم
-            remainingChars -= PERSIAN_SECOND_PAGE_CHARS;
-            pages = 2;
-
-            // محاسبه صفحات باقی‌مانده
-            pages += (int)Math.Ceiling((double)remainingChars / PERSIAN_OTHER_PAGES_CHARS);
-
-            return pages;
+            remaining -= second;
+            return 2 + (int)Math.Ceiling(remaining / (double)other);
         }
 
-        /// <summary>
-        /// محاسبه تعداد صفحات پیامک انگلیسی
-        /// صفحه اول: 160 کاراکتر
-        /// صفحات بعدی: 153 کاراکتر
-        /// </summary>
-        private static int CalculateEnglishPages(int totalChars)
+        private static int CalculateEnglishPages(int totalChars, SmsPartsRules rules)
         {
-            if (totalChars <= ENGLISH_FIRST_PAGE_CHARS)
+            var first = Math.Max(1, rules.EnglishFirstPageChars);
+            var other = Math.Max(1, rules.EnglishOtherPagesChars);
+
+            if (totalChars <= first)
                 return 1;
 
-            // کم کردن کاراکترهای صفحه اول
-            int remainingChars = totalChars - ENGLISH_FIRST_PAGE_CHARS;
-
-            // محاسبه صفحات باقی‌مانده
-            int additionalPages = (int)Math.Ceiling((double)remainingChars / ENGLISH_OTHER_PAGES_CHARS);
-
-            return 1 + additionalPages;
+            var remaining = totalChars - first;
+            return 1 + (int)Math.Ceiling(remaining / (double)other);
         }
 
-        /// <summary>
-        /// تشخیص زبان پیام بر اساس ابتدای محتوا
-        /// اگر فارسی باشد true و اگر انگلیسی باشد false برمی‌گرداند
-        /// </summary>
-        private static bool DetectLanguage(string content)
+        private static bool DetectLanguage(string content, SmsPartsRules rules)
         {
             if (string.IsNullOrWhiteSpace(content))
-                return true; // پیش‌فرض فارسی
+                return rules.DefaultLanguageIsPersian;
 
-            // بررسی ابتدای پیام (حدود 50 کاراکتر اول)
-            string sample = content.Length > 50 ? content.Substring(0, 50) : content;
+            var sampleLen = Math.Max(1, rules.LanguageDetectionSampleLength);
+            var sample = content.Length > sampleLen ? content[..sampleLen] : content;
 
-            // بررسی وجود کاراکترهای فارسی
-            // محدوده یونیکد کاراکترهای فارسی: U+0600 تا U+06FF
-            bool hasPersianChars = false;
-            bool hasEnglishChars = false;
+            var hasPersianChars = false;
+            var hasEnglishChars = false;
 
-            foreach (char c in sample)
+            foreach (var c in sample)
             {
-                // بررسی کاراکترهای فارسی (شامل اعداد فارسی و علائم نگارشی فارسی)
-                if ((c >= 0x0600 && c <= 0x06FF) || 
-                    (c >= 0xFB50 && c <= 0xFDFF) || 
+                if ((c >= 0x0600 && c <= 0x06FF) ||
+                    (c >= 0xFB50 && c <= 0xFDFF) ||
                     (c >= 0xFE70 && c <= 0xFEFF))
                 {
                     hasPersianChars = true;
                 }
-                // بررسی کاراکترهای انگلیسی (حروف و اعداد انگلیسی)
-                else if ((c >= 0x0020 && c <= 0x007E) || // ASCII printable
-                         (c >= 0x00A0 && c <= 0x00FF))   // Extended ASCII
+                else if ((c >= 0x0020 && c <= 0x007E) || (c >= 0x00A0 && c <= 0x00FF))
                 {
-                    // نادیده گرفتن فاصله‌ها و علائم نگارشی برای تصمیم‌گیری بهتر
                     if (char.IsLetter(c) || char.IsDigit(c))
-                    {
                         hasEnglishChars = true;
-                    }
                 }
             }
 
-            // اگر کاراکتر فارسی پیدا شد، پیام فارسی است
             if (hasPersianChars)
                 return true;
-
-            // اگر فقط کاراکتر انگلیسی پیدا شد، پیام انگلیسی است
             if (hasEnglishChars)
                 return false;
 
-            // پیش‌فرض: فارسی
-            return true;
+            return rules.DefaultLanguageIsPersian;
         }
 
-        /// <summary>
-        /// شمارش دقیق کاراکترها با در نظر گیری:
-        /// - ایموجی: 3 کاراکتر
-        /// - فاصله: 1 کاراکتر
-        /// - سایر کاراکترها: 1 کاراکتر
-        /// </summary>
-        private static int CountCharactersInternal(string content)
+        private static ElementCounts CountElements(string content, SmsPartsRules rules)
         {
-            if (string.IsNullOrEmpty(content))
-                return 0;
+            var regularWeight = Math.Max(0, rules.RegularCharWeight);
+            var spaceWeight = Math.Max(0, rules.SpaceCharWeight);
+            var emojiWeight = Math.Max(0, rules.EmojiCharWeight);
 
-            int count = 0;
-            var textElements = System.Globalization.StringInfo.GetTextElementEnumerator(content);
+            var counts = new ElementCounts();
+            var textElements = StringInfo.GetTextElementEnumerator(content);
 
             while (textElements.MoveNext())
             {
-                string element = textElements.GetTextElement();
-                
-                // بررسی اینکه آیا این یک ایموجی است یا خیر
+                var element = textElements.GetTextElement();
+                counts.RawElements++;
+
                 if (IsEmoji(element))
                 {
-                    count += 3; // هر ایموجی 3 کاراکتر محاسبه می‌شود
+                    counts.Emojis++;
+                    counts.WeightedTotal += emojiWeight;
+                }
+                else if (IsWhitespaceElement(element))
+                {
+                    counts.Spaces++;
+                    counts.WeightedTotal += spaceWeight;
                 }
                 else
                 {
-                    count += 1; // سایر کاراکترها (شامل فاصله) 1 کاراکتر محاسبه می‌شوند
+                    counts.Regular++;
+                    counts.WeightedTotal += regularWeight;
                 }
             }
 
-            return count;
+            return counts;
         }
 
-        /// <summary>
-        /// بررسی اینکه آیا یک رشته یک ایموجی است یا خیر
-        /// پشتیبانی از ایموجی‌های تک کاراکتری و surrogate pairs (4 بایتی)
-        /// </summary>
+        private static bool IsWhitespaceElement(string element)
+        {
+            if (string.IsNullOrEmpty(element))
+                return false;
+
+            foreach (var c in element)
+            {
+                if (!char.IsWhiteSpace(c))
+                    return false;
+            }
+
+            return true;
+        }
+
         private static bool IsEmoji(string text)
         {
             if (string.IsNullOrEmpty(text))
                 return false;
 
-            // پردازش متن به صورت Text Elements برای مدیریت صحیح surrogate pairs
-            var textElements = System.Globalization.StringInfo.GetTextElementEnumerator(text);
-            
+            var textElements = StringInfo.GetTextElementEnumerator(text);
             while (textElements.MoveNext())
             {
-                string element = textElements.GetTextElement();
-                
-                // برای surrogate pairs (ایموجی‌های 4 بایتی)
+                var element = textElements.GetTextElement();
+
                 if (element.Length >= 2)
                 {
-                    int highSurrogate = char.ConvertToUtf32(element, 0);
-                    
-                    // بررسی محدوده‌های یونیکد ایموجی‌های 4 بایتی
-                    if ((highSurrogate >= 0x1F300 && highSurrogate <= 0x1F9FF) || // Emoticons, Symbols & Pictographs
-                        (highSurrogate >= 0x1F900 && highSurrogate <= 0x1F9FF) || // Supplemental Symbols and Pictographs
-                        (highSurrogate >= 0x1F1E0 && highSurrogate <= 0x1F1FF))   // Regional Indicator Symbols (flags)
+                    var codePoint = char.ConvertToUtf32(element, 0);
+                    if ((codePoint >= 0x1F300 && codePoint <= 0x1F9FF) ||
+                        (codePoint >= 0x1F900 && codePoint <= 0x1F9FF) ||
+                        (codePoint >= 0x1F1E0 && codePoint <= 0x1F1FF))
                     {
                         return true;
                     }
                 }
                 else if (element.Length == 1)
                 {
-                    int codePoint = char.ConvertToUtf32(element, 0);
-                    
-                    // بررسی محدوده‌های یونیکد ایموجی‌های تک کاراکتری
-                    if ((codePoint >= 0x2600 && codePoint <= 0x26FF) ||   // Miscellaneous Symbols
-                        (codePoint >= 0x2700 && codePoint <= 0x27BF) ||   // Dingbats
-                        (codePoint >= 0xFE00 && codePoint <= 0xFE0F) ||   // Variation Selectors
-                        (codePoint == 0x200D) ||                          // Zero Width Joiner (برای ترکیب ایموجی)
-                        (codePoint == 0x20E3))                            // Combining Enclosing Keycap
+                    var codePoint = char.ConvertToUtf32(element, 0);
+                    if ((codePoint >= 0x2600 && codePoint <= 0x26FF) ||
+                        (codePoint >= 0x2700 && codePoint <= 0x27BF) ||
+                        (codePoint >= 0xFE00 && codePoint <= 0xFE0F) ||
+                        codePoint == 0x200D ||
+                        codePoint == 0x20E3)
                     {
                         return true;
                     }
@@ -249,30 +281,29 @@ namespace Api_Vapp.Services
             return false;
         }
 
-        /// <summary>
-        /// محاسبه تعداد کاراکترهای پیام (با در نظر گیری ایموجی و فاصله)
-        /// برای استفاده در نمایش اطلاعات به کاربر
-        /// </summary>
-        public static int CountMessageCharacters(string content)
+        private struct ElementCounts
         {
-            if (string.IsNullOrEmpty(content))
-                return 0;
-
-            return CountCharactersInternal(content);
-        }
-
-        /// <summary>
-        /// تشخیص نوع زبان پیام
-        /// </summary>
-        /// <param name="content">محتوی پیام</param>
-        /// <returns>true اگر فارسی باشد، false اگر انگلیسی باشد</returns>
-        public static bool IsPersian(string content)
-        {
-            if (string.IsNullOrWhiteSpace(content))
-                return true;
-
-            return DetectLanguage(content);
+            public int WeightedTotal;
+            public int RawElements;
+            public int Spaces;
+            public int Emojis;
+            public int Regular;
         }
     }
-}
 
+    /// <summary>نتیجه تحلیل پارت برای preview و گزارش</summary>
+    public sealed class SmsPartsAnalysis
+    {
+        public string PreparedContent { get; init; } = string.Empty;
+        public bool IsPersian { get; init; }
+        public int WeightedCharacterCount { get; init; }
+        public int RawTextElementCount { get; init; }
+        public int SpaceElementCount { get; init; }
+        public int EmojiElementCount { get; init; }
+        public int RegularElementCount { get; init; }
+        public int PartsCount { get; init; }
+        public int MaxPages { get; init; }
+        public bool ExceedsMaxPages { get; init; }
+        public bool OptOutApplied { get; init; }
+    }
+}
