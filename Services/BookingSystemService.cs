@@ -600,7 +600,7 @@ namespace Api_Vapp.Services
                 DepositAmount = dto.DepositAmount,
                 BufferMinutesBetweenAppointments = dto.BufferMinutesBetweenAppointments,
                 MaxDailyReservations = dto.MaxDailyReservations,
-                ReminderOffsetMinutes = dto.ReminderOffsetMinutes,
+                ReminderOffsetMinutes = dto.ReminderOffsetMinutes ?? 0,
                 SortOrder = maxOrder + 1,
                 CreatedAt = now
             };

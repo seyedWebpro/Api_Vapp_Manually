@@ -298,7 +298,7 @@ namespace Api_Vapp.DTOs.BookingSystem
         public int? MaxDailyReservations { get; set; }
 
         [Range(1, 43200)]
-        public int ReminderOffsetMinutes { get; set; }
+        public int? ReminderOffsetMinutes { get; set; }
 
         public List<BookingDayScheduleDto> WeeklyDays { get; set; } = new();
         public List<BookingScheduleExceptionDto> Exceptions { get; set; } = new();
