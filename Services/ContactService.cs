@@ -25,6 +25,7 @@ namespace Api_Vapp.Services
         private readonly IAuditService _audit;
         private readonly ILogger<ContactService> _logger;
         private readonly IFileUploadService _fileUploadService;
+        private readonly IUserPushNotifier _pushNotifier;
 
         public ContactService(
             IContactRepository contactRepository,
@@ -32,7 +33,8 @@ namespace Api_Vapp.Services
             Api_Vapp.Data.Api_Context context,
             IAuditService audit,
             ILogger<ContactService> logger,
-            IFileUploadService fileUploadService)
+            IFileUploadService fileUploadService,
+            IUserPushNotifier pushNotifier)
         {
             _contactRepository = contactRepository;
             _notebookRepository = notebookRepository;
@@ -40,6 +42,7 @@ namespace Api_Vapp.Services
             _audit = audit;
             _logger = logger;
             _fileUploadService = fileUploadService;
+            _pushNotifier = pushNotifier;
         }
 
         public async Task<ApiResponse<ContactResponseDto>> CreateContactAsync(int userId, CreateContactDto createDto)
@@ -292,6 +295,13 @@ namespace Api_Vapp.Services
                         ActorUserId = userId,
                         After = new { contactNotebookId = contact.ContactNotebookId, fullName = contact.FullName }
                     });
+
+                    var contactPush = PushNotificationCopy.NewContact(contact.FullName);
+                    await _pushNotifier.NotifyAsync(
+                        userId,
+                        NotificationCategory.NewCustomerRegistration,
+                        contactPush.Title,
+                        contactPush.Body);
 
                     return ApiResponse<ContactResponseDto>.CreateSuccess(
                         await MapToContactResponseDtoAsync(contactWithInfo!),
@@ -1308,7 +1318,7 @@ namespace Api_Vapp.Services
                             }
 
                             result.ErrorCount = contactsData.Count;
-                            return ApiResponse<ImportExcelResultDto>.InternalServerError("خطا در ذخیره مخاطبین در دیتابیس");
+                            return ApiResponse<ImportExcelResultDto>.InternalServerError(ControlledErrorHelper.Unexpected);
                         }
                     }
 
@@ -1469,7 +1479,7 @@ namespace Api_Vapp.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error creating import excel template");
-                return Task.FromResult(ApiResponse<ExportExcelResultDto>.InternalServerError("خطا در ایجاد فایل قالب"));
+                return Task.FromResult(ApiResponse<ExportExcelResultDto>.InternalServerError(ControlledErrorHelper.Unexpected));
             }
         }
 
@@ -1628,7 +1638,7 @@ namespace Api_Vapp.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error exporting contacts to Excel for notebook: {NotebookId}", notebookId);
-                return ApiResponse<ExportExcelResultDto>.InternalServerError("خطا در تولید فایل اکسل");
+                return ApiResponse<ExportExcelResultDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -2393,12 +2403,12 @@ namespace Api_Vapp.Services
             catch (DbUpdateException ex)
             {
                 _logger.LogError(ex, "Database error assigning tags to contact {ContactId}", contactId);
-                return ApiResponse<bool>.InternalServerError("خطا در اختصاص تگ‌ها. لطفاً دوباره تلاش کنید");
+                return ApiResponse<bool>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Unexpected error assigning tags to contact {ContactId}", contactId);
-                return ApiResponse<bool>.InternalServerError("خطای غیرمنتظره در اختصاص تگ‌ها");
+                return ApiResponse<bool>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
     }

@@ -112,7 +112,7 @@ namespace Api_Vapp.Services
                         // حذف QuickAction ایجاد شده در صورت خطا
                         tempQuickAction.IsDeleted = true;
                         await _quickActionRepository.UpdateAsync(tempQuickAction);
-                        return ApiResponse<QuickActionResponseDto>.InternalServerError("خطا در آپلود فایل آیکون");
+                        return ApiResponse<QuickActionResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
                     }
                 }
                 else
@@ -255,7 +255,7 @@ namespace Api_Vapp.Services
                     catch (Exception ex)
                     {
                         _logger.LogError(ex, "خطا در آپلود آیکون برای اکشن {ActionId}", id);
-                        return ApiResponse<QuickActionResponseDto>.InternalServerError("خطا در آپلود فایل آیکون");
+                        return ApiResponse<QuickActionResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
                     }
 
                     // به‌روزرسانی مسیر آیکون
@@ -342,11 +342,39 @@ namespace Api_Vapp.Services
                     }
                 }
 
-                action.IsDeleted = true;
-                action.UpdatedAt = DateTime.UtcNow;
+                await using var transaction = await _context.Database.BeginTransactionAsync();
+                try
+                {
+                    var wasDefault = action.IsDefault;
+                    action.IsDeleted = true;
+                    action.IsDefault = false;
+                    action.IsActive = false;
+                    action.UpdatedAt = DateTime.UtcNow;
 
-                await _quickActionRepository.UpdateAsync(action);
-                // SaveChangesAsync is called inside UpdateAsync
+                    // اگر لینک پیش‌فرض حذف شد، لینک فعال بعدی را پیش‌فرض کن
+                    if (wasDefault)
+                    {
+                        var nextDefault = await _context.QuickActions
+                            .Where(qa => qa.UserId == userId && !qa.IsDeleted && qa.IsActive && qa.Id != id)
+                            .OrderBy(qa => qa.DisplayOrder)
+                            .ThenByDescending(qa => qa.CreatedAt)
+                            .FirstOrDefaultAsync();
+
+                        if (nextDefault != null)
+                        {
+                            nextDefault.IsDefault = true;
+                            nextDefault.UpdatedAt = DateTime.UtcNow;
+                        }
+                    }
+
+                    await _context.SaveChangesAsync();
+                    await transaction.CommitAsync();
+                }
+                catch
+                {
+                    await transaction.RollbackAsync();
+                    throw;
+                }
 
                 await _audit.WriteAsync(new AuditEntry
                 {
@@ -405,7 +433,7 @@ namespace Api_Vapp.Services
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "خطا در آپلود آیکون برای اکشن {ActionId}", id);
-                    return ApiResponse<string>.InternalServerError("خطا در آپلود فایل آیکون");
+                    return ApiResponse<string>.InternalServerError(ControlledErrorHelper.Unexpected);
                 }
 
                 // به‌روزرسانی مسیر آیکون در دیتابیس
@@ -454,7 +482,7 @@ namespace Api_Vapp.Services
                         _logger.LogWarning(deleteEx, "خطا در حذف فایل آپلود شده پس از خطا: {IconPath}", iconPath);
                     }
 
-                    return ApiResponse<string>.InternalServerError("خطا در ذخیره اطلاعات آیکون");
+                    return ApiResponse<string>.InternalServerError(ControlledErrorHelper.Unexpected);
                 }
             }
             catch (Exception ex)
@@ -555,14 +583,14 @@ namespace Api_Vapp.Services
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "❌ Database error setting default action: {ActionId} for user: {UserId}", 
                     actionId, userId);
-                return ApiResponse<QuickActionResponseDto>.InternalServerError("خطا در تنظیم لینک پیش‌فرض. لطفاً دوباره تلاش کنید");
+                return ApiResponse<QuickActionResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "❌ Unexpected error setting default action: {ActionId} for user: {UserId}", 
                     actionId, userId);
-                return ApiResponse<QuickActionResponseDto>.InternalServerError("خطای غیرمنتظره در تنظیم لینک پیش‌فرض");
+                return ApiResponse<QuickActionResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -715,7 +743,7 @@ namespace Api_Vapp.Services
                 catch { }
                 _logger.LogError(ex, "❌ Database error quick sending action: ContactId {ContactId} for user: {UserId}", 
                     quickSendDto.ContactId, userId);
-                return ApiResponse<DirectSendResultDto>.InternalServerError("خطا در ارسال لینک سریع. لطفاً دوباره تلاش کنید");
+                return ApiResponse<DirectSendResultDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
             catch (Exception ex)
             {
@@ -726,7 +754,7 @@ namespace Api_Vapp.Services
                 catch { }
                 _logger.LogError(ex, "❌ Unexpected error quick sending action: ContactId {ContactId} for user: {UserId}", 
                     quickSendDto.ContactId, userId);
-                return ApiResponse<DirectSendResultDto>.InternalServerError("خطای غیرمنتظره در ارسال لینک سریع");
+                return ApiResponse<DirectSendResultDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 

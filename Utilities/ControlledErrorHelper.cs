@@ -7,8 +7,8 @@ namespace Api_Vapp.Utilities
     /// </summary>
     public static class ControlledErrorHelper
     {
-        public const string Unexpected = "خطای غیرمنتظره. لطفاً با پشتیبانی تماس بگیرید.";
-        public const string InternalServer = "خطای داخلی سرور. لطفاً با پشتیبانی تماس بگیرید.";
+        public const string Unexpected = "کاربرگرامی خطای سرور اتفاق است . لطفا مجدد تلاش کنید و در صورت تکرار با پشتیبانی تماس بگیرید .";
+        public const string InternalServer = "کاربرگرامی خطای سرور اتفاق است . لطفا مجدد تلاش کنید و در صورت تکرار با پشتیبانی تماس بگیرید .";
         public const string Database = "مشکلی در ذخیره‌سازی اطلاعات پیش آمد. لطفاً دوباره تلاش کنید.";
         public const string Unauthorized = "شما مجاز به انجام این عملیات نیستید";
         public const string NotFound = "منبع مورد نظر یافت نشد";
@@ -20,6 +20,7 @@ namespace Api_Vapp.Utilities
         public const string PushFailed = "مشکلی در ارسال اعلان پیش آمد. لطفاً دوباره تلاش کنید.";
         public const string PushNotConfigured = "سرویس اعلان در حال حاضر در دسترس نیست. لطفاً بعداً تلاش کنید.";
         public const string PushNoDevice = "دستگاه فعالی برای دریافت اعلان ثبت نشده است. ابتدا وارد اپ شوید و اجازه اعلان را فعال کنید.";
+        public const string PushDisabled = "ارسال اعلان برای این کاربر غیرفعال است.";
         public const string ExcelReadFailed = "مشکلی در خواندن فایل اکسل پیش آمد. لطفاً فرمت فایل را بررسی کنید.";
         public const string InactiveUserAccount = "حساب کاربری شما غیرفعال هست با پشتیبانی تماس بگیرید.";
         public const string AdminPanelAccessDenied = "شما دسترسی به پنل مدیریت ندارید. با پشتیبانی تماس بگیرید.";

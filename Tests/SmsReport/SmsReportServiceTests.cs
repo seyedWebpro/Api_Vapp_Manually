@@ -93,6 +93,47 @@ public class SmsReportServiceTests
         Assert.True(result.Data!.FileContent.Length > 0);
         Assert.Equal(2, result.Data.ExportedCount);
         Assert.EndsWith(".xlsx", result.Data.FileName);
+
+        using var stream = new MemoryStream(result.Data.FileContent);
+        using var workbook = new ClosedXML.Excel.XLWorkbook(stream);
+        var sheet = workbook.Worksheet(1);
+
+        Assert.Equal("کد وضعیت", sheet.Cell(1, 5).GetString());
+        Assert.Equal("پیام وضعیت", sheet.Cell(1, 6).GetString());
+        Assert.Equal("کد ارسال", sheet.Cell(1, 8).GetString());
+        Assert.Equal("عنوان", sheet.Cell(1, 9).GetString());
+        Assert.Equal("نوع ارسال", sheet.Cell(1, 10).GetString());
+        Assert.Equal("متن پیام", sheet.Cell(1, 11).GetString());
+
+        Assert.Equal("09120000000", sheet.Cell(2, 2).GetString());
+        Assert.Equal("90002034", sheet.Cell(2, 3).GetString());
+        Assert.False(string.IsNullOrWhiteSpace(sheet.Cell(2, 4).GetString()));
+        Assert.Equal("-", sheet.Cell(2, 5).GetString());
+        Assert.False(string.IsNullOrWhiteSpace(sheet.Cell(2, 6).GetString()));
+        Assert.Equal("55", sheet.Cell(2, 8).GetString());
+        Assert.Equal("کمپین تست", sheet.Cell(2, 9).GetString());
+        Assert.False(string.IsNullOrWhiteSpace(sheet.Cell(2, 10).GetString()));
+        Assert.Equal("متن 0", sheet.Cell(2, 11).GetString());
+    }
+
+    [Fact]
+    public async Task ExportRecipients_FillsTitleAndStatusFallbacks_WhenLabelAndCodeMissing()
+    {
+        var repo = new FakeSmsDeliveryRecordRepository();
+        repo.SeedRecord(7, 77, "09123334444", "سلام", SmsDeliveryCategories.PendingSync, title: "", module: SmsSourceModules.MessageDirect);
+        var service = CreateService(repo);
+
+        var result = await service.ExportRecipientsToExcelAsync(7, 77, new SmsSendRecipientFilterDto());
+
+        Assert.True(result.Success);
+        using var stream = new MemoryStream(result.Data!.FileContent);
+        using var workbook = new ClosedXML.Excel.XLWorkbook(stream);
+        var sheet = workbook.Worksheet(1);
+
+        Assert.Equal("-", sheet.Cell(2, 5).GetString());
+        Assert.Equal(SmsDeliveryCategories.GetPersianLabel(SmsDeliveryCategories.PendingSync), sheet.Cell(2, 6).GetString());
+        Assert.Equal("ارسال #77", sheet.Cell(2, 9).GetString());
+        Assert.Equal("سلام", sheet.Cell(2, 11).GetString());
     }
 
     [Fact]

@@ -11,6 +11,11 @@ namespace Api_Vapp.Models
         // شناسه کاربر
         public int UserId { get; set; }
 
+        /// <summary>
+        /// سوییچ اصلی ارسال Push — اگر false باشد هیچ نوتیفیکیشنی ارسال نمی‌شود
+        /// </summary>
+        public bool PushEnabled { get; set; } = true;
+
         #region اعلان‌های سیستمی
 
         // اعلان‌های مهم (تغییرات مهم حساب)
@@ -27,7 +32,7 @@ namespace Api_Vapp.Models
         #region اعلان‌های مالی
 
         // تراکنش کیف پول (واریز یا برداشت)
-        public bool WalletTransaction { get; set; } = false;
+        public bool WalletTransaction { get; set; } = true;
 
         // کش بک مشتری (مصرف یا اضافه شدن)
         public bool CustomerCashback { get; set; } = true;
@@ -40,7 +45,7 @@ namespace Api_Vapp.Models
         #region اعلان‌های متفرقه
 
         // ثبت مشتری جدید
-        public bool NewCustomerRegistration { get; set; } = false;
+        public bool NewCustomerRegistration { get; set; } = true;
 
         // پیشنهادها (پیشنهاد و کمپین)
         public bool Suggestions { get; set; } = true;

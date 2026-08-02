@@ -153,7 +153,7 @@ namespace Api_Vapp.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "خطا در دریافت انواع اتوماسیون");
-                return Task.FromResult(ApiResponse<AutomationTypeListResponseDto>.InternalServerError("خطا در دریافت انواع اتوماسیون"));
+                return Task.FromResult(ApiResponse<AutomationTypeListResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected));
             }
         }
 
@@ -221,13 +221,13 @@ namespace Api_Vapp.Services
             {
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "خطای دیتابیس در ایجاد پیش‌نویس پیام خودکار برای کاربر: {UserId}", userId);
-                return ApiResponse<AutomatedMessageResponseDto>.InternalServerError("خطا در ذخیره‌سازی پیام خودکار. لطفاً دوباره تلاش کنید");
+                return ApiResponse<AutomatedMessageResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "خطای غیرمنتظره در ایجاد پیش‌نویس پیام خودکار برای کاربر: {UserId}", userId);
-                return ApiResponse<AutomatedMessageResponseDto>.InternalServerError("خطای غیرمنتظره در ایجاد پیام خودکار");
+                return ApiResponse<AutomatedMessageResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -321,13 +321,13 @@ namespace Api_Vapp.Services
             {
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "خطای دیتابیس در ایجاد پیام خودکار برای کاربر: {UserId}", userId);
-                return ApiResponse<AutomatedMessageResponseDto>.InternalServerError("خطا در ذخیره‌سازی پیام خودکار. لطفاً دوباره تلاش کنید");
+                return ApiResponse<AutomatedMessageResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "خطای غیرمنتظره در ایجاد پیام خودکار برای کاربر: {UserId}", userId);
-                return ApiResponse<AutomatedMessageResponseDto>.InternalServerError("خطای غیرمنتظره در ایجاد پیام خودکار");
+                return ApiResponse<AutomatedMessageResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -540,14 +540,14 @@ namespace Api_Vapp.Services
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "خطای دیتابیس در انتخاب گیرندگان برای پیام خودکار - AutomatedMessageId: {AutomatedMessageId}, UserId: {UserId}",
                     automatedMessageId, userId);
-                return ApiResponse<RecipientListForAutomatedMessageResponseDto>.InternalServerError("خطا در ذخیره‌سازی گیرندگان. لطفاً دوباره تلاش کنید");
+                return ApiResponse<RecipientListForAutomatedMessageResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "خطای غیرمنتظره در انتخاب گیرندگان برای پیام خودکار - AutomatedMessageId: {AutomatedMessageId}, UserId: {UserId}",
                     automatedMessageId, userId);
-                return ApiResponse<RecipientListForAutomatedMessageResponseDto>.InternalServerError("خطای غیرمنتظره در انتخاب گیرندگان");
+                return ApiResponse<RecipientListForAutomatedMessageResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -574,7 +574,7 @@ namespace Api_Vapp.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "خطا در دریافت پیام خودکار: {Id}", id);
-                return ApiResponse<AutomatedMessageResponseDto>.InternalServerError("خطا در دریافت پیام خودکار");
+                return ApiResponse<AutomatedMessageResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -626,7 +626,7 @@ namespace Api_Vapp.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "خطا در دریافت پیام‌های خودکار برای کاربر: {UserId}", userId);
-                return ApiResponse<AutomatedMessageListResponseDto>.InternalServerError("خطا در دریافت لیست پیام‌های خودکار");
+                return ApiResponse<AutomatedMessageListResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -865,7 +865,7 @@ namespace Api_Vapp.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "خطا در ارسال آزمایشی پیام‌های تولد برای کاربر: {UserId}", userId);
-                return ApiResponse<string>.InternalServerError("خطا در تست ارسال پیام‌های تولد");
+                return ApiResponse<string>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -1027,13 +1027,13 @@ namespace Api_Vapp.Services
             {
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "خطای دیتابیس در به‌روزرسانی پیام خودکار: {Id}", id);
-                return ApiResponse<AutomatedMessageResponseDto>.InternalServerError("خطا در به‌روزرسانی پیام خودکار. لطفاً دوباره تلاش کنید");
+                return ApiResponse<AutomatedMessageResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "خطای غیرمنتظره در به‌روزرسانی پیام خودکار: {Id}", id);
-                return ApiResponse<AutomatedMessageResponseDto>.InternalServerError("خطای غیرمنتظره در به‌روزرسانی پیام خودکار");
+                return ApiResponse<AutomatedMessageResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -1088,13 +1088,13 @@ namespace Api_Vapp.Services
             {
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "خطای دیتابیس در حذف پیام خودکار: {Id}", id);
-                return ApiResponse<bool>.InternalServerError("خطا در حذف پیام خودکار. لطفاً دوباره تلاش کنید");
+                return ApiResponse<bool>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "خطای غیرمنتظره در حذف پیام خودکار: {Id}", id);
-                return ApiResponse<bool>.InternalServerError("خطای غیرمنتظره در حذف پیام خودکار");
+                return ApiResponse<bool>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -1131,13 +1131,13 @@ namespace Api_Vapp.Services
             {
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "خطای دیتابیس در تغییر وضعیت پیام خودکار: {Id}", id);
-                return ApiResponse<bool>.InternalServerError("خطا در تغییر وضعیت پیام خودکار. لطفاً دوباره تلاش کنید");
+                return ApiResponse<bool>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "خطای غیرمنتظره در تغییر وضعیت پیام خودکار: {Id}", id);
-                return ApiResponse<bool>.InternalServerError("خطای غیرمنتظره در تغییر وضعیت پیام خودکار");
+                return ApiResponse<bool>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -1515,13 +1515,13 @@ namespace Api_Vapp.Services
             {
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "Database error saving birthday settings for automated message {Id}", automatedMessageId);
-                return ApiResponse<AutomatedMessageResponseDto>.InternalServerError("خطا در ذخیره‌سازی تنظیمات. لطفاً دوباره تلاش کنید");
+                return ApiResponse<AutomatedMessageResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "Unexpected error saving birthday settings for automated message {Id}", automatedMessageId);
-                return ApiResponse<AutomatedMessageResponseDto>.InternalServerError("خطای غیرمنتظره در ذخیره‌سازی تنظیمات");
+                return ApiResponse<AutomatedMessageResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -1574,13 +1574,13 @@ namespace Api_Vapp.Services
             {
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "Database error saving cashback expiry settings for automated message {Id}", automatedMessageId);
-                return ApiResponse<AutomatedMessageResponseDto>.InternalServerError("خطا در ذخیره‌سازی تنظیمات. لطفاً دوباره تلاش کنید");
+                return ApiResponse<AutomatedMessageResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "Unexpected error saving cashback expiry settings for automated message {Id}", automatedMessageId);
-                return ApiResponse<AutomatedMessageResponseDto>.InternalServerError("خطای غیرمنتظره در ذخیره‌سازی تنظیمات");
+                return ApiResponse<AutomatedMessageResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -1625,13 +1625,13 @@ namespace Api_Vapp.Services
             {
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "Database error saving welcome settings for automated message {Id}", automatedMessageId);
-                return ApiResponse<AutomatedMessageResponseDto>.InternalServerError("خطا در ذخیره‌سازی تنظیمات. لطفاً دوباره تلاش کنید");
+                return ApiResponse<AutomatedMessageResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "Unexpected error saving welcome settings for automated message {Id}", automatedMessageId);
-                return ApiResponse<AutomatedMessageResponseDto>.InternalServerError("خطای غیرمنتظره در ذخیره‌سازی تنظیمات");
+                return ApiResponse<AutomatedMessageResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -1676,13 +1676,13 @@ namespace Api_Vapp.Services
             {
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "Database error saving purchase reminder settings for automated message {Id}", automatedMessageId);
-                return ApiResponse<AutomatedMessageResponseDto>.InternalServerError("خطا در ذخیره‌سازی تنظیمات. لطفاً دوباره تلاش کنید");
+                return ApiResponse<AutomatedMessageResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "Unexpected error saving purchase reminder settings for automated message {Id}", automatedMessageId);
-                return ApiResponse<AutomatedMessageResponseDto>.InternalServerError("خطای غیرمنتظره در ذخیره‌سازی تنظیمات");
+                return ApiResponse<AutomatedMessageResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -1817,13 +1817,13 @@ namespace Api_Vapp.Services
             {
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "Database error managing special occasions for automated message {Id}", automatedMessageId);
-                return ApiResponse<SpecialOccasionManagementResponseDto>.InternalServerError("خطا در مدیریت مناسبت‌ها. لطفاً دوباره تلاش کنید");
+                return ApiResponse<SpecialOccasionManagementResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "Unexpected error managing special occasions for automated message {Id}", automatedMessageId);
-                return ApiResponse<SpecialOccasionManagementResponseDto>.InternalServerError("خطایی غیرمنتظره در مدیریت مناسبت‌ها");
+                return ApiResponse<SpecialOccasionManagementResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -1880,13 +1880,13 @@ namespace Api_Vapp.Services
             {
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "Database error saving custom automation settings for automated message {Id}", automatedMessageId);
-                return ApiResponse<AutomatedMessageResponseDto>.InternalServerError("خطا در ذخیره‌سازی تنظیمات. لطفاً دوباره تلاش کنید");
+                return ApiResponse<AutomatedMessageResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "Unexpected error saving custom automation settings for automated message {Id}", automatedMessageId);
-                return ApiResponse<AutomatedMessageResponseDto>.InternalServerError("خطای غیرمنتظره در ذخیره‌سازی تنظیمات");
+                return ApiResponse<AutomatedMessageResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -2156,13 +2156,13 @@ namespace Api_Vapp.Services
             {
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "Database error saving message content for automated message {Id}", automatedMessageId);
-                return ApiResponse<MessageContentResponseDto>.InternalServerError("خطا در ذخیره‌سازی محتوی پیام. لطفاً دوباره تلاش کنید");
+                return ApiResponse<MessageContentResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "Unexpected error saving message content for automated message {Id}", automatedMessageId);
-                return ApiResponse<MessageContentResponseDto>.InternalServerError("خطایی غیرمنتظره در ذخیره‌سازی محتوی پیام");
+                return ApiResponse<MessageContentResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -2256,7 +2256,7 @@ namespace Api_Vapp.Services
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Error deserializing recipients from Session - SessionId: {SessionId}", session.Id);
-                    return ApiResponse<AutomatedMessageSummaryResponseDto>.InternalServerError("خطا در خواندن لیست گیرندگان");
+                    return ApiResponse<AutomatedMessageSummaryResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
                 }
 
                 // خواندن تنظیمات از Session
@@ -2346,7 +2346,7 @@ namespace Api_Vapp.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting automated message summary for: {AutomatedMessageId}", automatedMessageId);
-                return ApiResponse<AutomatedMessageSummaryResponseDto>.InternalServerError("خطا در دریافت خلاصه پیام خودکار");
+                return ApiResponse<AutomatedMessageSummaryResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -2439,7 +2439,7 @@ namespace Api_Vapp.Services
                 {
                     await transaction.RollbackAsync();
                     _logger.LogError(ex, "Error saving settings to Session - AutomatedMessageId: {Id}", automatedMessageId);
-                    return ApiResponse<AutomatedMessageSummaryResponseDto>.InternalServerError("خطا در ذخیره تنظیمات");
+                    return ApiResponse<AutomatedMessageSummaryResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
                 }
 
                 await _context.SaveChangesAsync();
@@ -2503,7 +2503,7 @@ namespace Api_Vapp.Services
             {
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "Error saving settings for automated message {Id}", automatedMessageId);
-                return ApiResponse<AutomatedMessageSummaryResponseDto>.InternalServerError("خطا در ذخیره تنظیمات");
+                return ApiResponse<AutomatedMessageSummaryResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -2790,7 +2790,7 @@ namespace Api_Vapp.Services
             {
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "Error calculating summary for automated message {Id}", automatedMessageId);
-                return ApiResponse<AutomatedMessageSummaryResponseDto>.InternalServerError("خطا در محاسبه خلاصه");
+                return ApiResponse<AutomatedMessageSummaryResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 

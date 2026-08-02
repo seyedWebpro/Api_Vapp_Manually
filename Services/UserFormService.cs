@@ -698,7 +698,7 @@ namespace Api_Vapp.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error exporting user form submissions {FormId} for user {UserId}", id, userId);
-                return ApiResponse<ExportExcelResultDto>.InternalServerError("خطا در تولید فایل اکسل");
+                return ApiResponse<ExportExcelResultDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 

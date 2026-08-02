@@ -139,7 +139,7 @@ internal sealed class SubscriptionTestContext : IDisposable
     {
         EntitlementService = new SubscriptionEntitlementService(_context);
         DiscountService = new SubscriptionDiscountService(_context, new NoOpAuditService());
-        ActivationService = new SubscriptionActivationService(_context, new NoOpAuditService(), NullLogger<SubscriptionActivationService>.Instance);
+        ActivationService = new SubscriptionActivationService(_context, new NoOpAuditService(), NullLogger<SubscriptionActivationService>.Instance, new NoOpUserPushNotifier());
 
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>

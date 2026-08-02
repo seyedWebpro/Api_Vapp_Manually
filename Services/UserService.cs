@@ -25,6 +25,7 @@ namespace Api_Vapp.Services
         private readonly IRefreshTokenService _refreshTokenService;
         private readonly IWalletReferralService _walletReferralService;
         private readonly IAuditService _audit;
+        private readonly IUserPushNotifier _pushNotifier;
 
         public UserService(
             IUserRepository userRepository, 
@@ -33,7 +34,8 @@ namespace Api_Vapp.Services
             IFileUploadService fileUploadService,
             IRefreshTokenService refreshTokenService,
             IWalletReferralService walletReferralService,
-            IAuditService audit)
+            IAuditService audit,
+            IUserPushNotifier pushNotifier)
         {
             _userRepository = userRepository;
             _context = context;
@@ -42,6 +44,7 @@ namespace Api_Vapp.Services
             _refreshTokenService = refreshTokenService;
             _walletReferralService = walletReferralService;
             _audit = audit;
+            _pushNotifier = pushNotifier;
         }
 
         private static object SafeUserSnapshot(User user) => new
@@ -400,6 +403,13 @@ namespace Api_Vapp.Services
                     Metadata = new { isBanned = banUserDto.IsBanned }
                 });
 
+                var banPush = PushNotificationCopy.AccountStatusChanged(updatedUser.IsActive);
+                await _pushNotifier.NotifyAsync(
+                    id,
+                    NotificationCategory.ImportantNotifications,
+                    banPush.Title,
+                    banPush.Body);
+
                 return ApiResponse<UserResponseDto>.CreateSuccess(
                     MapToUserResponseDto(updatedUser),
                     message
@@ -449,6 +459,13 @@ namespace Api_Vapp.Services
                     Before = beforeSnapshot,
                     After = SafeUserSnapshot(updatedUser)
                 });
+
+                var statusPush = PushNotificationCopy.AccountStatusChanged(isActive);
+                await _pushNotifier.NotifyAsync(
+                    id,
+                    NotificationCategory.ImportantNotifications,
+                    statusPush.Title,
+                    statusPush.Body);
 
                 return ApiResponse<UserResponseDto>.CreateSuccess(
                     MapToUserResponseDto(updatedUser),
@@ -633,7 +650,7 @@ namespace Api_Vapp.Services
             catch (DbUpdateException ex)
             {
                 _logger.LogError(ex, "خطا در به‌روزرسانی دیتابیس برای کاربر {UserId}", userId);
-                return ApiResponse<UserProfileDto>.InternalServerError("خطا در ذخیره‌سازی اطلاعات. لطفاً دوباره تلاش کنید");
+                return ApiResponse<UserProfileDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
             catch (Exception ex)
             {
@@ -789,13 +806,13 @@ namespace Api_Vapp.Services
                 {
                     await transaction.RollbackAsync();
                     _logger.LogError(ex, "خطا در به‌روزرسانی دیتابیس هنگام حذف عکس پروفایل کاربر {UserId}", userId);
-                    return ApiResponse<bool>.InternalServerError("خطا در ذخیره‌سازی تغییرات. لطفاً دوباره تلاش کنید");
+                    return ApiResponse<bool>.InternalServerError(ControlledErrorHelper.Unexpected);
                 }
                 catch (Exception ex)
                 {
                     await transaction.RollbackAsync();
                     _logger.LogError(ex, "خطا در حذف عکس پروفایل کاربر {UserId}", userId);
-                    return ApiResponse<bool>.InternalServerError("خطا در حذف عکس. لطفاً دوباره تلاش کنید");
+                    return ApiResponse<bool>.InternalServerError(ControlledErrorHelper.Unexpected);
                 }
             }
             catch (Exception ex)

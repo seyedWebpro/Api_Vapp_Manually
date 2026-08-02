@@ -96,12 +96,25 @@ ssh vapp-prod 'bash /root/Api_Vapp_Manually/devops/scripts/sync-api-repo-safe.sh
 
 ---
 
+## بکاپ secrets روی Mac (اگر سرور پاک شد)
+
+```bash
+cd ~/Documents/javad_project/vapp/Api_Vapp_Manually
+bash devops/scripts/pull-production-secrets.sh
+```
+
+خروجی: `~/vapp-secrets.txt` + `~/vapp-local-secrets-backup/vapp-production-full.env`  
+(شامل MerchantId، SA_PASSWORD، JWT، SMS، Scraper، … — خارج از git)
+
+---
+
 ## فایل‌های مرتبط
 
 | فایل | کار |
 |------|-----|
 | `scripts/deploy-from-mac.sh` | ورودی اصلی |
 | `scripts/deploy-api-upload-image.sh` | build API روی Mac |
+| `scripts/pull-production-secrets.sh` | کشیدن `.env`/secrets سرور → Mac |
 | `scripts/sync-api-repo-safe.sh` | sync امن گیت روی سرور (بدون conflict) |
 | `scripts/deploy-front-upload-dist.sh` | build Admin روی Mac |
 | `scripts/deploy-public-front-upload-dist.sh` | build Public_Vapp روی Mac |

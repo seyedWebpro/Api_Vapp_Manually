@@ -5,6 +5,7 @@ using Api_Vapp.DTOs.Common;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
 using Api_Vapp.Services.Audit;
+using Api_Vapp.Utilities;
 using Microsoft.EntityFrameworkCore;
 
 namespace Api_Vapp.Services.Admin
@@ -13,11 +14,16 @@ namespace Api_Vapp.Services.Admin
     {
         private readonly Api_Context _context;
         private readonly IAuditService _audit;
+        private readonly IUserPushNotifier _pushNotifier;
 
-        public AdminEducationalVideoService(Api_Context context, IAuditService audit)
+        public AdminEducationalVideoService(
+            Api_Context context,
+            IAuditService audit,
+            IUserPushNotifier pushNotifier)
         {
             _context = context;
             _audit = audit;
+            _pushNotifier = pushNotifier;
         }
 
         public async Task<ApiResponse<List<EducationalVideoResponseDto>>> GetAllAsync(bool includeInactive = true)
@@ -65,6 +71,15 @@ namespace Api_Vapp.Services.Admin
                 After = Snapshot(video)
             });
 
+            if (video.IsActive)
+            {
+                var tipPush = PushNotificationCopy.EducationTip(video.Title);
+                await _pushNotifier.NotifyBroadcastAsync(
+                    NotificationCategory.EducationAndTips,
+                    tipPush.Title,
+                    tipPush.Body);
+            }
+
             return ApiResponse<EducationalVideoResponseDto>.CreateSuccess(Map(video), "ویدیو ایجاد شد", 201);
         }
 
@@ -75,6 +90,7 @@ namespace Api_Vapp.Services.Admin
                 return ApiResponse<EducationalVideoResponseDto>.NotFound("ویدیو یافت نشد");
 
             var before = Snapshot(video);
+            var wasActive = video.IsActive;
 
             video.Title = dto.Title.Trim();
             video.Description = dto.Description?.Trim();
@@ -95,6 +111,15 @@ namespace Api_Vapp.Services.Admin
                 Before = before,
                 After = Snapshot(video)
             });
+
+            if (video.IsActive && !wasActive)
+            {
+                var tipPush = PushNotificationCopy.EducationTip(video.Title);
+                await _pushNotifier.NotifyBroadcastAsync(
+                    NotificationCategory.EducationAndTips,
+                    tipPush.Title,
+                    tipPush.Body);
+            }
 
             return ApiResponse<EducationalVideoResponseDto>.CreateSuccess(Map(video), "ویدیو به‌روزرسانی شد");
         }

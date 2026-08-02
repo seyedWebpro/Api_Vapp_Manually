@@ -18,17 +18,20 @@ namespace Api_Vapp.Services.Admin
         private readonly IMessageService _messageService;
         private readonly IAuditService _audit;
         private readonly ILogger<AdminMessageApprovalService> _logger;
+        private readonly IUserPushNotifier _pushNotifier;
 
         public AdminMessageApprovalService(
             Api_Context context,
             IMessageService messageService,
             IAuditService audit,
-            ILogger<AdminMessageApprovalService> logger)
+            ILogger<AdminMessageApprovalService> logger,
+            IUserPushNotifier pushNotifier)
         {
             _context = context;
             _messageService = messageService;
             _audit = audit;
             _logger = logger;
+            _pushNotifier = pushNotifier;
         }
 
         public Task<ApiResponse<PagedResponse<SmsApprovalRequestResponseDto>>> GetPendingAsync(int page = 1, int pageSize = 20)
@@ -332,6 +335,13 @@ namespace Api_Vapp.Services.Admin
                         rejectionReason = request.RejectionReason
                     }
                 });
+
+                var rejectPush = PushNotificationCopy.CampaignRejected(request.RejectionReason);
+                await _pushNotifier.NotifyAsync(
+                    request.UserId,
+                    NotificationCategory.Suggestions,
+                    rejectPush.Title,
+                    rejectPush.Body);
 
                 return ApiResponse<bool>.CreateSuccess(true, "درخواست رد شد");
             }

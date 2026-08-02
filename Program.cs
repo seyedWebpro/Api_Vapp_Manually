@@ -428,6 +428,7 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.INotificationSettingsService, Api
 builder.Services.AddScoped<Api_Vapp.Interfaces.IUserDeviceRepository, Api_Vapp.Repositories.UserDeviceRepository>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IUserDeviceService, Api_Vapp.Services.UserDeviceService>();
 builder.Services.AddSingleton<Api_Vapp.Interfaces.IPushNotificationService, Api_Vapp.Services.PushNotificationService>();
+builder.Services.AddSingleton<Api_Vapp.Interfaces.IUserPushNotifier, Api_Vapp.Services.UserPushNotifier>();
 
 // ثبت سرویس‌های پنل ادمین
 builder.Services.AddScoped<Api_Vapp.Interfaces.ISubscriptionEntitlementService, Api_Vapp.Services.SubscriptionEntitlementService>();
@@ -452,6 +453,7 @@ builder.Services.AddHostedService<Api_Vapp.Services.BackgroundServices.Scheduled
 builder.Services.AddHostedService<Api_Vapp.Services.BackgroundServices.ScheduledCashbackBackgroundService>();
 builder.Services.AddHostedService<Api_Vapp.Services.BackgroundServices.SmsDeliverySyncBackgroundService>();
 builder.Services.AddHostedService<Api_Vapp.Services.BackgroundServices.BookingReminderBackgroundService>();
+builder.Services.AddHostedService<Api_Vapp.Services.BackgroundServices.FinancialReportPushBackgroundService>();
 
 // use in OTP 
 builder.Services.AddSingleton<IConfiguration>(builder.Configuration);
@@ -578,7 +580,16 @@ if (app.Environment.IsProduction() || app.Environment.EnvironmentName == "Docker
 
         await DatabaseSeeder.SeedAsync(context, logger);
         logger.LogInformation("Database seed completed successfully.");
+    }
+    catch (Exception ex)
+    {
+        var logger = services.GetRequiredService<ILogger<Program>>();
+        logger.LogError(ex, "An error occurred while migrating or seeding the database.");
+    }
 
+    try
+    {
+        var logger = services.GetRequiredService<ILogger<Program>>();
         var push = services.GetRequiredService<Api_Vapp.Interfaces.IPushNotificationService>();
         if (push.TryInitialize())
             logger.LogInformation("Firebase Admin SDK آماده است — Push فعال.");
@@ -588,7 +599,7 @@ if (app.Environment.IsProduction() || app.Environment.EnvironmentName == "Docker
     catch (Exception ex)
     {
         var logger = services.GetRequiredService<ILogger<Program>>();
-        logger.LogError(ex, "An error occurred while migrating or seeding the database.");
+        logger.LogError(ex, "خطا در راه‌اندازی اولیه Firebase Admin SDK");
     }
 }
 

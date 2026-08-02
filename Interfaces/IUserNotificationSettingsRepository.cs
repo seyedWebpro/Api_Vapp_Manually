@@ -1,3 +1,4 @@
+using Api_Vapp.Constants;
 using Api_Vapp.Models;
 
 namespace Api_Vapp.Interfaces
@@ -7,27 +8,20 @@ namespace Api_Vapp.Interfaces
     /// </summary>
     public interface IUserNotificationSettingsRepository
     {
-        /// <summary>
-        /// دریافت تنظیمات اعلان‌های کاربر
-        /// </summary>
         Task<UserNotificationSettings?> GetByUserIdAsync(int userId);
 
-        /// <summary>
-        /// ایجاد تنظیمات جدید
-        /// </summary>
         Task<UserNotificationSettings> AddAsync(UserNotificationSettings settings);
 
-        /// <summary>
-        /// به‌روزرسانی تنظیمات
-        /// </summary>
         Task<UserNotificationSettings> UpdateAsync(UserNotificationSettings settings);
 
-        /// <summary>
-        /// دریافت یا ایجاد تنظیمات (اگر وجود نداشت، با مقادیر پیش‌فرض ایجاد می‌کند)
-        /// </summary>
         Task<UserNotificationSettings> GetOrCreateAsync(int userId);
+
+        /// <summary>
+        /// بررسی سریع اجازه ارسال Push برای یک دسته — فقط دو ستون لازم را می‌خواند
+        /// </summary>
+        /// <returns>
+        /// true = مجاز؛ false = غیرمجاز؛ null = ردیف تنظیمات وجود ندارد (پیش‌فرض: مجاز)
+        /// </returns>
+        Task<bool?> IsPushAllowedAsync(int userId, NotificationCategory category, CancellationToken cancellationToken = default);
     }
 }
-
-
-

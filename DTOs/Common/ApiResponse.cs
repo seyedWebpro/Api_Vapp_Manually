@@ -56,7 +56,7 @@ namespace Api_Vapp.DTOs.Common
             return Error(message, 400, errors, errorCode);
         }
 
-        public static ApiResponse<T> InternalServerError(string message = "خطای داخلی سرور. لطفاً با پشتیبانی تماس بگیرید.", string? errorCode = ErrorCodes.Unexpected)
+        public static ApiResponse<T> InternalServerError(string message = "کاربرگرامی خطای سرور اتفاق است . لطفا مجدد تلاش کنید و در صورت تکرار با پشتیبانی تماس بگیرید .", string? errorCode = ErrorCodes.Unexpected)
         {
             return Error(message, 500, errorCode: errorCode);
         }

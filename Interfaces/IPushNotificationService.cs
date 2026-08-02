@@ -1,3 +1,4 @@
+using Api_Vapp.Constants;
 using Api_Vapp.DTOs.Device;
 
 namespace Api_Vapp.Interfaces
@@ -10,16 +11,17 @@ namespace Api_Vapp.Interfaces
         bool TryInitialize();
 
         /// <summary>
-        /// ارسال نوتیفیکیشن به همه دستگاه‌های فعال یک کاربر
+        /// ارسال نوتیفیکیشن به دستگاه‌های فعال کاربر — با احترام به تنظیمات پروفایل
         /// </summary>
         Task<PushDeliveryResultDto> SendToUserAsync(
             int userId,
             string title,
             string body,
+            NotificationCategory category,
             CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// ارسال نوتیفیکیشن به یک توکن FCM مشخص
+        /// ارسال مستقیم به یک توکن (بدون چک تنظیمات کاربر — فقط برای موارد خاص)
         /// </summary>
         Task<bool> SendToTokenAsync(
             string fcmToken,

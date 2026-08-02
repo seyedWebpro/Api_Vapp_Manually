@@ -232,7 +232,7 @@ namespace Api_Vapp.Services
                 }
 
                 link.UpdatedAt = DateTime.UtcNow;
-                await _linkRepository.UpdateAsync(link);
+                await _context.SaveChangesAsync();
                 InvalidateUserCache(userId);
 
                 await _audit.WriteAsync(new AuditEntry
@@ -273,7 +273,6 @@ namespace Api_Vapp.Services
                     link.IsDefault = false;
                     link.IsActive = false;
                     link.UpdatedAt = DateTime.UtcNow;
-                    await _linkRepository.UpdateAsync(link);
 
                     if (wasDefault)
                     {

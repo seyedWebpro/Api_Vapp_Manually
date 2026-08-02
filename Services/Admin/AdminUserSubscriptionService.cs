@@ -5,6 +5,7 @@ using Api_Vapp.DTOs.Common;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
 using Api_Vapp.Services.Audit;
+using Api_Vapp.Utilities;
 using Microsoft.EntityFrameworkCore;
 
 namespace Api_Vapp.Services.Admin
@@ -13,11 +14,16 @@ namespace Api_Vapp.Services.Admin
     {
         private readonly Api_Context _context;
         private readonly IAuditService _audit;
+        private readonly IUserPushNotifier _pushNotifier;
 
-        public AdminUserSubscriptionService(Api_Context context, IAuditService audit)
+        public AdminUserSubscriptionService(
+            Api_Context context,
+            IAuditService audit,
+            IUserPushNotifier pushNotifier)
         {
             _context = context;
             _audit = audit;
+            _pushNotifier = pushNotifier;
         }
 
         public async Task<ApiResponse<List<UserSubscriptionResponseDto>>> GetAllAsync(int? userId = null, string? status = null)
@@ -109,7 +115,9 @@ namespace Api_Vapp.Services.Admin
 
         public async Task<ApiResponse<bool>> CancelAsync(int id)
         {
-            var subscription = await _context.UserSubscriptions.FirstOrDefaultAsync(us => us.Id == id && !us.IsDeleted);
+            var subscription = await _context.UserSubscriptions
+                .Include(us => us.Plan)
+                .FirstOrDefaultAsync(us => us.Id == id && !us.IsDeleted);
             if (subscription == null)
                 return ApiResponse<bool>.NotFound("اشتراک یافت نشد");
 
@@ -143,6 +151,13 @@ namespace Api_Vapp.Services.Admin
                     subscription.ExpiresAt
                 }
             });
+
+            var cancelPush = PushNotificationCopy.SubscriptionCancelled(subscription.Plan?.Name);
+            await _pushNotifier.NotifyAsync(
+                subscription.UserId,
+                NotificationCategory.ImportantNotifications,
+                cancelPush.Title,
+                cancelPush.Body);
 
             return ApiResponse<bool>.CreateSuccess(true, "اشتراک لغو شد");
         }

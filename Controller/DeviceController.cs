@@ -1,3 +1,4 @@
+using Api_Vapp.Constants;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.DTOs.Device;
 using Api_Vapp.Interfaces;
@@ -33,18 +34,6 @@ namespace Api_Vapp.Controller
         /// <summary>
         /// ثبت یا به‌روزرسانی توکن FCM
         /// </summary>
-        /// <remarks>
-        /// بعد از لاگین، اپ موبایل توکن Firebase را با این endpoint ارسال می‌کند.
-        /// ارسال دوبارهٔ همان توکن خطا نمی‌دهد و رکورد را به‌روزرسانی می‌کند (upsert).
-        ///
-        /// نمونه body:
-        /// ```
-        /// { "token": "fcm_device_token_here" }
-        /// ```
-        /// </remarks>
-        /// <response code="200">ثبت یا به‌روزرسانی موفق</response>
-        /// <response code="400">توکن خالی یا نامعتبر</response>
-        /// <response code="401">بدون JWT معتبر</response>
         [HttpPost("fcm-token")]
         [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
@@ -71,8 +60,7 @@ namespace Api_Vapp.Controller
         /// ارسال نوتیفیکیشن تستی به دستگاه‌های کاربر جاری
         /// </summary>
         /// <remarks>
-        /// برای تست اتصال Firebase Admin → FCM → گوشی.
-        /// کاربر باید قبلاً توکن را با /api/Device/fcm-token ثبت کرده باشد.
+        /// تنظیمات پروفایل (PushEnabled و ImportantNotifications) رعایت می‌شود.
         /// </remarks>
         [HttpPost("test-push")]
         [ProducesResponseType(typeof(ApiResponse<PushDeliveryResultDto>), StatusCodes.Status200OK)]
@@ -91,7 +79,18 @@ namespace Api_Vapp.Controller
             var title = string.IsNullOrWhiteSpace(dto?.Title) ? "تست وپ" : dto!.Title!.Trim();
             var body = string.IsNullOrWhiteSpace(dto?.Body) ? "این یک نوتیفیکیشن تستی است" : dto!.Body!.Trim();
 
-            var delivery = await _pushNotificationService.SendToUserAsync(userId, title, body);
+            var delivery = await _pushNotificationService.SendToUserAsync(
+                userId,
+                title,
+                body,
+                NotificationCategory.ImportantNotifications);
+
+            if (delivery.SkippedByPreference)
+            {
+                return StatusCode(400, ApiResponse<PushDeliveryResultDto>.BadRequest(
+                    ControlledErrorHelper.PushDisabled,
+                    errorCode: ErrorCodes.PushDisabled));
+            }
 
             if (delivery.DeviceCount == 0)
             {

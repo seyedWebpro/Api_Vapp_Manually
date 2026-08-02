@@ -1,4 +1,5 @@
 using Api_Vapp.Configuration;
+using Api_Vapp.Constants;
 using Api_Vapp.Data;
 using Api_Vapp.DTOs.Device;
 using Api_Vapp.Interfaces;
@@ -39,11 +40,38 @@ namespace Api_Vapp.Services
             int userId,
             string title,
             string body,
+            NotificationCategory category,
             CancellationToken cancellationToken = default)
         {
-            _logger.LogInformation("شروع ارسال Push — UserId={UserId}", userId);
+            _logger.LogInformation(
+                "شروع ارسال Push — UserId={UserId}, Category={Category}",
+                userId, category);
 
-            var result = new PushDeliveryResultDto();
+            var result = new PushDeliveryResultDto
+            {
+                Category = category.ToString()
+            };
+
+            // ۱) چک سریع تنظیمات پروفایل — قبل از Firebase و قبل از خواندن دستگاه‌ها
+            bool preferenceAllowed;
+            using (var scope = _scopeFactory.CreateScope())
+            {
+                var settingsRepo = scope.ServiceProvider.GetRequiredService<IUserNotificationSettingsRepository>();
+                var allowed = await settingsRepo.IsPushAllowedAsync(userId, category, cancellationToken);
+
+                // null = ردیف تنظیمات نیست → پیش‌فرض: PushEnabled=true و فلگ‌های پیش‌فرض مدل
+                preferenceAllowed = allowed ?? IsCategoryEnabledByDefault(category);
+            }
+
+            result.PreferenceAllowed = preferenceAllowed;
+            if (!preferenceAllowed)
+            {
+                result.SkippedByPreference = true;
+                _logger.LogInformation(
+                    "ارسال Push رد شد به‌خاطر تنظیمات کاربر — UserId={UserId}, Category={Category}",
+                    userId, category);
+                return result;
+            }
 
             if (!EnsureInitialized())
             {
@@ -69,14 +97,15 @@ namespace Api_Vapp.Services
             if (devices.Count == 0)
             {
                 _logger.LogInformation(
-                    "پایان ارسال Push — دستگاه فعالی نیست — UserId={UserId}",
-                    userId);
+                    "پایان ارسال Push — دستگاه فعالی نیست — UserId={UserId}, Category={Category}",
+                    userId, category);
                 return result;
             }
 
             foreach (var (deviceId, token) in devices)
             {
-                var ok = await SendToTokenInternalAsync(userId, deviceId, token, title, body, cancellationToken);
+                var ok = await SendToTokenInternalAsync(
+                    userId, deviceId, token, title, body, category.ToString(), cancellationToken);
                 if (ok)
                     result.SentCount++;
                 else
@@ -84,8 +113,8 @@ namespace Api_Vapp.Services
             }
 
             _logger.LogInformation(
-                "پایان ارسال Push — UserId={UserId}, DeviceCount={DeviceCount}, SentCount={SentCount}, FailedCount={FailedCount}",
-                userId, result.DeviceCount, result.SentCount, result.FailedCount);
+                "پایان ارسال Push — UserId={UserId}, Category={Category}, DeviceCount={DeviceCount}, SentCount={SentCount}, FailedCount={FailedCount}",
+                userId, category, result.DeviceCount, result.SentCount, result.FailedCount);
 
             return result;
         }
@@ -96,8 +125,27 @@ namespace Api_Vapp.Services
             string body,
             CancellationToken cancellationToken = default)
         {
-            return await SendToTokenInternalAsync(null, null, fcmToken, title, body, cancellationToken);
+            return await SendToTokenInternalAsync(
+                null, null, fcmToken, title, body, category: null, cancellationToken);
         }
+
+        /// <summary>
+        /// پیش‌فرض‌های مدل وقتی ردیف تنظیمات هنوز ساخته نشده
+        /// </summary>
+        private static bool IsCategoryEnabledByDefault(NotificationCategory category) =>
+            category switch
+            {
+                NotificationCategory.ImportantNotifications => true,
+                NotificationCategory.Updates => false,
+                NotificationCategory.SystemWarnings => true,
+                NotificationCategory.WalletTransaction => true,
+                NotificationCategory.CustomerCashback => true,
+                NotificationCategory.FinancialReport => false,
+                NotificationCategory.NewCustomerRegistration => true,
+                NotificationCategory.Suggestions => true,
+                NotificationCategory.EducationAndTips => false,
+                _ => false
+            };
 
         private async Task<bool> SendToTokenInternalAsync(
             int? userId,
@@ -105,6 +153,7 @@ namespace Api_Vapp.Services
             string fcmToken,
             string title,
             string body,
+            string? category,
             CancellationToken cancellationToken)
         {
             if (!EnsureInitialized())
@@ -114,16 +163,60 @@ namespace Api_Vapp.Services
                 return false;
 
             var tokenPrefix = TokenPrefix(fcmToken);
+            var safeTitle = title?.Trim() ?? string.Empty;
+            var safeBody = body?.Trim() ?? string.Empty;
+            var safeCategory = string.IsNullOrWhiteSpace(category) ? "General" : category.Trim();
 
             try
             {
+                // Android (به‌خصوص وقتی اپ باز است) و iOS به کانال/اولویت و data نیاز دارند
                 var message = new Message
                 {
                     Token = fcmToken.Trim(),
                     Notification = new Notification
                     {
-                        Title = title,
-                        Body = body
+                        Title = safeTitle,
+                        Body = safeBody
+                    },
+                    Data = new Dictionary<string, string>
+                    {
+                        ["title"] = safeTitle,
+                        ["body"] = safeBody,
+                        ["category"] = safeCategory,
+                        ["click_action"] = "FLUTTER_NOTIFICATION_CLICK"
+                    },
+                    Android = new AndroidConfig
+                    {
+                        Priority = Priority.High,
+                        Notification = new AndroidNotification
+                        {
+                            Title = safeTitle,
+                            Body = safeBody,
+                            // کانال پیش‌فرض FCM — تا وقتی اپ کانال اختصاصی نساخته، امن‌تر است
+                            Sound = "default",
+                            DefaultSound = true,
+                            DefaultVibrateTimings = true,
+                            Priority = NotificationPriority.HIGH,
+                            ClickAction = "FLUTTER_NOTIFICATION_CLICK"
+                        }
+                    },
+                    Apns = new ApnsConfig
+                    {
+                        Headers = new Dictionary<string, string>
+                        {
+                            ["apns-priority"] = "10"
+                        },
+                        Aps = new Aps
+                        {
+                            Alert = new ApsAlert
+                            {
+                                Title = safeTitle,
+                                Body = safeBody
+                            },
+                            Sound = "default",
+                            ContentAvailable = true,
+                            MutableContent = true
+                        }
                     }
                 };
 

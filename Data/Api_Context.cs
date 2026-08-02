@@ -923,6 +923,9 @@ namespace Api_Vapp.Data
                 entity.Property(uns => uns.UserId)
                     .IsRequired();
 
+                entity.Property(uns => uns.PushEnabled)
+                    .HasDefaultValue(true);
+
                 // مقادیر پیش‌فرض برای اعلان‌های سیستمی
                 entity.Property(uns => uns.ImportantNotifications)
                     .HasDefaultValue(true);
@@ -933,7 +936,7 @@ namespace Api_Vapp.Data
 
                 // مقادیر پیش‌فرض برای اعلان‌های مالی
                 entity.Property(uns => uns.WalletTransaction)
-                    .HasDefaultValue(false);
+                    .HasDefaultValue(true);
                 entity.Property(uns => uns.CustomerCashback)
                     .HasDefaultValue(true);
                 entity.Property(uns => uns.FinancialReport)
@@ -941,7 +944,7 @@ namespace Api_Vapp.Data
 
                 // مقادیر پیش‌فرض برای اعلان‌های متفرقه
                 entity.Property(uns => uns.NewCustomerRegistration)
-                    .HasDefaultValue(false);
+                    .HasDefaultValue(true);
                 entity.Property(uns => uns.Suggestions)
                     .HasDefaultValue(true);
                 entity.Property(uns => uns.EducationAndTips)

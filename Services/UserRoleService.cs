@@ -5,6 +5,7 @@ using Api_Vapp.DTOs.UserRole;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
 using Api_Vapp.Services.Audit;
+using Api_Vapp.Utilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -21,6 +22,7 @@ namespace Api_Vapp.Services
         private readonly Api_Vapp.Data.Api_Context _context;
         private readonly ILogger<UserRoleService> _logger;
         private readonly IAuditService _audit;
+        private readonly IUserPushNotifier _pushNotifier;
 
         public UserRoleService(
             IUserRoleRepository userRoleRepository,
@@ -28,7 +30,8 @@ namespace Api_Vapp.Services
             IRoleRepository roleRepository,
             Api_Vapp.Data.Api_Context context,
             ILogger<UserRoleService> logger,
-            IAuditService audit)
+            IAuditService audit,
+            IUserPushNotifier pushNotifier)
         {
             _userRoleRepository = userRoleRepository;
             _userRepository = userRepository;
@@ -36,6 +39,7 @@ namespace Api_Vapp.Services
             _context = context;
             _logger = logger;
             _audit = audit;
+            _pushNotifier = pushNotifier;
         }
 
         public async Task<ApiResponse<UserRoleResponseDto>> CreateUserRoleAsync(CreateUserRoleDto createUserRoleDto)
@@ -106,6 +110,13 @@ namespace Api_Vapp.Services
                         isActive = createdUserRole.IsActive
                     }
                 });
+
+                var rolePush = PushNotificationCopy.RoleChanged(role.Name, true);
+                await _pushNotifier.NotifyAsync(
+                    createUserRoleDto.UserId,
+                    NotificationCategory.ImportantNotifications,
+                    rolePush.Title,
+                    rolePush.Body);
 
                 return ApiResponse<UserRoleResponseDto>.CreateSuccess(
                     MapToUserRoleResponseDto(createdUserRole),
@@ -323,6 +334,15 @@ namespace Api_Vapp.Services
                         isActive = userRole.IsActive
                     }
                 });
+
+                var role = await _roleRepository.GetByIdAsync(userRole.RoleId);
+                var roleName = role?.Name ?? "نقش";
+                var removePush = PushNotificationCopy.RoleChanged(roleName, false);
+                await _pushNotifier.NotifyAsync(
+                    userRole.UserId,
+                    NotificationCategory.ImportantNotifications,
+                    removePush.Title,
+                    removePush.Body);
 
                 return ApiResponse<bool>.CreateSuccess(true, "رابطه کاربر-نقش با موفقیت حذف شد");
             }

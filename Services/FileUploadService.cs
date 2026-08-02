@@ -139,9 +139,14 @@ namespace Api_Vapp.Services
             // آپلود فایل
             try
             {
-                using (var stream = new FileStream(filePath, FileMode.Create))
+                // اگر اعتبارسنجی قبلی Position را جلو برده باشد، از ابتدا کپی می‌کنیم
+                await using (var source = file.OpenReadStream())
                 {
-                    await file.CopyToAsync(stream);
+                    if (source.CanSeek)
+                        source.Position = 0;
+
+                    await using var destination = new FileStream(filePath, FileMode.Create);
+                    await source.CopyToAsync(destination);
                 }
 
                 string relativePath = GetRelativePath(filePath);

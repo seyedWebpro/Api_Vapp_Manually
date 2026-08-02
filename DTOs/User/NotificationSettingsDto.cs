@@ -5,6 +5,11 @@ namespace Api_Vapp.DTOs.User
     /// </summary>
     public class NotificationSettingsDto
     {
+        /// <summary>
+        /// سوییچ اصلی ارسال Push (خاموش = هیچ نوتیفی ارسال نشود)
+        /// </summary>
+        public bool PushEnabled { get; set; } = true;
+
         #region اعلان‌های سیستمی
 
         /// <summary>

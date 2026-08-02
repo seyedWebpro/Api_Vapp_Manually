@@ -940,7 +940,7 @@ namespace Api_Vapp.Services.BackgroundServices
                 return ApiResponse<SendSmsResponseDto>.InternalServerError(ControlledErrorHelper.SmsFailed);
             }
 
-            return ApiResponse<SendSmsResponseDto>.InternalServerError("خطای ناشناخته در ارسال SMS");
+            return ApiResponse<SendSmsResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
         }
 
         /// <summary>

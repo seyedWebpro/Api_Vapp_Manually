@@ -6,6 +6,7 @@ using Api_Vapp.DTOs.NumberSeeker;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
 using Api_Vapp.Services.Audit;
+using Api_Vapp.Utilities;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -139,7 +140,7 @@ namespace Api_Vapp.Services
             {
                 _logger.LogError(ex, "Scraper API key rejected for user {UserId}", userId);
                 return ApiResponse<NumberSeekerTaskCreatedDto>.InternalServerError(
-                    "پیکربندی اتصال به سرویس شماره‌جو نادرست است.",
+                    ControlledErrorHelper.Unexpected,
                     "SCRAPER_AUTH_FAILED");
             }
             catch (ArgumentException ex)

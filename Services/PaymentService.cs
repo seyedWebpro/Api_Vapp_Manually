@@ -34,6 +34,7 @@ namespace Api_Vapp.Services
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IAuditService _audit;
         private readonly ILogger<PaymentService> _logger;
+        private readonly IUserPushNotifier _pushNotifier;
 
         // تنظیمات درگاه به‌پرداخت
         private readonly string _behpardakhtTerminalId;
@@ -55,7 +56,8 @@ namespace Api_Vapp.Services
             IConfiguration configuration,
             IHttpClientFactory httpClientFactory,
             IAuditService audit,
-            ILogger<PaymentService> logger)
+            ILogger<PaymentService> logger,
+            IUserPushNotifier pushNotifier)
         {
             _context = context;
             _paymentRepository = paymentRepository;
@@ -68,6 +70,7 @@ namespace Api_Vapp.Services
             _httpClientFactory = httpClientFactory;
             _audit = audit;
             _logger = logger;
+            _pushNotifier = pushNotifier;
 
             // خواندن تنظیمات درگاه
             _behpardakhtTerminalId = _configuration["Payment:Behpardakht:TerminalId"] ?? "";
@@ -421,6 +424,13 @@ namespace Api_Vapp.Services
                                 cardNumber = MaskCardNumber(payment.CardNumber)
                             }
                         });
+
+                        var failPush = PushNotificationCopy.PaymentFailed();
+                        await _pushNotifier.NotifyAsync(
+                            payment.UserId,
+                            NotificationCategory.SystemWarnings,
+                            failPush.Title,
+                            failPush.Body);
 
                         return ApiResponse<PaymentResultDto>.CreateSuccess(failResult, "پرداخت ناموفق بود");
                     }

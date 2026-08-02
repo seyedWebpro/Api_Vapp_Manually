@@ -272,6 +272,14 @@ namespace Api_Vapp.Services
                     userId, sid, filter, MaxExcelExportRows);
                 var isTruncated = totalMatching > records.Count;
 
+                var batchTitle = !string.IsNullOrWhiteSpace(batch?.Title)
+                    ? batch!.Title!
+                    : $"ارسال #{sid}";
+                var batchMessageText = batch != null
+                    ? await ResolveBatchMessageTextAsync(userId, batch)
+                    : null;
+                var (_, sendTypeLabel) = MapSendType(batch?.SourceModule ?? records.FirstOrDefault()?.SourceModule ?? string.Empty);
+
                 using var workbook = new XLWorkbook();
                 var worksheet = workbook.Worksheets.Add("گیرندگان");
 
@@ -280,23 +288,45 @@ namespace Api_Vapp.Services
                 worksheet.Cell(1, 3).Value = "فرستنده";
                 worksheet.Cell(1, 4).Value = "وضعیت";
                 worksheet.Cell(1, 5).Value = "کد وضعیت";
-                worksheet.Cell(1, 6).Value = "تاریخ ارسال";
-                worksheet.Cell(1, 7).Value = "کد ارسال";
-                worksheet.Cell(1, 8).Value = "عنوان";
+                worksheet.Cell(1, 6).Value = "پیام وضعیت";
+                worksheet.Cell(1, 7).Value = "تاریخ ارسال";
+                worksheet.Cell(1, 8).Value = "کد ارسال";
+                worksheet.Cell(1, 9).Value = "عنوان";
+                worksheet.Cell(1, 10).Value = "نوع ارسال";
+                worksheet.Cell(1, 11).Value = "متن پیام";
+                worksheet.Cell(1, 12).Value = "وضعیت نهایی";
                 worksheet.Row(1).Style.Font.Bold = true;
 
                 for (var i = 0; i < records.Count; i++)
                 {
                     var record = records[i];
                     var row = i + 2;
+                    var categoryLabel = ResolveCategoryLabel(record);
+                    var statusMessage = !string.IsNullOrWhiteSpace(record.ProviderStatusMessage)
+                        ? record.ProviderStatusMessage!
+                        : categoryLabel;
+                    var title = !string.IsNullOrWhiteSpace(record.SourceEntityLabel)
+                        ? record.SourceEntityLabel!
+                        : batchTitle;
+                    var messageText = !string.IsNullOrWhiteSpace(record.MessageText)
+                        ? record.MessageText!
+                        : (batchMessageText ?? string.Empty);
+                    var rowSendTypeLabel = string.IsNullOrWhiteSpace(sendTypeLabel)
+                        ? SmsSourceModules.GetPersianLabel(record.SourceModule)
+                        : sendTypeLabel;
+
                     worksheet.Cell(row, 1).Value = i + 1;
-                    worksheet.Cell(row, 2).Value = record.Mobile;
-                    worksheet.Cell(row, 3).Value = _senderNumber;
-                    worksheet.Cell(row, 4).Value = ResolveCategoryLabel(record);
-                    worksheet.Cell(row, 5).Value = record.ProviderStatusCode;
-                    worksheet.Cell(row, 6).Value = record.SentAt.ToString("yyyy-MM-dd HH:mm:ss");
-                    worksheet.Cell(row, 7).Value = record.Sid;
-                    worksheet.Cell(row, 8).Value = record.SourceEntityLabel ?? string.Empty;
+                    worksheet.Cell(row, 2).Value = record.Mobile ?? string.Empty;
+                    worksheet.Cell(row, 3).Value = string.IsNullOrWhiteSpace(_senderNumber) ? "-" : _senderNumber;
+                    worksheet.Cell(row, 4).Value = categoryLabel;
+                    worksheet.Cell(row, 5).Value = record.ProviderStatusCode?.ToString() ?? "-";
+                    worksheet.Cell(row, 6).Value = statusMessage;
+                    worksheet.Cell(row, 7).Value = record.SentAt.ToString("yyyy-MM-dd HH:mm:ss");
+                    worksheet.Cell(row, 8).Value = record.Sid.ToString();
+                    worksheet.Cell(row, 9).Value = title;
+                    worksheet.Cell(row, 10).Value = rowSendTypeLabel;
+                    worksheet.Cell(row, 11).Value = string.IsNullOrWhiteSpace(messageText) ? "-" : messageText;
+                    worksheet.Cell(row, 12).Value = record.IsDeliveryFinal ? "بله" : "خیر";
                 }
 
                 worksheet.Columns().AdjustToContents();

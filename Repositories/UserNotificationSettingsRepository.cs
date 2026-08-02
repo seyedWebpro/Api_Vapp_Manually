@@ -1,3 +1,4 @@
+using Api_Vapp.Constants;
 using Api_Vapp.Data;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
@@ -20,6 +21,7 @@ namespace Api_Vapp.Repositories
         public async Task<UserNotificationSettings?> GetByUserIdAsync(int userId)
         {
             return await _context.UserNotificationSettings
+                .AsNoTracking()
                 .FirstOrDefaultAsync(uns => uns.UserId == userId);
         }
 
@@ -41,31 +43,75 @@ namespace Api_Vapp.Repositories
 
         public async Task<UserNotificationSettings> GetOrCreateAsync(int userId)
         {
-            var settings = await GetByUserIdAsync(userId);
-            
+            var settings = await _context.UserNotificationSettings
+                .FirstOrDefaultAsync(uns => uns.UserId == userId);
+
             if (settings == null)
             {
                 settings = new UserNotificationSettings
                 {
                     UserId = userId,
+                    PushEnabled = true,
                     ImportantNotifications = true,
                     Updates = false,
                     SystemWarnings = true,
-                    WalletTransaction = false,
+                    WalletTransaction = true,
                     CustomerCashback = true,
                     FinancialReport = false,
-                    NewCustomerRegistration = false,
+                    NewCustomerRegistration = true,
                     Suggestions = true,
                     EducationAndTips = false
                 };
-                
+
                 settings = await AddAsync(settings);
             }
-            
+
             return settings;
+        }
+
+        public async Task<bool?> IsPushAllowedAsync(
+            int userId,
+            NotificationCategory category,
+            CancellationToken cancellationToken = default)
+        {
+            // یک query سبک: فقط PushEnabled + فلگ دسته — بدون Load کل entity
+            var row = await _context.UserNotificationSettings
+                .AsNoTracking()
+                .Where(s => s.UserId == userId)
+                .Select(s => new
+                {
+                    s.PushEnabled,
+                    s.ImportantNotifications,
+                    s.Updates,
+                    s.SystemWarnings,
+                    s.WalletTransaction,
+                    s.CustomerCashback,
+                    s.FinancialReport,
+                    s.NewCustomerRegistration,
+                    s.Suggestions,
+                    s.EducationAndTips
+                })
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (row == null)
+                return null;
+
+            if (!row.PushEnabled)
+                return false;
+
+            return category switch
+            {
+                NotificationCategory.ImportantNotifications => row.ImportantNotifications,
+                NotificationCategory.Updates => row.Updates,
+                NotificationCategory.SystemWarnings => row.SystemWarnings,
+                NotificationCategory.WalletTransaction => row.WalletTransaction,
+                NotificationCategory.CustomerCashback => row.CustomerCashback,
+                NotificationCategory.FinancialReport => row.FinancialReport,
+                NotificationCategory.NewCustomerRegistration => row.NewCustomerRegistration,
+                NotificationCategory.Suggestions => row.Suggestions,
+                NotificationCategory.EducationAndTips => row.EducationAndTips,
+                _ => false
+            };
         }
     }
 }
-
-
-

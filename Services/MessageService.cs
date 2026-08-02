@@ -38,6 +38,7 @@ namespace Api_Vapp.Services
         private readonly IAuditService _audit;
         private readonly ISmsPricingService _smsPricing;
         private readonly IWalletService _walletService;
+        private readonly IUserPushNotifier _pushNotifier;
 
         public MessageService(
             IMessageRepository messageRepository,
@@ -56,6 +57,7 @@ namespace Api_Vapp.Services
             IAuditService audit,
             ISmsPricingService smsPricing,
             IWalletService walletService,
+            IUserPushNotifier pushNotifier,
             IFileUploadService? fileUploadService = null)
         {
             _messageRepository = messageRepository;
@@ -74,6 +76,7 @@ namespace Api_Vapp.Services
             _walletService = walletService;
             _hostEnvironment = hostEnvironment;
             _audit = audit;
+            _pushNotifier = pushNotifier;
             _fileUploadService = fileUploadService;
         }
 
@@ -120,12 +123,12 @@ namespace Api_Vapp.Services
             catch (DbUpdateException ex)
             {
                 _logger.LogError(ex, "Database error creating message for user: {UserId}", userId);
-                return ApiResponse<MessageResponseDto>.InternalServerError("خطا در ذخیره‌سازی پیام. لطفاً دوباره تلاش کنید");
+                return ApiResponse<MessageResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Unexpected error creating message for user: {UserId}", userId);
-                return ApiResponse<MessageResponseDto>.InternalServerError("خطای غیرمنتظره در ایجاد پیام");
+                return ApiResponse<MessageResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -152,7 +155,7 @@ namespace Api_Vapp.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting message: {MessageId}", messageId);
-                return ApiResponse<MessageResponseDto>.InternalServerError("خطا در دریافت پیام");
+                return ApiResponse<MessageResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -204,7 +207,7 @@ namespace Api_Vapp.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting messages for user: {UserId}", userId);
-                return ApiResponse<MessageListResponseDto>.InternalServerError("خطا در دریافت لیست پیام‌ها");
+                return ApiResponse<MessageListResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -268,12 +271,12 @@ namespace Api_Vapp.Services
             catch (DbUpdateException ex)
             {
                 _logger.LogError(ex, "Database error updating message: {MessageId}", messageId);
-                return ApiResponse<MessageResponseDto>.InternalServerError("خطا در به‌روزرسانی پیام. لطفاً دوباره تلاش کنید");
+                return ApiResponse<MessageResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Unexpected error updating message: {MessageId}", messageId);
-                return ApiResponse<MessageResponseDto>.InternalServerError("خطای غیرمنتظره در به‌روزرسانی پیام");
+                return ApiResponse<MessageResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -311,12 +314,12 @@ namespace Api_Vapp.Services
             catch (DbUpdateException ex)
             {
                 _logger.LogError(ex, "Database error deleting message: {MessageId}", messageId);
-                return ApiResponse<bool>.InternalServerError("خطا در حذف پیام. لطفاً دوباره تلاش کنید");
+                return ApiResponse<bool>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Unexpected error deleting message: {MessageId}", messageId);
-                return ApiResponse<bool>.InternalServerError("خطای غیرمنتظره در حذف پیام");
+                return ApiResponse<bool>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -352,7 +355,7 @@ namespace Api_Vapp.Services
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Error deserializing recipients from Session - SessionId: {SessionId}", session.Id);
-                    return ApiResponse<CampaignSummaryDto>.InternalServerError("خطا در خواندن لیست گیرندگان");
+                    return ApiResponse<CampaignSummaryDto>.InternalServerError(ControlledErrorHelper.Unexpected);
                 }
 
                 // خواندن تنظیمات از Session
@@ -442,7 +445,7 @@ namespace Api_Vapp.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting campaign summary for message: {MessageId}", messageId);
-                return ApiResponse<CampaignSummaryDto>.InternalServerError("خطا در دریافت خلاصه کمپین");
+                return ApiResponse<CampaignSummaryDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -629,7 +632,7 @@ namespace Api_Vapp.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error calculating campaign summary for message: {MessageId}", messageId);
-                return ApiResponse<CampaignSummaryDto>.InternalServerError("خطا در محاسبه خلاصه کمپین");
+                return ApiResponse<CampaignSummaryDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -945,7 +948,7 @@ namespace Api_Vapp.Services
             {
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "Error confirming and sending message - MessageId: {MessageId}", messageId);
-                return ApiResponse<DirectSendResultDto>.InternalServerError("خطا در تأیید و ارسال پیام");
+                return ApiResponse<DirectSendResultDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -967,12 +970,12 @@ namespace Api_Vapp.Services
             catch (DbUpdateException ex)
             {
                 _logger.LogError(ex, "Database error creating campaign for user: {UserId}", userId);
-                return ApiResponse<CampaignResponseDto>.InternalServerError("خطا در ذخیره‌سازی کمپین. لطفاً دوباره تلاش کنید");
+                return ApiResponse<CampaignResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Unexpected error creating campaign for user: {UserId}", userId);
-                return ApiResponse<CampaignResponseDto>.InternalServerError("خطای غیرمنتظره در ایجاد کمپین");
+                return ApiResponse<CampaignResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -999,7 +1002,7 @@ namespace Api_Vapp.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting campaign: {CampaignId}", campaignId);
-                return ApiResponse<CampaignResponseDto>.InternalServerError("خطا در دریافت کمپین");
+                return ApiResponse<CampaignResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -1049,7 +1052,7 @@ namespace Api_Vapp.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting campaigns for user: {UserId}", userId);
-                return ApiResponse<CampaignListResponseDto>.InternalServerError("خطا در دریافت لیست کمپین‌ها");
+                return ApiResponse<CampaignListResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -1315,17 +1318,24 @@ namespace Api_Vapp.Services
                     ? $"پیام‌ها با موفقیت ارسال شد ({sentCount} ارسال موفق، {failedCount} ناموفق)"
                     : "هیچ پیامی ارسال نشد";
 
+                var campaignPush = PushNotificationCopy.CampaignCompleted(campaign.Title, sentCount, failedCount);
+                await _pushNotifier.NotifyAsync(
+                    userId,
+                    NotificationCategory.Suggestions,
+                    campaignPush.Title,
+                    campaignPush.Body);
+
                 return ApiResponse<bool>.CreateSuccess(true, successMessage);
             }
             catch (DbUpdateException ex)
             {
                 _logger.LogError(ex, "Database error sending campaign: {CampaignId}", campaignId);
-                return ApiResponse<bool>.InternalServerError("خطا در ذخیره‌سازی وضعیت ارسال کمپین. لطفاً دوباره تلاش کنید");
+                return ApiResponse<bool>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Unexpected error sending campaign: {CampaignId}", campaignId);
-                return ApiResponse<bool>.InternalServerError("خطای غیرمنتظره در ارسال کمپین");
+                return ApiResponse<bool>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -1373,12 +1383,12 @@ namespace Api_Vapp.Services
             catch (DbUpdateException ex)
             {
                 _logger.LogError(ex, "Database error cancelling campaign: {CampaignId}", campaignId);
-                return ApiResponse<bool>.InternalServerError("خطا در لغو کمپین. لطفاً دوباره تلاش کنید");
+                return ApiResponse<bool>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Unexpected error cancelling campaign: {CampaignId}", campaignId);
-                return ApiResponse<bool>.InternalServerError("خطای غیرمنتظره در لغو کمپین");
+                return ApiResponse<bool>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -1437,13 +1447,13 @@ namespace Api_Vapp.Services
             {
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "Database error toggling campaign status: {CampaignId}", campaignId);
-                return ApiResponse<bool>.InternalServerError("خطا در تغییر وضعیت کمپین. لطفاً دوباره تلاش کنید");
+                return ApiResponse<bool>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "Unexpected error toggling campaign status: {CampaignId}", campaignId);
-                return ApiResponse<bool>.InternalServerError("خطای غیرمنتظره در تغییر وضعیت کمپین");
+                return ApiResponse<bool>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -1649,7 +1659,7 @@ namespace Api_Vapp.Services
                     }
                 }
                 _logger.LogError(ex, "❌ Database error creating template for user: {UserId}", userId);
-                return ApiResponse<TemplateResponseDto>.InternalServerError("خطا در ذخیره‌سازی قالب. لطفاً دوباره تلاش کنید");
+                return ApiResponse<TemplateResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
             catch (Exception ex)
             {
@@ -1667,7 +1677,7 @@ namespace Api_Vapp.Services
                     }
                 }
                 _logger.LogError(ex, "❌ Unexpected error creating template for user: {UserId}", userId);
-                return ApiResponse<TemplateResponseDto>.InternalServerError("خطای غیرمنتظره در ایجاد قالب");
+                return ApiResponse<TemplateResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -1699,7 +1709,7 @@ namespace Api_Vapp.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting templates for user {UserId}", userId);
-                return ApiResponse<List<TemplateResponseDto>>.InternalServerError("خطا در دریافت لیست قالب‌ها");
+                return ApiResponse<List<TemplateResponseDto>>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -1740,7 +1750,7 @@ namespace Api_Vapp.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting grouped templates for user {UserId}", userId);
-                return ApiResponse<List<CategoryGroupDto>>.InternalServerError("خطا در دریافت لیست دسته‌بندی شده قالب‌ها");
+                return ApiResponse<List<CategoryGroupDto>>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -1939,7 +1949,7 @@ namespace Api_Vapp.Services
                     }
                 }
                 _logger.LogError(ex, "❌ Database error updating template: {TemplateId}", id);
-                return ApiResponse<TemplateResponseDto>.InternalServerError("خطا در به‌روزرسانی قالب. لطفاً دوباره تلاش کنید");
+                return ApiResponse<TemplateResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
             catch (Exception ex)
             {
@@ -1957,7 +1967,7 @@ namespace Api_Vapp.Services
                     }
                 }
                 _logger.LogError(ex, "❌ Unexpected error updating template: {TemplateId}", id);
-                return ApiResponse<TemplateResponseDto>.InternalServerError("خطای غیرمنتظره در به‌روزرسانی قالب");
+                return ApiResponse<TemplateResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -2012,13 +2022,13 @@ namespace Api_Vapp.Services
             {
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "❌ Database error deleting template: {TemplateId}", id);
-                return ApiResponse<bool>.InternalServerError("خطا در حذف قالب. لطفاً دوباره تلاش کنید");
+                return ApiResponse<bool>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "❌ Unexpected error deleting template: {TemplateId}", id);
-                return ApiResponse<bool>.InternalServerError("خطای غیرمنتظره در حذف قالب");
+                return ApiResponse<bool>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -2105,14 +2115,14 @@ namespace Api_Vapp.Services
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "❌ Database error setting default template: {TemplateId} for user: {UserId}", 
                     templateId, userId);
-                return ApiResponse<TemplateResponseDto>.InternalServerError("خطا در تنظیم قالب پیش‌فرض. لطفاً دوباره تلاش کنید");
+                return ApiResponse<TemplateResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "❌ Unexpected error setting default template: {TemplateId} for user: {UserId}", 
                     templateId, userId);
-                return ApiResponse<TemplateResponseDto>.InternalServerError("خطای غیرمنتظره در تنظیم قالب پیش‌فرض");
+                return ApiResponse<TemplateResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -2263,7 +2273,7 @@ namespace Api_Vapp.Services
                 catch { }
                 _logger.LogError(ex, "❌ Database error quick sending message: ContactId {ContactId} for user: {UserId}", 
                     quickSendDto.ContactId, userId);
-                return ApiResponse<DirectSendResultDto>.InternalServerError("خطا در ارسال پیام سریع. لطفاً دوباره تلاش کنید");
+                return ApiResponse<DirectSendResultDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
             catch (Exception ex)
             {
@@ -2274,7 +2284,7 @@ namespace Api_Vapp.Services
                 catch { }
                 _logger.LogError(ex, "❌ Unexpected error quick sending message: ContactId {ContactId} for user: {UserId}", 
                     quickSendDto.ContactId, userId);
-                return ApiResponse<DirectSendResultDto>.InternalServerError("خطای غیرمنتظره در ارسال پیام سریع");
+                return ApiResponse<DirectSendResultDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -2365,7 +2375,7 @@ namespace Api_Vapp.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting tags for user: {UserId}", userId);
-                return ApiResponse<MessageTagListResponseDto>.InternalServerError("خطا در دریافت تگ‌ها");
+                return ApiResponse<MessageTagListResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -2423,12 +2433,12 @@ namespace Api_Vapp.Services
             catch (DbUpdateException ex)
             {
                 _logger.LogError(ex, "Database error creating tag for user: {UserId}", userId);
-                return ApiResponse<MessageTagResponseDto>.InternalServerError("خطا در ذخیره‌سازی تگ. لطفاً دوباره تلاش کنید");
+                return ApiResponse<MessageTagResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Unexpected error creating tag for user: {UserId}", userId);
-                return ApiResponse<MessageTagResponseDto>.InternalServerError("خطای غیرمنتظره در ایجاد تگ");
+                return ApiResponse<MessageTagResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -2504,7 +2514,7 @@ namespace Api_Vapp.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting tags with contact count for user: {UserId}", userId);
-                return ApiResponse<MessageTagWithContactCountListResponseDto>.InternalServerError("خطا در دریافت تگ‌ها");
+                return ApiResponse<MessageTagWithContactCountListResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -2683,7 +2693,7 @@ namespace Api_Vapp.Services
                     }
                 }
                 _logger.LogError(ex, "❌ Database error creating template group for user: {UserId}", userId);
-                return ApiResponse<TemplateGroupResponseDto>.InternalServerError("خطا در ذخیره‌سازی گروه. لطفاً دوباره تلاش کنید");
+                return ApiResponse<TemplateGroupResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
             catch (Exception ex)
             {
@@ -2701,7 +2711,7 @@ namespace Api_Vapp.Services
                     }
                 }
                 _logger.LogError(ex, "❌ Unexpected error creating template group for user: {UserId}", userId);
-                return ApiResponse<TemplateGroupResponseDto>.InternalServerError("خطای غیرمنتظره در ایجاد گروه");
+                return ApiResponse<TemplateGroupResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -2768,7 +2778,7 @@ namespace Api_Vapp.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting template groups for user {UserId}", userId);
-                return ApiResponse<List<TemplateGroupSummaryDto>>.InternalServerError("خطا در دریافت لیست گروه‌های قالب");
+                return ApiResponse<List<TemplateGroupSummaryDto>>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -2794,7 +2804,7 @@ namespace Api_Vapp.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting template group {GroupId} for user {UserId}", id, userId);
-                return ApiResponse<TemplateGroupResponseDto>.InternalServerError("خطا در دریافت گروه");
+                return ApiResponse<TemplateGroupResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -2854,7 +2864,7 @@ namespace Api_Vapp.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting templates for group {GroupId} and user {UserId}", groupId, userId);
-                return ApiResponse<List<TemplateResponseDto>>.InternalServerError("خطا در دریافت لیست قالی‌های گروه");
+                return ApiResponse<List<TemplateResponseDto>>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -3034,7 +3044,7 @@ namespace Api_Vapp.Services
                     }
                 }
                 _logger.LogError(ex, "❌ Database error updating template group: {GroupId}", id);
-                return ApiResponse<TemplateGroupResponseDto>.InternalServerError("خطا در به‌روزرسانی گروه. لطفاً دوباره تلاش کنید");
+                return ApiResponse<TemplateGroupResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
             catch (Exception ex)
             {
@@ -3052,7 +3062,7 @@ namespace Api_Vapp.Services
                     }
                 }
                 _logger.LogError(ex, "❌ Unexpected error updating template group: {GroupId}", id);
-                return ApiResponse<TemplateGroupResponseDto>.InternalServerError("خطای غیرمنتظره در به‌روزرسانی گروه");
+                return ApiResponse<TemplateGroupResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -3106,13 +3116,13 @@ namespace Api_Vapp.Services
             {
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "❌ Database error deleting template group: {GroupId}", id);
-                return ApiResponse<bool>.InternalServerError("خطا در حذف گروه. لطفاً دوباره تلاش کنید");
+                return ApiResponse<bool>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "❌ Unexpected error deleting template group: {GroupId}", id);
-                return ApiResponse<bool>.InternalServerError("خطای غیرمنتظره در حذف گروه");
+                return ApiResponse<bool>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -3586,14 +3596,14 @@ namespace Api_Vapp.Services
                     _logger.LogError(retryEx, "Error in retry after concurrency conflict - MessageId: {MessageId}", selectDto.MessageId);
                 }
                 return ApiResponse<RecipientListResponseDto>.InternalServerError(
-                    "خطا در ذخیره‌سازی Session به دلیل تداخل. لطفاً دوباره تلاش کنید");
+                    ControlledErrorHelper.Unexpected);
             }
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "Error selecting recipients for user: {UserId}, Error: {Error}", userId, ex.Message);
                 _logger.LogError(ex, "Stack trace: {StackTrace}", ex.StackTrace);
-                return ApiResponse<RecipientListResponseDto>.InternalServerError("خطا در انتخاب گیرندگان");
+                return ApiResponse<RecipientListResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -3730,7 +3740,7 @@ namespace Api_Vapp.Services
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Error deserializing recipients from Session - SessionId: {SessionId}", session.Id);
-                    return ApiResponse<DirectSendResultDto>.InternalServerError("خطا در خواندن لیست گیرندگان");
+                    return ApiResponse<DirectSendResultDto>.InternalServerError(ControlledErrorHelper.Unexpected);
                 }
 
                 if (!recipients.Any())
@@ -4016,7 +4026,7 @@ namespace Api_Vapp.Services
                     // Re-throw خطای اصلی
                     _logger.LogError(ex, "Error during SMS sending - MessageId: {MessageId}, UserId: {UserId}", messageId, userId);
                     return ApiResponse<DirectSendResultDto>.InternalServerError(
-                        $"خطا در ارسال پیام.");
+                        ControlledErrorHelper.Unexpected);
                 }
 
                 // Session قبلاً در ConfirmAndSendMessageAsync علامت‌گذاری شده است
@@ -4063,7 +4073,7 @@ namespace Api_Vapp.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error sending direct message - MessageId: {MessageId}, UserId: {UserId}", messageId, userId);
-                return ApiResponse<DirectSendResultDto>.InternalServerError("خطا در ارسال پیام");
+                return ApiResponse<DirectSendResultDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -4102,7 +4112,7 @@ namespace Api_Vapp.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting today report for user: {UserId}", userId);
-                return ApiResponse<TodayReportDto>.InternalServerError("خطا در دریافت گزارش امروز");
+                return ApiResponse<TodayReportDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -4143,7 +4153,7 @@ namespace Api_Vapp.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting latest campaigns for user: {UserId}", userId);
-                return ApiResponse<List<LatestCampaignsDto>>.InternalServerError("خطا در دریافت آخرین کمپین‌ها");
+                return ApiResponse<List<LatestCampaignsDto>>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -4354,7 +4364,7 @@ namespace Api_Vapp.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting comprehensive report for user: {UserId}", userId);
-                return ApiResponse<ComprehensiveReportDto>.InternalServerError("خطا در دریافت گزارش جامع");
+                return ApiResponse<ComprehensiveReportDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -4384,7 +4394,7 @@ namespace Api_Vapp.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting message preview: {MessageId}", messageId);
-                return ApiResponse<MessagePreviewDto>.InternalServerError("خطا در دریافت پیش‌نمایش پیام");
+                return ApiResponse<MessagePreviewDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -4439,7 +4449,7 @@ namespace Api_Vapp.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error personalizing message: {MessageId}", messageId);
-                return ApiResponse<PersonalizedMessageResponseDto>.InternalServerError("خطا در شخصی‌سازی پیام");
+                return ApiResponse<PersonalizedMessageResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -5067,7 +5077,7 @@ namespace Api_Vapp.Services
                 return ApiResponse<DTOs.Sms.SendSmsResponseDto>.InternalServerError(ControlledErrorHelper.SmsFailed);
             }
 
-            return ApiResponse<DTOs.Sms.SendSmsResponseDto>.InternalServerError("خطا در ارسال پیامک");
+            return ApiResponse<DTOs.Sms.SendSmsResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
         }
 
         private async Task<List<RecipientItemDto>> FilterByTagsAsync(List<RecipientItemDto> recipients, List<int> tagIds, int userId)

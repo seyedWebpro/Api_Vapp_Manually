@@ -124,12 +124,22 @@ namespace Api_Vapp.Utilities
         {
             try
             {
-                using var stream = file.OpenReadStream();
+                // FormFile.OpenReadStream() معمولاً همان استریم زیر را برمی‌گرداند —
+                // نباید dispose شود و بعد از خواندن باید Position برگردد تا اعتبارسنجی/آپلود بعدی کار کند.
+                var stream = file.OpenReadStream();
                 if (!stream.CanRead)
                     return false;
 
+                long? originalPosition = stream.CanSeek ? stream.Position : null;
+                if (stream.CanSeek)
+                    stream.Position = 0;
+
                 Span<byte> header = stackalloc byte[16];
                 var read = stream.Read(header);
+
+                if (originalPosition.HasValue)
+                    stream.Position = originalPosition.Value;
+
                 if (read < 4)
                     return false;
 

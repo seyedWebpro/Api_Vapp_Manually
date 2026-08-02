@@ -540,14 +540,14 @@ namespace Api_Vapp.Controller
         {
             if (settingsDto == null)
             {
-                return StatusCode(400, ApiResponse<NotificationSettingsDto>.BadRequest("تنظیمات ارسال نشده است"));
+                return StatusCode(400, ApiResponse<NotificationSettingsDto>.BadRequest(
+                    "تنظیمات ارسال نشده است",
+                    errorCode: ErrorCodes.ValidationFailed));
             }
 
-            if (!ModelState.IsValid)
-            {
-                var errors = ExtractModelStateErrors();
-                return StatusCode(400, ApiResponse<NotificationSettingsDto>.BadRequest("داده‌های ورودی نامعتبر است", errors));
-            }
+            var invalid = InvalidModelStateResponse<NotificationSettingsDto>();
+            if (invalid != null)
+                return invalid;
 
             var userId = await GetCurrentUserIdAsync();
             var result = await _notificationSettingsService.UpdateSettingsAsync(userId, settingsDto);

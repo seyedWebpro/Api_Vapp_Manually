@@ -1319,16 +1319,13 @@ namespace Api_Vapp.Services
                     };
                 }
 
-                // ذخیره Expiration Time اولیه قبل از لغو
-                var originalExpiresAt = refreshToken.ExpiresAt;
-
                 // لغو توکن قدیمی
                 await _refreshTokenService.RevokeRefreshTokenAsync(refreshTokenDto.RefreshToken);
 
-                // تولید توکن‌های جدید
-                // Refresh Token جدید با همان Expiration Time اولیه ایجاد می‌شود (برای 24 ساعت لاگین بودن)
+                // تولید توکن‌های جدید با Sliding Expiration
+                // هر بار رفرش، عمر Refresh Token از نو تمدید می‌شود تا کاربر فعال از پنل بیرون نیفتد
                 var accessToken = await GenerateAccessTokenWithRolesAsync(user);
-                var newRefreshToken = await _refreshTokenService.CreateRefreshTokenAsync(user.Id, originalExpiresAt);
+                var newRefreshToken = await _refreshTokenService.CreateRefreshTokenAsync(user.Id);
 
                 _logger.LogInformation("Token refreshed successfully for user {UserId} from IP {IpAddress}", 
                     user.Id, ipAddress);

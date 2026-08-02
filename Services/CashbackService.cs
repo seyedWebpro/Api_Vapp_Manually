@@ -31,6 +31,7 @@ namespace Api_Vapp.Services
         private readonly IAuditService _audit;
         private readonly ILogger<CashbackService> _logger;
         private readonly ISmsPricingService _smsPricing;
+        private readonly IUserPushNotifier _pushNotifier;
         private const int DraftExpirationHours = 24; // draft به مدت 24 ساعت معتبر است
 
         public CashbackService(
@@ -45,7 +46,8 @@ namespace Api_Vapp.Services
             ISmsDeliveryTrackingService deliveryTracking,
             IAuditService audit,
             ILogger<CashbackService> logger,
-            ISmsPricingService smsPricing)
+            ISmsPricingService smsPricing,
+            IUserPushNotifier pushNotifier)
         {
             _context = context;
             _cashbackRepository = cashbackRepository;
@@ -59,6 +61,7 @@ namespace Api_Vapp.Services
             _audit = audit;
             _logger = logger;
             _smsPricing = smsPricing;
+            _pushNotifier = pushNotifier;
         }
 
         public async Task<ApiResponse<CashbackListDto>> GetCashbacksAsync(int userId, int pageNumber = 1, int pageSize = 10, bool? isActive = null)
@@ -1632,6 +1635,16 @@ namespace Api_Vapp.Services
                         }
                     });
 
+                    if (successCount > 0)
+                    {
+                        var cbPush = PushNotificationCopy.CashbackApplied(successCount, totalCashbackAmount);
+                        await _pushNotifier.NotifyAsync(
+                            userId,
+                            NotificationCategory.CustomerCashback,
+                            cbPush.Title,
+                            cbPush.Body);
+                    }
+
                     return ApiResponse<ApplyCashbackResultDto>.CreateSuccess(result, "کش‌بک با موفقیت اعمال شد");
                 }
                 catch (Exception ex)
@@ -2028,6 +2041,13 @@ namespace Api_Vapp.Services
                                 balanceAfter = balance.TotalBalance
                             }
                         });
+
+                        var singleCb = PushNotificationCopy.CashbackApplied(1, cashbackAmount);
+                        await _pushNotifier.NotifyAsync(
+                            userId,
+                            NotificationCategory.CustomerCashback,
+                            singleCb.Title,
+                            singleCb.Body);
 
                         return ApiResponse<ApplyCashbackToContactResultDto>.CreateSuccess(result, responseMessage);
                     }
@@ -2542,6 +2562,13 @@ namespace Api_Vapp.Services
                             "کش‌بک دستی با مبلغ {Amount} تومان به مخاطب {ContactId} توسط کاربر {UserId} افزوده شد - TransactionId: {TransactionId}",
                             request.Amount, request.ContactId, userId, cashbackTransaction.Id);
 
+                        var manualPush = PushNotificationCopy.CashbackManual(null, request.Amount);
+                        await _pushNotifier.NotifyAsync(
+                            userId,
+                            NotificationCategory.CustomerCashback,
+                            manualPush.Title,
+                            manualPush.Body);
+
                         return ApiResponse<AddManualCashbackResultDto>.CreateSuccess(result, "کش‌بک با موفقیت افزوده شد", 201);
                     }
                     catch (DbUpdateConcurrencyException ex)
@@ -2553,7 +2580,7 @@ namespace Api_Vapp.Services
                         if (retryCount >= maxRetries)
                         {
                             _logger.LogError(ex, "تداخل همزمانی پس از {MaxRetries} تلاش - ContactId: {ContactId}", maxRetries, request.ContactId);
-                            return ApiResponse<AddManualCashbackResultDto>.InternalServerError("خطا در پردازش درخواست. لطفاً مجدداً تلاش کنید");
+                            return ApiResponse<AddManualCashbackResultDto>.InternalServerError(ControlledErrorHelper.Unexpected);
                         }
                         
                         // تأخیر قبل از تلاش مجدد
@@ -2574,7 +2601,7 @@ namespace Api_Vapp.Services
                 }
             }
 
-            return ApiResponse<AddManualCashbackResultDto>.InternalServerError("خطای غیرمنتظره در پردازش درخواست");
+            return ApiResponse<AddManualCashbackResultDto>.InternalServerError(ControlledErrorHelper.Unexpected);
         }
 
         public async Task<ApiResponse<WithdrawCashbackResultDto>> WithdrawCashbackAsync(int userId, WithdrawCashbackDto request)
@@ -2748,6 +2775,13 @@ namespace Api_Vapp.Services
                             "کش‌بک با مبلغ {Amount} تومان از مخاطب {ContactId} توسط کاربر {UserId} برداشت شد - TransactionId: {TransactionId}",
                             request.Amount, request.ContactId, userId, cashbackTransaction.Id);
 
+                        var withdrawPush = PushNotificationCopy.CashbackWithdrawn(null, request.Amount);
+                        await _pushNotifier.NotifyAsync(
+                            userId,
+                            NotificationCategory.CustomerCashback,
+                            withdrawPush.Title,
+                            withdrawPush.Body);
+
                         return ApiResponse<WithdrawCashbackResultDto>.CreateSuccess(result, "برداشت با موفقیت انجام شد");
                     }
                     catch (DbUpdateConcurrencyException ex)
@@ -2759,7 +2793,7 @@ namespace Api_Vapp.Services
                         if (retryCount >= maxRetries)
                         {
                             _logger.LogError(ex, "تداخل همزمانی پس از {MaxRetries} تلاش - ContactId: {ContactId}", maxRetries, request.ContactId);
-                            return ApiResponse<WithdrawCashbackResultDto>.InternalServerError("خطا در پردازش درخواست. لطفاً مجدداً تلاش کنید");
+                            return ApiResponse<WithdrawCashbackResultDto>.InternalServerError(ControlledErrorHelper.Unexpected);
                         }
                         
                         // تأخیر قبل از تلاش مجدد
@@ -2780,7 +2814,7 @@ namespace Api_Vapp.Services
                 }
             }
 
-            return ApiResponse<WithdrawCashbackResultDto>.InternalServerError("خطای غیرمنتظره در پردازش درخواست");
+            return ApiResponse<WithdrawCashbackResultDto>.InternalServerError(ControlledErrorHelper.Unexpected);
         }
 
         public async Task<ApiResponse<ManualCashbackTransactionListDto>> GetManualCashbackTransactionsAsync(
@@ -2928,7 +2962,7 @@ namespace Api_Vapp.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "خطا در دریافت draft کش‌بک برای کاربر {UserId}", userId);
-                return ApiResponse<CashbackDraftDto>.InternalServerError("خطا در دریافت draft");
+                return ApiResponse<CashbackDraftDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -2964,7 +2998,7 @@ namespace Api_Vapp.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "خطا در حذف draft کش‌بک برای کاربر {UserId}", userId);
-                return ApiResponse<bool>.InternalServerError("خطا در حذف draft");
+                return ApiResponse<bool>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 

@@ -15,7 +15,7 @@ namespace Api_Vapp.DTOs.Auth
         public string AccessToken { get; set; } = string.Empty;
         public string RefreshToken { get; set; } = string.Empty;
         public DateTime ExpiresAt { get; set; } // زمان انقضای Access Token
-        public DateTime RefreshTokenExpiresAt { get; set; } // زمان انقضای Refresh Token (24 ساعت)
+        public DateTime RefreshTokenExpiresAt { get; set; } // زمان انقضای Refresh Token (sliding، پیش‌فرض ۷ روز)
     }
 
     public class UserInfoDto

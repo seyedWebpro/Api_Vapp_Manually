@@ -134,12 +134,12 @@ namespace Api_Vapp.Services
             catch (Microsoft.EntityFrameworkCore.DbUpdateException dbEx)
             {
                 _logger.LogError(dbEx, "Database error while creating contact notebook for user: {UserId}", userId);
-                return ApiResponse<ContactNotebookResponseDto>.InternalServerError("خطا در ارتباط با پایگاه داده");
+                return ApiResponse<ContactNotebookResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Unexpected error creating contact notebook for user: {UserId}", userId);
-                return ApiResponse<ContactNotebookResponseDto>.InternalServerError("خطای غیرمنتظره در ایجاد دفترچه");
+                return ApiResponse<ContactNotebookResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -169,12 +169,12 @@ namespace Api_Vapp.Services
             catch (Microsoft.EntityFrameworkCore.DbUpdateException dbEx)
             {
                 _logger.LogError(dbEx, "Database error while getting contact notebook with ID: {NotebookId}", id);
-                return ApiResponse<ContactNotebookResponseDto>.InternalServerError("خطا در ارتباط با پایگاه داده");
+                return ApiResponse<ContactNotebookResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Unexpected error getting contact notebook with ID: {NotebookId}", id);
-                return ApiResponse<ContactNotebookResponseDto>.InternalServerError("خطای غیرمنتظره در دریافت دفترچه");
+                return ApiResponse<ContactNotebookResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -227,12 +227,12 @@ namespace Api_Vapp.Services
             catch (Microsoft.EntityFrameworkCore.DbUpdateException dbEx)
             {
                 _logger.LogError(dbEx, "Database error while getting contact notebooks list for user: {UserId}", userId);
-                return ApiResponse<ContactNotebookListResponseDto>.InternalServerError("خطا در ارتباط با پایگاه داده");
+                return ApiResponse<ContactNotebookListResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Unexpected error getting contact notebooks list for user: {UserId}", userId);
-                return ApiResponse<ContactNotebookListResponseDto>.InternalServerError("خطای غیرمنتظره در دریافت لیست دفترچه‌ها");
+                return ApiResponse<ContactNotebookListResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -305,12 +305,12 @@ namespace Api_Vapp.Services
             catch (Microsoft.EntityFrameworkCore.DbUpdateException dbEx)
             {
                 _logger.LogError(dbEx, "Database error while updating contact notebook with ID: {NotebookId}", id);
-                return ApiResponse<ContactNotebookResponseDto>.InternalServerError("خطا در ارتباط با پایگاه داده");
+                return ApiResponse<ContactNotebookResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Unexpected error updating contact notebook with ID: {NotebookId}", id);
-                return ApiResponse<ContactNotebookResponseDto>.InternalServerError("خطای غیرمنتظره در به‌روزرسانی دفترچه");
+                return ApiResponse<ContactNotebookResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -361,12 +361,12 @@ namespace Api_Vapp.Services
             catch (Microsoft.EntityFrameworkCore.DbUpdateException dbEx)
             {
                 _logger.LogError(dbEx, "Database error while deleting contact notebook with ID: {NotebookId}", id);
-                return ApiResponse<bool>.InternalServerError("خطا در ارتباط با پایگاه داده");
+                return ApiResponse<bool>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Unexpected error deleting contact notebook with ID: {NotebookId}", id);
-                return ApiResponse<bool>.InternalServerError("خطای غیرمنتظره در حذف دفترچه");
+                return ApiResponse<bool>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -401,12 +401,12 @@ namespace Api_Vapp.Services
             catch (Microsoft.EntityFrameworkCore.DbUpdateException dbEx)
             {
                 _logger.LogError(dbEx, "Database error while toggling contact notebook active status with ID: {NotebookId}", id);
-                return ApiResponse<bool>.InternalServerError("خطا در ارتباط با پایگاه داده");
+                return ApiResponse<bool>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Unexpected error toggling contact notebook active status with ID: {NotebookId}", id);
-                return ApiResponse<bool>.InternalServerError("خطای غیرمنتظره در تغییر وضعیت دفترچه");
+                return ApiResponse<bool>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -503,7 +503,7 @@ namespace Api_Vapp.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Unexpected error getting statistics for notebook {NotebookId}", id);
-                return ApiResponse<ContactNotebookStatisticsDto>.InternalServerError("خطای غیرمنتظره در دریافت آمار دفترچه");
+                return ApiResponse<ContactNotebookStatisticsDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 

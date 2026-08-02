@@ -6,6 +6,7 @@ using Api_Vapp.DTOs.Cashback;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
 using Api_Vapp.Services.Audit;
+using Api_Vapp.Utilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Configuration;
@@ -28,6 +29,7 @@ namespace Api_Vapp.Services
         private readonly IServiceProvider _serviceProvider;
         private readonly IConfiguration _configuration;
         private readonly IAuditService _audit;
+        private readonly IUserPushNotifier _pushNotifier;
         private readonly ILogger<WalletService> _logger;
 
         public WalletService(
@@ -39,6 +41,7 @@ namespace Api_Vapp.Services
             IServiceProvider serviceProvider,
             IConfiguration configuration,
             IAuditService audit,
+            IUserPushNotifier pushNotifier,
             ILogger<WalletService> logger)
         {
             _context = context;
@@ -49,6 +52,7 @@ namespace Api_Vapp.Services
             _serviceProvider = serviceProvider;
             _configuration = configuration;
             _audit = audit;
+            _pushNotifier = pushNotifier;
             _logger = logger;
         }
 
@@ -308,6 +312,13 @@ namespace Api_Vapp.Services
                         }
                     });
 
+                    var creditCopy = PushNotificationCopy.WalletCredited(amount, balanceAfter, title);
+                    await _pushNotifier.NotifyAsync(
+                        userId,
+                        NotificationCategory.WalletTransaction,
+                        creditCopy.Title,
+                        creditCopy.Body);
+
                     return ApiResponse<WalletTransactionDto>.CreateSuccess(
                         MapToWalletTransactionDto(walletTransaction), 
                         "موجودی با موفقیت افزایش یافت");
@@ -352,6 +363,12 @@ namespace Api_Vapp.Services
 
                 if (user.WalletBalance < amount)
                 {
+                    var warn = PushNotificationCopy.InsufficientWallet(amount, user.WalletBalance);
+                    await _pushNotifier.NotifyAsync(
+                        userId,
+                        NotificationCategory.SystemWarnings,
+                        warn.Title,
+                        warn.Body);
                     return ApiResponse<WalletTransactionDto>.BadRequest("موجودی کیف پول کافی نیست");
                 }
 
@@ -406,6 +423,13 @@ namespace Api_Vapp.Services
                             title
                         }
                     });
+
+                    var debitCopy = PushNotificationCopy.WalletDebited(amount, balanceAfter, title);
+                    await _pushNotifier.NotifyAsync(
+                        userId,
+                        NotificationCategory.WalletTransaction,
+                        debitCopy.Title,
+                        debitCopy.Body);
 
                     return ApiResponse<WalletTransactionDto>.CreateSuccess(
                         MapToWalletTransactionDto(walletTransaction), 

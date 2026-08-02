@@ -18,15 +18,18 @@ namespace Api_Vapp.Services
         private readonly Api_Context _context;
         private readonly IAuditService _audit;
         private readonly ILogger<SubscriptionActivationService> _logger;
+        private readonly IUserPushNotifier _pushNotifier;
 
         public SubscriptionActivationService(
             Api_Context context,
             IAuditService audit,
-            ILogger<SubscriptionActivationService> logger)
+            ILogger<SubscriptionActivationService> logger,
+            IUserPushNotifier pushNotifier)
         {
             _context = context;
             _audit = audit;
             _logger = logger;
+            _pushNotifier = pushNotifier;
         }
 
         public async Task FulfillVerifiedPaymentAsync(Payment payment)
@@ -203,6 +206,13 @@ namespace Api_Vapp.Services
                         discountCodeId
                     }
                 });
+
+                var subPush = PushNotificationCopy.SubscriptionActivated(plan.Name, subscription.ExpiresAt);
+                await _pushNotifier.NotifyAsync(
+                    userId,
+                    NotificationCategory.ImportantNotifications,
+                    subPush.Title,
+                    subPush.Body);
 
                 _ = originalAmount;
                 _ = discountCode;

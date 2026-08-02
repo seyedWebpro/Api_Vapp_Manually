@@ -717,3 +717,27 @@ Content-Type: application/json
   "title": "تست وپ",
   "body": "این یک نوتیفیکیشن تستی است"
 }
+
+### ========== Notification Settings (پروفایل) ==========
+
+### دریافت تنظیمات اعلان
+GET {{Api_Vapp_HostAddress}}/api/User/notification-settings
+Authorization: Bearer {{accessToken}}
+
+### خاموش کردن کل Push
+POST {{Api_Vapp_HostAddress}}/api/User/notification-settings/update
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "pushEnabled": false,
+  "importantNotifications": true,
+  "updates": false,
+  "systemWarnings": true,
+  "walletTransaction": false,
+  "customerCashback": true,
+  "financialReport": false,
+  "newCustomerRegistration": false,
+  "suggestions": true,
+  "educationAndTips": false
+}
