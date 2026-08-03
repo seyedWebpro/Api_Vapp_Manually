@@ -51,6 +51,7 @@ namespace Api_Vapp.Data
         public DbSet<SupportTicket> SupportTickets { get; set; }
         public DbSet<TicketMessage> TicketMessages { get; set; }
         public DbSet<EducationalVideo> EducationalVideos { get; set; }
+        public DbSet<AutomationTypeDefinition> AutomationTypes { get; set; }
         public DbSet<SmsApprovalRequest> SmsApprovalRequests { get; set; }
         public DbSet<UserForm> UserForms { get; set; }
         public DbSet<UserFormField> UserFormFields { get; set; }
@@ -1224,6 +1225,24 @@ namespace Api_Vapp.Data
                 entity.Property(v => v.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
                 entity.HasIndex(v => v.IsActive);
                 entity.HasIndex(v => v.SortOrder);
+            });
+
+            // تنظیمات AutomationTypeDefinition (انواع پیام خودکار)
+            modelBuilder.Entity<AutomationTypeDefinition>(entity =>
+            {
+                entity.ToTable("AutomationTypes");
+                entity.HasKey(t => t.Id);
+                entity.Property(t => t.Id).ValueGeneratedOnAdd();
+                entity.Property(t => t.Code).IsRequired().HasMaxLength(50);
+                entity.Property(t => t.Name).IsRequired().HasMaxLength(200);
+                entity.Property(t => t.Description).HasMaxLength(1000);
+                entity.Property(t => t.Icon).HasMaxLength(20);
+                entity.Property(t => t.IsActive).HasDefaultValue(true);
+                entity.Property(t => t.IsDeleted).HasDefaultValue(false);
+                entity.Property(t => t.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+                entity.HasIndex(t => t.Code).IsUnique();
+                entity.HasIndex(t => t.IsActive);
+                entity.HasIndex(t => t.SortOrder);
             });
 
             // تنظیمات SmsApprovalRequest

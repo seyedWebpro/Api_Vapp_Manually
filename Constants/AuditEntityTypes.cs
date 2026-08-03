@@ -36,5 +36,6 @@ namespace Api_Vapp.Constants
         public const string SocialMediaLink = "SocialMediaLink";
         public const string SpecialOccasion = "SpecialOccasion";
         public const string AutomatedMessage = "AutomatedMessage";
+        public const string AutomationType = "AutomationType";
     }
 }

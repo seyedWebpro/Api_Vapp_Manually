@@ -34,11 +34,10 @@ namespace Api_Vapp.Services.BackgroundServices
                 {
                     var now = DateTime.UtcNow;
                     var today = now.Date;
-                    var targetHour = 6;
-                    var targetMinute = 30;
+                    // فقط در پنجرهٔ ۰۶:۳۰–۰۶:۴۴ UTC تا با ری‌استارت API در طول روز دوباره ارسال نشود
+                    var inSendWindow = now.Hour == 6 && now.Minute >= 30 && now.Minute <= 44;
 
-                    if (_lastRunDateUtc != today &&
-                        (now.Hour > targetHour || (now.Hour == targetHour && now.Minute >= targetMinute)))
+                    if (_lastRunDateUtc != today && inSendWindow)
                     {
                         await RunDailyReportAsync(today, stoppingToken);
                         _lastRunDateUtc = today;

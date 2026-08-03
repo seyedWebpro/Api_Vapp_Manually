@@ -4189,16 +4189,18 @@ namespace Api_Vapp.Services
         /// </summary>
         private string GetAutomationTypePersianTitle(string automationType)
         {
-            return automationType switch
-            {
-                "Birthday" => "تبریک تولد",
-                "CashbackExpiry" => "یادآوری انقضای کش‌بک",
-                "Welcome" => "پیام خوش‌آمدگویی",
-                "PurchaseReminder" => "یادآوری خرید",
-                "SpecialOccasion" => "مناسبت‌های خاص",
-                "Custom" => "اتوماسیون سفارشی",
-                _ => "پیام خودکار"
-            };
+            // اولویت با نام مدیریت‌شده در پنل ادمین (دیتابیس)
+            var fromDb = _context.AutomationTypes.AsNoTracking()
+                .Where(t => !t.IsDeleted && t.Code == automationType)
+                .Select(t => t.Name)
+                .FirstOrDefault();
+
+            if (!string.IsNullOrWhiteSpace(fromDb))
+                return fromDb;
+
+            var fromCatalog = AutomationTypeCatalog.All
+                .FirstOrDefault(t => string.Equals(t.Code, automationType, StringComparison.OrdinalIgnoreCase));
+            return fromCatalog?.Name ?? "پیام خودکار";
         }
 
         /// <summary>

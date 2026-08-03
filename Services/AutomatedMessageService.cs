@@ -6,6 +6,7 @@ using Api_Vapp.Models;
 using Api_Vapp.Services.Audit;
 using Api_Vapp.Utilities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -35,6 +36,9 @@ namespace Api_Vapp.Services
         private readonly IServiceProvider _serviceProvider;
         private readonly IAuditService _audit;
         private readonly ISmsPricingService _smsPricing;
+        private readonly IMemoryCache _cache;
+
+        private static readonly TimeSpan ActiveTypesCacheTtl = TimeSpan.FromMinutes(10);
 
         public AutomatedMessageService(
             IAutomatedMessageRepository automatedMessageRepository,
@@ -51,7 +55,8 @@ namespace Api_Vapp.Services
             IHostEnvironment hostEnvironment,
             IServiceProvider serviceProvider,
             IAuditService audit,
-            ISmsPricingService smsPricing)
+            ISmsPricingService smsPricing,
+            IMemoryCache cache)
         {
             _automatedMessageRepository = automatedMessageRepository;
             _messageRepository = messageRepository;
@@ -68,72 +73,24 @@ namespace Api_Vapp.Services
             _serviceProvider = serviceProvider;
             _audit = audit;
             _smsPricing = smsPricing;
+            _cache = cache;
         }
 
-        public Task<ApiResponse<AutomationTypeListResponseDto>> GetAutomationTypesAsync(int pageNumber = 1, int pageSize = 10)
+        public async Task<ApiResponse<AutomationTypeListResponseDto>> GetAutomationTypesAsync(int pageNumber = 1, int pageSize = 10)
         {
             try
             {
-                // اعتبارسنجی پارامترهای پیجینیشن
                 if (pageNumber < 1) pageNumber = 1;
                 if (pageSize < 1 || pageSize > 100) pageSize = 10;
 
-                var allTypes = new List<AutomationTypeDto>
-                {
-                    new AutomationTypeDto
-                    {
-                        Type = "Birthday",
-                        Name = "تبریک تولد",
-                        Description = "ارسال پیام خودکار در روز تولد مشتریان",
-                        Icon = "🎂"
-                    },
-                    new AutomationTypeDto
-                    {
-                        Type = "CashbackExpiry",
-                        Name = "یادآوری انقضای کش بک",
-                        Description = "۲ روز قبل از پایان اعتبار کش بک برای مشتری پیام ارسال می‌شود",
-                        Icon = "💰"
-                    },
-                    new AutomationTypeDto
-                    {
-                        Type = "Welcome",
-                        Name = "پیام خوش آمدگویی",
-                        Description = "پس از اولین ثبت شماره مشتری، پیام خوش آمدگویی ارسال می‌شود",
-                        Icon = "👋"
-                    },
-                    new AutomationTypeDto
-                    {
-                        Type = "PurchaseReminder",
-                        Name = "یادآوری خرید",
-                        Description = "اگر مشتری ۳۰ روز خرید نداشته باشد، پیام ارسال می‌شود",
-                        Icon = "🛒"
-                    },
-                    new AutomationTypeDto
-                    {
-                        Type = "SpecialOccasion",
-                        Name = "مناسبت های خاص",
-                        Description = "ارسال پیام در مناسبت‌های مخصوص سال",
-                        Icon = "🎉"
-                    },
-                    new AutomationTypeDto
-                    {
-                        Type = "Custom",
-                        Name = "اتوماسیون سفارشی",
-                        Description = "شرط، زمان و پیام را خودتان مشخص کنید",
-                        Icon = "⚡"
-                    }
-                };
-
+                // منبع حقیقت: فقط انواع فعال مدیریت‌شده از پنل ادمین (کش‌شده)
+                var allTypes = await GetActiveTypesCachedAsync();
                 var totalCount = allTypes.Count;
                 var totalPages = totalCount > 0 ? (int)Math.Ceiling(totalCount / (double)pageSize) : 0;
 
-                // بررسی اینکه pageNumber از totalPages بیشتر نباشد
                 if (totalPages > 0 && pageNumber > totalPages)
-                {
                     pageNumber = totalPages;
-                }
 
-                // اعمال پیجینیشن
                 var paginatedTypes = allTypes
                     .Skip((pageNumber - 1) * pageSize)
                     .Take(pageSize)
@@ -148,12 +105,12 @@ namespace Api_Vapp.Services
                     TotalPages = totalPages
                 };
 
-                return Task.FromResult(ApiResponse<AutomationTypeListResponseDto>.CreateSuccess(response));
+                return ApiResponse<AutomationTypeListResponseDto>.CreateSuccess(response);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "خطا در دریافت انواع اتوماسیون");
-                return Task.FromResult(ApiResponse<AutomationTypeListResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected));
+                return ApiResponse<AutomationTypeListResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -162,12 +119,14 @@ namespace Api_Vapp.Services
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                // بررسی صحت نوع اتوماسیون
-                var validTypes = new[] { "Birthday", "CashbackExpiry", "Welcome", "PurchaseReminder", "SpecialOccasion", "Custom" };
-                if (!validTypes.Contains(createDto.AutomationType))
+                // بررسی صحت نوع اتوماسیون (فقط انواع فعال در دیتابیس)
+                var typeDefinition = await ResolveActiveTypeAsync(createDto.AutomationType);
+                if (typeDefinition == null)
                 {
                     await transaction.RollbackAsync();
-                    return ApiResponse<AutomatedMessageResponseDto>.BadRequest("نوع اتوماسیون نامعتبر است");
+                    return ApiResponse<AutomatedMessageResponseDto>.BadRequest(
+                        "نوع اتوماسیون نامعتبر است",
+                        errorCode: ErrorCodes.InvalidInput);
                 }
 
                 // ایجاد Message با Status = "Draft" و Content = ""
@@ -193,12 +152,12 @@ namespace Api_Vapp.Services
                 var automatedMessage = new AutomatedMessage
                 {
                     UserId = userId,
-                    AutomationType = createDto.AutomationType,
-                    Title = GetDefaultTitle(createDto.AutomationType),
-                    Description = GetDefaultDescription(createDto.AutomationType),
+                    AutomationType = typeDefinition.Type,
+                    Title = typeDefinition.Name,
+                    Description = typeDefinition.Description,
                     MessageId = createdMessage.Id,
                     Status = "Active", // پیش‌فرض فعال است
-                    Icon = GetDefaultIcon(createDto.AutomationType),
+                    Icon = typeDefinition.Icon,
                     IsActive = true, // پیش‌فرض فعال است
                     CreatedAt = DateTime.UtcNow
                 };
@@ -236,12 +195,14 @@ namespace Api_Vapp.Services
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                // بررسی صحت نوع اتوماسیون
-                var validTypes = new[] { "Birthday", "CashbackExpiry", "Welcome", "PurchaseReminder", "SpecialOccasion", "Custom" };
-                if (!validTypes.Contains(createDto.AutomationType))
+                // بررسی صحت نوع اتوماسیون (فقط انواع فعال در دیتابیس)
+                var typeDefinition = await ResolveActiveTypeAsync(createDto.AutomationType);
+                if (typeDefinition == null)
                 {
                     await transaction.RollbackAsync();
-                    return ApiResponse<AutomatedMessageResponseDto>.BadRequest("نوع اتوماسیون نامعتبر است");
+                    return ApiResponse<AutomatedMessageResponseDto>.BadRequest(
+                        "نوع اتوماسیون نامعتبر است",
+                        errorCode: ErrorCodes.InvalidInput);
                 }
 
                 // بررسی نیاز به MessageId یا MessageContent
@@ -263,7 +224,8 @@ namespace Api_Vapp.Services
                 }
 
                 // بررسی نیاز به DaysBeforeEvent برای برخی انواع
-                if ((createDto.AutomationType == "CashbackExpiry" || createDto.AutomationType == "PurchaseReminder") 
+                if ((string.Equals(typeDefinition.Type, AutomationTypeCodes.CashbackExpiry, StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(typeDefinition.Type, AutomationTypeCodes.PurchaseReminder, StringComparison.OrdinalIgnoreCase))
                     && !createDto.DaysBeforeEvent.HasValue)
                 {
                     await transaction.RollbackAsync();
@@ -271,7 +233,8 @@ namespace Api_Vapp.Services
                 }
 
                 // بررسی نیاز به SpecialOccasionId
-                if (createDto.AutomationType == "SpecialOccasion" && !createDto.SpecialOccasionId.HasValue)
+                if (string.Equals(typeDefinition.Type, AutomationTypeCodes.SpecialOccasion, StringComparison.OrdinalIgnoreCase)
+                    && !createDto.SpecialOccasionId.HasValue)
                 {
                     await transaction.RollbackAsync();
                     return ApiResponse<AutomatedMessageResponseDto>.BadRequest("مناسبت خاص باید انتخاب شود");
@@ -290,7 +253,7 @@ namespace Api_Vapp.Services
                 var automatedMessage = new AutomatedMessage
                 {
                     UserId = userId,
-                    AutomationType = createDto.AutomationType,
+                    AutomationType = typeDefinition.Type,
                     Title = createDto.Title,
                     Description = createDto.Description,
                     MessageId = createDto.MessageId,
@@ -299,7 +262,7 @@ namespace Api_Vapp.Services
                     SpecialOccasionId = createDto.SpecialOccasionId,
                     ActivationConditions = createDto.ActivationConditions,
                     ScheduledTime = createDto.ScheduledTime,
-                    Icon = createDto.Icon ?? GetDefaultIcon(createDto.AutomationType),
+                    Icon = createDto.Icon ?? (string.IsNullOrWhiteSpace(typeDefinition.Icon) ? null : typeDefinition.Icon),
                     IsActive = true,
                     CreatedAt = DateTime.UtcNow
                 };
@@ -1371,46 +1334,68 @@ namespace Api_Vapp.Services
             }
         }
 
-        private string GetDefaultIcon(string automationType)
+        /// <summary>
+        /// انواع فعال فقط از دیتابیس (پنل ادمین) — با کش حافظه.
+        /// </summary>
+        private async Task<IReadOnlyList<AutomationTypeDto>> GetActiveTypesCachedAsync()
         {
-            return automationType switch
+            if (_cache.TryGetValue(AutomationTypeCacheKeys.ActiveList, out IReadOnlyList<AutomationTypeDto>? cached)
+                && cached != null)
             {
-                "Birthday" => "🎂",
-                "CashbackExpiry" => "💰",
-                "Welcome" => "👋",
-                "PurchaseReminder" => "🛒",
-                "SpecialOccasion" => "🎉",
-                "Custom" => "⚡",
-                _ => "ðŸ“¨"
-            };
+                return cached;
+            }
+
+            var types = await _context.AutomationTypes.AsNoTracking()
+                .Where(t => t.IsActive && !t.IsDeleted)
+                .OrderBy(t => t.SortOrder)
+                .ThenBy(t => t.Id)
+                .Select(t => new AutomationTypeDto
+                {
+                    Type = t.Code,
+                    Name = t.Name,
+                    Description = t.Description ?? string.Empty,
+                    Icon = t.Icon ?? string.Empty
+                })
+                .ToListAsync();
+
+            _cache.Set(
+                AutomationTypeCacheKeys.ActiveList,
+                (IReadOnlyList<AutomationTypeDto>)types,
+                new MemoryCacheEntryOptions
+                {
+                    AbsoluteExpirationRelativeToNow = ActiveTypesCacheTtl,
+                    Size = 1
+                });
+
+            return types;
         }
 
-        private string GetDefaultTitle(string automationType)
+        /// <summary>
+        /// فقط نوعی که در پنل ادمین فعال است پذیرفته می‌شود.
+        /// </summary>
+        private async Task<AutomationTypeDto?> ResolveActiveTypeAsync(string? automationType)
         {
-            return automationType switch
-            {
-                "Birthday" => "تبریک تولد",
-                "CashbackExpiry" => "یادآوری انقضای کش‌بک",
-                "Welcome" => "پیام خوش‌آمدگویی",
-                "PurchaseReminder" => "یادآوری خرید",
-                "SpecialOccasion" => "مناسبت‌های خاص",
-                "Custom" => "اتوماسیون سفارشی",
-                _ => "پیام خودکار"
-            };
+            if (string.IsNullOrWhiteSpace(automationType))
+                return null;
+
+            var code = automationType.Trim();
+            var activeTypes = await GetActiveTypesCachedAsync();
+            return activeTypes.FirstOrDefault(t =>
+                string.Equals(t.Type, code, StringComparison.OrdinalIgnoreCase));
         }
 
-        private string GetDefaultDescription(string automationType)
+        private async Task<string> ResolveTypeDisplayNameAsync(string automationType)
         {
-            return automationType switch
-            {
-                "Birthday" => "ارسال پیام خودکار در روز تولد مشتریان",
-                "CashbackExpiry" => "۲ روز قبل از پایان اعتبار کش بک برای مشتری پیام ارسال می‌شود",
-                "Welcome" => "پس از اولین ثبت شماره مشتری، پیام خوش آمدگویی ارسال می‌شود",
-                "PurchaseReminder" => "اگر مشتری ۳۰ روز خرید نداشته باشد، پیام ارسال می‌شود",
-                "SpecialOccasion" => "ارسال پیام در مناسبت‌های مخصوص سال",
-                "Custom" => "شرط، زمان و پیام را خودتان مشخص کنید",
-                _ => "پیام خودکار سفارشی"
-            };
+            var active = await ResolveActiveTypeAsync(automationType);
+            if (active != null)
+                return active.Name;
+
+            var fromDb = await _context.AutomationTypes.AsNoTracking()
+                .Where(t => !t.IsDeleted && t.Code == automationType)
+                .Select(t => t.Name)
+                .FirstOrDefaultAsync();
+
+            return string.IsNullOrWhiteSpace(fromDb) ? "پیام خودکار" : fromDb;
         }
 
         private AutomatedMessageResponseDto MapToAutomatedMessageResponseDto(AutomatedMessage automatedMessage)
@@ -2688,7 +2673,7 @@ namespace Api_Vapp.Services
                 // Title بر اساس AutomationType تنظیم می‌شود
                 var campaignTitle = !string.IsNullOrWhiteSpace(automatedMessage.Title) 
                     ? automatedMessage.Title 
-                    : GetDefaultTitle(automatedMessage.AutomationType);
+                    : await ResolveTypeDisplayNameAsync(automatedMessage.AutomationType);
 
                 var campaign = new MessageCampaign
                 {

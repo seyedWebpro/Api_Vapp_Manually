@@ -28,6 +28,8 @@ namespace Api_Vapp.DTOs.UserForm
         public string? HelpText { get; set; }
 
         public bool IsRequired { get; set; }
+
+        public int DisplayOrder { get; set; }
     }
 
     public class SubmitFormPublicDto

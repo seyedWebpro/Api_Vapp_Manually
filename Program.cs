@@ -442,6 +442,7 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminUserSubscriptionService, Ap
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminSupportTicketService, Api_Vapp.Services.Admin.AdminSupportTicketService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IUserSupportTicketService, Api_Vapp.Services.UserSupportTicketService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminEducationalVideoService, Api_Vapp.Services.Admin.AdminEducationalVideoService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminAutomationTypeService, Api_Vapp.Services.Admin.AdminAutomationTypeService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminMessageApprovalService, Api_Vapp.Services.Admin.AdminMessageApprovalService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminTemplateApprovalService, Api_Vapp.Services.Admin.AdminTemplateApprovalService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminDashboardService, Api_Vapp.Services.Admin.AdminDashboardService>();

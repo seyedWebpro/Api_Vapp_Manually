@@ -68,6 +68,13 @@ namespace Api_Vapp.Interfaces
         Task<ApiResponse<List<EducationalVideoResponseDto>>> GetActiveVideosAsync();
     }
 
+    public interface IAdminAutomationTypeService
+    {
+        Task<ApiResponse<List<AutomationTypeAdminResponseDto>>> GetAllAsync(bool includeInactive = true);
+        Task<ApiResponse<AutomationTypeAdminResponseDto>> GetByIdAsync(int id);
+        Task<ApiResponse<AutomationTypeAdminResponseDto>> UpdateAsync(int id, UpdateAutomationTypeDto dto);
+    }
+
     public interface IAdminMessageApprovalService
     {
         Task<ApiResponse<PagedResponse<SmsApprovalRequestResponseDto>>> GetPendingAsync(int page = 1, int pageSize = 20);

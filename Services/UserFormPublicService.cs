@@ -544,7 +544,8 @@ namespace Api_Vapp.Services
                     Label = f.Label,
                     Placeholder = f.Placeholder,
                     HelpText = f.HelpText,
-                    IsRequired = f.IsRequired
+                    IsRequired = f.IsRequired,
+                    DisplayOrder = f.DisplayOrder
                 })
                 .ToList()
         };

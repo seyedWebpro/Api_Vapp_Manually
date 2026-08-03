@@ -27,6 +27,7 @@ namespace Api_Vapp.Data
             await EnsureAdminUserRoleAsync(context, adminUser, adminRole, logger);
             await SeedSubscriptionFeaturesAsync(context, logger);
             await SeedSubscriptionPlansAsync(context, logger);
+            await SeedAutomationTypesAsync(context, logger);
         }
 
         private static async Task<IReadOnlyDictionary<string, Role>> SeedDefaultRolesAsync(
@@ -288,6 +289,52 @@ namespace Api_Vapp.Data
 
             await context.SaveChangesAsync();
             logger.LogInformation("Subscription plans seeded.");
+        }
+
+        private static async Task SeedAutomationTypesAsync(Api_Context context, ILogger logger)
+        {
+            var existingByCode = await context.AutomationTypes
+                .Where(t => !t.IsDeleted)
+                .ToDictionaryAsync(t => t.Code, StringComparer.OrdinalIgnoreCase);
+
+            foreach (var definition in AutomationTypeCatalog.All)
+            {
+                if (existingByCode.TryGetValue(definition.Code, out _))
+                {
+                    // نوع از قبل وجود دارد؛ ویرایش ادمین را بازنویسی نکن
+                    continue;
+                }
+
+                var softDeleted = await context.AutomationTypes
+                    .FirstOrDefaultAsync(t => t.Code == definition.Code);
+
+                if (softDeleted != null)
+                {
+                    softDeleted.IsDeleted = false;
+                    softDeleted.IsActive = true;
+                    softDeleted.Name = definition.Name;
+                    softDeleted.Description = definition.Description;
+                    softDeleted.Icon = definition.Icon;
+                    softDeleted.SortOrder = definition.SortOrder;
+                    softDeleted.UpdatedAt = DateTime.UtcNow;
+                    existingByCode[definition.Code] = softDeleted;
+                    continue;
+                }
+
+                context.AutomationTypes.Add(new AutomationTypeDefinition
+                {
+                    Code = definition.Code,
+                    Name = definition.Name,
+                    Description = definition.Description,
+                    Icon = definition.Icon,
+                    SortOrder = definition.SortOrder,
+                    IsActive = true,
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+
+            await context.SaveChangesAsync();
+            logger.LogInformation("Automation types seeded.");
         }
 
         private static void SyncLegacyPlanFlags(SubscriptionPlan plan, IEnumerable<string> featureCodes)
