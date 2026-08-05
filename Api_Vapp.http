@@ -881,3 +881,17 @@ Content-Disposition: form-data; name="ClearImage"
 false
 ------VappBannerBoundary--
 
+###
+
+# --- Admin Dashboard (آمار و نمودار صفحات پیامک) ---
+
+### آمار داشبورد ادمین (شامل صفحات پیامک امروز / هفته / ماه)
+GET {{Api_Vapp_HostAddress}}/api/Admin/Dashboard/stats
+Authorization: Bearer {{token}}
+
+###
+
+### نمودارهای داشبورد (روند کاربران + فعالیت ماه + صفحات پیامک روزانه/هفتگی/ماهانه)
+GET {{Api_Vapp_HostAddress}}/api/Admin/Dashboard/charts
+Authorization: Bearer {{token}}
+

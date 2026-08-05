@@ -576,11 +576,16 @@ namespace Api_Vapp.Services.Admin
     public class AdminDashboardService : IAdminDashboardService
     {
         private readonly Api_Context _context;
+        private readonly ISmsPricingService _smsPricing;
         private readonly ILogger<AdminDashboardService> _logger;
 
-        public AdminDashboardService(Api_Context context, ILogger<AdminDashboardService> logger)
+        public AdminDashboardService(
+            Api_Context context,
+            ISmsPricingService smsPricing,
+            ILogger<AdminDashboardService> logger)
         {
             _context = context;
+            _smsPricing = smsPricing;
             _logger = logger;
         }
 
@@ -588,20 +593,63 @@ namespace Api_Vapp.Services.Admin
         {
             try
             {
+                _logger.LogInformation("شروع بارگذاری آمار داشبورد ادمین");
+
+                var utcNow = DateTime.UtcNow;
+                var todayStart = DateTime.SpecifyKind(utcNow.Date, DateTimeKind.Utc);
+                var tomorrow = todayStart.AddDays(1);
+                var weekStart = todayStart.AddDays(-6);
+                var monthStart = new DateTime(utcNow.Year, utcNow.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+                var smsStatsFrom = weekStart < monthStart ? weekStart : monthStart;
+
+                var pricing = await _smsPricing.GetRuntimeAsync();
+                var smsDaily = await AggregateSmsUsageByDayAsync(smsStatsFrom, tomorrow, pricing.Rules);
+                var chargedByDay = await AggregateSmsWalletChargedByDayAsync(smsStatsFrom, tomorrow);
+
+                var pagesToday = SumIntInRange(smsDaily, todayStart, tomorrow, x => x.Pages);
+                var pagesWeek = SumIntInRange(smsDaily, weekStart, tomorrow, x => x.Pages);
+                var pagesMonth = SumIntInRange(smsDaily, monthStart, tomorrow, x => x.Pages);
+
+                var sentToday = SumIntInRange(smsDaily, todayStart, tomorrow, x => x.SentCount);
+                var sentWeek = SumIntInRange(smsDaily, weekStart, tomorrow, x => x.SentCount);
+                var sentMonth = SumIntInRange(smsDaily, monthStart, tomorrow, x => x.SentCount);
+
+                var chargedToday = SumDecimalInRange(chargedByDay, todayStart, tomorrow);
+                var chargedWeek = SumDecimalInRange(chargedByDay, weekStart, tomorrow);
+                var chargedMonth = SumDecimalInRange(chargedByDay, monthStart, tomorrow);
+
                 var stats = new AdminDashboardStatsDto
                 {
                     PendingSmsApprovals = await _context.SmsApprovalRequests.CountAsync(r => r.Status == AdminApprovalStatuses.Pending && !r.IsDeleted),
                     PendingTemplateApprovals = await _context.MessageTemplates.CountAsync(t => t.ApprovalStatus == AdminApprovalStatuses.Pending && !t.IsDeleted),
                     OpenTickets = await _context.SupportTickets.CountAsync(t => (t.Status == TicketStatuses.Open || t.Status == TicketStatuses.InProgress) && !t.IsDeleted),
                     TotalUsers = await _context.Users.CountAsync(u => !u.IsDeleted),
-                    ActiveSubscriptions = await _context.UserSubscriptions.CountAsync(us => us.Status == "Active" && us.ExpiresAt > DateTime.UtcNow && !us.IsDeleted)
+                    ActiveSubscriptions = await _context.UserSubscriptions.CountAsync(us => us.Status == "Active" && us.ExpiresAt > DateTime.UtcNow && !us.IsDeleted),
+                    SmsSentToday = sentToday,
+                    SmsSentThisWeek = sentWeek,
+                    SmsSentThisMonth = sentMonth,
+                    SmsPagesToday = pagesToday,
+                    SmsPagesThisWeek = pagesWeek,
+                    SmsPagesThisMonth = pagesMonth,
+                    CostPerPart = pricing.CostPerPart,
+                    SmsEstimatedCostToday = RoundMoney(pagesToday * pricing.CostPerPart),
+                    SmsEstimatedCostThisWeek = RoundMoney(pagesWeek * pricing.CostPerPart),
+                    SmsEstimatedCostThisMonth = RoundMoney(pagesMonth * pricing.CostPerPart),
+                    SmsChargedCostToday = chargedToday,
+                    SmsChargedCostThisWeek = chargedWeek,
+                    SmsChargedCostThisMonth = chargedMonth,
+                    IsSmsBillingEnabled = pricing.IsBillingEffectivelyEnabled
                 };
+
+                _logger.LogInformation(
+                    "پایان بارگذاری آمار داشبورد — PagesToday: {Pages}, ChargedToday: {Charged}, CostPerPart: {Cost}",
+                    stats.SmsPagesToday, stats.SmsChargedCostToday, stats.CostPerPart);
 
                 return ApiResponse<AdminDashboardStatsDto>.CreateSuccess(stats);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error loading admin dashboard stats");
+                _logger.LogError(ex, "خطا در بارگذاری آمار داشبورد ادمین");
                 return ApiResponse<AdminDashboardStatsDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
@@ -610,10 +658,15 @@ namespace Api_Vapp.Services.Admin
         {
             try
             {
+                _logger.LogInformation("شروع بارگذاری نمودارهای داشبورد ادمین");
+
                 var utcNow = DateTime.UtcNow;
-                var lineStart = utcNow.Date.AddDays(-6);
+                var todayStart = DateTime.SpecifyKind(utcNow.Date, DateTimeKind.Utc);
+                var tomorrow = todayStart.AddDays(1);
+                var lineStart = todayStart.AddDays(-6);
 
                 var userDailyRaw = await _context.Users
+                    .AsNoTracking()
                     .Where(u => !u.IsDeleted && u.CreatedAt >= lineStart)
                     .GroupBy(u => u.CreatedAt.Date)
                     .Select(g => new { Date = g.Key, Count = g.Count() })
@@ -623,7 +676,7 @@ namespace Api_Vapp.Services.Admin
                 for (var i = 0; i < 7; i++)
                 {
                     var day = lineStart.AddDays(i);
-                    var count = userDailyRaw.FirstOrDefault(x => x.Date == day)?.Count ?? 0;
+                    var count = userDailyRaw.FirstOrDefault(x => x.Date == day.Date)?.Count ?? 0;
                     userGrowth.Add(new AdminDashboardChartPointDto
                     {
                         Label = day.ToString("yyyy-MM-dd"),
@@ -642,17 +695,306 @@ namespace Api_Vapp.Services.Admin
                     new() { Label = "قالب جدید", Value = await _context.MessageTemplates.CountAsync(t => !t.IsDeleted && t.CreatedAt >= monthStart) },
                 };
 
+                var daysFromSaturday = ((int)todayStart.DayOfWeek + 1) % 7;
+                var thisWeekStart = todayStart.AddDays(-daysFromSaturday);
+                var eightWeeksStart = thisWeekStart.AddDays(-7 * 7);
+                var twelveMonthsStart = monthStart.AddMonths(-11);
+                var chartRangeStart = eightWeeksStart < twelveMonthsStart ? eightWeeksStart : twelveMonthsStart;
+
+                var pricing = await _smsPricing.GetRuntimeAsync();
+                var smsDaily = await AggregateSmsUsageByDayAsync(chartRangeStart, tomorrow, pricing.Rules);
+                var chargedByDay = await AggregateSmsWalletChargedByDayAsync(chartRangeStart, tomorrow);
+
+                var smsPagesDaily = BuildDailySmsPoints(smsDaily, chargedByDay, lineStart, 7, pricing.CostPerPart);
+                var smsPagesWeekly = BuildWeeklySmsPoints(smsDaily, chargedByDay, todayStart, 8, pricing.CostPerPart);
+                var smsPagesMonthly = BuildMonthlySmsPoints(smsDaily, chargedByDay, utcNow, 12, pricing.CostPerPart);
+
+                _logger.LogInformation("پایان بارگذاری نمودارهای داشبورد ادمین");
+
                 return ApiResponse<AdminDashboardChartsDto>.CreateSuccess(new AdminDashboardChartsDto
                 {
                     UserGrowthLast7Days = userGrowth,
-                    MonthlyActivity = monthlyActivity
+                    MonthlyActivity = monthlyActivity,
+                    SmsPagesDaily = smsPagesDaily,
+                    SmsPagesWeekly = smsPagesWeekly,
+                    SmsPagesMonthly = smsPagesMonthly
                 });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error loading admin dashboard charts");
+                _logger.LogError(ex, "خطا در بارگذاری نمودارهای داشبورد ادمین");
                 return ApiResponse<AdminDashboardChartsDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
+        }
+
+        /// <summary>
+        /// تجمیع تعداد ارسال و صفحات پیامک به‌ازای هر روز.
+        /// اولویت: MessageText + قواعد تعرفه؛ در غیر این صورت PartsCount کمپین/پیام؛ در نهایت ۱.
+        /// </summary>
+        private async Task<Dictionary<DateTime, SmsDayUsage>> AggregateSmsUsageByDayAsync(
+            DateTime fromUtc,
+            DateTime toUtcExclusive,
+            SmsPartsRules rules)
+        {
+            var rows = await _context.SmsDeliveryRecords
+                .AsNoTracking()
+                .Where(r => !r.IsDeleted
+                    && r.SendStatus == SmsSendStatuses.Sent
+                    && r.SentAt >= fromUtc
+                    && r.SentAt < toUtcExclusive)
+                .Select(r => new
+                {
+                    Day = r.SentAt.Date,
+                    r.SourceModule,
+                    r.SourceEntityId,
+                    r.MessageText
+                })
+                .ToListAsync();
+
+            if (rows.Count == 0)
+                return new Dictionary<DateTime, SmsDayUsage>();
+
+            var campaignIds = rows
+                .Where(r => r.SourceModule == SmsSourceModules.MessageCampaign && r.SourceEntityId.HasValue)
+                .Select(r => r.SourceEntityId!.Value)
+                .Distinct()
+                .ToList();
+
+            var messageIds = rows
+                .Where(r => (r.SourceModule == SmsSourceModules.MessageDirect
+                             || r.SourceModule == SmsSourceModules.AutomatedMessage)
+                            && r.SourceEntityId.HasValue)
+                .Select(r => r.SourceEntityId!.Value)
+                .Distinct()
+                .ToList();
+
+            var campaignParts = campaignIds.Count == 0
+                ? new Dictionary<int, int>()
+                : await _context.MessageCampaigns
+                    .AsNoTracking()
+                    .Where(c => campaignIds.Contains(c.Id) && !c.IsDeleted)
+                    .Select(c => new { c.Id, c.PartsCount })
+                    .ToDictionaryAsync(c => c.Id, c => c.PartsCount > 0 ? c.PartsCount : 1);
+
+            var messageParts = messageIds.Count == 0
+                ? new Dictionary<int, int>()
+                : await _context.Messages
+                    .AsNoTracking()
+                    .Where(m => messageIds.Contains(m.Id) && !m.IsDeleted)
+                    .Select(m => new { m.Id, m.PartsCount })
+                    .ToDictionaryAsync(m => m.Id, m => m.PartsCount > 0 ? m.PartsCount : 1);
+
+            var byDay = new Dictionary<DateTime, SmsDayUsage>();
+            foreach (var row in rows)
+            {
+                var fallback = ResolveFallbackParts(row.SourceModule, row.SourceEntityId, campaignParts, messageParts);
+                var pages = ResolveAccurateParts(row.MessageText, rules, fallback);
+                var day = DateTime.SpecifyKind(row.Day, DateTimeKind.Utc);
+
+                if (!byDay.TryGetValue(day, out var usage))
+                {
+                    usage = new SmsDayUsage();
+                    byDay[day] = usage;
+                }
+
+                usage.SentCount += 1;
+                usage.Pages += pages;
+            }
+
+            return byDay;
+        }
+
+        /// <summary>
+        /// مبلغ واقعی کسرشده از کیف پول بابت ارسال پیامک (Purchase منفی با عنوان مرتبط).
+        /// </summary>
+        private async Task<Dictionary<DateTime, decimal>> AggregateSmsWalletChargedByDayAsync(
+            DateTime fromUtc,
+            DateTime toUtcExclusive)
+        {
+            var groups = await _context.WalletTransactions
+                .AsNoTracking()
+                .Where(wt => wt.Status == TransactionStatuses.Completed
+                    && wt.TransactionType == WalletTransactionTypes.Purchase
+                    && wt.Amount < 0
+                    && wt.CreatedAt >= fromUtc
+                    && wt.CreatedAt < toUtcExclusive
+                    && (wt.Title.Contains("پیامک")
+                        || wt.Title.Contains("ارسال پیام")
+                        || wt.Title.Contains("ارسال کمپین")
+                        || (wt.Description != null && wt.Description.Contains("پیامک"))))
+                .GroupBy(wt => wt.CreatedAt.Date)
+                .Select(g => new { Day = g.Key, Amount = g.Sum(x => -x.Amount) })
+                .ToListAsync();
+
+            var byDay = new Dictionary<DateTime, decimal>(groups.Count);
+            foreach (var g in groups)
+            {
+                byDay[DateTime.SpecifyKind(g.Day, DateTimeKind.Utc)] = RoundMoney(g.Amount);
+            }
+
+            return byDay;
+        }
+
+        private static int ResolveFallbackParts(
+            string sourceModule,
+            int? sourceEntityId,
+            IReadOnlyDictionary<int, int> campaignParts,
+            IReadOnlyDictionary<int, int> messageParts)
+        {
+            if (sourceEntityId is null)
+                return 1;
+
+            if (sourceModule == SmsSourceModules.MessageCampaign
+                && campaignParts.TryGetValue(sourceEntityId.Value, out var campaignPageCount))
+            {
+                return campaignPageCount;
+            }
+
+            if ((sourceModule == SmsSourceModules.MessageDirect
+                 || sourceModule == SmsSourceModules.AutomatedMessage)
+                && messageParts.TryGetValue(sourceEntityId.Value, out var messagePageCount))
+            {
+                return messagePageCount;
+            }
+
+            return 1;
+        }
+
+        private static int ResolveAccurateParts(string? messageText, SmsPartsRules rules, int fallback)
+        {
+            if (string.IsNullOrWhiteSpace(messageText))
+                return Math.Max(1, fallback);
+
+            try
+            {
+                var analysis = SmsPartsCalculator.Analyze(messageText, rules, throwOnMaxPages: false);
+                return Math.Max(1, analysis.PartsCount);
+            }
+            catch (Exception)
+            {
+                return Math.Max(1, fallback);
+            }
+        }
+
+        private static int SumIntInRange(
+            IReadOnlyDictionary<DateTime, SmsDayUsage> byDay,
+            DateTime fromInclusive,
+            DateTime toExclusive,
+            Func<SmsDayUsage, int> selector)
+        {
+            var total = 0;
+            foreach (var (day, usage) in byDay)
+            {
+                if (day >= fromInclusive && day < toExclusive)
+                    total += selector(usage);
+            }
+
+            return total;
+        }
+
+        private static decimal SumDecimalInRange(
+            IReadOnlyDictionary<DateTime, decimal> byDay,
+            DateTime fromInclusive,
+            DateTime toExclusive)
+        {
+            decimal total = 0;
+            foreach (var (day, amount) in byDay)
+            {
+                if (day >= fromInclusive && day < toExclusive)
+                    total += amount;
+            }
+
+            return RoundMoney(total);
+        }
+
+        private static List<AdminDashboardChartPointDto> BuildDailySmsPoints(
+            IReadOnlyDictionary<DateTime, SmsDayUsage> smsDaily,
+            IReadOnlyDictionary<DateTime, decimal> chargedByDay,
+            DateTime startDay,
+            int dayCount,
+            decimal costPerPart)
+        {
+            var points = new List<AdminDashboardChartPointDto>(dayCount);
+            for (var i = 0; i < dayCount; i++)
+            {
+                var day = startDay.AddDays(i);
+                var pages = smsDaily.TryGetValue(day, out var usage) ? usage.Pages : 0;
+                points.Add(new AdminDashboardChartPointDto
+                {
+                    Label = day.ToString("yyyy-MM-dd"),
+                    Value = pages,
+                    EstimatedCost = RoundMoney(pages * costPerPart),
+                    ChargedCost = chargedByDay.GetValueOrDefault(day)
+                });
+            }
+
+            return points;
+        }
+
+        private static List<AdminDashboardChartPointDto> BuildWeeklySmsPoints(
+            IReadOnlyDictionary<DateTime, SmsDayUsage> smsDaily,
+            IReadOnlyDictionary<DateTime, decimal> chargedByDay,
+            DateTime todayUtc,
+            int weekCount,
+            decimal costPerPart)
+        {
+            var daysFromSaturday = ((int)todayUtc.DayOfWeek + 1) % 7;
+            var thisWeekStart = todayUtc.AddDays(-daysFromSaturday);
+            var firstWeekStart = thisWeekStart.AddDays(-7 * (weekCount - 1));
+
+            var points = new List<AdminDashboardChartPointDto>(weekCount);
+            for (var i = 0; i < weekCount; i++)
+            {
+                var weekStart = firstWeekStart.AddDays(7 * i);
+                var weekEnd = weekStart.AddDays(7);
+                var pages = SumIntInRange(smsDaily, weekStart, weekEnd, x => x.Pages);
+                points.Add(new AdminDashboardChartPointDto
+                {
+                    Label = weekStart.ToString("yyyy-MM-dd"),
+                    Value = pages,
+                    EstimatedCost = RoundMoney(pages * costPerPart),
+                    ChargedCost = SumDecimalInRange(chargedByDay, weekStart, weekEnd)
+                });
+            }
+
+            return points;
+        }
+
+        private static List<AdminDashboardChartPointDto> BuildMonthlySmsPoints(
+            IReadOnlyDictionary<DateTime, SmsDayUsage> smsDaily,
+            IReadOnlyDictionary<DateTime, decimal> chargedByDay,
+            DateTime utcNow,
+            int monthCount,
+            decimal costPerPart)
+        {
+            var currentMonthStart = new DateTime(utcNow.Year, utcNow.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+            var firstMonthStart = currentMonthStart.AddMonths(-(monthCount - 1));
+
+            var points = new List<AdminDashboardChartPointDto>(monthCount);
+            for (var i = 0; i < monthCount; i++)
+            {
+                var monthStart = firstMonthStart.AddMonths(i);
+                var monthEnd = monthStart.AddMonths(1);
+                var pages = SumIntInRange(smsDaily, monthStart, monthEnd, x => x.Pages);
+                points.Add(new AdminDashboardChartPointDto
+                {
+                    Label = monthStart.ToString("yyyy-MM"),
+                    Value = pages,
+                    EstimatedCost = RoundMoney(pages * costPerPart),
+                    ChargedCost = SumDecimalInRange(chargedByDay, monthStart, monthEnd)
+                });
+            }
+
+            return points;
+        }
+
+        private static decimal RoundMoney(decimal value) =>
+            Math.Round(value, 2, MidpointRounding.AwayFromZero);
+
+        private sealed class SmsDayUsage
+        {
+            public int SentCount { get; set; }
+            public int Pages { get; set; }
         }
     }
 }
