@@ -182,6 +182,78 @@ namespace Api_Vapp.Services.Admin
                             .FirstOrDefaultAsync(s => s.Id == request.MessageSessionId.Value && !s.IsDeleted);
                     }
 
+                    // اگر زمان‌بندی‌شده و هنوز موعد نرسیده: فقط تأیید کن تا Background در زمان مقرر بفرستد
+                    var scheduledAtUtc = NormalizeToUtc(sendDto.ScheduledAt);
+                    var isFutureSchedule = sendDto.SendType == CampaignSendType.Scheduled
+                        && scheduledAtUtc.HasValue
+                        && scheduledAtUtc.Value > DateTime.UtcNow.AddSeconds(30);
+
+                    if (isFutureSchedule)
+                    {
+                        if (session != null)
+                        {
+                            try
+                            {
+                                var criteria = JsonSerializer.Deserialize<Dictionary<string, object>>(session.SelectionCriteria ?? "{}")
+                                    ?? new Dictionary<string, object>();
+                                criteria["SendType"] = CampaignSendType.Scheduled.ToString();
+                                criteria["ScheduledAt"] = scheduledAtUtc!.Value.ToString("O");
+                                criteria["AdminApproved"] = true;
+                                criteria["PreventDuplicate"] = sendDto.PreventDuplicate;
+                                criteria["DuplicatePreventionHours"] = sendDto.DuplicatePreventionHours;
+                                criteria["SendToSpecificTags"] = sendDto.SendToSpecificTags;
+                                if (sendDto.SelectedTagIds != null && sendDto.SelectedTagIds.Any())
+                                    criteria["SelectedTagIds"] = JsonSerializer.Serialize(sendDto.SelectedTagIds);
+
+                                session.SelectionCriteria = JsonSerializer.Serialize(criteria);
+                                session.IsUsed = false;
+                                var minExpiry = scheduledAtUtc.Value.AddHours(24);
+                                var defaultExpiry = DateTime.UtcNow.AddHours(24);
+                                session.ExpiresAt = minExpiry > defaultExpiry ? minExpiry : defaultExpiry;
+                                session.UpdatedAt = DateTime.UtcNow;
+                                _context.MessageSessions.Update(session);
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogError(ex, "Failed to mark session as admin-approved for scheduled send - SessionId: {SessionId}", session.Id);
+                                await RevertToPendingAsync(request);
+                                return ApiResponse<bool>.BadRequest("خطا در ثبت تأیید زمان‌بندی");
+                            }
+                        }
+
+                        request.Status = AdminApprovalStatuses.Approved;
+                        request.ReviewedByUserId = adminUserId;
+                        request.ReviewedAt = DateTime.UtcNow;
+                        request.UpdatedAt = DateTime.UtcNow;
+                        await _context.SaveChangesAsync();
+
+                        await _audit.WriteAsync(new AuditEntry
+                        {
+                            Category = AuditCategories.Approval,
+                            Action = AuditActions.SmsApprovalApproved,
+                            EntityType = AuditEntityTypes.SmsApprovalRequest,
+                            EntityId = request.Id.ToString(),
+                            ActorUserId = adminUserId,
+                            TargetUserId = request.UserId,
+                            After = new
+                            {
+                                status = request.Status,
+                                scheduledAt = scheduledAtUtc,
+                                deferredSend = true
+                            }
+                        });
+
+                        _logger.LogInformation(
+                            "Scheduled direct message approved for later send - RequestId: {RequestId}, MessageId: {MessageId}, ScheduledAt: {ScheduledAt}",
+                            id, request.MessageId, scheduledAtUtc);
+
+                        return ApiResponse<bool>.CreateSuccess(true, "تأیید شد؛ پیام در زمان مقرر ارسال می‌شود");
+                    }
+
+                    // زمان رسیده یا Quick: فوراً ارسال کن
+                    if (sendDto.SendType == CampaignSendType.Scheduled)
+                        sendDto.SendType = CampaignSendType.Quick;
+
                     var sendResult = await _messageService.SendDirectMessageAsync(
                         request.UserId,
                         request.MessageId,
@@ -486,6 +558,19 @@ namespace Api_Vapp.Services.Admin
             RejectionReason = request.RejectionReason,
             CreatedAt = request.CreatedAt
         };
+
+        private static DateTime? NormalizeToUtc(DateTime? value)
+        {
+            if (!value.HasValue)
+                return null;
+
+            return value.Value.Kind switch
+            {
+                DateTimeKind.Utc => value.Value,
+                DateTimeKind.Local => value.Value.ToUniversalTime(),
+                _ => DateTime.SpecifyKind(value.Value, DateTimeKind.Utc)
+            };
+        }
     }
 
     public class AdminDashboardService : IAdminDashboardService

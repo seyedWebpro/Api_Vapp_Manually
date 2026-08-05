@@ -27,7 +27,7 @@ internal sealed class FakeFileUploadService : IFileUploadService
     public Task<List<string>> ListFilesAsync(string entityType, int entityId, string? subFolder = null)
         => Task.FromResult(new List<string>());
 
-    public Task<string> UploadFileAsync(IFormFile file, string entityType, int entityId, string? subFolder = null)
+    public Task<string> UploadFileAsync(IFormFile file, string entityType, int entityId, string? subFolder = null, CancellationToken cancellationToken = default)
         => Task.FromResult("test.jpg");
 
     public Task<List<string>> UploadMultipleFilesAsync(

@@ -13,6 +13,7 @@ namespace Api_Vapp.Utilities
         public const long ContactImageMaxBytes = 10 * 1024 * 1024;
         public const long ContactAttachmentMaxBytes = 50 * 1024 * 1024;
         public const long IconMaxBytes = 2 * 1024 * 1024;
+        public const long VideoMaxBytes = 2L * 1024 * 1024 * 1024; // 2 GB
 
         private static readonly HashSet<string> DangerousExtensions = new(StringComparer.OrdinalIgnoreCase)
         {
@@ -56,6 +57,11 @@ namespace Api_Vapp.Utilities
         {
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             "application/vnd.ms-excel"
+        };
+
+        public static readonly string[] VideoContentTypes =
+        {
+            "video/mp4", "video/quicktime", "video/x-msvideo", "video/avi"
         };
 
         /// <summary>
@@ -120,6 +126,12 @@ namespace Api_Vapp.Utilities
             return Validate(file, ExcelContentTypes, maxBytes, $"{maxMb} مگابایت");
         }
 
+        public static string? ValidateVideo(IFormFile? file, long maxBytes = VideoMaxBytes)
+        {
+            var maxGb = Math.Max(1, (int)Math.Round(maxBytes / (1024.0 * 1024.0 * 1024.0)));
+            return Validate(file, VideoContentTypes, maxBytes, $"{maxGb} گیگابایت");
+        }
+
         private static bool MatchesMagicBytes(IFormFile file, string contentType)
         {
             try
@@ -173,7 +185,9 @@ namespace Api_Vapp.Utilities
                         read >= 8 && header[4] == 0x66 && header[5] == 0x74 && header[6] == 0x79 && header[7] == 0x70, // ftyp
 
                     "video/x-msvideo" or "video/avi" =>
-                        header[0] == 0x52 && header[1] == 0x49 && header[2] == 0x46 && header[3] == 0x46,
+                        read >= 12
+                        && header[0] == 0x52 && header[1] == 0x49 && header[2] == 0x46 && header[3] == 0x46
+                        && header[8] == 0x41 && header[9] == 0x56 && header[10] == 0x49 && header[11] == 0x20, // AVI
 
                     "audio/mpeg" =>
                         (header[0] == 0xFF && (header[1] & 0xE0) == 0xE0) // frame sync

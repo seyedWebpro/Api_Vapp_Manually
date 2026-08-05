@@ -13,6 +13,7 @@ namespace Api_Vapp.Constants
         public const string AutomatedMessage = "AutomatedMessage";
         public const string BookingReminder = "BookingReminder";
         public const string BookingStatus = "BookingStatus";
+        public const string PublicParticipantOtp = "PublicParticipantOtp";
         public const string Manual = "Manual";
 
         public static readonly IReadOnlyDictionary<string, string> PersianLabels = new Dictionary<string, string>
@@ -25,6 +26,7 @@ namespace Api_Vapp.Constants
             [AutomatedMessage] = "پیام خودکار",
             [BookingReminder] = "یادآوری نوبت",
             [BookingStatus] = "وضعیت نوبت",
+            [PublicParticipantOtp] = "کد تأیید شرکت‌کننده",
             [Manual] = "ارسال دستی"
         };
 

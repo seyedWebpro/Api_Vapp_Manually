@@ -1,7 +1,7 @@
 namespace Api_Vapp.Models
 {
     /// <summary>
-    /// ویدیو آموزشی (فقط لینک)
+    /// ویدیو آموزشی (فایل آپلودشده یا لینک خارجی)
     /// </summary>
     public class EducationalVideo
     {

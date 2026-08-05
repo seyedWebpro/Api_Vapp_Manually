@@ -41,6 +41,8 @@ namespace Api_Vapp.DTOs.User
 
     /// <summary>
     /// DTO برای به‌روزرسانی پروفایل کاربر
+    /// توجه: تغییر شماره موبایل از این endpoint پشتیبانی نمی‌شود.
+    /// از profile/change-phone/request و profile/change-phone/verify استفاده کنید.
     /// </summary>
     public class UpdateUserProfileDto
     {
@@ -49,6 +51,9 @@ namespace Api_Vapp.DTOs.User
         [RegularExpression(@"^\d{10}$", ErrorMessage = "فرمت کد ملی صحیح نیست")]
         public string? NationalId { get; set; }
 
+        /// <summary>
+        /// منسوخ — تغییر شماره فقط با OTP. اگر ارسال شود و با شماره فعلی فرق داشته باشد → 400.
+        /// </summary>
         [RegularExpression(@"^09\d{9}$", ErrorMessage = "فرمت شماره تلفن صحیح نیست")]
         public string? PhoneNumber { get; set; }
     }

@@ -11,8 +11,9 @@ namespace Api_Vapp.Interfaces
         /// <param name="entityType">نوع موجودیت (مثل: user, product, ticket)</param>
         /// <param name="entityId">شناسه موجودیت</param>
         /// <param name="subFolder">پوشه فرعی اختیاری (مثل: profile, images, documents)</param>
+        /// <param name="cancellationToken">توکن لغو آپلود</param>
         /// <returns>مسیر نسبی فایل آپلود شده</returns>
-        Task<string> UploadFileAsync(IFormFile file, string entityType, int entityId, string? subFolder = null);
+        Task<string> UploadFileAsync(IFormFile file, string entityType, int entityId, string? subFolder = null, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// آپلود چند فایل به صورت همزمان

@@ -31,10 +31,18 @@ namespace Api_Vapp.DTOs.Admin
         public string Name { get; set; } = string.Empty;
         public string Content { get; set; } = string.Empty;
         public string? Category { get; set; }
+        public bool IsDefault { get; set; }
+        public bool IsActive { get; set; }
         public string ApprovalStatus { get; set; } = string.Empty;
         public string? RejectionReason { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime? ApprovedAt { get; set; }
+        public DateTime? UpdatedAt { get; set; }
+
+        /// <summary>
+        /// پس از تأیید، ارسال با این قالب تا ویرایش بعدی بدون صف تأیید پیام انجام می‌شود.
+        /// </summary>
+        public bool SkipsMessageApprovalQueue { get; set; }
     }
 
     public class RejectApprovalDto

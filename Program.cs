@@ -84,23 +84,25 @@ else if (!isDocker)
 builder.Configuration.AddEnvironmentVariables();
 
 #region File Upload Configuration for Large Files
-// تنظیمات برای آپلود فایل‌های حجیم
+// تنظیمات برای آپلود فایل‌های حجیم (+۶۴MB برای overhead فرم multipart)
+const long MaxUploadBodyBytes = (2L * 1024 * 1024 * 1024) + (64L * 1024 * 1024);
 builder.Services.Configure<FormOptions>(options =>
 {
-    options.MultipartBodyLengthLimit = 2147483648; // 2GB
+    options.MultipartBodyLengthLimit = MaxUploadBodyBytes;
     options.ValueLengthLimit = int.MaxValue;
     options.KeyLengthLimit = int.MaxValue;
     options.MultipartHeadersLengthLimit = int.MaxValue;
+    options.MemoryBufferThreshold = 1024 * 64; // استریم دیسک برای فایل‌های بزرگ
 });
 
 builder.Services.Configure<IISServerOptions>(options =>
 {
-    options.MaxRequestBodySize = 2147483648; // 2GB
+    options.MaxRequestBodySize = MaxUploadBodyBytes;
 });
 
 builder.Services.Configure<KestrelServerOptions>(options =>
 {
-    options.Limits.MaxRequestBodySize = 2147483648; // 2GB
+    options.Limits.MaxRequestBodySize = MaxUploadBodyBytes;
 });
 #endregion
 
@@ -409,6 +411,7 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.ISpecialOccasionService, Api_Vapp
 builder.Services.AddScoped<Api_Vapp.Interfaces.IWalletService, Api_Vapp.Services.WalletService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IWalletReferralService, Api_Vapp.Services.WalletReferralService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.ISmsPricingService, Api_Vapp.Services.SmsPricingService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IUserSmsBillingService, Api_Vapp.Services.UserSmsBillingService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IPaymentService, Api_Vapp.Services.PaymentService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.ICashbackService, Api_Vapp.Services.CashbackService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IReferralProgramService, Api_Vapp.Services.ReferralProgramService>();
@@ -443,6 +446,7 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminSupportTicketService, Api_V
 builder.Services.AddScoped<Api_Vapp.Interfaces.IUserSupportTicketService, Api_Vapp.Services.UserSupportTicketService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminEducationalVideoService, Api_Vapp.Services.Admin.AdminEducationalVideoService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminAutomationTypeService, Api_Vapp.Services.Admin.AdminAutomationTypeService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminAppBannerService, Api_Vapp.Services.Admin.AdminAppBannerService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminMessageApprovalService, Api_Vapp.Services.Admin.AdminMessageApprovalService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminTemplateApprovalService, Api_Vapp.Services.Admin.AdminTemplateApprovalService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminDashboardService, Api_Vapp.Services.Admin.AdminDashboardService>();

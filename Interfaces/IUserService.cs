@@ -55,9 +55,24 @@ namespace Api_Vapp.Interfaces
         Task<ApiResponse<UserProfileDto>> GetUserProfileAsync(int userId);
 
         /// <summary>
-        /// به‌روزرسانی پروفایل کاربر
+        /// به‌روزرسانی پروفایل کاربر (بدون تغییر شماره موبایل)
         /// </summary>
         Task<ApiResponse<UserProfileDto>> UpdateUserProfileAsync(int userId, UpdateUserProfileDto updateDto);
+
+        /// <summary>
+        /// درخواست تغییر شماره موبایل — ارسال OTP به شماره جدید
+        /// </summary>
+        Task<ApiResponse<ChangePhoneOtpResponseDto>> RequestChangePhoneAsync(int userId, RequestChangePhoneDto dto, string? ipAddress = null);
+
+        /// <summary>
+        /// تایید OTP و اعمال تغییر شماره موبایل
+        /// </summary>
+        Task<ApiResponse<UserProfileDto>> VerifyChangePhoneAsync(int userId, VerifyChangePhoneDto dto, string? ipAddress = null);
+
+        /// <summary>
+        /// ارسال مجدد OTP تغییر شماره موبایل
+        /// </summary>
+        Task<ApiResponse<ChangePhoneOtpResponseDto>> ResendChangePhoneOtpAsync(int userId, RequestChangePhoneDto dto, string? ipAddress = null);
 
         /// <summary>
         /// آپلود عکس پروفایل کاربر

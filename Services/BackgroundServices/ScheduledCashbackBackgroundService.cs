@@ -1,7 +1,6 @@
 using Api_Vapp.Constants;
 using Api_Vapp.Data;
 using Api_Vapp.DTOs.Common;
-using Api_Vapp.DTOs.Sms;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
 using Api_Vapp.Services.Audit;
@@ -85,9 +84,7 @@ namespace Api_Vapp.Services.BackgroundServices
         {
             using var scope = _serviceProvider.CreateScope();
             var context = scope.ServiceProvider.GetRequiredService<Api_Context>();
-            var walletService = scope.ServiceProvider.GetRequiredService<IWalletService>();
-            var smsService = scope.ServiceProvider.GetRequiredService<ISmsService>();
-            var deliveryTracking = scope.ServiceProvider.GetRequiredService<ISmsDeliveryTrackingService>();
+            var userSmsBilling = scope.ServiceProvider.GetRequiredService<IUserSmsBillingService>();
             var auditService = scope.ServiceProvider.GetRequiredService<IAuditService>();
             var smsPricing = scope.ServiceProvider.GetRequiredService<ISmsPricingService>();
 
@@ -161,7 +158,7 @@ namespace Api_Vapp.Services.BackgroundServices
 
                     // پردازش کش‌بک
                     var result = await ProcessSingleScheduledCashbackAsync(
-                        context, walletService, smsService, deliveryTracking, smsPricing, cashback, cancellationToken);
+                        context, userSmsBilling, smsPricing, cashback, cancellationToken);
 
                     // به‌روزرسانی وضعیت
                     cashback.ScheduleStatus = result.Success 
@@ -236,9 +233,7 @@ namespace Api_Vapp.Services.BackgroundServices
         /// </summary>
         private async Task<CashbackProcessResult> ProcessSingleScheduledCashbackAsync(
             Api_Context context,
-            IWalletService walletService,
-            ISmsService smsService,
-            ISmsDeliveryTrackingService deliveryTracking,
+            IUserSmsBillingService userSmsBilling,
             ISmsPricingService smsPricing,
             Cashback cashback,
             CancellationToken cancellationToken)
@@ -258,27 +253,13 @@ namespace Api_Vapp.Services.BackgroundServices
             _logger.LogInformation("تعداد مخاطبین هدف: {Count} برای کش‌بک {CashbackId}", contacts.Count, cashback.Id);
 
             var pricing = await smsPricing.GetRuntimeAsync(cancellationToken);
-            var estimatedSmsCost = contacts.Count * pricing.CostPerPart;
-            if (pricing.IsBillingEffectivelyEnabled)
-            {
-                var walletBalance = await walletService.GetBalanceAsync(cashback.UserId);
-                if (walletBalance < estimatedSmsCost)
-                {
-                    var requiredAmount = estimatedSmsCost - walletBalance;
-                    result.ErrorMessage = $"موجودی کیف پول کافی نیست. " +
-                        $"برای ارسال کش‌بک به {contacts.Count} مخاطب، به {estimatedSmsCost:N0} تومان موجودی نیاز دارید. " +
-                        $"موجودی فعلی: {walletBalance:N0} تومان. " +
-                        $"لطفاً {requiredAmount:N0} تومان به کیف پول خود اضافه کنید.";
-                    _logger.LogWarning("موجودی ناکافی برای کش‌بک {CashbackId}: هزینه مورد نیاز {Cost}, موجودی {Balance}, کمبود {Shortage}",
-                        cashback.Id, estimatedSmsCost, walletBalance, requiredAmount);
-                    return result;
-                }
-            }
+            // کمبود موجودی نباید کل پردازش را fail کند — فقط پیامک‌ها soft-skip می‌شوند
 
             var now = DateTime.UtcNow;
             var successCount = 0;
             var failedCount = 0;
             var totalCashbackAmount = 0m;
+            var smsSentCount = 0;
 
             using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
             try
@@ -350,51 +331,41 @@ namespace Api_Vapp.Services.BackgroundServices
 
                     try
                     {
-                        // ارسال پیامک
                         var message = GenerateCashbackMessage(cashback, cashbackAmount, cashbackTransaction.PurchaseAmount);
-                        var smsRequest = new SendSmsRequestDto
+                        var sendResult = await userSmsBilling.TrySendAsync(
+                            cashback.UserId,
+                            normalizedMobile,
+                            message,
+                            SmsSourceModules.CashbackScheduled,
+                            "ارسال کش‌بک زمان‌بندی شده",
+                            $"هزینه پیامک کش‌بک زمان‌بندی‌شده «{cashback.Title}»",
+                            cashback.Id,
+                            cashback.Title,
+                            cancellationToken);
+
+                        // کش‌بک همیشه ثبت می‌شود؛ پیامک best-effort است
+                        cashbackTransaction.Status = CashbackTransactionStatuses.Deposited;
+                        cashbackTransaction.DepositedAt = DateTime.UtcNow;
+                        if (sendResult.Sent)
                         {
-                            Mobile = normalizedMobile,
-                            Message = message
-                        };
-
-                        var smsResult = await SendSmsWithRetryAsync(smsService, smsRequest, cancellationToken);
-
-                        // Sid > 0 یعنی پیام ارسال شده (حتی اگر Status = 0 باشد)
-                        bool isSuccess = smsResult.Success && smsResult.Data != null && 
-                            (smsResult.Data.Sid > 0 || smsResult.Data.Status > 0);
-
-                        if (isSuccess)
-                        {
-                            cashbackTransaction.Status = CashbackTransactionStatuses.Deposited;
-                            cashbackTransaction.DepositedAt = DateTime.UtcNow;
                             cashbackTransaction.Description = "کش‌بک زمان‌بندی شده با موفقیت ارسال شد";
-                            successCount++;
-                            totalCashbackAmount += cashbackAmount;
-
-                            await deliveryTracking.TrackSuccessfulSendAsync(new DTOs.Sms.SmsDeliveryTrackRequestDto
-                            {
-                                UserId = cashback.UserId,
-                                SourceModule = SmsSourceModules.CashbackScheduled,
-                                SourceEntityId = cashback.Id,
-                                SourceEntityLabel = cashback.Title,
-                                Mobile = normalizedMobile,
-                                Sid = smsResult.Data!.Sid,
-                                MessageText = smsRequest.Message
-                            });
-
-                            _logger.LogDebug("کش‌بک ارسال شد - ContactId: {ContactId}, Mobile: {Mobile}, Amount: {Amount}",
-                                contact.Id, normalizedMobile, cashbackAmount);
+                            smsSentCount++;
+                        }
+                        else if (sendResult.SkippedInsufficientBalance)
+                        {
+                            cashbackTransaction.Description = "کش‌بک ثبت شد؛ پیامک به‌خاطر کمبود موجودی ارسال نشد";
                         }
                         else
                         {
-                            cashbackTransaction.Status = CashbackTransactionStatuses.Failed;
-                            cashbackTransaction.Description = ControlledErrorHelper.SmsFailed;
-                            failedCount++;
-
-                            _logger.LogWarning("خطا در ارسال کش‌بک - ContactId: {ContactId}, Mobile: {Mobile}, Error: {Error}",
-                                contact.Id, normalizedMobile, smsResult.Message);
+                            cashbackTransaction.Description = "کش‌بک ثبت شد؛ ارسال پیامک ناموفق بود";
                         }
+
+                        successCount++;
+                        totalCashbackAmount += cashbackAmount;
+
+                        _logger.LogDebug(
+                            "کش‌بک پردازش شد - ContactId: {ContactId}, Mobile: {Mobile}, Amount: {Amount}, SmsSent={SmsSent}",
+                            contact.Id, normalizedMobile, cashbackAmount, sendResult.Sent);
                     }
                     catch (Exception ex)
                     {
@@ -408,26 +379,13 @@ namespace Api_Vapp.Services.BackgroundServices
                 // یکبار SaveChanges برای به‌روزرسانی تمام وضعیت‌ها
                 await context.SaveChangesAsync(cancellationToken);
 
-                if (pricing.IsBillingEffectivelyEnabled && successCount > 0)
-                {
-                    var actualSmsCost = successCount * pricing.CostPerPart;
-                    await walletService.DeductBalanceAsync(
-                        cashback.UserId,
-                        actualSmsCost,
-                        "ارسال کش‌بک زمان‌بندی شده",
-                        $"هزینه ارسال {successCount} پیامک برای کش‌بک '{cashback.Title}'");
-
-                    _logger.LogInformation("هزینه {Cost:N0} تومان از کیف پول کاربر {UserId} کسر شد (برای {Count} پیامک موفق)",
-                        actualSmsCost, cashback.UserId, successCount);
-                }
-
                 await transaction.CommitAsync(cancellationToken);
 
                 result.Success = successCount > 0;
                 result.SuccessCount = successCount;
                 result.FailedCount = failedCount;
                 result.TotalCashbackAmount = totalCashbackAmount;
-                result.TotalSmsCost = successCount * pricing.CostPerPart;
+                result.TotalSmsCost = smsSentCount * pricing.CostPerPart;
 
                 return result;
             }
@@ -447,11 +405,8 @@ namespace Api_Vapp.Services.BackgroundServices
         {
             using var scope = _serviceProvider.CreateScope();
             var context = scope.ServiceProvider.GetRequiredService<Api_Context>();
-            var walletService = scope.ServiceProvider.GetRequiredService<IWalletService>();
-            var smsService = scope.ServiceProvider.GetRequiredService<ISmsService>();
-            var deliveryTracking = scope.ServiceProvider.GetRequiredService<ISmsDeliveryTrackingService>();
+            var userSmsBilling = scope.ServiceProvider.GetRequiredService<IUserSmsBillingService>();
             var auditService = scope.ServiceProvider.GetRequiredService<IAuditService>();
-            var smsPricing = scope.ServiceProvider.GetRequiredService<ISmsPricingService>();
 
             var now = DateTime.UtcNow;
 
@@ -512,23 +467,7 @@ namespace Api_Vapp.Services.BackgroundServices
                     _logger.LogDebug("زمان برنامه‌ریزی شده (UTC): {ScheduledAt:yyyy-MM-dd HH:mm:ss}, زمان فعلی (UTC): {Now:yyyy-MM-dd HH:mm:ss}, تأخیر: {Delay:F2} ثانیه",
                         transactionScheduledTime, now, transactionDelaySeconds);
 
-                    var txPricing = await smsPricing.GetRuntimeAsync(cancellationToken);
-                    if (txPricing.IsBillingEffectivelyEnabled)
-                    {
-                        var walletBalance = await walletService.GetBalanceAsync(transaction.Cashback.UserId);
-                        if (walletBalance < txPricing.CostPerPart)
-                        {
-                            var requiredAmount = txPricing.CostPerPart - walletBalance;
-                            _logger.LogWarning("موجودی ناکافی برای تراکنش {TransactionId}: موجودی {Balance}, کمبود {Shortage}",
-                                transaction.Id, walletBalance, requiredAmount);
-
-                            transaction.Status = CashbackTransactionStatuses.Failed;
-                            transaction.Description = $"موجودی کیف پول کافی نیست. برای ارسال این کش‌بک به {txPricing.CostPerPart:N0} تومان موجودی نیاز دارید. " +
-                                $"موجودی فعلی: {walletBalance:N0} تومان. لطفاً {requiredAmount:N0} تومان به کیف پول خود اضافه کنید.";
-                            await context.SaveChangesAsync(cancellationToken);
-                            continue;
-                        }
-                    }
+                    // کمبود موجودی نباید تراکنش را fail کند — فقط پیامک soft-skip می‌شود
 
                     // نرمال‌سازی شماره موبایل
                     var normalizedMobile = NormalizePhoneNumber(transaction.Contact.MobileNumber);
@@ -542,72 +481,48 @@ namespace Api_Vapp.Services.BackgroundServices
                         continue;
                     }
 
-                    // ارسال پیامک
                     var message = GenerateCashbackMessage(transaction.Cashback, transaction.Amount, transaction.PurchaseAmount);
-                    var smsRequest = new SendSmsRequestDto
+                    var sendResult = await userSmsBilling.TrySendAsync(
+                        transaction.Cashback.UserId,
+                        normalizedMobile,
+                        message,
+                        SmsSourceModules.CashbackScheduled,
+                        "ارسال کش‌بک زمان‌بندی شده",
+                        $"هزینه ارسال پیامک کش‌بک تراکنش #{transaction.Id}",
+                        transaction.CashbackId,
+                        transaction.Cashback.Title,
+                        cancellationToken);
+
+                    transaction.Status = CashbackTransactionStatuses.Deposited;
+                    transaction.DepositedAt = DateTime.UtcNow;
+                    transaction.Description = sendResult.Sent
+                        ? "کش‌بک زمان‌بندی شده با موفقیت ارسال شد"
+                        : sendResult.SkippedInsufficientBalance
+                            ? "کش‌بک ثبت شد؛ پیامک به‌خاطر کمبود موجودی ارسال نشد"
+                            : "کش‌بک ثبت شد؛ ارسال پیامک ناموفق بود";
+
+                    await context.SaveChangesAsync(cancellationToken);
+
+                    await auditService.WriteAsync(new AuditEntry
                     {
-                        Mobile = normalizedMobile,
-                        Message = message
-                    };
-
-                    var smsResult = await SendSmsWithRetryAsync(smsService, smsRequest, cancellationToken);
-
-                    // Sid > 0 یعنی پیام ارسال شده (حتی اگر Status = 0 باشد)
-                    bool isSmsSent = smsResult.Success && smsResult.Data != null && 
-                        (smsResult.Data.Sid > 0 || smsResult.Data.Status > 0);
-
-                    if (isSmsSent)
-                    {
-                        transaction.Status = CashbackTransactionStatuses.Deposited;
-                        transaction.DepositedAt = DateTime.UtcNow;
-                        transaction.Description = "کش‌بک زمان‌بندی شده با موفقیت ارسال شد";
-
-                        await deliveryTracking.TrackSuccessfulSendAsync(new DTOs.Sms.SmsDeliveryTrackRequestDto
+                        Category = AuditCategories.Cashback,
+                        Action = AuditActions.CashbackApplied,
+                        EntityType = AuditEntityTypes.Cashback,
+                        EntityId = transaction.CashbackId.ToString(),
+                        ActorUserId = transaction.Cashback.UserId,
+                        Source = AuditSources.Background,
+                        After = new
                         {
-                            UserId = transaction.Cashback.UserId,
-                            SourceModule = SmsSourceModules.CashbackScheduled,
-                            SourceEntityId = transaction.CashbackId,
-                            SourceEntityLabel = transaction.Cashback.Title,
-                            Mobile = normalizedMobile,
-                            Sid = smsResult.Data!.Sid,
-                            MessageText = message
-                        });
-
-                        if (txPricing.IsBillingEffectivelyEnabled)
-                        {
-                            await walletService.DeductBalanceAsync(
-                                transaction.Cashback.UserId,
-                                txPricing.CostPerPart,
-                                "ارسال کش‌بک زمان‌بندی شده",
-                                $"هزینه ارسال پیامک کش‌بک تراکنش #{transaction.Id}");
+                            transactionId = transaction.Id,
+                            amount = transaction.Amount,
+                            contactId = transaction.ContactId,
+                            smsSent = sendResult.Sent
                         }
+                    }, cancellationToken);
 
-                        await context.SaveChangesAsync(cancellationToken);
-
-                        await auditService.WriteAsync(new AuditEntry
-                        {
-                            Category = AuditCategories.Cashback,
-                            Action = AuditActions.CashbackApplied,
-                            EntityType = AuditEntityTypes.Cashback,
-                            EntityId = transaction.CashbackId.ToString(),
-                            ActorUserId = transaction.Cashback.UserId,
-                            Source = AuditSources.Background,
-                            After = new { transactionId = transaction.Id, amount = transaction.Amount, contactId = transaction.ContactId }
-                        }, cancellationToken);
-
-                        _logger.LogInformation("تراکنش کش‌بک {TransactionId} با موفقیت پردازش شد - Mobile: {Mobile}",
-                            transaction.Id, normalizedMobile);
-                    }
-                    else
-                    {
-                        transaction.Status = CashbackTransactionStatuses.Failed;
-                        transaction.Description = ControlledErrorHelper.SmsFailed;
-                        
-                        _logger.LogWarning("خطا در ارسال تراکنش کش‌بک {TransactionId}: {Error}",
-                            transaction.Id, smsResult.Message);
-
-                        await context.SaveChangesAsync(cancellationToken);
-                    }
+                    _logger.LogInformation(
+                        "تراکنش کش‌بک {TransactionId} پردازش شد - Mobile: {Mobile}, SmsSent={SmsSent}",
+                        transaction.Id, normalizedMobile, sendResult.Sent);
                 }
                 catch (Exception ex)
                 {
@@ -849,98 +764,6 @@ namespace Api_Vapp.Services.BackgroundServices
             }
 
             return normalized;
-        }
-
-        /// <summary>
-        /// ارسال پیامک با مکانیزم Retry و Exponential Backoff
-        /// </summary>
-        private async Task<ApiResponse<SendSmsResponseDto>> SendSmsWithRetryAsync(
-            ISmsService smsService,
-            SendSmsRequestDto request,
-            CancellationToken cancellationToken,
-            int maxRetries = 3,
-            int initialDelayMs = 1000)
-        {
-            Exception? lastException = null;
-            ApiResponse<SendSmsResponseDto>? lastResult = null;
-
-            for (int attempt = 0; attempt <= maxRetries; attempt++)
-            {
-                try
-                {
-                    if (attempt > 0)
-                    {
-                        // Exponential Backoff
-                        var delayMs = initialDelayMs * (int)Math.Pow(2, attempt - 1);
-                        _logger.LogDebug("تلاش مجدد ارسال SMS - تلاش: {Attempt}/{MaxRetries}, تأخیر: {Delay}ms, شماره: {Mobile}",
-                            attempt + 1, maxRetries + 1, delayMs, request.Mobile);
-                        await Task.Delay(delayMs, cancellationToken);
-                    }
-
-                    var result = await smsService.SendSmsAsync(request);
-
-                    // موفقیت: Sid > 0 یعنی پیام ارسال شده (حتی اگر Status = 0 باشد)
-                    bool isSuccess = result.Success && result.Data != null && 
-                        (result.Data.Sid > 0 || result.Data.Status > 0);
-                    
-                    if (isSuccess)
-                    {
-                        if (attempt > 0)
-                        {
-                            _logger.LogInformation("SMS با موفقیت ارسال شد پس از {Attempt} تلاش - شماره: {Mobile}",
-                                attempt + 1, request.Mobile);
-                        }
-                        return result;
-                    }
-
-                    // بررسی خطاهای غیرقابل Retry
-                    if (result.Data != null)
-                    {
-                        var status = result.Data.Status;
-                        var message = result.Data.Message ?? "";
-
-                        bool isNonRetryable = status < 0 ||
-                            (status == 0 && (
-                                message.Contains("تکراری", StringComparison.OrdinalIgnoreCase) ||
-                                message.Contains("duplicate", StringComparison.OrdinalIgnoreCase) ||
-                                message.Contains("نامعتبر", StringComparison.OrdinalIgnoreCase) ||
-                                message.Contains("invalid", StringComparison.OrdinalIgnoreCase) ||
-                                message.Contains("blacklist", StringComparison.OrdinalIgnoreCase) ||
-                                message.Contains("لیست سیاه", StringComparison.OrdinalIgnoreCase)));
-
-                        if (isNonRetryable)
-                        {
-                            _logger.LogWarning("ارسال SMS ناموفق (غیرقابل Retry) - شماره: {Mobile}, وضعیت: {Status}, پیام: {Message}",
-                                request.Mobile, status, message);
-                            return result;
-                        }
-                    }
-
-                    lastResult = result;
-                }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    lastException = ex;
-                    _logger.LogWarning(ex, "خطا در تلاش {Attempt} ارسال SMS - شماره: {Mobile}", attempt + 1, request.Mobile);
-                }
-            }
-
-            // همه تلاش‌ها ناموفق
-            if (lastResult != null)
-            {
-                return lastResult;
-            }
-
-            if (lastException != null)
-            {
-                return ApiResponse<SendSmsResponseDto>.InternalServerError(ControlledErrorHelper.SmsFailed);
-            }
-
-            return ApiResponse<SendSmsResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
         }
 
         /// <summary>

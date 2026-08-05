@@ -156,8 +156,7 @@ internal sealed class ReferralProgramTestContext : IDisposable
                 new ReferralProgramRepository(context),
                 new ReferralProgramDraftRepository(context),
                 new ReferralUsageRepository(context),
-                new FakeSmsService(),
-                new FakeDeliveryTrackingService(),
+                new FakeUserSmsBillingService(),
                 new Api_Vapp.Tests.Shared.NoOpAuditService(),
                 NullLogger<ReferralProgramService>.Instance);
     }
@@ -217,56 +216,36 @@ internal sealed class ReferralProgramTestContext : IDisposable
         ContactId = contact.Id;
     }
 
-    private sealed class FakeSmsService : ISmsService
+    private sealed class FakeUserSmsBillingService : IUserSmsBillingService
     {
-        public Task<bool> SendOtpAsync(string phoneNumber, string otpCode, string templateType = "VerifyOtp") =>
-            Task.FromResult(true);
+        public Task<(decimal Cost, int PartsCount)> EstimateCostAsync(
+            string message,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult((160m, 1));
 
-        public Task<string> GenerateOtpAsync() => Task.FromResult("123456");
+        public Task<UserSmsSendResult> TrySendAsync(
+            int userId,
+            string mobile,
+            string message,
+            string sourceModule,
+            string walletTitle,
+            string? walletDescription = null,
+            int? sourceEntityId = null,
+            string? sourceEntityLabel = null,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(UserSmsSendResult.Success(1, 160m, 1, 0));
 
-        public Task<ApiResponse<SendSmsResponseDto>> SendSmsAsync(SendSmsRequestDto request) =>
-            Task.FromResult(ApiResponse<SendSmsResponseDto>.CreateSuccess(new SendSmsResponseDto
-            {
-                Sid = 1,
-                Status = 1,
-                Message = "sent"
-            }));
-
-        public Task<ApiResponse<SendBulkResponseDto>> SendBulkSmsAsync(SendBulkRequestDto request) =>
-            Task.FromResult(ApiResponse<SendBulkResponseDto>.CreateSuccess(new SendBulkResponseDto()));
-
-        public Task<ApiResponse<SendArrayResponseDto>> SendArraySmsAsync(SendArrayRequestDto request) =>
-            Task.FromResult(ApiResponse<SendArrayResponseDto>.CreateSuccess(new SendArrayResponseDto()));
-
-        public Task<ApiResponse<DeliveryResponseDto>> GetDeliveryStatusAsync(long sid) =>
-            Task.FromResult(ApiResponse<DeliveryResponseDto>.CreateSuccess(new DeliveryResponseDto()));
-
-        public Task<ApiResponse<InboxResponseDto>> GetInboxAsync(InboxRequestDto request) =>
-            Task.FromResult(ApiResponse<InboxResponseDto>.CreateSuccess(new InboxResponseDto()));
-
-        public Task<ApiResponse<InfoResponseDto>> GetWalletInfoAsync() =>
-            Task.FromResult(ApiResponse<InfoResponseDto>.CreateSuccess(new InfoResponseDto()));
-    }
-
-    private sealed class FakeDeliveryTrackingService : ISmsDeliveryTrackingService
-    {
-        public Task TrackSuccessfulSendAsync(SmsDeliveryTrackRequestDto request) => Task.CompletedTask;
-
-        public Task<ApiResponse<SmsDeliveryRecordDto>> GetByIdAsync(int userId, int id) =>
-            Task.FromResult(ApiResponse<SmsDeliveryRecordDto>.NotFound("not found"));
-
-        public Task<ApiResponse<SmsDeliveryReportListDto>> GetReportAsync(int userId, SmsDeliveryReportFilterDto filter) =>
-            Task.FromResult(ApiResponse<SmsDeliveryReportListDto>.CreateSuccess(new SmsDeliveryReportListDto()));
-
-        public Task<ApiResponse<SmsDeliverySummaryDto>> GetSummaryAsync(int userId, SmsDeliveryReportFilterDto filter) =>
-            Task.FromResult(ApiResponse<SmsDeliverySummaryDto>.CreateSuccess(new SmsDeliverySummaryDto()));
-
-        public Task<ApiResponse<SmsDeliveryRecordDto>> RefreshRecordAsync(int userId, int id) =>
-            Task.FromResult(ApiResponse<SmsDeliveryRecordDto>.NotFound("not found"));
-
-        public Task SyncPendingDeliveriesAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
-
-        public Task<ApiResponse<SmsDeliverySummaryDto>> RefreshBySidAsync(int userId, long sid) =>
-            Task.FromResult(ApiResponse<SmsDeliverySummaryDto>.NotFound("not found"));
+        public Task<UserSmsSendResult> TrySendOtpAsync(
+            int userId,
+            string mobile,
+            string otpCode,
+            string templateType,
+            string sourceModule,
+            string walletTitle,
+            string? walletDescription = null,
+            int? sourceEntityId = null,
+            string? sourceEntityLabel = null,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(UserSmsSendResult.Success(1, 160m, 1, 0));
     }
 }

@@ -43,6 +43,21 @@ namespace Api_Vapp.DTOs.File
         /// </summary>
         public const string EntityType_BusinessCard = "businesscard";
 
+        /// <summary>
+        /// نوع پیام خودکار
+        /// </summary>
+        public const string EntityType_AutomationType = "automationtype";
+
+        /// <summary>
+        /// ویدیو آموزشی
+        /// </summary>
+        public const string EntityType_EducationalVideo = "educationalvideo";
+
+        /// <summary>
+        /// بنر اپ موبایل
+        /// </summary>
+        public const string EntityType_AppBanner = "appbanner";
+
         #endregion
 
         #region SubFolders (پوشه‌های فرعی)

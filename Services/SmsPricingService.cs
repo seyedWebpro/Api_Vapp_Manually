@@ -391,7 +391,7 @@ namespace Api_Vapp.Services
 
         private static SmsPricingSetting CreateDefaultEntity() => new()
         {
-            IsBillingEnabled = false,
+            IsBillingEnabled = true,
             CostPerPart = 160m,
             PersianFirstPageChars = 70,
             PersianSecondPageChars = 64,

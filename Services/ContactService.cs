@@ -88,12 +88,12 @@ namespace Api_Vapp.Services
                 using var transaction = await _context.Database.BeginTransactionAsync();
                 try
                 {
-                    // ایجاد مخاطب جدید
+                    // ایجاد مخاطب جدید (نام کامل اختیاری است)
                     var contact = new Contact
                     {
                         ContactNotebookId = createDto.ContactNotebookId,
                         MobileNumber = createDto.MobileNumber,
-                        FullName = createDto.FullName,
+                        FullName = string.IsNullOrWhiteSpace(createDto.FullName) ? null : createDto.FullName.Trim(),
                         Brand = createDto.Brand,
                         Tags = null, // فیلد Tags دیگر استفاده نمی‌شود، از TagNames استفاده می‌شود
                         CreatedAt = DateTime.UtcNow

@@ -281,11 +281,43 @@ internal sealed class BookingSystemTestContext : IDisposable
                 new BookingAppointmentRepository(context),
                 new BookingSystemRepository(context),
                 new PublicPhonebookService(context),
-                new FakeSmsService(),
-                new FakeDeliveryTrackingService(),
+                new FakeUserSmsBillingService(),
                 Microsoft.Extensions.Options.Options.Create(new BookingSystemOptions()),
                 new Api_Vapp.Tests.Shared.NoOpAuditService(),
                 NullLogger<BookingAppointmentService>.Instance);
+    }
+
+    private sealed class FakeUserSmsBillingService : IUserSmsBillingService
+    {
+        public Task<(decimal Cost, int PartsCount)> EstimateCostAsync(
+            string message,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult((160m, 1));
+
+        public Task<UserSmsSendResult> TrySendAsync(
+            int userId,
+            string mobile,
+            string message,
+            string sourceModule,
+            string walletTitle,
+            string? walletDescription = null,
+            int? sourceEntityId = null,
+            string? sourceEntityLabel = null,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(UserSmsSendResult.Success(1, 160m, 1, 0));
+
+        public Task<UserSmsSendResult> TrySendOtpAsync(
+            int userId,
+            string mobile,
+            string otpCode,
+            string templateType,
+            string sourceModule,
+            string walletTitle,
+            string? walletDescription = null,
+            int? sourceEntityId = null,
+            string? sourceEntityLabel = null,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(UserSmsSendResult.Success(1, 160m, 1, 0));
     }
 
     private sealed class FakeSmsService : ISmsService
@@ -317,28 +349,6 @@ internal sealed class BookingSystemTestContext : IDisposable
 
         public Task<ApiResponse<InfoResponseDto>> GetWalletInfoAsync() =>
             Task.FromResult(ApiResponse<InfoResponseDto>.CreateSuccess(new InfoResponseDto()));
-    }
-
-    private sealed class FakeDeliveryTrackingService : ISmsDeliveryTrackingService
-    {
-        public Task TrackSuccessfulSendAsync(SmsDeliveryTrackRequestDto request) => Task.CompletedTask;
-
-        public Task<ApiResponse<SmsDeliveryRecordDto>> GetByIdAsync(int userId, int id) =>
-            Task.FromResult(ApiResponse<SmsDeliveryRecordDto>.NotFound("not found"));
-
-        public Task<ApiResponse<SmsDeliveryReportListDto>> GetReportAsync(int userId, SmsDeliveryReportFilterDto filter) =>
-            Task.FromResult(ApiResponse<SmsDeliveryReportListDto>.CreateSuccess(new SmsDeliveryReportListDto()));
-
-        public Task<ApiResponse<SmsDeliverySummaryDto>> GetSummaryAsync(int userId, SmsDeliveryReportFilterDto filter) =>
-            Task.FromResult(ApiResponse<SmsDeliverySummaryDto>.CreateSuccess(new SmsDeliverySummaryDto()));
-
-        public Task<ApiResponse<SmsDeliveryRecordDto>> RefreshRecordAsync(int userId, int id) =>
-            Task.FromResult(ApiResponse<SmsDeliveryRecordDto>.NotFound("not found"));
-
-        public Task SyncPendingDeliveriesAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
-
-        public Task<ApiResponse<SmsDeliverySummaryDto>> RefreshBySidAsync(int userId, long sid) =>
-            Task.FromResult(ApiResponse<SmsDeliverySummaryDto>.NotFound("not found"));
     }
 
     private async Task SeedAsync()

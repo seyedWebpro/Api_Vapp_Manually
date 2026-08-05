@@ -89,11 +89,40 @@ namespace Api_Vapp.Services
                 // محتوای پیام (می‌تواند خالی باشد و بعداً به‌روزرسانی شود)
                 var content = string.IsNullOrWhiteSpace(createDto.Content) ? "" : createDto.Content.Trim();
 
+                int? templateId = null;
+                if (createDto.TemplateId.HasValue)
+                {
+                    var template = await _templateRepository.GetByIdAsync(createDto.TemplateId.Value);
+                    if (template == null || template.IsDeleted || template.UserId != userId || !template.IsActive)
+                        return ApiResponse<MessageResponseDto>.BadRequest("قالب مورد نظر یافت نشد یا متعلق به شما نیست");
+
+                    if (template.ApprovalStatus != AdminApprovalStatuses.Approved)
+                        return ApiResponse<MessageResponseDto>.BadRequest("قالب پیام هنوز توسط ادمین تأیید نشده است");
+
+                    if (string.IsNullOrWhiteSpace(content))
+                    {
+                        content = template.Content;
+                    }
+                    else if (!string.Equals(content.Trim(), template.Content?.Trim(), StringComparison.Ordinal))
+                    {
+                        // جلوگیری از اتصال TemplateId به متن دلخواه برای دور زدن صف تأیید
+                        return ApiResponse<MessageResponseDto>.BadRequest(
+                            "متن پیام با قالب انتخاب‌شده یکسان نیست. برای ارسال متن آزاد، TemplateId ارسال نکنید");
+                    }
+
+                    templateId = template.Id;
+                }
+                else if (!string.IsNullOrWhiteSpace(content))
+                {
+                    templateId = await TryResolveApprovedTemplateIdByContentAsync(userId, content);
+                }
+
                 var pricing = await _smsPricing.GetRuntimeAsync();
                 var message = new Message
                 {
                     UserId = userId,
                     Content = content,
+                    TemplateId = templateId,
                     CharacterCount = SmsPartsCalculator.CountMessageCharacters(content, pricing.Rules),
                     PartsCount = SmsPartsCalculator.CalculateParts(content, pricing.Rules),
                     IsPersonalized = ContainsPlaceholders(content),
@@ -239,6 +268,61 @@ namespace Api_Vapp.Services
                     message.IsPersonalized = ContainsPlaceholders(message.Content);
                     message.Placeholders = ExtractPlaceholders(message.Content);
                     hasChanges = true;
+                }
+
+                if (updateDto.TemplateId.HasValue)
+                {
+                    if (updateDto.TemplateId.Value <= 0)
+                    {
+                        message.TemplateId = null;
+                        hasChanges = true;
+                    }
+                    else
+                    {
+                        var template = await _templateRepository.GetByIdAsync(updateDto.TemplateId.Value);
+                        if (template == null || template.IsDeleted || template.UserId != userId || !template.IsActive)
+                            return ApiResponse<MessageResponseDto>.BadRequest("قالب مورد نظر یافت نشد یا متعلق به شما نیست");
+
+                        if (template.ApprovalStatus != AdminApprovalStatuses.Approved)
+                            return ApiResponse<MessageResponseDto>.BadRequest("قالب پیام هنوز توسط ادمین تأیید نشده است");
+
+                        var effectiveContent = !string.IsNullOrWhiteSpace(updateDto.Content)
+                            ? updateDto.Content.Trim()
+                            : message.Content?.Trim() ?? "";
+
+                        if (string.IsNullOrWhiteSpace(effectiveContent))
+                        {
+                            message.Content = template.Content;
+                            var pricingForTemplate = await _smsPricing.GetRuntimeAsync();
+                            message.CharacterCount = SmsPartsCalculator.CountMessageCharacters(message.Content, pricingForTemplate.Rules);
+                            message.PartsCount = SmsPartsCalculator.CalculateParts(message.Content, pricingForTemplate.Rules);
+                            message.IsPersonalized = ContainsPlaceholders(message.Content);
+                            message.Placeholders = ExtractPlaceholders(message.Content);
+                        }
+                        else if (!string.Equals(effectiveContent, template.Content?.Trim(), StringComparison.Ordinal))
+                        {
+                            return ApiResponse<MessageResponseDto>.BadRequest(
+                                "متن پیام با قالب انتخاب‌شده یکسان نیست. برای ارسال متن آزاد، TemplateId را حذف کنید");
+                        }
+
+                        message.TemplateId = template.Id;
+                        hasChanges = true;
+                    }
+                }
+                else if (hasChanges && message.TemplateId.HasValue)
+                {
+                    // اگر متن از قالب جدا شده، ارتباط TemplateId را قطع کن تا صف تأیید به‌درستی اعمال شود
+                    var linkedTemplate = await _templateRepository.GetByIdAsync(message.TemplateId.Value);
+                    if (linkedTemplate == null
+                        || linkedTemplate.IsDeleted
+                        || !string.Equals(linkedTemplate.Content?.Trim(), message.Content?.Trim(), StringComparison.Ordinal))
+                    {
+                        message.TemplateId = await TryResolveApprovedTemplateIdByContentAsync(userId, message.Content);
+                    }
+                }
+                else if (hasChanges && !message.TemplateId.HasValue)
+                {
+                    message.TemplateId = await TryResolveApprovedTemplateIdByContentAsync(userId, message.Content);
                 }
 
                 // اگر هیچ تغییری ایجاد نشده
@@ -784,9 +868,18 @@ namespace Api_Vapp.Services
                     if (selectionCriteria.TryGetValue("ScheduledAt", out var scheduledAtElement))
                     {
                         var scheduledAtStr = scheduledAtElement.GetString();
-                        if (!string.IsNullOrEmpty(scheduledAtStr) && DateTime.TryParse(scheduledAtStr, out var parsedScheduledAt))
+                        if (!string.IsNullOrEmpty(scheduledAtStr))
                         {
-                            scheduledAt = parsedScheduledAt;
+                            if (DateTimeOffset.TryParse(scheduledAtStr, out var dto))
+                                scheduledAt = dto.UtcDateTime;
+                            else if (DateTime.TryParse(scheduledAtStr, null, System.Globalization.DateTimeStyles.RoundtripKind, out var parsedScheduledAt))
+                            {
+                                scheduledAt = parsedScheduledAt.Kind == DateTimeKind.Unspecified
+                                    ? DateTime.SpecifyKind(parsedScheduledAt, DateTimeKind.Utc)
+                                    : parsedScheduledAt.Kind == DateTimeKind.Local
+                                        ? parsedScheduledAt.ToUniversalTime()
+                                        : parsedScheduledAt;
+                            }
                         }
                     }
 
@@ -862,13 +955,21 @@ namespace Api_Vapp.Services
                     SelectedTagIds = selectedTagIds
                 };
 
-                // برای Scheduled، باید زمان در آینده باشد
+                // برای Scheduled: زمان‌بندی را تأیید و به Background Service می‌سپاریم
                 if (sendType == CampaignSendType.Scheduled)
                 {
                     if (!scheduledAt.HasValue)
                     {
+                        await transaction.RollbackAsync();
                         return ApiResponse<DirectSendResultDto>.BadRequest(
                             "برای ارسال زمان‌دار، ابتدا باید از calculate-summary استفاده کنید و تنظیمات را ذخیره کنید.");
+                    }
+
+                    var templateError = await ValidateTemplateApprovalForMessageAsync(message);
+                    if (templateError != null)
+                    {
+                        await transaction.RollbackAsync();
+                        return ApiResponse<DirectSendResultDto>.BadRequest(templateError);
                     }
 
                     // تبدیل به UTC برای مقایسه
@@ -882,13 +983,14 @@ namespace Api_Vapp.Services
                     else if (scheduledAtValue.Kind == DateTimeKind.Local)
                     {
                         scheduledAtUtc = scheduledAtValue.ToUniversalTime();
-                            }
-                            else
-                            {
+                    }
+                    else
+                    {
                         scheduledAtUtc = scheduledAtValue;
                     }
                     
                     var nowUtc = DateTime.UtcNow;
+                    var forceSendApplied = false;
                     
                     // بررسی اینکه زمان در آینده باشد
                     if (scheduledAtUtc <= nowUtc)
@@ -897,23 +999,95 @@ namespace Api_Vapp.Services
                         if (forceSend)
                         {
                             scheduledAtUtc = nowUtc.AddSeconds(5);
+                            forceSendApplied = true;
                             _logger.LogInformation("ForceSend enabled - Setting scheduled time to 5 seconds from now for testing - MessageId: {MessageId}", messageId);
-                            sendDto.ScheduledAt = scheduledAtUtc;
                         }
                         else
                         {
+                            await transaction.RollbackAsync();
                             return ApiResponse<DirectSendResultDto>.BadRequest("زمان ارسال باید در آینده باشد");
                         }
                     }
-                    else
+
+                    sendDto.ScheduledAt = scheduledAtUtc;
+                    sendDto.SendType = CampaignSendType.Scheduled;
+
+                    var skipSmsApprovalForTemplate = await ShouldSkipSmsApprovalForApprovedTemplateAsync(message);
+                    var adminApprovedForSchedule = forceSendApplied || skipSmsApprovalForTemplate;
+
+                    // ذخیره زمان نهایی و وضعیت تأیید در Session (برای Background Service)
+                    try
                     {
-                        sendDto.ScheduledAt = scheduledAtUtc;
+                        var selectionCriteria = JsonSerializer.Deserialize<Dictionary<string, object>>(session.SelectionCriteria ?? "{}")
+                            ?? new Dictionary<string, object>();
+                        selectionCriteria["SendType"] = CampaignSendType.Scheduled.ToString();
+                        selectionCriteria["ScheduledAt"] = scheduledAtUtc.ToString("O");
+                        selectionCriteria["PreventDuplicate"] = preventDuplicate;
+                        selectionCriteria["DuplicatePreventionHours"] = duplicatePreventionHours;
+                        selectionCriteria["SendToSpecificTags"] = sendToSpecificTags;
+                        if (selectedTagIds != null && selectedTagIds.Any())
+                            selectionCriteria["SelectedTagIds"] = JsonSerializer.Serialize(selectedTagIds);
+                        else
+                            selectionCriteria.Remove("SelectedTagIds");
+                        selectionCriteria["ForceSend"] = forceSend;
+                        // ForceSend یا قالب تأییدشده → بدون صف تأیید پیام
+                        selectionCriteria["AdminApproved"] = adminApprovedForSchedule;
+
+                        session.SelectionCriteria = JsonSerializer.Serialize(selectionCriteria);
+                        // Session باید تا بعد از زمان ارسال زنده بماند
+                        var minExpiry = scheduledAtUtc.AddHours(24);
+                        var defaultExpiry = nowUtc.AddHours(24);
+                        session.ExpiresAt = minExpiry > defaultExpiry ? minExpiry : defaultExpiry;
+                        session.IsUsed = false;
+                        session.UpdatedAt = nowUtc;
+                        await _sessionRepository.UpdateAsync(session);
+
+                        message.Status = "Scheduled";
+                        message.UpdatedAt = nowUtc;
+                        await _messageRepository.UpdateAsync(message);
+                        await _context.SaveChangesAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        await transaction.RollbackAsync();
+                        _logger.LogError(ex, "Error persisting scheduled settings - MessageId: {MessageId}", messageId);
+                        return ApiResponse<DirectSendResultDto>.InternalServerError(ControlledErrorHelper.Unexpected);
                     }
 
-                    // برای Scheduled، فعلاً فقط Session را به‌روزرسانی می‌کنیم و ارسال را به Background Service می‌سپاریم
-                    // در حال حاضر SendDirectMessageAsync برای Scheduled پیام خطا برمی‌گرداند
-                    return ApiResponse<DirectSendResultDto>.BadRequest(
-                        "ارسال زمان‌بندی شده در حال حاضر پشتیبانی نمی‌شود. لطفاً از ارسال فوری استفاده کنید.");
+                    await transaction.CommitAsync();
+
+                    if (adminApprovedForSchedule)
+                    {
+                        _logger.LogInformation(
+                            "Message scheduled without SMS approval queue - MessageId: {MessageId}, SessionId: {SessionId}, ScheduledAt (UTC): {ScheduledAt}, ForceSend: {ForceSend}, ApprovedTemplate: {ApprovedTemplate}",
+                            messageId, session.Id, scheduledAtUtc, forceSendApplied, skipSmsApprovalForTemplate);
+
+                        return ApiResponse<DirectSendResultDto>.CreateSuccess(
+                            new DirectSendResultDto(),
+                            "پیام زمان‌بندی شد و در زمان مقرر ارسال می‌شود");
+                    }
+
+                    var recipientsCount = 0;
+                    try
+                    {
+                        var recipients = JsonSerializer.Deserialize<List<RecipientItemDto>>(session.RecipientsJson ?? "[]");
+                        recipientsCount = recipients?.Count ?? 0;
+                    }
+                    catch
+                    {
+                        recipientsCount = 0;
+                    }
+
+                    await UpsertDirectMessageApprovalRequestAsync(message, session, sendDto, recipientsCount);
+
+                    _logger.LogInformation(
+                        "Message scheduled successfully - MessageId: {MessageId}, SessionId: {SessionId}, ScheduledAt (UTC): {ScheduledAt}",
+                        messageId, session.Id, scheduledAtUtc);
+
+                    return ApiResponse<DirectSendResultDto>.CreateSuccess(
+                        new DirectSendResultDto(),
+                        "پیام زمان‌بندی شد و در صف تأیید ادمین قرار گرفت",
+                        202);
                 }
 
                 // برای Quick: ارسال فوری
@@ -1095,7 +1269,17 @@ namespace Api_Vapp.Services
                     if (templateError != null)
                         return ApiResponse<bool>.BadRequest(templateError);
 
-                    if (campaign.AdminApprovalStatus != AdminApprovalStatuses.Approved)
+                    // قالب تأییدشده: تا قبل از ویرایش مجدد، ارسال آنی بدون صف تأیید پیام
+                    if (await ShouldSkipSmsApprovalForApprovedTemplateAsync(message))
+                    {
+                        if (campaign.AdminApprovalStatus != AdminApprovalStatuses.Approved)
+                        {
+                            campaign.AdminApprovalStatus = AdminApprovalStatuses.Approved;
+                            campaign.UpdatedAt = DateTime.UtcNow;
+                            await _campaignRepository.UpdateAsync(campaign);
+                        }
+                    }
+                    else if (campaign.AdminApprovalStatus != AdminApprovalStatuses.Approved)
                     {
                         campaign.AdminApprovalStatus = AdminApprovalStatuses.Pending;
                         campaign.Status = "PendingApproval";
@@ -2060,6 +2244,13 @@ namespace Api_Vapp.Services
                     return ApiResponse<TemplateResponseDto>.NotFound("قالب مورد نظر یافت نشد یا متعلق به شما نیست");
                 }
 
+                if (template.ApprovalStatus != AdminApprovalStatuses.Approved)
+                {
+                    await transaction.RollbackAsync();
+                    return ApiResponse<TemplateResponseDto>.BadRequest(
+                        "فقط قالب تأییدشده می‌تواند به‌عنوان پیش‌فرض تنظیم شود");
+                }
+
                 // غیرفعال کردن تمام قالب‌های پیش‌فرض قبلی کاربر (اگر وجود داشته باشند)
                 var previousDefaultTemplates = await _context.MessageTemplates
                     .Where(mt => mt.UserId == userId && 
@@ -2157,12 +2348,13 @@ namespace Api_Vapp.Services
                     return ApiResponse<DirectSendResultDto>.Forbidden("مخاطب متعلق به شما نیست");
                 }
 
-                // 3. پیدا کردن قالب پیش‌فرض کاربر
+                // 3. پیدا کردن قالب پیش‌فرض تأییدشده کاربر
                 var defaultTemplate = await _context.MessageTemplates
                     .FirstOrDefaultAsync(mt => mt.UserId == userId && 
                                                mt.IsDefault && 
                                                mt.IsActive && 
-                                               !mt.IsDeleted);
+                                               !mt.IsDeleted &&
+                                               mt.ApprovalStatus == AdminApprovalStatuses.Approved);
 
                 string messageContent;
                 int? templateId = null;
@@ -3748,7 +3940,8 @@ namespace Api_Vapp.Services
                     return ApiResponse<DirectSendResultDto>.BadRequest("هیچ گیرنده‌ای برای ارسال وجود ندارد");
                 }
 
-                if (!bypassAdminApproval)
+                // قالب تأییدشده: تا قبل از ویرایش مجدد، ارسال آنی بدون صف تأیید پیام
+                if (!bypassAdminApproval && !await ShouldSkipSmsApprovalForApprovedTemplateAsync(message))
                 {
                     var existingPending = await _context.SmsApprovalRequests
                         .AnyAsync(r => r.MessageId == messageId
@@ -3848,12 +4041,19 @@ namespace Api_Vapp.Services
                     return ApiResponse<DirectSendResultDto>.BadRequest("موجودی کیف پول کافی نیست");
                 }
 
-                // اگر ارسال زمان‌بندی شده است، باید یک Background Job ایجاد شود
-                // فعلاً فقط ارسال فوری را پشتیبانی می‌کنیم
+                // ارسال زمان‌بندی‌شده باید از ConfirmAndSendMessageAsync / Background انجام شود.
+                // اگر به اینجا رسید و هنوز Scheduled است یعنی زمان ارسال فرا رسیده (مثلاً Approve ادمین).
                 if (sendDto.SendType == CampaignSendType.Scheduled)
                 {
-                    return ApiResponse<DirectSendResultDto>.BadRequest(
-                        "ارسال زمان‌بندی شده برای پیام عادی در حال حاضر پشتیبانی نمی‌شود. لطفاً از ارسال فوری استفاده کنید.");
+                    if (sendDto.ScheduledAt.HasValue && sendDto.ScheduledAt.Value > DateTime.UtcNow.AddSeconds(30))
+                    {
+                        return ApiResponse<DirectSendResultDto>.CreateSuccess(
+                            new DirectSendResultDto(),
+                            "پیام برای ارسال در زمان مقرر زمان‌بندی شده است",
+                            202);
+                    }
+
+                    sendDto.SendType = CampaignSendType.Quick;
                 }
 
                 // ارسال پیام‌ها با Compensation Pattern (مشکل 6.1)
@@ -4030,6 +4230,13 @@ namespace Api_Vapp.Services
                 }
 
                 // Session قبلاً در ConfirmAndSendMessageAsync علامت‌گذاری شده است
+                // برای مسیر Approve/Background هم Session را استفاده شده علامت بزن تا دوبار ارسال نشود
+                if (session != null && !session.IsUsed && sentCount > 0)
+                {
+                    session.IsUsed = true;
+                    session.UpdatedAt = DateTime.UtcNow;
+                    await _sessionRepository.UpdateAsync(session);
+                }
 
                 // به‌روزرسانی وضعیت پیام
                 message.Status = "Sent";
@@ -5223,6 +5430,54 @@ namespace Api_Vapp.Services
                 return "قالب پیام هنوز توسط ادمین تأیید نشده است";
 
             return null;
+        }
+
+        /// <summary>
+        /// اگر پیام بر اساس قالب تأییدشده باشد، نیازی به صف تأیید مجدد ارسال نیست
+        /// (تا وقتی قالب ویرایش و دوباره Pending شود).
+        /// مسیرها: TemplateId معتبر + Approved، یا تطبیق دقیق متن با قالب Approved.
+        /// </summary>
+        private async Task<bool> ShouldSkipSmsApprovalForApprovedTemplateAsync(Message message)
+        {
+            if (message.TemplateId.HasValue)
+            {
+                var template = await _templateRepository.GetByIdAsync(message.TemplateId.Value);
+                if (template != null
+                    && !template.IsDeleted
+                    && template.IsActive
+                    && template.UserId == message.UserId
+                    && template.ApprovalStatus == AdminApprovalStatuses.Approved)
+                {
+                    return true;
+                }
+
+                // TemplateId نامعتبر/تأییدنشده: به fallback متنی نرو اگر Validate قبلاً خطا نداده
+                // (مثلاً قالب حذف‌شده) — در این حالت فقط تطبیق متن را چک می‌کنیم.
+            }
+
+            if (string.IsNullOrWhiteSpace(message.Content))
+                return false;
+
+            var matchedId = await TryResolveApprovedTemplateIdByContentAsync(message.UserId, message.Content);
+            return matchedId.HasValue;
+        }
+
+        private async Task<int?> TryResolveApprovedTemplateIdByContentAsync(int userId, string? content)
+        {
+            if (string.IsNullOrWhiteSpace(content))
+                return null;
+
+            var normalized = content.Trim();
+            return await _context.MessageTemplates
+                .AsNoTracking()
+                .Where(t => t.UserId == userId
+                    && !t.IsDeleted
+                    && t.IsActive
+                    && t.ApprovalStatus == AdminApprovalStatuses.Approved
+                    && t.Content == normalized)
+                .OrderByDescending(t => t.IsDefault)
+                .Select(t => (int?)t.Id)
+                .FirstOrDefaultAsync();
         }
 
         private async Task UpsertCampaignApprovalRequestAsync(MessageCampaign campaign, Message message)

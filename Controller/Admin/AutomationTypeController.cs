@@ -48,17 +48,28 @@ namespace Api_Vapp.Controller.Admin
         }
 
         /// <summary>
-        /// به‌روزرسانی نام، توضیحات، آیکون، ترتیب و وضعیت فعال بودن
+        /// به‌روزرسانی نوع پیام خودکار (multipart — آیکون فایل)
         /// </summary>
         [HttpPost("{id:int}/update")]
+        [Consumes("multipart/form-data")]
         public async Task<ActionResult<ApiResponse<AutomationTypeAdminResponseDto>>> Update(
             int id,
-            [FromBody] UpdateAutomationTypeDto dto)
+            [FromForm] UpdateAutomationTypeDto dto)
         {
             var invalid = InvalidModelStateResponse<AutomationTypeAdminResponseDto>();
             if (invalid != null) return invalid;
 
             var result = await _service.UpdateAsync(id, dto);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        /// <summary>
+        /// حذف نرم نوع پیام خودکار
+        /// </summary>
+        [HttpPost("{id:int}/delete")]
+        public async Task<ActionResult<ApiResponse<bool>>> Delete(int id)
+        {
+            var result = await _service.DeleteAsync(id);
             return StatusCode(result.StatusCode, result);
         }
     }

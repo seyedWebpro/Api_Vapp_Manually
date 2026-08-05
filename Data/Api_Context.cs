@@ -52,6 +52,7 @@ namespace Api_Vapp.Data
         public DbSet<TicketMessage> TicketMessages { get; set; }
         public DbSet<EducationalVideo> EducationalVideos { get; set; }
         public DbSet<AutomationTypeDefinition> AutomationTypes { get; set; }
+        public DbSet<AppBanner> AppBanners { get; set; }
         public DbSet<SmsApprovalRequest> SmsApprovalRequests { get; set; }
         public DbSet<UserForm> UserForms { get; set; }
         public DbSet<UserFormField> UserFormFields { get; set; }
@@ -1236,13 +1237,33 @@ namespace Api_Vapp.Data
                 entity.Property(t => t.Code).IsRequired().HasMaxLength(50);
                 entity.Property(t => t.Name).IsRequired().HasMaxLength(200);
                 entity.Property(t => t.Description).HasMaxLength(1000);
-                entity.Property(t => t.Icon).HasMaxLength(20);
+                entity.Property(t => t.Icon).HasMaxLength(500);
                 entity.Property(t => t.IsActive).HasDefaultValue(true);
                 entity.Property(t => t.IsDeleted).HasDefaultValue(false);
                 entity.Property(t => t.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
                 entity.HasIndex(t => t.Code).IsUnique();
                 entity.HasIndex(t => t.IsActive);
                 entity.HasIndex(t => t.SortOrder);
+            });
+
+            // بنرهای اپ موبایل
+            modelBuilder.Entity<AppBanner>(entity =>
+            {
+                entity.ToTable("AppBanners");
+                entity.HasKey(b => b.Id);
+                entity.Property(b => b.Id).ValueGeneratedOnAdd();
+                entity.Property(b => b.Key).IsRequired().HasMaxLength(50);
+                entity.Property(b => b.Title).IsRequired().HasMaxLength(200);
+                entity.Property(b => b.Description).HasMaxLength(1000);
+                entity.Property(b => b.ImageUrl).HasMaxLength(1000);
+                entity.Property(b => b.LinkUrl).HasMaxLength(1000);
+                entity.Property(b => b.LinkType).IsRequired().HasMaxLength(30).HasDefaultValue("none");
+                entity.Property(b => b.IsActive).HasDefaultValue(true);
+                entity.Property(b => b.IsDeleted).HasDefaultValue(false);
+                entity.Property(b => b.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+                entity.HasIndex(b => b.Key).IsUnique();
+                entity.HasIndex(b => b.IsActive);
+                entity.HasIndex(b => b.SortOrder);
             });
 
             // تنظیمات SmsApprovalRequest
@@ -1675,7 +1696,6 @@ namespace Api_Vapp.Data
                 entity.Property(s => s.Title).IsRequired().HasMaxLength(200);
                 entity.Property(s => s.DurationMinutes).IsRequired();
                 entity.Property(s => s.Price).HasColumnType("decimal(18,2)");
-                entity.Property(s => s.ServiceCost).HasColumnType("decimal(18,2)");
                 entity.Property(s => s.DepositAmount).HasColumnType("decimal(18,2)");
                 entity.Property(s => s.IsDeleted).HasDefaultValue(false);
                 entity.Property(s => s.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
@@ -1980,7 +2000,7 @@ namespace Api_Vapp.Data
                 entity.Property(e => e.Id).ValueGeneratedOnAdd();
                 entity.Property(e => e.CostPerPart).HasPrecision(18, 2);
                 entity.Property(e => e.OptOutSuffix).IsRequired().HasMaxLength(50);
-                entity.Property(e => e.IsBillingEnabled).HasDefaultValue(false);
+                entity.Property(e => e.IsBillingEnabled).HasDefaultValue(true);
                 entity.Property(e => e.IsDeleted).HasDefaultValue(false);
                 entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
                 entity.HasIndex(e => e.IsDeleted);

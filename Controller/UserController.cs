@@ -33,6 +33,18 @@ namespace Api_Vapp.Controller
             _notificationSettingsService = notificationSettingsService;
         }
 
+        private string? GetClientIpAddress()
+        {
+            var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString();
+
+            if (Request.Headers.ContainsKey("X-Forwarded-For"))
+            {
+                ipAddress = Request.Headers["X-Forwarded-For"].FirstOrDefault()?.Split(',')[0].Trim();
+            }
+
+            return ipAddress;
+        }
+
         /// <summary>
         /// ایجاد کاربر جدید
         /// </summary>
@@ -381,13 +393,14 @@ namespace Api_Vapp.Controller
         /// 
         /// **نکات مهم:**
         /// - فقط فیلدهای ارسال شده به‌روزرسانی می‌شوند
-        /// - شماره موبایل و کد ملی باید منحصر به فرد باشند
+        /// - تغییر شماره موبایل از این endpoint پشتیبانی نمی‌شود — از /profile/change-phone/request استفاده کنید
+        /// - کد ملی باید منحصر به فرد باشد
         /// - برای آپلود عکس پروفایل از endpoint /profile/upload-image استفاده کنید
         /// </remarks>
         /// <response code="200">پروفایل با موفقیت به‌روزرسانی شد</response>
         /// <response code="400">داده‌های ورودی نامعتبر است</response>
         /// <response code="401">توکن معتبر نیست یا منقضی شده است</response>
-        /// <response code="409">شماره موبایل یا کد ملی قبلاً ثبت شده است</response>
+        /// <response code="409">کد ملی قبلاً ثبت شده است</response>
         /// <response code="500">خطای سرور</response>
         [HttpPost("profile/update")]
         [ProducesResponseType(typeof(ApiResponse<UserProfileDto>), StatusCodes.Status200OK)]
@@ -405,11 +418,108 @@ namespace Api_Vapp.Controller
             if (!ModelState.IsValid)
             {
                 var errors = ExtractModelStateErrors();
-                return StatusCode(400, ApiResponse<UserProfileDto>.BadRequest("داده‌های ورودی نامعتبر است", errors));
+                return StatusCode(400, ApiResponse<UserProfileDto>.BadRequest("داده‌های ورودی نامعتبر است", errors, ErrorCodes.ValidationFailed));
             }
 
             var userId = await GetCurrentUserIdAsync();
             var result = await _userService.UpdateUserProfileAsync(userId, updateDto);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        /// <summary>
+        /// درخواست تغییر شماره موبایل — ارسال OTP به شماره جدید
+        /// </summary>
+        [HttpPost("profile/change-phone/request")]
+        [ProducesResponseType(typeof(ApiResponse<ChangePhoneOtpResponseDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<ChangePhoneOtpResponseDto>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(ApiResponse<ChangePhoneOtpResponseDto>), StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(typeof(ApiResponse<ChangePhoneOtpResponseDto>), StatusCodes.Status429TooManyRequests)]
+        [ProducesResponseType(typeof(ApiResponse<ChangePhoneOtpResponseDto>), StatusCodes.Status503ServiceUnavailable)]
+        public async Task<ActionResult<ApiResponse<ChangePhoneOtpResponseDto>>> RequestChangePhone(
+            [FromBody] RequestChangePhoneDto dto)
+        {
+            if (dto == null)
+            {
+                return StatusCode(400, ApiResponse<ChangePhoneOtpResponseDto>.BadRequest(
+                    "اطلاعات ارسال نشده است",
+                    errorCode: ErrorCodes.InvalidInput));
+            }
+
+            if (!ModelState.IsValid)
+            {
+                var errors = ExtractModelStateErrors();
+                return StatusCode(400, ApiResponse<ChangePhoneOtpResponseDto>.BadRequest(
+                    "داده‌های ورودی نامعتبر است",
+                    errors,
+                    ErrorCodes.ValidationFailed));
+            }
+
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _userService.RequestChangePhoneAsync(userId, dto, GetClientIpAddress());
+            return StatusCode(result.StatusCode, result);
+        }
+
+        /// <summary>
+        /// تایید OTP و اعمال تغییر شماره موبایل
+        /// </summary>
+        [HttpPost("profile/change-phone/verify")]
+        [ProducesResponseType(typeof(ApiResponse<UserProfileDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<UserProfileDto>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(ApiResponse<UserProfileDto>), StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(typeof(ApiResponse<UserProfileDto>), StatusCodes.Status423Locked)]
+        public async Task<ActionResult<ApiResponse<UserProfileDto>>> VerifyChangePhone(
+            [FromBody] VerifyChangePhoneDto dto)
+        {
+            if (dto == null)
+            {
+                return StatusCode(400, ApiResponse<UserProfileDto>.BadRequest(
+                    "اطلاعات ارسال نشده است",
+                    errorCode: ErrorCodes.InvalidInput));
+            }
+
+            if (!ModelState.IsValid)
+            {
+                var errors = ExtractModelStateErrors();
+                return StatusCode(400, ApiResponse<UserProfileDto>.BadRequest(
+                    "داده‌های ورودی نامعتبر است",
+                    errors,
+                    ErrorCodes.ValidationFailed));
+            }
+
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _userService.VerifyChangePhoneAsync(userId, dto, GetClientIpAddress());
+            return StatusCode(result.StatusCode, result);
+        }
+
+        /// <summary>
+        /// ارسال مجدد OTP تغییر شماره موبایل
+        /// </summary>
+        [HttpPost("profile/change-phone/resend")]
+        [ProducesResponseType(typeof(ApiResponse<ChangePhoneOtpResponseDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<ChangePhoneOtpResponseDto>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(ApiResponse<ChangePhoneOtpResponseDto>), StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(typeof(ApiResponse<ChangePhoneOtpResponseDto>), StatusCodes.Status429TooManyRequests)]
+        public async Task<ActionResult<ApiResponse<ChangePhoneOtpResponseDto>>> ResendChangePhoneOtp(
+            [FromBody] RequestChangePhoneDto dto)
+        {
+            if (dto == null)
+            {
+                return StatusCode(400, ApiResponse<ChangePhoneOtpResponseDto>.BadRequest(
+                    "اطلاعات ارسال نشده است",
+                    errorCode: ErrorCodes.InvalidInput));
+            }
+
+            if (!ModelState.IsValid)
+            {
+                var errors = ExtractModelStateErrors();
+                return StatusCode(400, ApiResponse<ChangePhoneOtpResponseDto>.BadRequest(
+                    "داده‌های ورودی نامعتبر است",
+                    errors,
+                    ErrorCodes.ValidationFailed));
+            }
+
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _userService.ResendChangePhoneOtpAsync(userId, dto, GetClientIpAddress());
             return StatusCode(result.StatusCode, result);
         }
 

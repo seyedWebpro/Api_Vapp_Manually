@@ -723,7 +723,7 @@ namespace Api_Vapp.Services
 
             if (form.SaveToPhonebook)
             {
-                var phonebookErrors = ValidatePhonebookSettings(
+                var phonebookErrors = PhonebookSettingsValidationHelper.ValidateForUserForm(
                     form.SaveToPhonebook,
                     form.Notebooks.Select(n => n.ContactNotebookId).ToList(),
                     form.Fields.Select(MapFieldToDto).ToList());
@@ -731,7 +731,7 @@ namespace Api_Vapp.Services
                 if (phonebookErrors.Count > 0)
                 {
                     return ApiResponse<UserFormResponseDto>.BadRequest(
-                        "تنظیمات دفترچه تلفن نامعتبر است",
+                        PhonebookSettingsValidationHelper.ToUserMessage(phonebookErrors),
                         phonebookErrors,
                         ErrorCodes.ValidationFailed);
                 }
@@ -802,7 +802,7 @@ namespace Api_Vapp.Services
 
             if (createDto.SaveToPhonebook)
             {
-                var phonebookErrors = ValidatePhonebookSettings(
+                var phonebookErrors = PhonebookSettingsValidationHelper.ValidateForUserForm(
                     createDto.SaveToPhonebook,
                     createDto.NotebookIds,
                     createDto.Fields);
@@ -810,7 +810,7 @@ namespace Api_Vapp.Services
                 if (phonebookErrors.Count > 0)
                 {
                     return ApiResponse<UserFormResponseDto>.BadRequest(
-                        "تنظیمات دفترچه تلفن نامعتبر است",
+                        PhonebookSettingsValidationHelper.ToUserMessage(phonebookErrors),
                         phonebookErrors,
                         ErrorCodes.ValidationFailed);
                 }
@@ -881,7 +881,7 @@ namespace Api_Vapp.Services
 
             if (form.SaveToPhonebook)
             {
-                var phonebookErrors = ValidatePhonebookSettings(
+                var phonebookErrors = PhonebookSettingsValidationHelper.ValidateForUserForm(
                     form.SaveToPhonebook,
                     notebookIdsForValidation,
                     fieldsForValidation);
@@ -889,7 +889,7 @@ namespace Api_Vapp.Services
                 if (phonebookErrors.Count > 0)
                 {
                     return ApiResponse<UserFormResponseDto>.BadRequest(
-                        "تنظیمات دفترچه تلفن نامعتبر است",
+                        PhonebookSettingsValidationHelper.ToUserMessage(phonebookErrors),
                         phonebookErrors,
                         ErrorCodes.ValidationFailed);
                 }
@@ -1187,36 +1187,6 @@ namespace Api_Vapp.Services
                 {
                     errors.Add($"fieldKey تکراری: {field.FieldKey}");
                 }
-            }
-
-            return errors;
-        }
-
-        private static List<string> ValidatePhonebookSettings(
-            bool saveToPhonebook,
-            IReadOnlyList<int> notebookIds,
-            IReadOnlyList<UserFormFieldDto> fields)
-        {
-            var errors = new List<string>();
-
-            if (!saveToPhonebook)
-            {
-                return errors;
-            }
-
-            if (notebookIds.Count == 0)
-            {
-                errors.Add("حداقل یک دفترچه تلفن باید انتخاب شود");
-            }
-
-            var hasMobileField = fields.Any(f =>
-                f.IsActive &&
-                (string.Equals(f.FieldKey, "mobile", StringComparison.OrdinalIgnoreCase) ||
-                 string.Equals(f.FieldType, "mobile", StringComparison.OrdinalIgnoreCase)));
-
-            if (!hasMobileField)
-            {
-                errors.Add("برای ذخیره در دفترچه، فیلد موبایل فعال الزامی است");
             }
 
             return errors;

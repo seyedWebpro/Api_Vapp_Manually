@@ -37,5 +37,6 @@ namespace Api_Vapp.Constants
         public const string SpecialOccasion = "SpecialOccasion";
         public const string AutomatedMessage = "AutomatedMessage";
         public const string AutomationType = "AutomationType";
+        public const string AppBanner = "AppBanner";
     }
 }

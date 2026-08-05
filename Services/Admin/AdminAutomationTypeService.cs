@@ -2,6 +2,7 @@ using Api_Vapp.Constants;
 using Api_Vapp.Data;
 using Api_Vapp.DTOs.Admin;
 using Api_Vapp.DTOs.Common;
+using Api_Vapp.DTOs.File;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
 using Api_Vapp.Services.Audit;
@@ -20,17 +21,20 @@ namespace Api_Vapp.Services.Admin
         private readonly Api_Context _context;
         private readonly IAuditService _audit;
         private readonly IMemoryCache _cache;
+        private readonly IFileUploadService _fileUploadService;
         private readonly ILogger<AdminAutomationTypeService> _logger;
 
         public AdminAutomationTypeService(
             Api_Context context,
             IAuditService audit,
             IMemoryCache cache,
+            IFileUploadService fileUploadService,
             ILogger<AdminAutomationTypeService> logger)
         {
             _context = context;
             _audit = audit;
             _cache = cache;
+            _fileUploadService = fileUploadService;
             _logger = logger;
         }
 
@@ -63,9 +67,7 @@ namespace Api_Vapp.Services.Admin
 
                 foreach (var type in types)
                 {
-                    type.IsSystemManaged = AutomationTypeCodes.IsKnown(type.Code);
-                    type.CanChangeCode = false;
-                    type.CanDelete = false;
+                    ApplyFlags(type);
                 }
 
                 _logger.LogInformation("پایان دریافت انواع پیام خودکار — Count: {Count}", types.Count);
@@ -101,9 +103,7 @@ namespace Api_Vapp.Services.Admin
                 if (type == null)
                     return ApiResponse<AutomationTypeAdminResponseDto>.NotFound("نوع پیام خودکار یافت نشد");
 
-                type.IsSystemManaged = AutomationTypeCodes.IsKnown(type.Code);
-                type.CanChangeCode = false;
-                type.CanDelete = false;
+                ApplyFlags(type);
 
                 return ApiResponse<AutomationTypeAdminResponseDto>.CreateSuccess(type);
             }
@@ -139,18 +139,72 @@ namespace Api_Vapp.Services.Admin
                         errorCode: ErrorCodes.ValidationFailed);
                 }
 
+                string? uploadedIconPath = null;
+                if (dto.IconFile != null && dto.IconFile.Length > 0)
+                {
+                    var validationError = SecureFileValidator.ValidateImage(
+                        dto.IconFile,
+                        SecureFileValidator.IconMaxBytes,
+                        "۲ مگابایت");
+                    if (!string.IsNullOrEmpty(validationError))
+                    {
+                        return ApiResponse<AutomationTypeAdminResponseDto>.BadRequest(
+                            validationError,
+                            errorCode: ErrorCodes.ValidationFailed);
+                    }
+
+                    try
+                    {
+                        uploadedIconPath = await _fileUploadService.UploadFileAsync(
+                            dto.IconFile,
+                            FileUploadConstants.EntityType_AutomationType,
+                            type.Id,
+                            FileUploadConstants.SubFolder_Images);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "خطا در آپلود آیکون نوع پیام خودکار — Id: {Id}", id);
+                        return ApiResponse<AutomationTypeAdminResponseDto>.InternalServerError(
+                            ControlledErrorHelper.FileUploadFailed);
+                    }
+                }
+
                 var before = Snapshot(type);
+                var oldIcon = type.Icon;
 
                 type.Name = name;
                 type.Description = string.IsNullOrWhiteSpace(dto.Description) ? null : dto.Description.Trim();
-                type.Icon = string.IsNullOrWhiteSpace(dto.Icon) ? null : dto.Icon.Trim();
                 type.SortOrder = dto.SortOrder;
                 type.IsActive = dto.IsActive;
                 type.UpdatedAt = DateTime.UtcNow;
 
+                if (uploadedIconPath != null)
+                {
+                    type.Icon = uploadedIconPath;
+                }
+                else if (dto.ClearIcon)
+                {
+                    type.Icon = null;
+                }
+
                 await _context.SaveChangesAsync();
 
-                // اپ فقط از کش انواع فعال می‌خواند — بلافاصله باطل شود
+                if ((uploadedIconPath != null || dto.ClearIcon) && IsUploadedIconPath(oldIcon))
+                {
+                    try
+                    {
+                        await _fileUploadService.DeleteFileAsync(
+                            oldIcon!,
+                            FileUploadConstants.EntityType_AutomationType,
+                            type.Id,
+                            FileUploadConstants.SubFolder_Images);
+                    }
+                    catch (Exception deleteEx)
+                    {
+                        _logger.LogWarning(deleteEx, "خطا در حذف آیکون قدیمی نوع پیام خودکار — Path: {Path}", oldIcon);
+                    }
+                }
+
                 _cache.Remove(AutomationTypeCacheKeys.ActiveList);
 
                 await _audit.WriteAsync(new AuditEntry
@@ -173,6 +227,78 @@ namespace Api_Vapp.Services.Admin
             }
         }
 
+        public async Task<ApiResponse<bool>> DeleteAsync(int id)
+        {
+            try
+            {
+                _logger.LogInformation("شروع حذف نوع پیام خودکار — Id: {Id}", id);
+
+                var type = await _context.AutomationTypes.FirstOrDefaultAsync(t => t.Id == id && !t.IsDeleted);
+                if (type == null)
+                    return ApiResponse<bool>.NotFound("نوع پیام خودکار یافت نشد");
+
+                var before = Snapshot(type);
+                var oldIcon = type.Icon;
+
+                type.IsDeleted = true;
+                type.IsActive = false;
+                type.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+
+                if (IsUploadedIconPath(oldIcon))
+                {
+                    try
+                    {
+                        await _fileUploadService.DeleteFileAsync(
+                            oldIcon!,
+                            FileUploadConstants.EntityType_AutomationType,
+                            type.Id,
+                            FileUploadConstants.SubFolder_Images);
+                    }
+                    catch (Exception deleteEx)
+                    {
+                        _logger.LogWarning(deleteEx, "خطا در حذف آیکون نوع پیام خودکار — Path: {Path}", oldIcon);
+                    }
+                }
+
+                _cache.Remove(AutomationTypeCacheKeys.ActiveList);
+
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Admin,
+                    Action = AuditActions.AutomationTypeDeleted,
+                    EntityType = AuditEntityTypes.AutomationType,
+                    EntityId = type.Id.ToString(),
+                    Before = before,
+                    After = new { type.Id, type.Code, isDeleted = true, isActive = false }
+                });
+
+                _logger.LogInformation("پایان حذف نوع پیام خودکار — Id: {Id}, Code: {Code}", id, type.Code);
+                return ApiResponse<bool>.CreateSuccess(true, "نوع پیام خودکار حذف شد");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "خطا در حذف نوع پیام خودکار — Id: {Id}", id);
+                return ApiResponse<bool>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
+        private static void ApplyFlags(AutomationTypeAdminResponseDto type)
+        {
+            type.IsSystemManaged = AutomationTypeCodes.IsKnown(type.Code);
+            type.CanChangeCode = false;
+            type.CanDelete = true;
+        }
+
+        private static bool IsUploadedIconPath(string? icon)
+        {
+            if (string.IsNullOrWhiteSpace(icon))
+                return false;
+
+            return icon.Contains('/') || icon.Contains('\\')
+                || icon.Contains("uploads", StringComparison.OrdinalIgnoreCase);
+        }
+
         private static object Snapshot(AutomationTypeDefinition type) => new
         {
             type.Id,
@@ -184,20 +310,22 @@ namespace Api_Vapp.Services.Admin
             type.IsActive
         };
 
-        private static AutomationTypeAdminResponseDto Map(AutomationTypeDefinition type) => new()
+        private static AutomationTypeAdminResponseDto Map(AutomationTypeDefinition type)
         {
-            Id = type.Id,
-            Code = type.Code,
-            Name = type.Name,
-            Description = type.Description,
-            Icon = type.Icon,
-            SortOrder = type.SortOrder,
-            IsActive = type.IsActive,
-            IsSystemManaged = AutomationTypeCodes.IsKnown(type.Code),
-            CanChangeCode = false,
-            CanDelete = false,
-            CreatedAt = type.CreatedAt,
-            UpdatedAt = type.UpdatedAt
-        };
+            var dto = new AutomationTypeAdminResponseDto
+            {
+                Id = type.Id,
+                Code = type.Code,
+                Name = type.Name,
+                Description = type.Description,
+                Icon = type.Icon,
+                SortOrder = type.SortOrder,
+                IsActive = type.IsActive,
+                CreatedAt = type.CreatedAt,
+                UpdatedAt = type.UpdatedAt
+            };
+            ApplyFlags(dto);
+            return dto;
+        }
     }
 }

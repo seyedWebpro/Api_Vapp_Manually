@@ -99,7 +99,7 @@ namespace Api_Vapp.Services
         /// 
         /// مثال: contact/123/profile/images/a1b2c3d4_20241129120000.jpg
         /// </summary>
-        public async Task<string> UploadFileAsync(IFormFile file, string entityType, int entityId, string? subFolder = null)
+        public async Task<string> UploadFileAsync(IFormFile file, string entityType, int entityId, string? subFolder = null, CancellationToken cancellationToken = default)
         {
             _logger.LogDebug("📤 شروع آپلود فایل: {FileName}, EntityType: {EntityType}, EntityId: {EntityId}, SubFolder: {SubFolder}", 
                 file?.FileName, entityType, entityId, subFolder ?? "none");
@@ -145,8 +145,14 @@ namespace Api_Vapp.Services
                     if (source.CanSeek)
                         source.Position = 0;
 
-                    await using var destination = new FileStream(filePath, FileMode.Create);
-                    await source.CopyToAsync(destination);
+                    await using var destination = new FileStream(
+                        filePath,
+                        FileMode.Create,
+                        FileAccess.Write,
+                        FileShare.None,
+                        1024 * 64,
+                        FileOptions.Asynchronous | FileOptions.SequentialScan);
+                    await source.CopyToAsync(destination, 1024 * 80, cancellationToken);
                 }
 
                 string relativePath = GetRelativePath(filePath);
@@ -154,19 +160,28 @@ namespace Api_Vapp.Services
 
                 return relativePath;
             }
+            catch (OperationCanceledException)
+            {
+                TryDeletePartialFile(filePath);
+                _logger.LogInformation("⏹ آپلود لغو شد: {FileName}", file.FileName);
+                throw;
+            }
             catch (UnauthorizedAccessException ex)
             {
+                TryDeletePartialFile(filePath);
                 _logger.LogError(ex, "❌ خطای دسترسی: امکان نوشتن فایل در مسیر {FilePath} وجود ندارد.", filePath);
                 throw new UnauthorizedAccessException(
                     "دسترسی به مسیر فایل امکان‌پذیر نیست. لطفاً با پشتیبانی تماس بگیرید.", ex);
             }
             catch (DirectoryNotFoundException ex)
             {
+                TryDeletePartialFile(filePath);
                 _logger.LogError(ex, "❌ پوشه یافت نشد: {FilePath}", filePath);
                 throw new DirectoryNotFoundException(ControlledErrorHelper.FileUploadFailed, ex);
             }
             catch (Exception ex)
             {
+                TryDeletePartialFile(filePath);
                 _logger.LogError(ex, "❌ خطا در آپلود فایل: {FileName}", file.FileName);
                 throw new InvalidOperationException(ControlledErrorHelper.FileUploadFailed, ex);
             }
@@ -473,6 +488,23 @@ namespace Api_Vapp.Services
         }
 
         #region Helper Methods
+
+        private void TryDeletePartialFile(string filePath)
+        {
+            try
+            {
+                if (File.Exists(filePath))
+                {
+                    File.Delete(filePath);
+                    _logger.LogDebug("🗑️ فایل ناقص حذف شد: {FilePath}", filePath);
+                    CleanupEmptyDirectories(Path.GetDirectoryName(filePath));
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "⚠️ خطا در حذف فایل ناقص: {FilePath}", filePath);
+            }
+        }
 
         private void ValidateFile(IFormFile? file)
         {

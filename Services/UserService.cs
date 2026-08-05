@@ -1,4 +1,5 @@
 using Api_Vapp.Constants;
+using Api_Vapp.DTOs.Auth;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.DTOs.File;
 using Api_Vapp.DTOs.User;
@@ -8,6 +9,8 @@ using Api_Vapp.Services.Audit;
 using Api_Vapp.Utilities;
 using BCrypt.Net;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using System.IO;
 
@@ -18,6 +21,11 @@ namespace Api_Vapp.Services
     /// </summary>
     public class UserService : IUserService
     {
+        private const int ChangePhoneOtpExpirationMinutes = 5;
+        private const int ChangePhoneMaxOtpAttempts = 5;
+        private const int ChangePhoneOtpLockoutMinutes = 15;
+        private const int ChangePhoneOtpRateLimitMinutes = 2;
+
         private readonly IUserRepository _userRepository;
         private readonly Api_Vapp.Data.Api_Context _context;
         private readonly ILogger<UserService> _logger;
@@ -26,6 +34,9 @@ namespace Api_Vapp.Services
         private readonly IWalletReferralService _walletReferralService;
         private readonly IAuditService _audit;
         private readonly IUserPushNotifier _pushNotifier;
+        private readonly IMemoryCache _cache;
+        private readonly ISmsService _smsService;
+        private readonly IHostEnvironment _environment;
 
         public UserService(
             IUserRepository userRepository, 
@@ -35,7 +46,10 @@ namespace Api_Vapp.Services
             IRefreshTokenService refreshTokenService,
             IWalletReferralService walletReferralService,
             IAuditService audit,
-            IUserPushNotifier pushNotifier)
+            IUserPushNotifier pushNotifier,
+            IMemoryCache cache,
+            ISmsService smsService,
+            IHostEnvironment environment)
         {
             _userRepository = userRepository;
             _context = context;
@@ -45,6 +59,9 @@ namespace Api_Vapp.Services
             _walletReferralService = walletReferralService;
             _audit = audit;
             _pushNotifier = pushNotifier;
+            _cache = cache;
+            _smsService = smsService;
+            _environment = environment;
         }
 
         private static object SafeUserSnapshot(User user) => new
@@ -610,25 +627,15 @@ namespace Api_Vapp.Services
                     }
                 }
 
+                // تغییر شماره فقط از طریق OTP (profile/change-phone/*)
                 if (!string.IsNullOrWhiteSpace(updateDto.PhoneNumber))
                 {
                     var trimmedPhoneNumber = updateDto.PhoneNumber.Trim();
-                    // بررسی فرمت شماره تلفن
-                    if (!System.Text.RegularExpressions.Regex.IsMatch(trimmedPhoneNumber, @"^09\d{9}$"))
+                    if (!string.Equals(user.PhoneNumber, trimmedPhoneNumber, StringComparison.Ordinal))
                     {
-                        return ApiResponse<UserProfileDto>.BadRequest("فرمت شماره تلفن صحیح نیست. شماره باید با 09 شروع شود و 11 رقم باشد");
-                    }
-
-                    // بررسی تکراری نبودن شماره تلفن
-                    if (user.PhoneNumber != trimmedPhoneNumber)
-                    {
-                        var existingUser = await _userRepository.GetByPhoneNumberAsync(trimmedPhoneNumber);
-                        if (existingUser != null && existingUser.Id != userId && !existingUser.IsDeleted)
-                        {
-                            return ApiResponse<UserProfileDto>.BadRequest("کاربری با این شماره تلفن قبلاً ثبت شده است");
-                        }
-                        user.PhoneNumber = trimmedPhoneNumber;
-                        hasChanges = true;
+                        return ApiResponse<UserProfileDto>.BadRequest(
+                            "برای تغییر شماره موبایل باید کد تایید دریافت کنید",
+                            errorCode: ErrorCodes.InvalidInput);
                     }
                 }
 
@@ -658,6 +665,385 @@ namespace Api_Vapp.Services
                 throw;
             }
         }
+
+        public async Task<ApiResponse<ChangePhoneOtpResponseDto>> RequestChangePhoneAsync(
+            int userId,
+            RequestChangePhoneDto dto,
+            string? ipAddress = null)
+        {
+            try
+            {
+                var validation = await ValidateChangePhoneRequestAsync(userId, dto.PhoneNumber);
+                if (validation.ErrorResponse != null)
+                    return validation.ErrorResponse;
+
+                return await SendChangePhoneOtpInternalAsync(
+                    validation.User!,
+                    validation.NormalizedPhone!,
+                    requireExistingPending: false,
+                    ipAddress);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error requesting change-phone OTP for user {UserId}", userId);
+                return ApiResponse<ChangePhoneOtpResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
+        public async Task<ApiResponse<ChangePhoneOtpResponseDto>> ResendChangePhoneOtpAsync(
+            int userId,
+            RequestChangePhoneDto dto,
+            string? ipAddress = null)
+        {
+            try
+            {
+                var validation = await ValidateChangePhoneRequestAsync(userId, dto.PhoneNumber);
+                if (validation.ErrorResponse != null)
+                    return validation.ErrorResponse;
+
+                return await SendChangePhoneOtpInternalAsync(
+                    validation.User!,
+                    validation.NormalizedPhone!,
+                    requireExistingPending: true,
+                    ipAddress);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error resending change-phone OTP for user {UserId}", userId);
+                return ApiResponse<ChangePhoneOtpResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
+        public async Task<ApiResponse<UserProfileDto>> VerifyChangePhoneAsync(
+            int userId,
+            VerifyChangePhoneDto dto,
+            string? ipAddress = null)
+        {
+            try
+            {
+                if (userId <= 0)
+                    return ApiResponse<UserProfileDto>.BadRequest("شناسه کاربر نامعتبر است", errorCode: ErrorCodes.InvalidUserId);
+
+                var newPhone = dto.PhoneNumber?.Trim() ?? string.Empty;
+                if (!System.Text.RegularExpressions.Regex.IsMatch(newPhone, @"^09\d{9}$"))
+                {
+                    return ApiResponse<UserProfileDto>.BadRequest(
+                        "فرمت شماره تلفن صحیح نیست. شماره باید با 09 شروع شود و 11 رقم باشد",
+                        errorCode: ErrorCodes.ValidationFailed);
+                }
+
+                var user = await _userRepository.GetByIdAsync(userId);
+                if (user == null || user.IsDeleted)
+                    return ApiResponse<UserProfileDto>.NotFound("کاربر یافت نشد");
+
+                if (string.Equals(user.PhoneNumber, newPhone, StringComparison.Ordinal))
+                {
+                    return ApiResponse<UserProfileDto>.BadRequest(
+                        "شماره جدید با شماره فعلی یکسان است",
+                        errorCode: ErrorCodes.InvalidInput);
+                }
+
+                var attemptKey = ChangePhoneAttemptKey(userId);
+                var attemptData = _cache.Get<OtpAttemptCacheDto>(attemptKey);
+                if (attemptData?.LockedUntil != null && attemptData.LockedUntil > DateTime.UtcNow)
+                {
+                    var remainingMinutes = Math.Max(
+                        1,
+                        (int)Math.Ceiling((attemptData.LockedUntil.Value - DateTime.UtcNow).TotalMinutes));
+
+                    _logger.LogWarning(
+                        "Change-phone OTP locked for user {UserId} from IP {IpAddress}",
+                        userId,
+                        ipAddress);
+
+                    return ApiResponse<UserProfileDto>.Error(
+                        $"به دلیل تلاش‌های ناموفق، تا {remainingMinutes} دقیقه امکان تأیید وجود ندارد",
+                        423,
+                        errorCode: ErrorCodes.OtpLocked);
+                }
+
+                var otpCacheKey = ChangePhoneOtpKey(userId);
+                if (!_cache.TryGetValue(otpCacheKey, out ChangePhoneOtpCacheDto? cached) || cached == null)
+                {
+                    return ApiResponse<UserProfileDto>.BadRequest(
+                        ControlledErrorHelper.OtpExpired,
+                        errorCode: ErrorCodes.OtpExpired);
+                }
+
+                if (cached.UserId != userId ||
+                    !string.Equals(cached.NewPhoneNumber, newPhone, StringComparison.Ordinal))
+                {
+                    return ApiResponse<UserProfileDto>.BadRequest(
+                        "شماره موبایل با درخواست تغییر مطابقت ندارد. لطفاً مجدداً کد تایید دریافت کنید",
+                        errorCode: ErrorCodes.InvalidInput);
+                }
+
+                var cachedOtp = cached.OtpCode?.Trim() ?? string.Empty;
+                var userOtp = dto.OtpCode?.Trim() ?? string.Empty;
+
+                // DEV ONLY — TODO(production): قبل از release حذف شود (جستجو: DEV-OTP-VERIFY)
+                _logger.LogInformation(
+                    "[DEV-OTP-VERIFY] ChangePhone Cached OTP: {CachedOtp}, User Input: {UserOtp}, UserId: {UserId}",
+                    cachedOtp,
+                    userOtp,
+                    userId);
+
+                if (!string.Equals(cachedOtp, userOtp, StringComparison.Ordinal))
+                {
+                    attemptData ??= new OtpAttemptCacheDto
+                    {
+                        AttemptCount = 0,
+                        FirstAttemptTime = DateTime.UtcNow
+                    };
+                    attemptData.AttemptCount++;
+
+                    if (attemptData.AttemptCount >= ChangePhoneMaxOtpAttempts)
+                    {
+                        attemptData.LockedUntil = DateTime.UtcNow.AddMinutes(ChangePhoneOtpLockoutMinutes);
+                        _logger.LogWarning(
+                            "Change-phone OTP attempts exceeded for user {UserId} from IP {IpAddress}",
+                            userId,
+                            ipAddress);
+                    }
+
+                    SetChangePhoneCacheData(attemptKey, attemptData, ChangePhoneOtpLockoutMinutes + 5);
+
+                    return ApiResponse<UserProfileDto>.BadRequest(
+                        ControlledErrorHelper.OtpIncorrect,
+                        errorCode: ErrorCodes.OtpIncorrect);
+                }
+
+                // بررسی مجدد تکراری نبودن (ممکن است بین request و verify ثبت شده باشد)
+                var existingUser = await _userRepository.GetByPhoneNumberAsync(newPhone);
+                if (existingUser != null && existingUser.Id != userId && !existingUser.IsDeleted)
+                {
+                    _cache.Remove(otpCacheKey);
+                    _cache.Remove(attemptKey);
+                    return ApiResponse<UserProfileDto>.BadRequest(
+                        "کاربری با این شماره تلفن قبلاً ثبت شده است",
+                        errorCode: ErrorCodes.InvalidInput);
+                }
+
+                var oldPhone = user.PhoneNumber;
+                user.PhoneNumber = newPhone;
+                user.IsPhoneVerified = true;
+                user.UpdatedAt = DateTime.UtcNow;
+                await _userRepository.UpdateAsync(user);
+
+                _cache.Remove(otpCacheKey);
+                _cache.Remove(attemptKey);
+
+                _logger.LogInformation(
+                    "Phone changed for user {UserId} from {OldPhone} to {NewPhone} from IP {IpAddress}",
+                    userId,
+                    oldPhone,
+                    newPhone,
+                    ipAddress);
+
+                var profileResult = await GetUserProfileAsync(userId);
+                if (profileResult.Success && profileResult.Data != null)
+                {
+                    profileResult.Message = "شماره موبایل با موفقیت تغییر کرد";
+                }
+
+                return profileResult;
+            }
+            catch (DbUpdateException ex)
+            {
+                _logger.LogError(ex, "Database error verifying change-phone for user {UserId}", userId);
+                return ApiResponse<UserProfileDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error verifying change-phone for user {UserId}", userId);
+                return ApiResponse<UserProfileDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
+        private async Task<(
+            User? User,
+            string? NormalizedPhone,
+            ApiResponse<ChangePhoneOtpResponseDto>? ErrorResponse)> ValidateChangePhoneRequestAsync(
+            int userId,
+            string? phoneNumber)
+        {
+            if (userId <= 0)
+            {
+                return (null, null, ApiResponse<ChangePhoneOtpResponseDto>.BadRequest(
+                    "شناسه کاربر نامعتبر است",
+                    errorCode: ErrorCodes.InvalidUserId));
+            }
+
+            var newPhone = phoneNumber?.Trim() ?? string.Empty;
+            if (!System.Text.RegularExpressions.Regex.IsMatch(newPhone, @"^09\d{9}$"))
+            {
+                return (null, null, ApiResponse<ChangePhoneOtpResponseDto>.BadRequest(
+                    "فرمت شماره تلفن صحیح نیست. شماره باید با 09 شروع شود و 11 رقم باشد",
+                    errorCode: ErrorCodes.ValidationFailed));
+            }
+
+            var user = await _userRepository.GetByIdAsync(userId);
+            if (user == null || user.IsDeleted)
+            {
+                return (null, null, ApiResponse<ChangePhoneOtpResponseDto>.NotFound("کاربر یافت نشد"));
+            }
+
+            if (string.Equals(user.PhoneNumber, newPhone, StringComparison.Ordinal))
+            {
+                return (null, null, ApiResponse<ChangePhoneOtpResponseDto>.BadRequest(
+                    "شماره جدید با شماره فعلی یکسان است",
+                    errorCode: ErrorCodes.InvalidInput));
+            }
+
+            var existingUser = await _userRepository.GetByPhoneNumberAsync(newPhone);
+            if (existingUser != null && existingUser.Id != userId && !existingUser.IsDeleted)
+            {
+                return (null, null, ApiResponse<ChangePhoneOtpResponseDto>.BadRequest(
+                    "کاربری با این شماره تلفن قبلاً ثبت شده است",
+                    errorCode: ErrorCodes.InvalidInput));
+            }
+
+            return (user, newPhone, null);
+        }
+
+        private async Task<ApiResponse<ChangePhoneOtpResponseDto>> SendChangePhoneOtpInternalAsync(
+            User user,
+            string newPhone,
+            bool requireExistingPending,
+            string? ipAddress)
+        {
+            var (isRateLimited, retryAfterSeconds) = CheckChangePhoneRateLimit(newPhone);
+            if (isRateLimited)
+            {
+                return new ApiResponse<ChangePhoneOtpResponseDto>
+                {
+                    StatusCode = 429,
+                    Success = false,
+                    Message = $"لطفاً {retryAfterSeconds} ثانیه صبر کنید و مجدداً تلاش کنید",
+                    ErrorCode = ErrorCodes.OtpRateLimited,
+                    Data = new ChangePhoneOtpResponseDto
+                    {
+                        ExpiresInSeconds = 0,
+                        RetryAfterSeconds = retryAfterSeconds
+                    }
+                };
+            }
+
+            var otpCacheKey = ChangePhoneOtpKey(user.Id);
+
+            if (requireExistingPending)
+            {
+                if (!_cache.TryGetValue(otpCacheKey, out ChangePhoneOtpCacheDto? existing) || existing == null)
+                {
+                    return ApiResponse<ChangePhoneOtpResponseDto>.BadRequest(
+                        "درخواست تغییر شماره منقضی شده است. لطفاً مجدداً درخواست دهید",
+                        errorCode: ErrorCodes.OtpExpired);
+                }
+
+                if (!string.Equals(existing.NewPhoneNumber, newPhone, StringComparison.Ordinal))
+                {
+                    return ApiResponse<ChangePhoneOtpResponseDto>.BadRequest(
+                        "شماره موبایل با درخواست قبلی مطابقت ندارد",
+                        errorCode: ErrorCodes.InvalidInput);
+                }
+            }
+
+            var otpCode = await _smsService.GenerateOtpAsync();
+            var cacheData = new ChangePhoneOtpCacheDto
+            {
+                OtpCode = otpCode,
+                NewPhoneNumber = newPhone,
+                UserId = user.Id
+            };
+
+            SetChangePhoneCacheData(otpCacheKey, cacheData, ChangePhoneOtpExpirationMinutes);
+            SetChangePhoneRateLimit(newPhone, ChangePhoneOtpRateLimitMinutes);
+            _cache.Remove(ChangePhoneAttemptKey(user.Id));
+
+            var sent = await _smsService.SendOtpAsync(newPhone, otpCode, "VerifyOtp");
+            if (!sent)
+            {
+                if (!_environment.IsDevelopment())
+                {
+                    _cache.Remove(otpCacheKey);
+                    _cache.Remove(ChangePhoneRateLimitKey(newPhone));
+                    _logger.LogError(
+                        "Failed to send change-phone OTP SMS for user {UserId}, phone {PhoneNumber}",
+                        user.Id,
+                        newPhone);
+                    return ApiResponse<ChangePhoneOtpResponseDto>.Error(
+                        ControlledErrorHelper.SmsFailed,
+                        503,
+                        errorCode: ErrorCodes.SmsFailed);
+                }
+
+                _logger.LogWarning(
+                    "Change-phone OTP SMS failed in Development — continuing with cached OTP for user {UserId}, phone {PhoneNumber}",
+                    user.Id,
+                    newPhone);
+            }
+
+            DevOtpLogger.Write(_logger, newPhone, otpCode, "ChangePhone");
+
+            _logger.LogInformation(
+                "Change-phone OTP ready for user {UserId}, phone {PhoneNumber}, smsSent {SmsSent}, from IP {IpAddress}",
+                user.Id,
+                newPhone,
+                sent,
+                ipAddress);
+
+            return ApiResponse<ChangePhoneOtpResponseDto>.CreateSuccess(
+                new ChangePhoneOtpResponseDto
+                {
+                    ExpiresInSeconds = ChangePhoneOtpExpirationMinutes * 60,
+                    RetryAfterSeconds = ChangePhoneOtpRateLimitMinutes * 60,
+                    OtpCode = otpCode
+                },
+                sent ? "کد تایید به شماره جدید ارسال شد" : "کد تایید آماده است (پیامک در Development ارسال نشد)");
+        }
+
+        private (bool isRateLimited, int? retryAfterSeconds) CheckChangePhoneRateLimit(string phoneNumber)
+        {
+            var rateLimitKey = ChangePhoneRateLimitKey(phoneNumber);
+            if (_cache.TryGetValue(rateLimitKey, out RateLimitInfoDto? rateLimitInfo) && rateLimitInfo != null)
+            {
+                if (rateLimitInfo.ExpiresAt > DateTime.UtcNow)
+                {
+                    var remainingSeconds = (int)Math.Ceiling((rateLimitInfo.ExpiresAt - DateTime.UtcNow).TotalSeconds);
+                    if (remainingSeconds > 0)
+                        return (true, remainingSeconds);
+                }
+
+                _cache.Remove(rateLimitKey);
+            }
+
+            return (false, null);
+        }
+
+        private void SetChangePhoneRateLimit(string phoneNumber, int minutes)
+        {
+            var rateLimitInfo = new RateLimitInfoDto
+            {
+                ExpiresAt = DateTime.UtcNow.AddMinutes(minutes),
+                IsActive = true
+            };
+            SetChangePhoneCacheData(ChangePhoneRateLimitKey(phoneNumber), rateLimitInfo, minutes);
+        }
+
+        private void SetChangePhoneCacheData<T>(string key, T data, int expirationMinutes)
+        {
+            var cacheOptions = new MemoryCacheEntryOptions
+            {
+                AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(expirationMinutes),
+                Priority = CacheItemPriority.Normal,
+                Size = 1
+            };
+            _cache.Set(key, data, cacheOptions);
+        }
+
+        private static string ChangePhoneOtpKey(int userId) => $"ChangePhoneOtp_{userId}";
+        private static string ChangePhoneAttemptKey(int userId) => $"ChangePhoneOtpAttempt_{userId}";
+        private static string ChangePhoneRateLimitKey(string phoneNumber) => $"ChangePhoneOtpRateLimit_{phoneNumber}";
 
         public async Task<ApiResponse<string>> UploadProfileImageAsync(int userId, Microsoft.AspNetCore.Http.IFormFile imageFile)
         {

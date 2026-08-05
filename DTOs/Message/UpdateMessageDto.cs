@@ -9,6 +9,11 @@ namespace Api_Vapp.DTOs.Message
     public class UpdateMessageDto
     {
         public string? Content { get; set; }
+
+        /// <summary>
+        /// شناسه قالب استفاده‌شده (اختیاری). برای حذف ارتباط با قالب، مقدار 0 ارسال شود.
+        /// </summary>
+        public int? TemplateId { get; set; }
     }
 }
 

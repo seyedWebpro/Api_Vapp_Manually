@@ -15,10 +15,14 @@ namespace Api_Vapp.Models
 
         public bool HasCost { get; set; }
 
+        /// <summary>
+        /// قیمت خدمت — وقتی HasCost=true الزامی است
+        /// </summary>
         public decimal? Price { get; set; }
 
-        public decimal? ServiceCost { get; set; }
-
+        /// <summary>
+        /// بیعانه — اختیاری
+        /// </summary>
         public decimal? DepositAmount { get; set; }
 
         /// <summary>

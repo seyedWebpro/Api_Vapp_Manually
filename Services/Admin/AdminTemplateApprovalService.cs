@@ -194,10 +194,16 @@ namespace Api_Vapp.Services.Admin
             Name = template.Name,
             Content = template.Content,
             Category = template.Category,
+            IsDefault = template.IsDefault,
+            IsActive = template.IsActive,
             ApprovalStatus = template.ApprovalStatus,
             RejectionReason = template.RejectionReason,
             CreatedAt = template.CreatedAt,
-            ApprovedAt = template.ApprovedAt
+            ApprovedAt = template.ApprovedAt,
+            UpdatedAt = template.UpdatedAt,
+            SkipsMessageApprovalQueue = template.ApprovalStatus == AdminApprovalStatuses.Approved
+                && template.IsActive
+                && !template.IsDeleted
         };
     }
 }

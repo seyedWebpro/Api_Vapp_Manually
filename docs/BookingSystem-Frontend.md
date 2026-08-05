@@ -108,7 +108,6 @@ confirm         →  draftId  →  سیستم + publicUrl
       "durationMinutes": 60,
       "hasCost": true,
       "price": 500000,
-      "serviceCost": 350000,
       "depositAmount": 100000
     }
   ]
@@ -117,6 +116,9 @@ confirm         →  draftId  →  سیستم + publicUrl
 
 - حداقل **یک خدمت**
 - `serviceTempId` را کلاینت بسازد (UUID) — در مراحل ۳ و ۴ همین ID استفاده می‌شود
+- `hasCost=true` → فقط **`price`** الزامی است (یک فیلد قیمت)
+- `depositAmount` اختیاری است؛ اگر ارسال شود نباید منفی یا بیشتر از `price` باشد
+- فیلد `serviceCost` حذف شده — ارسال نکنید
 
 ---
 

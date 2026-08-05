@@ -597,6 +597,43 @@ Content-Type: application/json
 GET {{Api_Vapp_HostAddress}}/api/User/profile
 Authorization: Bearer {{token}}
 
+### به‌روزرسانی پروفایل (بدون تغییر شماره — شماره فقط با OTP)
+POST {{Api_Vapp_HostAddress}}/api/User/profile/update
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "fullName": "نام تست"
+}
+
+### درخواست تغییر شماره موبایل — ارسال OTP به شماره جدید
+POST {{Api_Vapp_HostAddress}}/api/User/profile/change-phone/request
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "phoneNumber": "09121234567"
+}
+
+### تایید OTP و اعمال تغییر شماره
+POST {{Api_Vapp_HostAddress}}/api/User/profile/change-phone/verify
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "phoneNumber": "09121234567",
+  "otpCode": "1234"
+}
+
+### ارسال مجدد OTP تغییر شماره
+POST {{Api_Vapp_HostAddress}}/api/User/profile/change-phone/resend
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "phoneNumber": "09121234567"
+}
+
 ### ادمین — تنظیمات رفرال
 GET {{Api_Vapp_HostAddress}}/api/Admin/WalletReferralSetting
 Authorization: Bearer {{adminToken}}
@@ -756,15 +793,91 @@ Authorization: Bearer {{accessToken}}
 GET {{Api_Vapp_HostAddress}}/api/Admin/AutomationType/1
 Authorization: Bearer {{accessToken}}
 
-### به‌روزرسانی نوع
+### به‌روزرسانی نوع (multipart — آیکون فایل)
+# با curl:
+# curl -X POST "$host/api/Admin/AutomationType/1/update" -H "Authorization: Bearer $token" \
+#   -F "Name=تبریک تولد" -F "Description=..." -F "SortOrder=1" -F "IsActive=true" \
+#   -F "ClearIcon=false" -F "IconFile=@./icon.png;type=image/png"
 POST {{Api_Vapp_HostAddress}}/api/Admin/AutomationType/1/update
 Authorization: Bearer {{accessToken}}
-Content-Type: application/json
+Content-Type: multipart/form-data; boundary=----VappBoundary
 
-{
-  "name": "تبریک تولد",
-  "description": "ارسال پیام خودکار در روز تولد مشتریان",
-  "icon": "🎂",
-  "sortOrder": 1,
-  "isActive": true
-}
+------VappBoundary
+Content-Disposition: form-data; name="Name"
+
+تبریک تولد
+------VappBoundary
+Content-Disposition: form-data; name="Description"
+
+ارسال پیام خودکار در روز تولد مشتریان
+------VappBoundary
+Content-Disposition: form-data; name="SortOrder"
+
+1
+------VappBoundary
+Content-Disposition: form-data; name="IsActive"
+
+true
+------VappBoundary
+Content-Disposition: form-data; name="ClearIcon"
+
+false
+------VappBoundary--
+
+### حذف نرم نوع پیام خودکار
+POST {{Api_Vapp_HostAddress}}/api/Admin/AutomationType/1/delete
+Authorization: Bearer {{accessToken}}
+
+### ========== App Banners (بنرهای اپ) ==========
+
+### لیست بنرهای فعال برای اپ موبایل
+GET {{Api_Vapp_HostAddress}}/api/AppBanner
+Authorization: Bearer {{accessToken}}
+
+### لیست همه بنرها برای ادمین
+GET {{Api_Vapp_HostAddress}}/api/Admin/AppBanner?includeInactive=true
+Authorization: Bearer {{accessToken}}
+
+### دریافت یک بنر
+GET {{Api_Vapp_HostAddress}}/api/Admin/AppBanner/1
+Authorization: Bearer {{accessToken}}
+
+### به‌روزرسانی بنر (multipart — تصویر فایل)
+# با curl:
+# curl -X POST "$host/api/Admin/AppBanner/1/update" -H "Authorization: Bearer $token" \
+#   -F "Title=بنر صفحه اصلی" -F "Description=..." -F "LinkType=none" -F "LinkUrl=" \
+#   -F "SortOrder=1" -F "IsActive=true" -F "ClearImage=false" \
+#   -F "ImageFile=@./banner.jpg;type=image/jpeg"
+POST {{Api_Vapp_HostAddress}}/api/Admin/AppBanner/1/update
+Authorization: Bearer {{accessToken}}
+Content-Type: multipart/form-data; boundary=----VappBannerBoundary
+
+------VappBannerBoundary
+Content-Disposition: form-data; name="Title"
+
+بنر صفحه اصلی
+------VappBannerBoundary
+Content-Disposition: form-data; name="Description"
+
+بنر پایین صفحه خانه
+------VappBannerBoundary
+Content-Disposition: form-data; name="LinkType"
+
+none
+------VappBannerBoundary
+Content-Disposition: form-data; name="LinkUrl"
+
+------VappBannerBoundary
+Content-Disposition: form-data; name="SortOrder"
+
+1
+------VappBannerBoundary
+Content-Disposition: form-data; name="IsActive"
+
+true
+------VappBannerBoundary
+Content-Disposition: form-data; name="ClearImage"
+
+false
+------VappBannerBoundary--
+

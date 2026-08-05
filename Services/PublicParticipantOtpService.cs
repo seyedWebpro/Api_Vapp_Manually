@@ -1,16 +1,20 @@
+using Api_Vapp.Constants;
+using Api_Vapp.Data;
 using Api_Vapp.DTOs.Auth;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.DTOs.Public;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
 using Api_Vapp.Utilities;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Hosting;
 
 namespace Api_Vapp.Services
 {
     /// <summary>
-    /// OTP شرکت‌کننده عمومی — همان الگوی AuthService (کش، محدودیت ارسال، تلاش ناموفق)
+    /// OTP شرکت‌کننده عمومی — همان الگوی AuthService (کش، محدودیت ارسال، تلاش ناموفق).
+    /// هزینه از کیف پول مالک فرم/گردونه کسر می‌شود؛ کمبود موجودی عملیات را fail نمی‌کند و فقط پیامک ارسال نمی‌شود.
     /// </summary>
     public class PublicParticipantOtpService : IPublicParticipantOtpService
     {
@@ -19,19 +23,25 @@ namespace Api_Vapp.Services
         private const int OtpLockoutMinutes = 15;
         private const int OtpRateLimitMinutes = 2;
 
+        private readonly Api_Context _context;
         private readonly IMemoryCache _cache;
         private readonly ISmsService _smsService;
+        private readonly IUserSmsBillingService _userSmsBilling;
         private readonly IHostEnvironment _environment;
         private readonly ILogger<PublicParticipantOtpService> _logger;
 
         public PublicParticipantOtpService(
+            Api_Context context,
             IMemoryCache cache,
             ISmsService smsService,
+            IUserSmsBillingService userSmsBilling,
             IHostEnvironment environment,
             ILogger<PublicParticipantOtpService> logger)
         {
+            _context = context;
             _cache = cache;
             _smsService = smsService;
+            _userSmsBilling = userSmsBilling;
             _environment = environment;
             _logger = logger;
         }
@@ -174,27 +184,56 @@ namespace Api_Vapp.Services
                     }
                 }
 
+                var ownerUserId = await ResolveOwnerUserIdAsync(session);
+                if (ownerUserId == null)
+                {
+                    _logger.LogError(
+                        "Cannot resolve owner for public OTP — session {SessionId}, type {Type}, resource {ResourceId}",
+                        session.Id, session.ResourceType, session.ResourceId);
+                    return ApiResponse<PublicParticipantOtpResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+                }
+
                 var otpCode = await _smsService.GenerateOtpAsync();
                 var otpCacheKey = OtpKey(session);
                 SetCacheData(otpCacheKey, otpCode, OtpExpirationMinutes);
                 SetRateLimit(mobile, OtpRateLimitMinutes);
                 _cache.Remove(AttemptKey(session));
 
-                var sent = await _smsService.SendOtpAsync(mobile, otpCode, "VerifyOtp");
-                if (!sent)
+                var sendResult = await _userSmsBilling.TrySendOtpAsync(
+                    ownerUserId.Value,
+                    mobile,
+                    otpCode,
+                    "VerifyOtp",
+                    SmsSourceModules.PublicParticipantOtp,
+                    "کد تأیید شرکت‌کننده",
+                    $"هزینه OTP عمومی — {purpose}",
+                    session.Id,
+                    purpose);
+
+                var smsSent = sendResult.Sent;
+
+                if (sendResult.SkippedInsufficientBalance)
+                {
+                    // عملیات ثبت‌نام/جلسه fail نمی‌شود؛ فقط پیامک ارسال نمی‌شود
+                    _logger.LogInformation(
+                        "Public OTP SMS skipped (insufficient wallet) — session {SessionId}, owner {OwnerUserId}",
+                        session.Id, ownerUserId.Value);
+                }
+                else if (!smsSent)
                 {
                     if (!_environment.IsDevelopment())
                     {
                         _cache.Remove(otpCacheKey);
                         _cache.Remove($"PublicOtpRateLimit_{mobile}");
-                        _logger.LogError("Failed to send public OTP SMS for session {SessionId}", session.Id);
+                        _logger.LogError(
+                            "Failed to send public OTP SMS for session {SessionId}: {Message}",
+                            session.Id, sendResult.Message);
                         return ApiResponse<PublicParticipantOtpResponseDto>.Error(
                             ControlledErrorHelper.SmsFailed,
                             503,
                             errorCode: ErrorCodes.SmsFailed);
                     }
 
-                    // Development: پنل SMS در دسترس نیست (مثلاً DNS ایران) — OTP در کش می‌ماند برای تست محلی
                     _logger.LogWarning(
                         "Public OTP SMS failed in Development — continuing with cached OTP for session {SessionId}, mobile {Mobile}",
                         session.Id,
@@ -203,12 +242,17 @@ namespace Api_Vapp.Services
 
                 DevOtpLogger.Write(_logger, mobile, otpCode, purpose);
 
+                var responseMessage = sendResult.SkippedInsufficientBalance
+                    ? "ثبت انجام شد؛ ارسال پیامک به‌خاطر کمبود موجودی کیف پول کسب‌وکار انجام نشد"
+                    : "کد تایید به شماره موبایل ارسال شد";
+
                 _logger.LogInformation(
-                    "Public OTP ready — session {SessionId}, mobile {Mobile}, purpose {Purpose}, smsSent {SmsSent}, expiresInSeconds {ExpiresInSeconds}",
+                    "Public OTP ready — session {SessionId}, mobile {Mobile}, purpose {Purpose}, smsSent {SmsSent}, skippedWallet {Skipped}, expiresInSeconds {ExpiresInSeconds}",
                     session.Id,
                     mobile,
                     purpose,
-                    sent,
+                    smsSent,
+                    sendResult.SkippedInsufficientBalance,
                     OtpExpirationMinutes * 60);
 
                 return ApiResponse<PublicParticipantOtpResponseDto>.CreateSuccess(
@@ -219,7 +263,7 @@ namespace Api_Vapp.Services
                         IsPhoneVerified = false,
                         OtpCode = otpCode
                     },
-                    sent ? "کد تایید ارسال شد" : "کد تایید آماده است (پیامک در Development ارسال نشد)");
+                    responseMessage);
             }
             catch (Exception ex)
             {
@@ -228,53 +272,51 @@ namespace Api_Vapp.Services
             }
         }
 
-        private (bool isRateLimited, int? retryAfterSeconds) CheckRateLimit(string phoneNumber)
+        private async Task<int?> ResolveOwnerUserIdAsync(PublicParticipantSession session)
         {
-            var rateLimitKey = $"PublicOtpRateLimit_{phoneNumber}";
-            if (_cache.TryGetValue(rateLimitKey, out RateLimitInfoDto? rateLimitInfo) && rateLimitInfo != null)
+            return session.ResourceType switch
             {
-                if (rateLimitInfo.ExpiresAt > DateTime.UtcNow)
-                {
-                    var remainingSeconds = (int)Math.Ceiling((rateLimitInfo.ExpiresAt - DateTime.UtcNow).TotalSeconds);
-                    if (remainingSeconds > 0)
-                    {
-                        return (true, remainingSeconds);
-                    }
-                }
+                PublicParticipantResourceType.UserForm =>
+                    await _context.UserForms.AsNoTracking()
+                        .Where(f => f.Id == session.ResourceId && !f.IsDeleted)
+                        .Select(f => (int?)f.UserId)
+                        .FirstOrDefaultAsync(),
+                PublicParticipantResourceType.LuckyWheel =>
+                    await _context.LuckyWheels.AsNoTracking()
+                        .Where(w => w.Id == session.ResourceId && !w.IsDeleted)
+                        .Select(w => (int?)w.UserId)
+                        .FirstOrDefaultAsync(),
+                _ => null
+            };
+        }
 
-                _cache.Remove(rateLimitKey);
+        private (bool IsRateLimited, int RetryAfterSeconds) CheckRateLimit(string mobile)
+        {
+            var key = $"PublicOtpRateLimit_{mobile}";
+            if (_cache.TryGetValue(key, out DateTime limitedUntil) && limitedUntil > DateTime.UtcNow)
+            {
+                var retryAfter = (int)Math.Ceiling((limitedUntil - DateTime.UtcNow).TotalSeconds);
+                return (true, Math.Max(1, retryAfter));
             }
 
-            return (false, null);
+            return (false, 0);
         }
 
-        private void SetRateLimit(string phoneNumber, int minutes)
+        private void SetRateLimit(string mobile, int minutes)
         {
-            var rateLimitKey = $"PublicOtpRateLimit_{phoneNumber}";
-            var rateLimitInfo = new RateLimitInfoDto
-            {
-                ExpiresAt = DateTime.UtcNow.AddMinutes(minutes),
-                IsActive = true
-            };
-
-            SetCacheData(rateLimitKey, rateLimitInfo, minutes);
+            var key = $"PublicOtpRateLimit_{mobile}";
+            _cache.Set(key, DateTime.UtcNow.AddMinutes(minutes), TimeSpan.FromMinutes(minutes));
         }
 
-        private void SetCacheData<T>(string key, T data, int expirationMinutes)
+        private void SetCacheData(string key, object value, int expirationMinutes)
         {
-            var cacheOptions = new MemoryCacheEntryOptions
-            {
-                AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(expirationMinutes),
-                Priority = CacheItemPriority.Normal,
-                Size = 1
-            };
-            _cache.Set(key, data, cacheOptions);
+            _cache.Set(key, value, TimeSpan.FromMinutes(expirationMinutes));
         }
 
         private static string OtpKey(PublicParticipantSession session) =>
-            $"PublicFormOtp_{session.ResourceType}_{session.ResourceId}_{session.ParticipantMobile}";
+            $"PublicOtp_{session.Id}_{session.ParticipantMobile}";
 
         private static string AttemptKey(PublicParticipantSession session) =>
-            $"PublicOtpAttempt_{session.ResourceType}_{session.ResourceId}_{session.ParticipantMobile}";
+            $"PublicOtpAttempt_{session.Id}_{session.ParticipantMobile}";
     }
 }

@@ -180,31 +180,87 @@ namespace Api_Vapp.Services.BackgroundServices
 
                     // خواندن تنظیمات از SelectionCriteria
                     var criteria = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(session.SelectionCriteria);
+                    if (criteria == null)
+                    {
+                        _logger.LogWarning("Empty SelectionCriteria for scheduled Session {SessionId}", session.Id);
+                        continue;
+                    }
+
+                    // فقط بعد از تأیید ادمین ارسال کن (مگر ForceSend برای تست نزدیک)
+                    var adminApproved = criteria.TryGetValue("AdminApproved", out var adminApprovedElement)
+                        && adminApprovedElement.ValueKind == JsonValueKind.True;
+
+                    if (!adminApproved)
+                    {
+                        var hasApprovedRequest = await context.SmsApprovalRequests
+                            .AsNoTracking()
+                            .AnyAsync(r => r.MessageSessionId == session.Id
+                                && r.Status == AdminApprovalStatuses.Approved
+                                && !r.IsDeleted, cancellationToken);
+
+                        if (!hasApprovedRequest)
+                        {
+                            _logger.LogInformation(
+                                "Scheduled session waiting for admin approval - SessionId: {SessionId}, MessageId: {MessageId}",
+                                session.Id, session.MessageId);
+                            continue;
+                        }
+
+                        adminApproved = true;
+                    }
+
                     var sendDto = new DTOs.Message.SendDirectMessageDto
                     {
-                        SendType = DTOs.Message.CampaignSendType.Quick, // برای ارسال استفاده می‌کنیم
+                        SendType = DTOs.Message.CampaignSendType.Quick, // ارسال واقعی فوری (زمان‌بندی قبلاً چک شده)
                         ScheduledAt = null,
-                        PreventDuplicate = criteria?.TryGetValue("PreventDuplicate", out var preventDuplicate) == true 
+                        PreventDuplicate = criteria.TryGetValue("PreventDuplicate", out var preventDuplicate) 
+                            && preventDuplicate.ValueKind == JsonValueKind.True
                             && preventDuplicate.GetBoolean(),
-                        DuplicatePreventionHours = criteria?.TryGetValue("DuplicatePreventionHours", out var hours) == true 
-                            ? hours.GetInt32() 
+                        DuplicatePreventionHours = criteria.TryGetValue("DuplicatePreventionHours", out var hours) 
+                            && hours.TryGetInt32(out var hoursValue)
+                            ? hoursValue
                             : 24,
-                        SendToSpecificTags = criteria?.TryGetValue("SendToSpecificTags", out var sendToTags) == true 
+                        SendToSpecificTags = criteria.TryGetValue("SendToSpecificTags", out var sendToTags) 
+                            && sendToTags.ValueKind == JsonValueKind.True
                             && sendToTags.GetBoolean(),
-                        SelectedTagIds = criteria?.TryGetValue("SelectedTagIds", out var tagIds) == true
-                            ? JsonSerializer.Deserialize<List<int>>(tagIds.GetRawText())
-                            : null
+                        SelectedTagIds = null
                     };
 
-                    // ارسال پیام
+                    if (criteria.TryGetValue("SelectedTagIds", out var tagIdsElement))
+                    {
+                        try
+                        {
+                            if (tagIdsElement.ValueKind == JsonValueKind.Array)
+                            {
+                                sendDto.SelectedTagIds = JsonSerializer.Deserialize<List<int>>(tagIdsElement.GetRawText());
+                            }
+                            else if (tagIdsElement.ValueKind == JsonValueKind.String)
+                            {
+                                var tagIdsStr = tagIdsElement.GetString();
+                                if (!string.IsNullOrWhiteSpace(tagIdsStr))
+                                    sendDto.SelectedTagIds = JsonSerializer.Deserialize<List<int>>(tagIdsStr);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "Failed to parse SelectedTagIds for Session {SessionId}", session.Id);
+                        }
+                    }
+
+                    // ارسال پیام با bypass چون قبلاً توسط ادمین تأیید شده
                     var sendStartTime = DateTime.UtcNow;
                     _logger.LogInformation("در حال ارسال پیام زمان‌بندی شده - زمان شروع ارسال (UTC): {SendStartTime}", sendStartTime);
                     
-                    var result = await messageService.SendDirectMessageAsync(session.UserId, session.MessageId, sendDto, session);
+                    var result = await messageService.SendDirectMessageAsync(
+                        session.UserId,
+                        session.MessageId,
+                        sendDto,
+                        session,
+                        bypassAdminApproval: true);
                     var sendEndTime = DateTime.UtcNow;
                     var sendDuration = (sendEndTime - sendStartTime).TotalSeconds;
                     
-                    if (result.Success && result.Data != null)
+                    if (result.Success && result.Data != null && result.Data.SentCount > 0)
                     {
                         // علامت‌گذاری Session به عنوان استفاده شده
                         session.IsUsed = true;

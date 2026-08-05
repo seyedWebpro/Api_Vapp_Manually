@@ -12,6 +12,11 @@ namespace Api_Vapp.Controller.Admin
     [Produces("application/json")]
     public class EducationalVideoController : VappControllerBase
     {
+        /// <summary>
+        /// سقف بدنه درخواست کمی بالاتر از سقف فایل است تا overhead فرم multipart باعث 413 نشود.
+        /// </summary>
+        private const long MaxVideoBodyBytes = (2L * 1024 * 1024 * 1024) + (64L * 1024 * 1024); // 2 GB + 64 MB
+
         private readonly IAdminEducationalVideoService _service;
 
         public EducationalVideoController(
@@ -37,23 +42,40 @@ namespace Api_Vapp.Controller.Admin
             return StatusCode(result.StatusCode, result);
         }
 
+        /// <summary>
+        /// ایجاد ویدیو آموزشی (multipart — فایل ویدیو یا لینک)
+        /// </summary>
         [HttpPost]
-        public async Task<ActionResult<ApiResponse<EducationalVideoResponseDto>>> Create([FromBody] CreateEducationalVideoDto dto)
+        [Consumes("multipart/form-data")]
+        [RequestSizeLimit(MaxVideoBodyBytes)]
+        [RequestFormLimits(MultipartBodyLengthLimit = MaxVideoBodyBytes)]
+        public async Task<ActionResult<ApiResponse<EducationalVideoResponseDto>>> Create(
+            [FromForm] CreateEducationalVideoDto dto,
+            CancellationToken cancellationToken)
         {
             var invalid = InvalidModelStateResponse<EducationalVideoResponseDto>();
             if (invalid != null) return invalid;
 
-            var result = await _service.CreateAsync(dto);
+            var result = await _service.CreateAsync(dto, cancellationToken);
             return StatusCode(result.StatusCode, result);
         }
 
+        /// <summary>
+        /// به‌روزرسانی ویدیو آموزشی (multipart — فایل ویدیو یا لینک)
+        /// </summary>
         [HttpPost("{id:int}/update")]
-        public async Task<ActionResult<ApiResponse<EducationalVideoResponseDto>>> Update(int id, [FromBody] UpdateEducationalVideoDto dto)
+        [Consumes("multipart/form-data")]
+        [RequestSizeLimit(MaxVideoBodyBytes)]
+        [RequestFormLimits(MultipartBodyLengthLimit = MaxVideoBodyBytes)]
+        public async Task<ActionResult<ApiResponse<EducationalVideoResponseDto>>> Update(
+            int id,
+            [FromForm] UpdateEducationalVideoDto dto,
+            CancellationToken cancellationToken)
         {
             var invalid = InvalidModelStateResponse<EducationalVideoResponseDto>();
             if (invalid != null) return invalid;
 
-            var result = await _service.UpdateAsync(id, dto);
+            var result = await _service.UpdateAsync(id, dto, cancellationToken);
             return StatusCode(result.StatusCode, result);
         }
 

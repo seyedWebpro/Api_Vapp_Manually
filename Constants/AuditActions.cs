@@ -72,6 +72,8 @@ namespace Api_Vapp.Constants
         public const string EducationalVideoUpdated = "EducationalVideo.Updated";
         public const string EducationalVideoDeleted = "EducationalVideo.Deleted";
         public const string AutomationTypeUpdated = "AutomationType.Updated";
+        public const string AutomationTypeDeleted = "AutomationType.Deleted";
+        public const string AppBannerUpdated = "AppBanner.Updated";
         public const string LuckyWheelStatusChanged = "LuckyWheel.StatusChanged";
         public const string LuckyWheelCreated = "LuckyWheel.Created";
         public const string LuckyWheelUpdated = "LuckyWheel.Updated";

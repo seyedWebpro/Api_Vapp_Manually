@@ -140,4 +140,66 @@ public class BookingSystemServiceTests : IAsyncLifetime
         BookingApiAssertions.AssertSuccess(result);
         Assert.Contains(result.Data!, t => t.Code == BookingActivityTypes.BeautySalon);
     }
+
+    [Fact]
+    public async Task AddService_WithPriceAndOptionalDeposit_Returns201WithoutServiceCost()
+    {
+        var (systemId, _) = await _ctx.CreateConfirmedSystemAsync();
+
+        var result = await _ctx.Service.AddServiceAsync(systemId, _ctx.OwnerUserId, new AddBookingServiceDto
+        {
+            Title = "رنگ مو",
+            DurationMinutes = 90,
+            HasCost = true,
+            Price = 800_000m,
+            DepositAmount = 200_000m,
+            BufferMinutesBetweenAppointments = 10,
+            ReminderOffsetMinutes = 60,
+            WeeklyDays = BookingSystemTestContext.DefaultWeeklySchedule()
+        });
+
+        BookingApiAssertions.AssertSuccess(result, 201);
+        Assert.True(result.Data!.HasCost);
+        Assert.Equal(800_000m, result.Data.Price);
+        Assert.Equal(200_000m, result.Data.DepositAmount);
+    }
+
+    [Fact]
+    public async Task ValidateStep2_DepositGreaterThanPrice_Returns400()
+    {
+        var step1 = await _ctx.Service.ValidateStep1Async(_ctx.OwnerUserId, _ctx.BuildStep1Dto());
+        var draftId = step1.Data!.DraftId!;
+
+        var result = await _ctx.Service.ValidateStep2Async(_ctx.OwnerUserId, new BookingStep2Dto
+        {
+            DraftId = draftId,
+            Services = new List<BookingServiceDraftDto>
+            {
+                new()
+                {
+                    ServiceTempId = Guid.NewGuid().ToString("N"),
+                    Title = "خدمت تست",
+                    DurationMinutes = 45,
+                    HasCost = true,
+                    Price = 100_000m,
+                    DepositAmount = 150_000m
+                }
+            }
+        });
+
+        BookingApiAssertions.AssertFailure(result, 400);
+        Assert.Contains(result.Errors!, e => e.Contains("بیعانه"));
+    }
+
+    [Fact]
+    public async Task Confirm_ServiceHasOnlyPrice_NotServiceCost()
+    {
+        var (systemId, _) = await _ctx.CreateConfirmedSystemAsync();
+        var getResult = await _ctx.Service.GetByIdAsync(systemId, _ctx.OwnerUserId);
+
+        BookingApiAssertions.AssertSuccess(getResult);
+        var service = Assert.Single(getResult.Data!.Services);
+        Assert.Equal(500_000m, service.Price);
+        Assert.Null(service.DepositAmount);
+    }
 }

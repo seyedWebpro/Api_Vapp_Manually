@@ -28,6 +28,7 @@ namespace Api_Vapp.Data
             await SeedSubscriptionFeaturesAsync(context, logger);
             await SeedSubscriptionPlansAsync(context, logger);
             await SeedAutomationTypesAsync(context, logger);
+            await SeedAppBannersAsync(context, logger);
         }
 
         private static async Task<IReadOnlyDictionary<string, Role>> SeedDefaultRolesAsync(
@@ -297,27 +298,18 @@ namespace Api_Vapp.Data
                 .Where(t => !t.IsDeleted)
                 .ToDictionaryAsync(t => t.Code, StringComparer.OrdinalIgnoreCase);
 
+            // کدهایی که ادمین soft-delete کرده — دوباره seed نشوند
+            var softDeletedCodes = await context.AutomationTypes
+                .Where(t => t.IsDeleted)
+                .Select(t => t.Code)
+                .ToListAsync();
+            var softDeletedSet = softDeletedCodes.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
             foreach (var definition in AutomationTypeCatalog.All)
             {
-                if (existingByCode.TryGetValue(definition.Code, out _))
+                if (existingByCode.ContainsKey(definition.Code) || softDeletedSet.Contains(definition.Code))
                 {
-                    // نوع از قبل وجود دارد؛ ویرایش ادمین را بازنویسی نکن
-                    continue;
-                }
-
-                var softDeleted = await context.AutomationTypes
-                    .FirstOrDefaultAsync(t => t.Code == definition.Code);
-
-                if (softDeleted != null)
-                {
-                    softDeleted.IsDeleted = false;
-                    softDeleted.IsActive = true;
-                    softDeleted.Name = definition.Name;
-                    softDeleted.Description = definition.Description;
-                    softDeleted.Icon = definition.Icon;
-                    softDeleted.SortOrder = definition.SortOrder;
-                    softDeleted.UpdatedAt = DateTime.UtcNow;
-                    existingByCode[definition.Code] = softDeleted;
+                    // نوع از قبل وجود دارد یا توسط ادمین حذف شده؛ ویرایش/حذف ادمین را بازنویسی نکن
                     continue;
                 }
 
@@ -335,6 +327,54 @@ namespace Api_Vapp.Data
 
             await context.SaveChangesAsync();
             logger.LogInformation("Automation types seeded.");
+        }
+
+        private static async Task SeedAppBannersAsync(Api_Context context, ILogger logger)
+        {
+            var existingByKey = await context.AppBanners
+                .Where(b => !b.IsDeleted)
+                .ToDictionaryAsync(b => b.Key, StringComparer.OrdinalIgnoreCase);
+
+            foreach (var definition in AppBannerCatalog.All)
+            {
+                if (existingByKey.TryGetValue(definition.Key, out _))
+                {
+                    // بنر از قبل وجود دارد؛ ویرایش ادمین را بازنویسی نکن
+                    continue;
+                }
+
+                var softDeleted = await context.AppBanners
+                    .FirstOrDefaultAsync(b => b.Key == definition.Key);
+
+                if (softDeleted != null)
+                {
+                    softDeleted.IsDeleted = false;
+                    softDeleted.IsActive = true;
+                    softDeleted.Title = definition.Title;
+                    softDeleted.Description = definition.Description;
+                    softDeleted.LinkType = definition.LinkType;
+                    softDeleted.LinkUrl = definition.LinkUrl;
+                    softDeleted.SortOrder = definition.SortOrder;
+                    softDeleted.UpdatedAt = DateTime.UtcNow;
+                    existingByKey[definition.Key] = softDeleted;
+                    continue;
+                }
+
+                context.AppBanners.Add(new AppBanner
+                {
+                    Key = definition.Key,
+                    Title = definition.Title,
+                    Description = definition.Description,
+                    LinkType = definition.LinkType,
+                    LinkUrl = definition.LinkUrl,
+                    SortOrder = definition.SortOrder,
+                    IsActive = true,
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+
+            await context.SaveChangesAsync();
+            logger.LogInformation("App banners seeded.");
         }
 
         private static void SyncLegacyPlanFlags(SubscriptionPlan plan, IEnumerable<string> featureCodes)

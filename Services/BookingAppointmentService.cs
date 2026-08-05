@@ -2,7 +2,6 @@ using Api_Vapp.Constants;
 using Api_Vapp.Data;
 using Api_Vapp.DTOs.BookingSystem;
 using Api_Vapp.DTOs.Common;
-using Api_Vapp.DTOs.Sms;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
 using Api_Vapp.Services.Audit;
@@ -18,8 +17,7 @@ namespace Api_Vapp.Services
         private readonly IBookingAppointmentRepository _appointmentRepository;
         private readonly IBookingSystemRepository _systemRepository;
         private readonly PublicPhonebookService _phonebookService;
-        private readonly ISmsService _smsService;
-        private readonly ISmsDeliveryTrackingService _deliveryTracking;
+        private readonly IUserSmsBillingService _userSmsBilling;
         private readonly IAuditService _audit;
         private readonly ILogger<BookingAppointmentService> _logger;
         private readonly BookingSystemOptions _options;
@@ -32,8 +30,7 @@ namespace Api_Vapp.Services
             IBookingAppointmentRepository appointmentRepository,
             IBookingSystemRepository systemRepository,
             PublicPhonebookService phonebookService,
-            ISmsService smsService,
-            ISmsDeliveryTrackingService deliveryTracking,
+            IUserSmsBillingService userSmsBilling,
             Microsoft.Extensions.Options.IOptions<BookingSystemOptions> options,
             IAuditService audit,
             ILogger<BookingAppointmentService> logger)
@@ -42,8 +39,7 @@ namespace Api_Vapp.Services
             _appointmentRepository = appointmentRepository;
             _systemRepository = systemRepository;
             _phonebookService = phonebookService;
-            _smsService = smsService;
-            _deliveryTracking = deliveryTracking;
+            _userSmsBilling = userSmsBilling;
             _options = options.Value;
             _audit = audit;
             _logger = logger;
@@ -954,33 +950,37 @@ namespace Api_Vapp.Services
 
                 try
                 {
-                    var smsResult = await _smsService.SendSmsAsync(new SendSmsRequestDto
-                    {
-                        Mobile = tracked.CustomerMobile,
-                        Message = message
-                    });
+                    var sendResult = await _userSmsBilling.TrySendAsync(
+                        candidate.BookingSystem.UserId,
+                        tracked.CustomerMobile,
+                        message,
+                        SmsSourceModules.BookingReminder,
+                        "یادآوری نوبت",
+                        $"هزینه پیامک یادآوری نوبت #{tracked.Id}",
+                        tracked.Id,
+                        candidate.BookingSystem.Title,
+                        cancellationToken);
 
-                    var isSuccess = smsResult.Success && smsResult.Data != null &&
-                                    (smsResult.Data.Sid > 0 || smsResult.Data.Status > 0);
-
-                    if (!isSuccess)
+                    if (sendResult.SkippedInsufficientBalance)
                     {
-                        _logger.LogWarning(
-                            "Booking reminder SMS failed for appointment {AppointmentId}",
+                        _logger.LogInformation(
+                            "Booking reminder SMS skipped (insufficient wallet) for appointment {AppointmentId}",
                             tracked.Id);
+                        // نوبت را علامت‌گذاری می‌کنیم تا دوباره تلاش نشود؛ عملیات نوبت دست‌نخورده است
+                        tracked.ReminderSentAt = DateTime.UtcNow;
+                        tracked.UpdatedAt = DateTime.UtcNow;
+                        await _context.SaveChangesAsync(cancellationToken);
                         continue;
                     }
 
-                    await _deliveryTracking.TrackSuccessfulSendAsync(new SmsDeliveryTrackRequestDto
+                    if (!sendResult.Sent)
                     {
-                        UserId = candidate.BookingSystem.UserId,
-                        SourceModule = SmsSourceModules.BookingReminder,
-                        SourceEntityId = tracked.Id,
-                        SourceEntityLabel = candidate.BookingSystem.Title,
-                        Mobile = tracked.CustomerMobile,
-                        Sid = smsResult.Data!.Sid,
-                        MessageText = message
-                    });
+                        _logger.LogWarning(
+                            "Booking reminder SMS failed for appointment {AppointmentId}: {Message}",
+                            tracked.Id,
+                            sendResult.Message);
+                        continue;
+                    }
 
                     tracked.ReminderSentAt = DateTime.UtcNow;
                     tracked.UpdatedAt = DateTime.UtcNow;
@@ -1294,34 +1294,34 @@ namespace Api_Vapp.Services
                       $"خدمت: {service.Title}\n" +
                       $"زمان: {whenLocal}";
 
-                var smsResult = await _smsService.SendSmsAsync(new SendSmsRequestDto
-                {
-                    Mobile = appointment.CustomerMobile,
-                    Message = message
-                });
+                var sendResult = await _userSmsBilling.TrySendAsync(
+                    system.UserId,
+                    appointment.CustomerMobile,
+                    message,
+                    SmsSourceModules.BookingStatus,
+                    isConfirmed ? "تأیید نوبت" : "لغو نوبت",
+                    $"هزینه پیامک وضعیت نوبت #{appointment.Id}",
+                    appointment.Id,
+                    system.Title);
 
-                var isSuccess = smsResult.Success && smsResult.Data != null &&
-                                (smsResult.Data.Sid > 0 || smsResult.Data.Status > 0);
-
-                if (!isSuccess)
+                if (sendResult.SkippedInsufficientBalance)
                 {
-                    _logger.LogWarning(
-                        "Booking status SMS failed for appointment {AppointmentId} confirmed={IsConfirmed}",
+                    _logger.LogInformation(
+                        "Booking status SMS skipped (insufficient wallet) for appointment {AppointmentId} confirmed={IsConfirmed}",
                         appointment.Id,
                         isConfirmed);
                     return;
                 }
 
-                await _deliveryTracking.TrackSuccessfulSendAsync(new SmsDeliveryTrackRequestDto
+                if (!sendResult.Sent)
                 {
-                    UserId = system.UserId,
-                    SourceModule = SmsSourceModules.BookingStatus,
-                    SourceEntityId = appointment.Id,
-                    SourceEntityLabel = system.Title,
-                    Mobile = appointment.CustomerMobile,
-                    Sid = smsResult.Data!.Sid,
-                    MessageText = message
-                });
+                    _logger.LogWarning(
+                        "Booking status SMS failed for appointment {AppointmentId} confirmed={IsConfirmed}: {Message}",
+                        appointment.Id,
+                        isConfirmed,
+                        sendResult.Message);
+                    return;
+                }
 
                 _logger.LogInformation(
                     "Booking status SMS sent for appointment {AppointmentId} confirmed={IsConfirmed}",

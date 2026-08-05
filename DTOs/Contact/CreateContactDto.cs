@@ -17,9 +17,11 @@ namespace Api_Vapp.DTOs.Contact
         [StringLength(20, ErrorMessage = "شماره موبایل نمی‌تواند بیشتر از 20 کاراکتر باشد")]
         public string MobileNumber { get; set; } = string.Empty;
 
-        [Required(ErrorMessage = "نام کامل مخاطب الزامی است")]
+        /// <summary>
+        /// نام کامل مخاطب (اختیاری — می‌تواند خالی باشد)
+        /// </summary>
         [StringLength(200, ErrorMessage = "نام کامل نمی‌تواند بیشتر از 200 کاراکتر باشد")]
-        public string FullName { get; set; } = string.Empty;
+        public string? FullName { get; set; }
 
         [StringLength(200, ErrorMessage = "برند نمی‌تواند بیشتر از 200 کاراکتر باشد")]
         public string? Brand { get; set; }

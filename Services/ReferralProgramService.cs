@@ -2,7 +2,6 @@ using Api_Vapp.Constants;
 using Api_Vapp.Data;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.DTOs.ReferralProgram;
-using Api_Vapp.DTOs.Sms;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
 using Api_Vapp.Services.Audit;
@@ -20,8 +19,7 @@ namespace Api_Vapp.Services
         private readonly IReferralProgramRepository _programRepository;
         private readonly IReferralProgramDraftRepository _draftRepository;
         private readonly IReferralUsageRepository _usageRepository;
-        private readonly ISmsService _smsService;
-        private readonly ISmsDeliveryTrackingService _deliveryTracking;
+        private readonly IUserSmsBillingService _userSmsBilling;
         private readonly IAuditService _audit;
         private readonly ILogger<ReferralProgramService> _logger;
 
@@ -35,8 +33,7 @@ namespace Api_Vapp.Services
             IReferralProgramRepository programRepository,
             IReferralProgramDraftRepository draftRepository,
             IReferralUsageRepository usageRepository,
-            ISmsService smsService,
-            ISmsDeliveryTrackingService deliveryTracking,
+            IUserSmsBillingService userSmsBilling,
             IAuditService audit,
             ILogger<ReferralProgramService> logger)
         {
@@ -44,8 +41,7 @@ namespace Api_Vapp.Services
             _programRepository = programRepository;
             _draftRepository = draftRepository;
             _usageRepository = usageRepository;
-            _smsService = smsService;
-            _deliveryTracking = deliveryTracking;
+            _userSmsBilling = userSmsBilling;
             _audit = audit;
             _logger = logger;
         }
@@ -1204,32 +1200,29 @@ namespace Api_Vapp.Services
 
                 try
                 {
-                    var smsRequest = new SendSmsRequestDto
-                    {
-                        Mobile = contact.MobileNumber,
-                        Message = message
-                    };
+                    var sendResult = await _userSmsBilling.TrySendAsync(
+                        program.UserId,
+                        contact.MobileNumber,
+                        message,
+                        SmsSourceModules.ReferralProgram,
+                        "برنامه پاداش",
+                        $"هزینه پیامک برنامه پاداش «{program.Title}»",
+                        program.Id,
+                        program.Title ?? $"برنامه پاداش #{program.Id}");
 
-                    var smsResult = await _smsService.SendSmsAsync(smsRequest);
-                    var isSuccess = smsResult.Success && smsResult.Data != null &&
-                                    (smsResult.Data.Sid > 0 || smsResult.Data.Status > 0);
-
-                    if (isSuccess)
+                    if (sendResult.Sent)
                     {
                         sent++;
-                        await _deliveryTracking.TrackSuccessfulSendAsync(new SmsDeliveryTrackRequestDto
-                        {
-                            UserId = program.UserId,
-                            SourceModule = SmsSourceModules.ReferralProgram,
-                            SourceEntityId = program.Id,
-                            SourceEntityLabel = program.Title ?? $"برنامه پاداش #{program.Id}",
-                            Mobile = contact.MobileNumber,
-                            Sid = smsResult.Data!.Sid,
-                            MessageText = message
-                        });
                     }
                     else
                     {
+                        if (sendResult.SkippedInsufficientBalance)
+                        {
+                            _logger.LogInformation(
+                                "Referral SMS skipped (insufficient wallet) for contact {ContactId}, program {ProgramId}",
+                                contact.Id, program.Id);
+                        }
+
                         failed++;
                     }
                 }

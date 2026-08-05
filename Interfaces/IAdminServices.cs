@@ -62,8 +62,8 @@ namespace Api_Vapp.Interfaces
     {
         Task<ApiResponse<List<EducationalVideoResponseDto>>> GetAllAsync(bool includeInactive = true);
         Task<ApiResponse<EducationalVideoResponseDto>> GetByIdAsync(int id);
-        Task<ApiResponse<EducationalVideoResponseDto>> CreateAsync(CreateEducationalVideoDto dto);
-        Task<ApiResponse<EducationalVideoResponseDto>> UpdateAsync(int id, UpdateEducationalVideoDto dto);
+        Task<ApiResponse<EducationalVideoResponseDto>> CreateAsync(CreateEducationalVideoDto dto, CancellationToken cancellationToken = default);
+        Task<ApiResponse<EducationalVideoResponseDto>> UpdateAsync(int id, UpdateEducationalVideoDto dto, CancellationToken cancellationToken = default);
         Task<ApiResponse<bool>> DeleteAsync(int id);
         Task<ApiResponse<List<EducationalVideoResponseDto>>> GetActiveVideosAsync();
     }
@@ -73,6 +73,15 @@ namespace Api_Vapp.Interfaces
         Task<ApiResponse<List<AutomationTypeAdminResponseDto>>> GetAllAsync(bool includeInactive = true);
         Task<ApiResponse<AutomationTypeAdminResponseDto>> GetByIdAsync(int id);
         Task<ApiResponse<AutomationTypeAdminResponseDto>> UpdateAsync(int id, UpdateAutomationTypeDto dto);
+        Task<ApiResponse<bool>> DeleteAsync(int id);
+    }
+
+    public interface IAdminAppBannerService
+    {
+        Task<ApiResponse<List<AppBannerResponseDto>>> GetAllAsync(bool includeInactive = true);
+        Task<ApiResponse<AppBannerResponseDto>> GetByIdAsync(int id);
+        Task<ApiResponse<AppBannerResponseDto>> UpdateAsync(int id, UpdateAppBannerDto dto);
+        Task<ApiResponse<List<AppBannerResponseDto>>> GetActiveBannersAsync();
     }
 
     public interface IAdminMessageApprovalService

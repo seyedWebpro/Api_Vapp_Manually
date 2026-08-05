@@ -27,6 +27,12 @@ namespace Api_Vapp.Middleware
             {
                 await _next(context);
             }
+            catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+            {
+                // کلاینت درخواست را لغو کرده — خطای سرور نیست
+                if (!context.Response.HasStarted)
+                    context.Response.StatusCode = 499;
+            }
             catch (Exception ex)
             {
                 var traceId = ControlledErrorHelper.GetTraceId(context);

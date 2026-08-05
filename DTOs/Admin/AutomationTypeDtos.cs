@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using Microsoft.AspNetCore.Http;
 
 namespace Api_Vapp.DTOs.Admin
 {
@@ -8,6 +9,7 @@ namespace Api_Vapp.DTOs.Admin
         public string Code { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
         public string? Description { get; set; }
+        /// <summary>مسیر فایل آپلودشده یا (legacy) ایموجی متنی.</summary>
         public string? Icon { get; set; }
         public int SortOrder { get; set; }
         public bool IsActive { get; set; }
@@ -27,10 +29,13 @@ namespace Api_Vapp.DTOs.Admin
         [MaxLength(1000, ErrorMessage = "توضیحات نمی‌تواند بیشتر از ۱۰۰۰ کاراکتر باشد")]
         public string? Description { get; set; }
 
-        [MaxLength(20, ErrorMessage = "آیکون نمی‌تواند بیشتر از ۲۰ کاراکتر باشد")]
-        public string? Icon { get; set; }
-
         public int SortOrder { get; set; }
         public bool IsActive { get; set; } = true;
+
+        /// <summary>فایل آیکون جدید (اختیاری).</summary>
+        public IFormFile? IconFile { get; set; }
+
+        /// <summary>اگر true باشد آیکون فعلی حذف می‌شود (وقتی فایل جدید نیست).</summary>
+        public bool ClearIcon { get; set; }
     }
 }

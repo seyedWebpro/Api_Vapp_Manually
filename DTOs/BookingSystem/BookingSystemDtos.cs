@@ -42,7 +42,6 @@ namespace Api_Vapp.DTOs.BookingSystem
         public int DurationMinutes { get; set; }
         public bool HasCost { get; set; }
         public decimal? Price { get; set; }
-        public decimal? ServiceCost { get; set; }
         public decimal? DepositAmount { get; set; }
         public int BufferMinutesBetweenAppointments { get; set; }
         public int? MaxDailyReservations { get; set; }
@@ -127,8 +126,9 @@ namespace Api_Vapp.DTOs.BookingSystem
 
         public decimal? Price { get; set; }
 
-        public decimal? ServiceCost { get; set; }
-
+        /// <summary>
+        /// بیعانه — اختیاری
+        /// </summary>
         public decimal? DepositAmount { get; set; }
     }
 
@@ -288,7 +288,10 @@ namespace Api_Vapp.DTOs.BookingSystem
 
         public bool HasCost { get; set; }
         public decimal? Price { get; set; }
-        public decimal? ServiceCost { get; set; }
+
+        /// <summary>
+        /// بیعانه — اختیاری
+        /// </summary>
         public decimal? DepositAmount { get; set; }
 
         [Range(0, 480)]
@@ -313,7 +316,10 @@ namespace Api_Vapp.DTOs.BookingSystem
 
         public bool? HasCost { get; set; }
         public decimal? Price { get; set; }
-        public decimal? ServiceCost { get; set; }
+
+        /// <summary>
+        /// بیعانه — اختیاری
+        /// </summary>
         public decimal? DepositAmount { get; set; }
 
         [Range(0, 480)]

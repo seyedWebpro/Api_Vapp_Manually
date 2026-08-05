@@ -492,7 +492,6 @@ namespace Api_Vapp.Services
                         DurationMinutes = serviceDraft.DurationMinutes,
                         HasCost = serviceDraft.HasCost,
                         Price = serviceDraft.HasCost ? serviceDraft.Price : null,
-                        ServiceCost = serviceDraft.HasCost ? serviceDraft.ServiceCost : null,
                         DepositAmount = serviceDraft.DepositAmount,
                         BufferMinutesBetweenAppointments = settings.BufferMinutesBetweenAppointments,
                         MaxDailyReservations = settings.MaxDailyReservations,
@@ -579,7 +578,7 @@ namespace Api_Vapp.Services
                 return ApiResponse<BookingServiceItemDto>.NotFound("سیستم رزرو یافت نشد");
             }
 
-            var errors = ValidateServiceDraftFields(dto.Title, dto.DurationMinutes, dto.HasCost, dto.Price, dto.ServiceCost);
+            var errors = ValidateServiceDraftFields(dto.Title, dto.DurationMinutes, dto.HasCost, dto.Price, dto.DepositAmount);
             var scheduleErrors = ValidateWeeklyDays(dto.WeeklyDays);
             errors.AddRange(scheduleErrors);
 
@@ -596,7 +595,6 @@ namespace Api_Vapp.Services
                 DurationMinutes = dto.DurationMinutes,
                 HasCost = dto.HasCost,
                 Price = dto.HasCost ? dto.Price : null,
-                ServiceCost = dto.HasCost ? dto.ServiceCost : null,
                 DepositAmount = dto.DepositAmount,
                 BufferMinutesBetweenAppointments = dto.BufferMinutesBetweenAppointments,
                 MaxDailyReservations = dto.MaxDailyReservations,
@@ -658,12 +656,11 @@ namespace Api_Vapp.Services
                 if (!dto.HasCost.Value)
                 {
                     service.Price = null;
-                    service.ServiceCost = null;
+                    service.DepositAmount = null;
                 }
             }
 
             if (dto.Price.HasValue) service.Price = dto.Price;
-            if (dto.ServiceCost.HasValue) service.ServiceCost = dto.ServiceCost;
             if (dto.DepositAmount.HasValue) service.DepositAmount = dto.DepositAmount;
             if (dto.BufferMinutesBetweenAppointments.HasValue)
             {
@@ -678,6 +675,17 @@ namespace Api_Vapp.Services
             if (dto.ReminderOffsetMinutes.HasValue)
             {
                 service.ReminderOffsetMinutes = dto.ReminderOffsetMinutes.Value;
+            }
+
+            var costErrors = ValidateServiceDraftFields(
+                service.Title,
+                service.DurationMinutes,
+                service.HasCost,
+                service.Price,
+                service.DepositAmount);
+            if (costErrors.Count > 0)
+            {
+                return ApiResponse<BookingServiceItemDto>.BadRequest("خطا در اعتبارسنجی", costErrors);
             }
 
             service.UpdatedAt = DateTime.UtcNow;
@@ -816,7 +824,6 @@ namespace Api_Vapp.Services
             dto.DurationMinutes.HasValue ||
             dto.HasCost.HasValue ||
             dto.Price.HasValue ||
-            dto.ServiceCost.HasValue ||
             dto.DepositAmount.HasValue ||
             dto.BufferMinutesBetweenAppointments.HasValue ||
             dto.MaxDailyReservations.HasValue ||
@@ -859,7 +866,6 @@ namespace Api_Vapp.Services
             DurationMinutes = service.DurationMinutes,
             HasCost = service.HasCost,
             Price = service.Price,
-            ServiceCost = service.ServiceCost,
             DepositAmount = service.DepositAmount,
             BufferMinutesBetweenAppointments = service.BufferMinutesBetweenAppointments,
             MaxDailyReservations = service.MaxDailyReservations,
@@ -1025,7 +1031,7 @@ namespace Api_Vapp.Services
                     errors.Add(prefix + "شناسه موقت تکراری است");
                 }
 
-                errors.AddRange(ValidateServiceDraftFields(service.Title, service.DurationMinutes, service.HasCost, service.Price, service.ServiceCost)
+                errors.AddRange(ValidateServiceDraftFields(service.Title, service.DurationMinutes, service.HasCost, service.Price, service.DepositAmount)
                     .Select(e => prefix + e));
             }
 
@@ -1128,7 +1134,7 @@ namespace Api_Vapp.Services
             int durationMinutes,
             bool hasCost,
             decimal? price,
-            decimal? serviceCost)
+            decimal? depositAmount)
         {
             var errors = new List<string>();
 
@@ -1145,6 +1151,16 @@ namespace Api_Vapp.Services
             if (hasCost && (!price.HasValue || price.Value < 0))
             {
                 errors.Add("قیمت خدمت الزامی است");
+            }
+
+            if (depositAmount.HasValue && depositAmount.Value < 0)
+            {
+                errors.Add("بیعانه نمی‌تواند منفی باشد");
+            }
+
+            if (hasCost && depositAmount.HasValue && price.HasValue && depositAmount.Value > price.Value)
+            {
+                errors.Add("بیعانه نمی‌تواند بیشتر از قیمت خدمت باشد");
             }
 
             return errors;
