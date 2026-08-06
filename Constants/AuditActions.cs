@@ -147,5 +147,8 @@ namespace Api_Vapp.Constants
         public const string CampaignAutoSent = "MessageCampaign.AutoSent";
         public const string MessageAutoSent = "Message.AutoSent";
         public const string AutomatedMessageQueued = "AutomatedMessage.Queued";
+        public const string AutomatedMessageCancelled = "AutomatedMessage.Cancelled";
+        public const string AutomatedMessageDeleted = "AutomatedMessage.Deleted";
+        public const string AutomatedMessageStatusChanged = "AutomatedMessage.StatusChanged";
     }
 }

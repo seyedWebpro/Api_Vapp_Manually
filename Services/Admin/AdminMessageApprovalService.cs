@@ -18,20 +18,20 @@ namespace Api_Vapp.Services.Admin
         private readonly IMessageService _messageService;
         private readonly IAuditService _audit;
         private readonly ILogger<AdminMessageApprovalService> _logger;
-        private readonly IUserPushNotifier _pushNotifier;
+        private readonly IUserAppNotifier _appNotifier;
 
         public AdminMessageApprovalService(
             Api_Context context,
             IMessageService messageService,
             IAuditService audit,
             ILogger<AdminMessageApprovalService> logger,
-            IUserPushNotifier pushNotifier)
+            IUserAppNotifier appNotifier)
         {
             _context = context;
             _messageService = messageService;
             _audit = audit;
             _logger = logger;
-            _pushNotifier = pushNotifier;
+            _appNotifier = appNotifier;
         }
 
         public Task<ApiResponse<PagedResponse<SmsApprovalRequestResponseDto>>> GetPendingAsync(int page = 1, int pageSize = 20)
@@ -247,6 +247,11 @@ namespace Api_Vapp.Services.Admin
                             "Scheduled direct message approved for later send - RequestId: {RequestId}, MessageId: {MessageId}, ScheduledAt: {ScheduledAt}",
                             id, request.MessageId, scheduledAtUtc);
 
+                        await NotifyMessageDecisionAsync(
+                            request,
+                            approved: true,
+                            scheduled: true);
+
                         return ApiResponse<bool>.CreateSuccess(true, "تأیید شد؛ پیام در زمان مقرر ارسال می‌شود");
                     }
 
@@ -305,6 +310,8 @@ namespace Api_Vapp.Services.Admin
                         reviewedAt = request.ReviewedAt
                     }
                 });
+
+                await NotifyMessageDecisionAsync(request, approved: true, scheduled: false);
 
                 return ApiResponse<bool>.CreateSuccess(true, "درخواست تأیید و ارسال انجام شد");
             }
@@ -408,12 +415,25 @@ namespace Api_Vapp.Services.Admin
                     }
                 });
 
-                var rejectPush = PushNotificationCopy.CampaignRejected(request.RejectionReason);
-                await _pushNotifier.NotifyAsync(
+                var rejectPush = PushNotificationCopy.MessageRejected(
+                    request.RejectionReason,
+                    request.TitlePreview);
+                await _appNotifier.NotifyAsync(
                     request.UserId,
                     NotificationCategory.Suggestions,
                     rejectPush.Title,
-                    rejectPush.Body);
+                    rejectPush.Body,
+                    InAppNotificationTypes.MessageRejected,
+                    relatedEntityId: request.Id,
+                    relatedEntityType: AuditEntityTypes.SmsApprovalRequest,
+                    actionUrl: "/sms/reports",
+                    metadataJson: System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        decision = "Rejected",
+                        rejectionReason = request.RejectionReason,
+                        titlePreview = request.TitlePreview,
+                        requestType = request.RequestType
+                    }));
 
                 return ApiResponse<bool>.CreateSuccess(true, "درخواست رد شد");
             }
@@ -422,6 +442,54 @@ namespace Api_Vapp.Services.Admin
                 _logger.LogError(ex, "Error rejecting SMS request {RequestId}", id);
                 return ApiResponse<bool>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
+        }
+
+        private async Task NotifyMessageDecisionAsync(
+            SmsApprovalRequest request,
+            bool approved,
+            bool scheduled)
+        {
+            if (approved)
+            {
+                var copy = PushNotificationCopy.MessageApproved(request.TitlePreview, scheduled);
+                await _appNotifier.NotifyAsync(
+                    request.UserId,
+                    NotificationCategory.Suggestions,
+                    copy.Title,
+                    copy.Body,
+                    InAppNotificationTypes.MessageApproved,
+                    relatedEntityId: request.Id,
+                    relatedEntityType: AuditEntityTypes.SmsApprovalRequest,
+                    actionUrl: "/sms/reports",
+                    metadataJson: System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        decision = "Approved",
+                        scheduled,
+                        titlePreview = request.TitlePreview,
+                        requestType = request.RequestType
+                    }));
+                return;
+            }
+
+            var rejectCopy = PushNotificationCopy.MessageRejected(
+                request.RejectionReason,
+                request.TitlePreview);
+            await _appNotifier.NotifyAsync(
+                request.UserId,
+                NotificationCategory.Suggestions,
+                rejectCopy.Title,
+                rejectCopy.Body,
+                InAppNotificationTypes.MessageRejected,
+                relatedEntityId: request.Id,
+                relatedEntityType: AuditEntityTypes.SmsApprovalRequest,
+                actionUrl: "/sms/reports",
+                metadataJson: System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    decision = "Rejected",
+                    rejectionReason = request.RejectionReason,
+                    titlePreview = request.TitlePreview,
+                    requestType = request.RequestType
+                }));
         }
 
         private async Task RevertToPendingAsync(SmsApprovalRequest request)

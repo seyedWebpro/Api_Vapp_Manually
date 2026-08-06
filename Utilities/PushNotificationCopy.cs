@@ -127,6 +127,44 @@ namespace Api_Vapp.Utilities
                 $"درخواست کمپین شما رد شد. {detail}");
         }
 
+        public static (string Title, string Body) MessageApproved(string? titlePreview = null, bool scheduled = false)
+        {
+            var name = string.IsNullOrWhiteSpace(titlePreview) ? "پیام شما" : $"«{titlePreview.Trim()}»";
+            return scheduled
+                ? ("پیام تأیید شد", $"{name} تأیید شد و در زمان مقرر ارسال می‌شود.")
+                : ("پیام تأیید شد", $"{name} تأیید شد و ارسال انجام شد.");
+        }
+
+        public static (string Title, string Body) MessageRejected(string? reason, string? titlePreview = null)
+        {
+            var name = string.IsNullOrWhiteSpace(titlePreview) ? "پیام شما" : $"«{titlePreview.Trim()}»";
+            var detail = string.IsNullOrWhiteSpace(reason)
+                ? "لطفاً محتوا را بازبینی و دوباره ارسال کنید."
+                : reason.Trim();
+            return (
+                "پیام تأیید نشد",
+                $"{name} رد شد. دلیل: {detail}");
+        }
+
+        public static (string Title, string Body) TemplateApproved(string? templateName)
+        {
+            var name = string.IsNullOrWhiteSpace(templateName) ? "قالب شما" : $"«{templateName.Trim()}»";
+            return (
+                "قالب تأیید شد",
+                $"{name} تأیید شد و می‌توانید از آن برای ارسال پیامک استفاده کنید.");
+        }
+
+        public static (string Title, string Body) TemplateRejected(string? templateName, string? reason)
+        {
+            var name = string.IsNullOrWhiteSpace(templateName) ? "قالب شما" : $"«{templateName.Trim()}»";
+            var detail = string.IsNullOrWhiteSpace(reason)
+                ? "لطفاً محتوا را بازبینی و دوباره ارسال کنید."
+                : reason.Trim();
+            return (
+                "قالب تأیید نشد",
+                $"{name} رد شد. دلیل: {detail}");
+        }
+
         public static (string Title, string Body) FinancialDailyReport(
             decimal balance,
             decimal credited,

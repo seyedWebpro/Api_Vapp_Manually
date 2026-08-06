@@ -38,11 +38,9 @@ namespace Api_Vapp.Services
                 }
 
                 ScraperPlatformTokenListRaw tokens;
-                ScraperTokenAlertsRaw alerts;
                 try
                 {
                     tokens = await _scraper.GetPlatformTokensAsync();
-                    alerts = await _scraper.GetPlatformTokenAlertsAsync();
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
@@ -56,13 +54,27 @@ namespace Api_Vapp.Services
                         });
                 }
 
+                var platforms = MapPlatforms(tokens.Platforms);
+                List<AdminScraperTokenAlertDto> alerts;
+                try
+                {
+                    var alertsRaw = await _scraper.GetPlatformTokenAlertsAsync();
+                    alerts = MapAlerts(alertsRaw.Alerts);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // مسیر /alerts گاهی با روت {platform} تداخل دارد — از وضعیت پلتفرم‌ها هشدار بساز
+                    _logger.LogWarning(ex, "Platform token alerts endpoint failed; deriving from statuses");
+                    alerts = DeriveAlertsFromPlatforms(platforms);
+                }
+
                 return ApiResponse<AdminScraperTokensOverviewDto>.CreateSuccess(
                     new AdminScraperTokensOverviewDto
                     {
                         ScraperEnabled = true,
                         ScraperReachable = true,
-                        Platforms = MapPlatforms(tokens.Platforms),
-                        Alerts = MapAlerts(alerts.Alerts),
+                        Platforms = platforms,
+                        Alerts = alerts,
                         Hint = null
                     });
             }
@@ -305,6 +317,52 @@ namespace Api_Vapp.Services
                 Code = a.Code,
                 Message = a.Message
             }).ToList();
+        }
+
+        private static List<AdminScraperTokenAlertDto> DeriveAlertsFromPlatforms(
+            List<AdminScraperTokenStatusDto> platforms)
+        {
+            var alerts = new List<AdminScraperTokenAlertDto>();
+            foreach (var p in platforms)
+            {
+                var level = (p.AlertLevel ?? "none").Trim().ToLowerInvariant();
+                if (level is "none" or "")
+                    continue;
+
+                var name = DisplayName(p.Platform);
+                string message;
+                string code;
+                if (!p.Configured)
+                {
+                    code = "not_configured";
+                    message = $"توکن {name} تنظیم نشده است.";
+                }
+                else if (p.IsExpired == true)
+                {
+                    code = "expired";
+                    message = $"توکن {name} منقضی شده — مقدار جدید را ذخیره کنید.";
+                }
+                else if (!p.Ready)
+                {
+                    code = "not_ready";
+                    message = $"توکن {name} آماده نیست — مقدار را بررسی کنید.";
+                }
+                else
+                {
+                    code = level;
+                    message = $"هشدار توکن {name} ({level}).";
+                }
+
+                alerts.Add(new AdminScraperTokenAlertDto
+                {
+                    Platform = p.Platform,
+                    Level = level,
+                    Code = code,
+                    Message = message
+                });
+            }
+
+            return alerts;
         }
 
         private static string DisplayName(string platform) => platform.Trim().ToLowerInvariant() switch

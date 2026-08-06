@@ -182,11 +182,95 @@ namespace Api_Vapp.Repositories
 
             var baseQuery = ApplySendListBaseFilter(UserQuery(userId), filter);
 
-            var grouped = baseQuery
+            // کمپین‌های چندگیرنده: یک ردیف به‌ازای SourceEntityId؛ بقیه: یک ردیف به‌ازای Sid
+            var campaignModule = SmsSourceModules.MessageCampaign;
+
+            IQueryable<SmsSendBatchProjection> grouped;
+
+            if (!string.IsNullOrWhiteSpace(filter.Search))
+            {
+                var search = filter.Search.Trim();
+                List<int> matchingCampaignIds;
+                List<long> matchingSids;
+
+                if (long.TryParse(search, out var idSearch))
+                {
+                    matchingCampaignIds = await baseQuery
+                        .Where(r => r.SourceModule == campaignModule
+                            && r.SourceEntityId != null
+                            && (r.Sid == idSearch
+                                || (idSearch <= int.MaxValue && r.SourceEntityId.Value == (int)idSearch)))
+                        .Select(r => r.SourceEntityId!.Value)
+                        .Distinct()
+                        .ToListAsync();
+
+                    matchingSids = await baseQuery
+                        .Where(r => r.Sid == idSearch
+                            && !(r.SourceModule == campaignModule && r.SourceEntityId != null))
+                        .Select(r => r.Sid)
+                        .Distinct()
+                        .ToListAsync();
+                }
+                else
+                {
+                    matchingCampaignIds = new List<int>();
+                    matchingSids = new List<long>();
+                }
+
+                if (matchingCampaignIds.Count == 0 && matchingSids.Count == 0)
+                {
+                    matchingCampaignIds = await baseQuery
+                        .Where(r => r.SourceModule == campaignModule
+                            && r.SourceEntityId != null
+                            && r.SourceEntityLabel != null
+                            && r.SourceEntityLabel.Contains(search))
+                        .Select(r => r.SourceEntityId!.Value)
+                        .Distinct()
+                        .ToListAsync();
+
+                    matchingSids = await baseQuery
+                        .Where(r => !(r.SourceModule == campaignModule && r.SourceEntityId != null)
+                            && r.SourceEntityLabel != null
+                            && r.SourceEntityLabel.Contains(search))
+                        .Select(r => r.Sid)
+                        .Distinct()
+                        .ToListAsync();
+                }
+
+                if (matchingCampaignIds.Count == 0 && matchingSids.Count == 0)
+                    return (new List<SmsSendBatchProjection>(), 0);
+
+                baseQuery = baseQuery.Where(r =>
+                    (r.SourceModule == campaignModule
+                        && r.SourceEntityId != null
+                        && matchingCampaignIds.Contains(r.SourceEntityId.Value))
+                    || (!(r.SourceModule == campaignModule && r.SourceEntityId != null)
+                        && matchingSids.Contains(r.Sid)));
+            }
+
+            var campaignGroups = baseQuery
+                .Where(r => r.SourceModule == campaignModule && r.SourceEntityId != null)
+                .GroupBy(r => r.SourceEntityId!.Value)
+                .Select(g => new SmsSendBatchProjection
+                {
+                    Sid = g.Min(x => x.Sid),
+                    SendId = g.Key,
+                    IsCampaignBatch = true,
+                    Title = g.Max(x => x.SourceEntityLabel),
+                    SourceModule = campaignModule,
+                    SourceEntityId = g.Key,
+                    SendCount = g.Count(),
+                    SentAt = g.Min(x => x.SentAt)
+                });
+
+            var sidGroups = baseQuery
+                .Where(r => !(r.SourceModule == campaignModule && r.SourceEntityId != null))
                 .GroupBy(r => r.Sid)
                 .Select(g => new SmsSendBatchProjection
                 {
                     Sid = g.Key,
+                    SendId = g.Key,
+                    IsCampaignBatch = false,
                     Title = g.Max(x => x.SourceEntityLabel),
                     SourceModule = g.Max(x => x.SourceModule)!,
                     SourceEntityId = g.Max(x => x.SourceEntityId),
@@ -194,20 +278,7 @@ namespace Api_Vapp.Repositories
                     SentAt = g.Min(x => x.SentAt)
                 });
 
-            if (!string.IsNullOrWhiteSpace(filter.Search))
-            {
-                var search = filter.Search.Trim();
-                if (long.TryParse(search, out var sidSearch))
-                {
-                    grouped = grouped.Where(x =>
-                        x.Sid == sidSearch ||
-                        (x.Title != null && x.Title.Contains(search)));
-                }
-                else
-                {
-                    grouped = grouped.Where(x => x.Title != null && x.Title.Contains(search));
-                }
-            }
+            grouped = campaignGroups.Concat(sidGroups);
 
             var totalCount = await grouped.CountAsync();
 
@@ -223,15 +294,42 @@ namespace Api_Vapp.Repositories
 
         public async Task<SmsSendBatchProjection?> GetSendBatchBySidAsync(int userId, long sid)
         {
+            var campaignId = await TryResolveCampaignIdBySidAsync(userId, sid);
+            if (campaignId.HasValue)
+                return await GetSendBatchByCampaignAsync(userId, campaignId.Value);
+
             return await UserQuery(userId)
                 .Where(r => r.Sid == sid)
                 .GroupBy(r => r.Sid)
                 .Select(g => new SmsSendBatchProjection
                 {
                     Sid = g.Key,
+                    SendId = g.Key,
+                    IsCampaignBatch = false,
                     Title = g.Max(x => x.SourceEntityLabel),
                     SourceModule = g.Max(x => x.SourceModule)!,
                     SourceEntityId = g.Max(x => x.SourceEntityId),
+                    SendCount = g.Count(),
+                    SentAt = g.Min(x => x.SentAt)
+                })
+                .AsNoTracking()
+                .FirstOrDefaultAsync();
+        }
+
+        public Task<SmsSendBatchProjection?> GetSendBatchByCampaignAsync(int userId, int campaignId)
+        {
+            return UserQuery(userId)
+                .Where(r => r.SourceModule == SmsSourceModules.MessageCampaign
+                    && r.SourceEntityId == campaignId)
+                .GroupBy(r => r.SourceEntityId!.Value)
+                .Select(g => new SmsSendBatchProjection
+                {
+                    Sid = g.Min(x => x.Sid),
+                    SendId = g.Key,
+                    IsCampaignBatch = true,
+                    Title = g.Max(x => x.SourceEntityLabel),
+                    SourceModule = SmsSourceModules.MessageCampaign,
+                    SourceEntityId = g.Key,
                     SendCount = g.Count(),
                     SentAt = g.Min(x => x.SentAt)
                 })
@@ -243,6 +341,17 @@ namespace Api_Vapp.Repositories
             UserQuery(userId)
                 .AsNoTracking()
                 .Where(r => r.Sid == sid && r.MessageText != null && r.MessageText != "")
+                .OrderBy(r => r.Id)
+                .Select(r => r.MessageText)
+                .FirstOrDefaultAsync();
+
+        public Task<string?> GetSampleMessageTextByCampaignAsync(int userId, int campaignId) =>
+            UserQuery(userId)
+                .AsNoTracking()
+                .Where(r => r.SourceModule == SmsSourceModules.MessageCampaign
+                    && r.SourceEntityId == campaignId
+                    && r.MessageText != null
+                    && r.MessageText != "")
                 .OrderBy(r => r.Id)
                 .Select(r => r.MessageText)
                 .FirstOrDefaultAsync();
@@ -264,15 +373,56 @@ namespace Api_Vapp.Repositories
                 .ToDictionary(g => g.Key, g => g.OrderBy(x => x.Id).First().MessageText);
         }
 
+        public async Task<Dictionary<int, string?>> GetSampleMessageTextsByCampaignIdsAsync(
+            int userId, IEnumerable<int> campaignIds)
+        {
+            var idList = campaignIds.Distinct().ToList();
+            if (idList.Count == 0)
+                return new Dictionary<int, string?>();
+
+            var rows = await UserQuery(userId)
+                .AsNoTracking()
+                .Where(r => r.SourceModule == SmsSourceModules.MessageCampaign
+                    && r.SourceEntityId != null
+                    && idList.Contains(r.SourceEntityId.Value)
+                    && r.MessageText != null
+                    && r.MessageText != "")
+                .Select(r => new { CampaignId = r.SourceEntityId!.Value, r.Id, r.MessageText })
+                .ToListAsync();
+
+            return rows
+                .GroupBy(r => r.CampaignId)
+                .ToDictionary(g => g.Key, g => g.OrderBy(x => x.Id).First().MessageText);
+        }
+
         public async Task<(List<SmsDeliveryRecord> Items, int TotalCount)> GetRecipientsBySidAsync(
             int userId, long sid, SmsSendRecipientFilterDto filter)
         {
+            var campaignId = await TryResolveCampaignIdBySidAsync(userId, sid);
+            if (campaignId.HasValue)
+                return await GetRecipientsByCampaignAsync(userId, campaignId.Value, filter);
+
+            return await GetRecipientsInternalAsync(
+                ApplyRecipientFilter(UserQuery(userId).Where(r => r.Sid == sid), filter),
+                filter);
+        }
+
+        public Task<(List<SmsDeliveryRecord> Items, int TotalCount)> GetRecipientsByCampaignAsync(
+            int userId, int campaignId, SmsSendRecipientFilterDto filter) =>
+            GetRecipientsInternalAsync(
+                ApplyRecipientFilter(
+                    UserQuery(userId).Where(r =>
+                        r.SourceModule == SmsSourceModules.MessageCampaign
+                        && r.SourceEntityId == campaignId),
+                    filter),
+                filter);
+
+        private async Task<(List<SmsDeliveryRecord> Items, int TotalCount)> GetRecipientsInternalAsync(
+            IQueryable<SmsDeliveryRecord> query,
+            SmsSendRecipientFilterDto filter)
+        {
             var pageNumber = filter.PageNumber < 1 ? 1 : filter.PageNumber;
             var pageSize = filter.PageSize < 1 ? 20 : Math.Min(filter.PageSize, 100);
-
-            var query = ApplyRecipientFilter(
-                UserQuery(userId).Where(r => r.Sid == sid),
-                filter);
 
             var totalCount = await query.CountAsync();
 
@@ -289,6 +439,10 @@ namespace Api_Vapp.Repositories
         public async Task<List<SmsDeliveryRecord>> GetAllRecipientsBySidForExportAsync(
             int userId, long sid, SmsSendRecipientFilterDto filter, int maxRows)
         {
+            var campaignId = await TryResolveCampaignIdBySidAsync(userId, sid);
+            if (campaignId.HasValue)
+                return await GetAllRecipientsByCampaignForExportAsync(userId, campaignId.Value, filter, maxRows);
+
             var take = Math.Clamp(maxRows, 1, 50_000);
 
             return await ApplyRecipientFilter(
@@ -300,13 +454,51 @@ namespace Api_Vapp.Repositories
                 .ToListAsync();
         }
 
+        public async Task<List<SmsDeliveryRecord>> GetAllRecipientsByCampaignForExportAsync(
+            int userId, int campaignId, SmsSendRecipientFilterDto filter, int maxRows)
+        {
+            var take = Math.Clamp(maxRows, 1, 50_000);
+
+            return await ApplyRecipientFilter(
+                    UserQuery(userId).Where(r =>
+                        r.SourceModule == SmsSourceModules.MessageCampaign
+                        && r.SourceEntityId == campaignId),
+                    filter)
+                .AsNoTracking()
+                .OrderBy(r => r.Id)
+                .Take(take)
+                .ToListAsync();
+        }
+
         public async Task<SmsDeliverySummaryDto> GetSummaryBySidAsync(
             int userId, long sid, SmsSendRecipientFilterDto? filter = null)
         {
+            var campaignId = await TryResolveCampaignIdBySidAsync(userId, sid);
+            if (campaignId.HasValue)
+                return await GetSummaryByCampaignAsync(userId, campaignId.Value, filter);
+
             var query = UserQuery(userId).Where(r => r.Sid == sid);
             if (filter != null)
                 query = ApplyRecipientFilter(query, filter);
 
+            return await BuildSummaryAsync(query);
+        }
+
+        public async Task<SmsDeliverySummaryDto> GetSummaryByCampaignAsync(
+            int userId, int campaignId, SmsSendRecipientFilterDto? filter = null)
+        {
+            var query = UserQuery(userId).Where(r =>
+                r.SourceModule == SmsSourceModules.MessageCampaign
+                && r.SourceEntityId == campaignId);
+
+            if (filter != null)
+                query = ApplyRecipientFilter(query, filter);
+
+            return await BuildSummaryAsync(query);
+        }
+
+        private async Task<SmsDeliverySummaryDto> BuildSummaryAsync(IQueryable<SmsDeliveryRecord> query)
+        {
             var grouped = await query
                 .GroupBy(r => r.DeliveryCategory)
                 .Select(g => new { Category = g.Key, Count = g.Count() })
@@ -317,6 +509,38 @@ namespace Api_Vapp.Repositories
 
         public Task<bool> UserOwnsSidAsync(int userId, long sid) =>
             UserQuery(userId).AnyAsync(r => r.Sid == sid);
+
+        public Task<bool> UserOwnsCampaignAsync(int userId, int campaignId) =>
+            UserQuery(userId).AnyAsync(r =>
+                r.SourceModule == SmsSourceModules.MessageCampaign
+                && r.SourceEntityId == campaignId);
+
+        public async Task<int?> TryResolveCampaignIdBySidAsync(int userId, long sid)
+        {
+            var hit = await UserQuery(userId)
+                .AsNoTracking()
+                .Where(r => r.Sid == sid)
+                .Select(r => new { r.SourceModule, r.SourceEntityId })
+                .FirstOrDefaultAsync();
+
+            if (hit == null)
+                return null;
+
+            if (hit.SourceModule == SmsSourceModules.MessageCampaign && hit.SourceEntityId.HasValue)
+                return hit.SourceEntityId.Value;
+
+            return null;
+        }
+
+        public Task<List<long>> GetDistinctSidsByCampaignAsync(int userId, int campaignId) =>
+            UserQuery(userId)
+                .AsNoTracking()
+                .Where(r => r.SourceModule == SmsSourceModules.MessageCampaign
+                    && r.SourceEntityId == campaignId
+                    && r.Sid > 0)
+                .Select(r => r.Sid)
+                .Distinct()
+                .ToListAsync();
 
         public Task<List<SmsDeliveryRecord>> GetSentRecordsBySidForUserAsync(int userId, long sid) =>
             UserQuery(userId)

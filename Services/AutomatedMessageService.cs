@@ -1000,109 +1000,263 @@ namespace Api_Vapp.Services
             }
         }
 
-        public async Task<ApiResponse<bool>> DeleteAutomatedMessageAsync(int id, int userId)
+        public async Task<ApiResponse<AutomatedMessageActionResultDto>> CancelAutomatedMessageAsync(int id, int userId)
         {
-            using var transaction = await _context.Database.BeginTransactionAsync();
+            _logger.LogInformation("شروع لغو پیام خودکار — Id: {Id}, UserId: {UserId}", id, userId);
+
             try
             {
                 var automatedMessage = await _automatedMessageRepository.GetByIdAsync(id);
-
                 if (automatedMessage == null)
-                {
-                    await transaction.RollbackAsync();
-                    return ApiResponse<bool>.NotFound("پیام خودکار یافت نشد");
-                }
+                    return ApiResponse<AutomatedMessageActionResultDto>.NotFound("پیام خودکار یافت نشد");
 
                 if (automatedMessage.UserId != userId)
+                    return ApiResponse<AutomatedMessageActionResultDto>.Forbidden("شما مجاز به لغو این پیام خودکار نیستید");
+
+                var before = new
                 {
-                    await transaction.RollbackAsync();
-                    return ApiResponse<bool>.Forbidden("شما مجاز به حذف این پیام خودکار نیستید");
-                }
+                    automatedMessage.IsActive,
+                    automatedMessage.Status,
+                    automatedMessage.IsDeleted
+                };
 
-                // بررسی استفاده در کمپین‌های فعال
-                var activeCampaigns = await _context.MessageCampaigns
-                    .Where(c => c.AutomatedMessageId == id
-                                && c.IsActive
-                                && c.Status != "Draft"
-                                && c.Status != "Cancelled"
-                                && c.Status != "Completed"
-                                && !c.IsDeleted)
-                    .ToListAsync();
+                var cancelledCampaigns = await CancelLinkedOpenCampaignsAsync(id, userId);
 
-                if (activeCampaigns.Any())
-                {
-                    await transaction.RollbackAsync();
-                    return ApiResponse<bool>.BadRequest(
-                        $"این پیام خودکار در {activeCampaigns.Count} کمپین فعال استفاده شده و قابل حذف نیست. لطفاً ابتدا کمپین‌ها را لغو یا تکمیل کنید.");
-                }
-
-                // Soft Delete
-                automatedMessage.IsDeleted = true;
+                automatedMessage.IsActive = false;
+                automatedMessage.Status = "Paused";
                 automatedMessage.UpdatedAt = DateTime.UtcNow;
                 await _automatedMessageRepository.UpdateAsync(automatedMessage);
                 await _context.SaveChangesAsync();
-                await transaction.CommitAsync();
 
-                _logger.LogInformation("Automated message deleted successfully with ID: {Id}", id);
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Message,
+                    Action = AuditActions.AutomatedMessageCancelled,
+                    EntityType = AuditEntityTypes.AutomatedMessage,
+                    EntityId = id.ToString(),
+                    ActorUserId = userId,
+                    Before = before,
+                    After = new
+                    {
+                        automatedMessage.IsActive,
+                        automatedMessage.Status,
+                        automatedMessage.IsDeleted,
+                        cancelledCampaigns
+                    }
+                });
 
-                return ApiResponse<bool>.CreateSuccess(true, "پیام خودکار با موفقیت حذف شد");
+                _logger.LogInformation(
+                    "پایان لغو پیام خودکار — Id: {Id}, CancelledCampaigns: {CancelledCampaigns}",
+                    id, cancelledCampaigns);
+
+                return ApiResponse<AutomatedMessageActionResultDto>.CreateSuccess(
+                    MapActionResult(automatedMessage, cancelledCampaigns),
+                    cancelledCampaigns > 0
+                        ? $"پیام خودکار لغو شد و {cancelledCampaigns} کمپین مرتبط لغو گردید"
+                        : "پیام خودکار با موفقیت لغو شد");
             }
             catch (DbUpdateException ex)
             {
-                await transaction.RollbackAsync();
-                _logger.LogError(ex, "خطای دیتابیس در حذف پیام خودکار: {Id}", id);
-                return ApiResponse<bool>.InternalServerError(ControlledErrorHelper.Unexpected);
+                _logger.LogError(ex, "خطای دیتابیس در لغو پیام خودکار — Id: {Id}", id);
+                return ApiResponse<AutomatedMessageActionResultDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
             catch (Exception ex)
             {
-                await transaction.RollbackAsync();
-                _logger.LogError(ex, "خطای غیرمنتظره در حذف پیام خودکار: {Id}", id);
-                return ApiResponse<bool>.InternalServerError(ControlledErrorHelper.Unexpected);
+                _logger.LogError(ex, "خطای غیرمنتظره در لغو پیام خودکار — Id: {Id}", id);
+                return ApiResponse<AutomatedMessageActionResultDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
-        public async Task<ApiResponse<bool>> ToggleAutomatedMessageStatusAsync(int id, int userId, bool isActive)
+        public async Task<ApiResponse<AutomatedMessageActionResultDto>> DeleteAutomatedMessageAsync(int id, int userId)
         {
-            using var transaction = await _context.Database.BeginTransactionAsync();
+            _logger.LogInformation("شروع حذف پیام خودکار — Id: {Id}, UserId: {UserId}", id, userId);
+
             try
             {
                 var automatedMessage = await _automatedMessageRepository.GetByIdAsync(id);
-
                 if (automatedMessage == null)
-                {
-                    await transaction.RollbackAsync();
-                    return ApiResponse<bool>.NotFound("پیام خودکار یافت نشد");
-                }
+                    return ApiResponse<AutomatedMessageActionResultDto>.NotFound("پیام خودکار یافت نشد");
 
                 if (automatedMessage.UserId != userId)
+                    return ApiResponse<AutomatedMessageActionResultDto>.Forbidden("شما مجاز به حذف این پیام خودکار نیستید");
+
+                var before = new
                 {
-                    await transaction.RollbackAsync();
-                    return ApiResponse<bool>.Forbidden("شما مجاز به تغییر وضعیت این پیام خودکار نیستید");
+                    automatedMessage.IsActive,
+                    automatedMessage.Status,
+                    automatedMessage.IsDeleted
+                };
+
+                // کمپین‌های باز را لغو کن تا حذف بلاک نشود و ارسال بعدی قطع شود
+                var cancelledCampaigns = await CancelLinkedOpenCampaignsAsync(id, userId);
+
+                automatedMessage.IsDeleted = true;
+                automatedMessage.IsActive = false;
+                automatedMessage.Status = "Completed";
+                automatedMessage.UpdatedAt = DateTime.UtcNow;
+                await _automatedMessageRepository.UpdateAsync(automatedMessage);
+                await _context.SaveChangesAsync();
+
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Message,
+                    Action = AuditActions.AutomatedMessageDeleted,
+                    EntityType = AuditEntityTypes.AutomatedMessage,
+                    EntityId = id.ToString(),
+                    ActorUserId = userId,
+                    Before = before,
+                    After = new
+                    {
+                        isDeleted = true,
+                        isActive = false,
+                        status = automatedMessage.Status,
+                        cancelledCampaigns
+                    }
+                });
+
+                _logger.LogInformation(
+                    "پایان حذف پیام خودکار — Id: {Id}, CancelledCampaigns: {CancelledCampaigns}",
+                    id, cancelledCampaigns);
+
+                return ApiResponse<AutomatedMessageActionResultDto>.CreateSuccess(
+                    MapActionResult(automatedMessage, cancelledCampaigns),
+                    cancelledCampaigns > 0
+                        ? $"پیام خودکار حذف شد و {cancelledCampaigns} کمپین مرتبط لغو گردید"
+                        : "پیام خودکار با موفقیت حذف شد");
+            }
+            catch (DbUpdateException ex)
+            {
+                _logger.LogError(ex, "خطای دیتابیس در حذف پیام خودکار — Id: {Id}", id);
+                return ApiResponse<AutomatedMessageActionResultDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "خطای غیرمنتظره در حذف پیام خودکار — Id: {Id}", id);
+                return ApiResponse<AutomatedMessageActionResultDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
+        public async Task<ApiResponse<AutomatedMessageActionResultDto>> ToggleAutomatedMessageStatusAsync(int id, int userId, bool isActive)
+        {
+            _logger.LogInformation(
+                "شروع تغییر وضعیت پیام خودکار — Id: {Id}, UserId: {UserId}, IsActive: {IsActive}",
+                id, userId, isActive);
+
+            try
+            {
+                var automatedMessage = await _automatedMessageRepository.GetByIdAsync(id);
+                if (automatedMessage == null)
+                    return ApiResponse<AutomatedMessageActionResultDto>.NotFound("پیام خودکار یافت نشد");
+
+                if (automatedMessage.UserId != userId)
+                    return ApiResponse<AutomatedMessageActionResultDto>.Forbidden("شما مجاز به تغییر وضعیت این پیام خودکار نیستید");
+
+                var before = new
+                {
+                    automatedMessage.IsActive,
+                    automatedMessage.Status
+                };
+
+                var cancelledCampaigns = 0;
+                if (!isActive)
+                {
+                    // غیرفعال‌سازی = توقف ارسال‌های آینده و لغو کمپین‌های باز
+                    cancelledCampaigns = await CancelLinkedOpenCampaignsAsync(id, userId);
                 }
 
                 automatedMessage.IsActive = isActive;
+                automatedMessage.Status = isActive ? "Active" : "Paused";
                 automatedMessage.UpdatedAt = DateTime.UtcNow;
                 await _automatedMessageRepository.UpdateAsync(automatedMessage);
                 await _context.SaveChangesAsync();
-                await transaction.CommitAsync();
 
-                _logger.LogInformation("Automated message status toggled to {Status} for ID: {Id}", isActive ? "Active" : "Inactive", id);
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Message,
+                    Action = AuditActions.AutomatedMessageStatusChanged,
+                    EntityType = AuditEntityTypes.AutomatedMessage,
+                    EntityId = id.ToString(),
+                    ActorUserId = userId,
+                    Before = before,
+                    After = new
+                    {
+                        automatedMessage.IsActive,
+                        automatedMessage.Status,
+                        cancelledCampaigns
+                    }
+                });
 
-                return ApiResponse<bool>.CreateSuccess(true, $"پیام خودکار با موفقیت {(isActive ? "فعال" : "غیرفعال")} شد");
+                _logger.LogInformation(
+                    "پایان تغییر وضعیت پیام خودکار — Id: {Id}, IsActive: {IsActive}, CancelledCampaigns: {CancelledCampaigns}",
+                    id, isActive, cancelledCampaigns);
+
+                return ApiResponse<AutomatedMessageActionResultDto>.CreateSuccess(
+                    MapActionResult(automatedMessage, cancelledCampaigns),
+                    isActive
+                        ? "پیام خودکار با موفقیت فعال شد"
+                        : cancelledCampaigns > 0
+                            ? $"پیام خودکار غیرفعال شد و {cancelledCampaigns} کمپین مرتبط لغو گردید"
+                            : "پیام خودکار با موفقیت غیرفعال شد");
             }
             catch (DbUpdateException ex)
             {
-                await transaction.RollbackAsync();
-                _logger.LogError(ex, "خطای دیتابیس در تغییر وضعیت پیام خودکار: {Id}", id);
-                return ApiResponse<bool>.InternalServerError(ControlledErrorHelper.Unexpected);
+                _logger.LogError(ex, "خطای دیتابیس در تغییر وضعیت پیام خودکار — Id: {Id}", id);
+                return ApiResponse<AutomatedMessageActionResultDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
             catch (Exception ex)
             {
-                await transaction.RollbackAsync();
-                _logger.LogError(ex, "خطای غیرمنتظره در تغییر وضعیت پیام خودکار: {Id}", id);
-                return ApiResponse<bool>.InternalServerError(ControlledErrorHelper.Unexpected);
+                _logger.LogError(ex, "خطای غیرمنتظره در تغییر وضعیت پیام خودکار — Id: {Id}", id);
+                return ApiResponse<AutomatedMessageActionResultDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
+
+        /// <summary>
+        /// لغو دسته‌ای کمپین‌های بازِ مرتبط با پیام خودکار (بدون بارگذاری entityها)
+        /// </summary>
+        private async Task<int> CancelLinkedOpenCampaignsAsync(int automatedMessageId, int userId)
+        {
+            var now = DateTime.UtcNow;
+            // فقط وضعیت‌هایی که هنوز ارسال نهایی (Sent) یا لغو نشده‌اند
+            var openStatuses = new[] { "Draft", "Pending", "PendingApproval", "Sending", "Failed" };
+
+            var cancelledCampaigns = await _context.MessageCampaigns
+                .Where(c => c.AutomatedMessageId == automatedMessageId
+                            && c.UserId == userId
+                            && !c.IsDeleted
+                            && openStatuses.Contains(c.Status))
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(c => c.Status, "Cancelled")
+                    .SetProperty(c => c.IsActive, false)
+                    .SetProperty(c => c.UpdatedAt, now));
+
+            if (cancelledCampaigns == 0)
+                return 0;
+
+            // گیرندگان Pending را Failed کن تا worker دوباره ارسال نکند
+            await _context.MessageRecipients
+                .Where(r => r.Status == "Pending"
+                            && _context.MessageCampaigns.Any(c =>
+                                c.Id == r.CampaignId
+                                && c.AutomatedMessageId == automatedMessageId
+                                && c.UserId == userId
+                                && c.Status == "Cancelled"
+                                && !c.IsDeleted))
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(r => r.Status, "Failed")
+                    .SetProperty(r => r.ErrorMessage, "لغو به‌خاطر توقف پیام خودکار"));
+
+            return cancelledCampaigns;
+        }
+
+        private static AutomatedMessageActionResultDto MapActionResult(AutomatedMessage automatedMessage, int cancelledCampaigns) =>
+            new()
+            {
+                Id = automatedMessage.Id,
+                IsActive = automatedMessage.IsActive,
+                IsDeleted = automatedMessage.IsDeleted,
+                Status = automatedMessage.Status,
+                CancelledCampaignsCount = cancelledCampaigns
+            };
 
         #region Helper Methods
 

@@ -64,18 +64,30 @@ namespace Api_Vapp.Services
 
                 var (items, totalCount) = await _repository.GetSendBatchesAsync(userId, filter);
                 var partsMap = await LoadPartsMapAsync(items);
-                var messageTexts = await _repository.GetSampleMessageTextsBySidsAsync(
-                    userId, items.Select(i => i.Sid));
+                var sidMessageTexts = await _repository.GetSampleMessageTextsBySidsAsync(
+                    userId, items.Where(i => !i.IsCampaignBatch).Select(i => i.Sid));
+                var campaignMessageTexts = await _repository.GetSampleMessageTextsByCampaignIdsAsync(
+                    userId, items.Where(i => i.IsCampaignBatch && i.SourceEntityId.HasValue)
+                        .Select(i => i.SourceEntityId!.Value));
                 var pricingRules = (await _smsPricing.GetRuntimeAsync()).Rules;
 
                 var dtoItems = items.Select(item =>
                 {
-                    messageTexts.TryGetValue(item.Sid, out var sampleMessage);
+                    string? sampleMessage = null;
+                    if (item.IsCampaignBatch && item.SourceEntityId.HasValue)
+                        campaignMessageTexts.TryGetValue(item.SourceEntityId.Value, out sampleMessage);
+                    else
+                        sidMessageTexts.TryGetValue(item.Sid, out sampleMessage);
+
                     var (sendType, sendTypeLabel) = MapSendType(item.SourceModule);
                     return new SmsSendBatchListItemDto
                     {
                         Sid = item.Sid,
-                        Title = item.Title ?? $"ارسال #{item.Sid}",
+                        SendId = item.SendId,
+                        IsCampaignBatch = item.IsCampaignBatch,
+                        Title = item.Title ?? (item.IsCampaignBatch
+                            ? $"کمپین #{item.SendId}"
+                            : $"ارسال #{item.Sid}"),
                         SourceModule = item.SourceModule,
                         SourceModuleLabel = SmsSourceModules.GetPersianLabel(item.SourceModule),
                         SendType = sendType,
@@ -120,40 +132,74 @@ namespace Api_Vapp.Services
                 if (batch == null)
                     return ApiResponse<SmsSendBatchDetailDto>.NotFound("ارسال مورد نظر یافت نشد");
 
-                var summary = await _repository.GetSummaryBySidAsync(userId, sid);
-                var partsMap = await LoadPartsMapAsync(new[] { batch });
-                var messageText = await ResolveBatchMessageTextAsync(userId, batch);
-                var (sendType, sendTypeLabel) = MapSendType(batch.SourceModule);
-                var pricingRules = (await _smsPricing.GetRuntimeAsync()).Rules;
-
-                var dto = new SmsSendBatchDetailDto
-                {
-                    Sid = batch.Sid,
-                    Title = batch.Title ?? $"ارسال #{batch.Sid}",
-                    SourceModule = batch.SourceModule,
-                    SourceModuleLabel = SmsSourceModules.GetPersianLabel(batch.SourceModule),
-                    SendType = sendType,
-                    SendTypeLabel = sendTypeLabel,
-                    SourceEntityId = batch.SourceEntityId,
-                    SenderNumber = _senderNumber,
-                    SendCount = batch.SendCount,
-                    PartsCount = ResolvePartsCount(batch, partsMap, messageText, pricingRules),
-                    SentAt = batch.SentAt,
-                    MessageText = messageText,
-                    Summary = summary
-                };
-
-                _logger.LogInformation(
-                    "SMS send batch detail — UserId: {UserId}, Sid: {Sid}, Count: {Count}",
-                    userId, sid, batch.SendCount);
-
-                return ApiResponse<SmsSendBatchDetailDto>.CreateSuccess(dto);
+                return await BuildBatchDetailAsync(userId, batch);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "SMS send batch detail failed — UserId: {UserId}, Sid: {Sid}", userId, sid);
                 return ApiResponse<SmsSendBatchDetailDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
+        }
+
+        public async Task<ApiResponse<SmsSendBatchDetailDto>> GetSendBatchDetailByCampaignAsync(int userId, int campaignId)
+        {
+            try
+            {
+                if (campaignId <= 0)
+                    return ApiResponse<SmsSendBatchDetailDto>.BadRequest("شناسه کمپین نامعتبر است");
+
+                var batch = await _repository.GetSendBatchByCampaignAsync(userId, campaignId);
+                if (batch == null)
+                    return ApiResponse<SmsSendBatchDetailDto>.NotFound("ارسال مورد نظر یافت نشد");
+
+                return await BuildBatchDetailAsync(userId, batch);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "SMS campaign batch detail failed — UserId: {UserId}, CampaignId: {CampaignId}", userId, campaignId);
+                return ApiResponse<SmsSendBatchDetailDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
+        private async Task<ApiResponse<SmsSendBatchDetailDto>> BuildBatchDetailAsync(int userId, SmsSendBatchProjection batch)
+        {
+            SmsDeliverySummaryDto summary;
+            if (batch.IsCampaignBatch && batch.SourceEntityId.HasValue)
+                summary = await _repository.GetSummaryByCampaignAsync(userId, batch.SourceEntityId.Value);
+            else
+                summary = await _repository.GetSummaryBySidAsync(userId, batch.Sid);
+
+            var partsMap = await LoadPartsMapAsync(new[] { batch });
+            var messageText = await ResolveBatchMessageTextAsync(userId, batch);
+            var (sendType, sendTypeLabel) = MapSendType(batch.SourceModule);
+            var pricingRules = (await _smsPricing.GetRuntimeAsync()).Rules;
+
+            var dto = new SmsSendBatchDetailDto
+            {
+                Sid = batch.Sid,
+                SendId = batch.SendId,
+                IsCampaignBatch = batch.IsCampaignBatch,
+                Title = batch.Title ?? (batch.IsCampaignBatch
+                    ? $"کمپین #{batch.SendId}"
+                    : $"ارسال #{batch.Sid}"),
+                SourceModule = batch.SourceModule,
+                SourceModuleLabel = SmsSourceModules.GetPersianLabel(batch.SourceModule),
+                SendType = sendType,
+                SendTypeLabel = sendTypeLabel,
+                SourceEntityId = batch.SourceEntityId,
+                SenderNumber = _senderNumber,
+                SendCount = batch.SendCount,
+                PartsCount = ResolvePartsCount(batch, partsMap, messageText, pricingRules),
+                SentAt = batch.SentAt,
+                MessageText = messageText,
+                Summary = summary
+            };
+
+            _logger.LogInformation(
+                "SMS send batch detail — UserId: {UserId}, Sid: {Sid}, SendId: {SendId}, Campaign: {IsCampaign}, Count: {Count}",
+                userId, batch.Sid, batch.SendId, batch.IsCampaignBatch, batch.SendCount);
+
+            return ApiResponse<SmsSendBatchDetailDto>.CreateSuccess(dto);
         }
 
         public async Task<ApiResponse<SmsSendRecipientListDto>> GetRecipientsAsync(
@@ -169,27 +215,63 @@ namespace Api_Vapp.Services
                 if (!await _repository.UserOwnsSidAsync(userId, sid))
                     return ApiResponse<SmsSendRecipientListDto>.NotFound("ارسال مورد نظر یافت نشد");
 
+                var batch = await _repository.GetSendBatchBySidAsync(userId, sid);
                 var (items, totalCount) = await _repository.GetRecipientsBySidAsync(userId, sid, filter);
-                var rowOffset = (filter.PageNumber - 1) * filter.PageSize;
-
-                var dtoItems = items.Select((record, index) => MapRecipient(record, rowOffset + index + 1)).ToList();
-                var totalPages = totalCount == 0 ? 0 : (int)Math.Ceiling(totalCount / (double)filter.PageSize);
-
-                return ApiResponse<SmsSendRecipientListDto>.CreateSuccess(new SmsSendRecipientListDto
-                {
-                    Sid = sid,
-                    Items = dtoItems,
-                    TotalCount = totalCount,
-                    PageNumber = filter.PageNumber,
-                    PageSize = filter.PageSize,
-                    TotalPages = totalPages
-                });
+                return BuildRecipientListResponse(batch, sid, items, totalCount, filter);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "SMS recipients list failed — UserId: {UserId}, Sid: {Sid}", userId, sid);
                 return ApiResponse<SmsSendRecipientListDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
+        }
+
+        public async Task<ApiResponse<SmsSendRecipientListDto>> GetRecipientsByCampaignAsync(
+            int userId, int campaignId, SmsSendRecipientFilterDto filter)
+        {
+            try
+            {
+                if (campaignId <= 0)
+                    return ApiResponse<SmsSendRecipientListDto>.BadRequest("شناسه کمپین نامعتبر است");
+
+                NormalizeRecipientFilter(filter);
+
+                if (!await _repository.UserOwnsCampaignAsync(userId, campaignId))
+                    return ApiResponse<SmsSendRecipientListDto>.NotFound("ارسال مورد نظر یافت نشد");
+
+                var batch = await _repository.GetSendBatchByCampaignAsync(userId, campaignId);
+                var (items, totalCount) = await _repository.GetRecipientsByCampaignAsync(userId, campaignId, filter);
+                return BuildRecipientListResponse(batch, batch?.Sid ?? 0, items, totalCount, filter);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "SMS campaign recipients list failed — UserId: {UserId}, CampaignId: {CampaignId}", userId, campaignId);
+                return ApiResponse<SmsSendRecipientListDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
+        private ApiResponse<SmsSendRecipientListDto> BuildRecipientListResponse(
+            SmsSendBatchProjection? batch,
+            long sid,
+            List<SmsDeliveryRecord> items,
+            int totalCount,
+            SmsSendRecipientFilterDto filter)
+        {
+            var rowOffset = (filter.PageNumber - 1) * filter.PageSize;
+            var dtoItems = items.Select((record, index) => MapRecipient(record, rowOffset + index + 1)).ToList();
+            var totalPages = totalCount == 0 ? 0 : (int)Math.Ceiling(totalCount / (double)filter.PageSize);
+
+            return ApiResponse<SmsSendRecipientListDto>.CreateSuccess(new SmsSendRecipientListDto
+            {
+                Sid = batch?.Sid ?? sid,
+                SendId = batch?.SendId ?? sid,
+                IsCampaignBatch = batch?.IsCampaignBatch ?? false,
+                Items = dtoItems,
+                TotalCount = totalCount,
+                PageNumber = filter.PageNumber,
+                PageSize = filter.PageSize,
+                TotalPages = totalPages
+            });
         }
 
         public async Task<ApiResponse<SmsMessageDetailDto>> GetMessageDetailAsync(int userId, int recordId)
@@ -237,11 +319,41 @@ namespace Api_Vapp.Services
                 if (sid <= 0)
                     return ApiResponse<SmsDeliverySummaryDto>.BadRequest("کد ارسال نامعتبر است");
 
+                var campaignId = await _repository.TryResolveCampaignIdBySidAsync(userId, sid);
+                if (campaignId.HasValue)
+                    return await RefreshSendBatchByCampaignAsync(userId, campaignId.Value);
+
                 return await _deliveryTracking.RefreshBySidAsync(userId, sid);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "SMS send batch refresh failed — UserId: {UserId}, Sid: {Sid}", userId, sid);
+                return ApiResponse<SmsDeliverySummaryDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
+        public async Task<ApiResponse<SmsDeliverySummaryDto>> RefreshSendBatchByCampaignAsync(int userId, int campaignId)
+        {
+            try
+            {
+                if (campaignId <= 0)
+                    return ApiResponse<SmsDeliverySummaryDto>.BadRequest("شناسه کمپین نامعتبر است");
+
+                if (!await _repository.UserOwnsCampaignAsync(userId, campaignId))
+                    return ApiResponse<SmsDeliverySummaryDto>.NotFound("ارسال مورد نظر یافت نشد");
+
+                var sids = await _repository.GetDistinctSidsByCampaignAsync(userId, campaignId);
+                foreach (var sid in sids)
+                {
+                    await _deliveryTracking.RefreshBySidAsync(userId, sid);
+                }
+
+                var summary = await _repository.GetSummaryByCampaignAsync(userId, campaignId);
+                return ApiResponse<SmsDeliverySummaryDto>.CreateSuccess(summary, "وضعیت دلیوری بروزرسانی شد");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "SMS campaign batch refresh failed — UserId: {UserId}, CampaignId: {CampaignId}", userId, campaignId);
                 return ApiResponse<SmsDeliverySummaryDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
@@ -270,103 +382,149 @@ namespace Api_Vapp.Services
 
                 var records = await _repository.GetAllRecipientsBySidForExportAsync(
                     userId, sid, filter, MaxExcelExportRows);
-                var isTruncated = totalMatching > records.Count;
 
-                var batchTitle = !string.IsNullOrWhiteSpace(batch?.Title)
-                    ? batch!.Title!
-                    : $"ارسال #{sid}";
-                var batchMessageText = batch != null
-                    ? await ResolveBatchMessageTextAsync(userId, batch)
-                    : null;
-                var (_, sendTypeLabel) = MapSendType(batch?.SourceModule ?? records.FirstOrDefault()?.SourceModule ?? string.Empty);
-
-                using var workbook = new XLWorkbook();
-                var worksheet = workbook.Worksheets.Add("گیرندگان");
-
-                worksheet.Cell(1, 1).Value = "ردیف";
-                worksheet.Cell(1, 2).Value = "شماره موبایل";
-                worksheet.Cell(1, 3).Value = "فرستنده";
-                worksheet.Cell(1, 4).Value = "وضعیت";
-                worksheet.Cell(1, 5).Value = "کد وضعیت";
-                worksheet.Cell(1, 6).Value = "پیام وضعیت";
-                worksheet.Cell(1, 7).Value = "تاریخ ارسال";
-                worksheet.Cell(1, 8).Value = "کد ارسال";
-                worksheet.Cell(1, 9).Value = "عنوان";
-                worksheet.Cell(1, 10).Value = "نوع ارسال";
-                worksheet.Cell(1, 11).Value = "متن پیام";
-                worksheet.Cell(1, 12).Value = "وضعیت نهایی";
-                worksheet.Row(1).Style.Font.Bold = true;
-
-                for (var i = 0; i < records.Count; i++)
-                {
-                    var record = records[i];
-                    var row = i + 2;
-                    var categoryLabel = ResolveCategoryLabel(record);
-                    var statusMessage = !string.IsNullOrWhiteSpace(record.ProviderStatusMessage)
-                        ? record.ProviderStatusMessage!
-                        : categoryLabel;
-                    var title = !string.IsNullOrWhiteSpace(record.SourceEntityLabel)
-                        ? record.SourceEntityLabel!
-                        : batchTitle;
-                    var messageText = !string.IsNullOrWhiteSpace(record.MessageText)
-                        ? record.MessageText!
-                        : (batchMessageText ?? string.Empty);
-                    var rowSendTypeLabel = string.IsNullOrWhiteSpace(sendTypeLabel)
-                        ? SmsSourceModules.GetPersianLabel(record.SourceModule)
-                        : sendTypeLabel;
-
-                    worksheet.Cell(row, 1).Value = i + 1;
-                    worksheet.Cell(row, 2).Value = record.Mobile ?? string.Empty;
-                    worksheet.Cell(row, 3).Value = string.IsNullOrWhiteSpace(_senderNumber) ? "-" : _senderNumber;
-                    worksheet.Cell(row, 4).Value = categoryLabel;
-                    worksheet.Cell(row, 5).Value = record.ProviderStatusCode?.ToString() ?? "-";
-                    worksheet.Cell(row, 6).Value = statusMessage;
-                    worksheet.Cell(row, 7).Value = record.SentAt.ToString("yyyy-MM-dd HH:mm:ss");
-                    worksheet.Cell(row, 8).Value = record.Sid.ToString();
-                    worksheet.Cell(row, 9).Value = title;
-                    worksheet.Cell(row, 10).Value = rowSendTypeLabel;
-                    worksheet.Cell(row, 11).Value = string.IsNullOrWhiteSpace(messageText) ? "-" : messageText;
-                    worksheet.Cell(row, 12).Value = record.IsDeliveryFinal ? "بله" : "خیر";
-                }
-
-                worksheet.Columns().AdjustToContents();
-
-                using var stream = new MemoryStream();
-                workbook.SaveAs(stream);
-                var fileContent = stream.ToArray();
-
-                var safeTitle = string.Join("_", (batch?.Title ?? $"sid-{sid}").Split(Path.GetInvalidFileNameChars()));
-                if (string.IsNullOrWhiteSpace(safeTitle))
-                    safeTitle = $"sid-{sid}";
-
-                var result = new ExportExcelResultDto
-                {
-                    FileContent = fileContent,
-                    FileName = $"SmsReport_{safeTitle}_{sid}_{DateTime.UtcNow:yyyyMMdd_HHmmss}.xlsx",
-                    ContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    TotalCount = totalMatching,
-                    ExportedCount = records.Count,
-                    PageNumber = 1,
-                    PageSize = records.Count,
-                    TotalPages = 1,
-                    IsTruncated = isTruncated
-                };
-
-                _logger.LogInformation(
-                    "SMS recipients exported — UserId: {UserId}, Sid: {Sid}, Exported: {Exported}, Total: {Total}, Truncated: {Truncated}",
-                    userId, sid, records.Count, totalMatching, isTruncated);
-
-                var message = isTruncated
-                    ? $"فایل اکسل با {records.Count} ردیف از {totalMatching} آماده دانلود است (سقف خروجی اعمال شد)"
-                    : $"فایل اکسل با {records.Count} ردیف آماده دانلود است";
-
-                return ApiResponse<ExportExcelResultDto>.CreateSuccess(result, message);
+                return await BuildExcelExportAsync(userId, batch, sid, records, totalMatching);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "SMS recipients export failed — UserId: {UserId}, Sid: {Sid}", userId, sid);
                 return ApiResponse<ExportExcelResultDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
+        }
+
+        public async Task<ApiResponse<ExportExcelResultDto>> ExportRecipientsByCampaignToExcelAsync(
+            int userId, int campaignId, SmsSendRecipientFilterDto filter)
+        {
+            try
+            {
+                if (campaignId <= 0)
+                    return ApiResponse<ExportExcelResultDto>.BadRequest("شناسه کمپین نامعتبر است");
+
+                if (!await _repository.UserOwnsCampaignAsync(userId, campaignId))
+                    return ApiResponse<ExportExcelResultDto>.NotFound("ارسال مورد نظر یافت نشد");
+
+                NormalizeRecipientFilter(filter);
+
+                var batch = await _repository.GetSendBatchByCampaignAsync(userId, campaignId);
+                var totalMatching = (await _repository.GetRecipientsByCampaignAsync(userId, campaignId, new SmsSendRecipientFilterDto
+                {
+                    Search = filter.Search,
+                    DeliveryCategory = filter.DeliveryCategory,
+                    PageNumber = 1,
+                    PageSize = 1
+                })).TotalCount;
+
+                var records = await _repository.GetAllRecipientsByCampaignForExportAsync(
+                    userId, campaignId, filter, MaxExcelExportRows);
+
+                return await BuildExcelExportAsync(userId, batch, batch?.Sid ?? 0, records, totalMatching);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "SMS campaign recipients export failed — UserId: {UserId}, CampaignId: {CampaignId}", userId, campaignId);
+                return ApiResponse<ExportExcelResultDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
+        private async Task<ApiResponse<ExportExcelResultDto>> BuildExcelExportAsync(
+            int userId,
+            SmsSendBatchProjection? batch,
+            long sid,
+            List<SmsDeliveryRecord> records,
+            int totalMatching)
+        {
+            var isTruncated = totalMatching > records.Count;
+            var sendId = batch?.SendId ?? sid;
+
+            var batchTitle = !string.IsNullOrWhiteSpace(batch?.Title)
+                ? batch!.Title!
+                : (batch?.IsCampaignBatch == true ? $"کمپین #{sendId}" : $"ارسال #{sid}");
+            var batchMessageText = batch != null
+                ? await ResolveBatchMessageTextAsync(userId, batch)
+                : null;
+            var (_, sendTypeLabel) = MapSendType(batch?.SourceModule ?? records.FirstOrDefault()?.SourceModule ?? string.Empty);
+
+            using var workbook = new XLWorkbook();
+            var worksheet = workbook.Worksheets.Add("گیرندگان");
+
+            worksheet.Cell(1, 1).Value = "ردیف";
+            worksheet.Cell(1, 2).Value = "شماره موبایل";
+            worksheet.Cell(1, 3).Value = "فرستنده";
+            worksheet.Cell(1, 4).Value = "وضعیت";
+            worksheet.Cell(1, 5).Value = "کد وضعیت";
+            worksheet.Cell(1, 6).Value = "پیام وضعیت";
+            worksheet.Cell(1, 7).Value = "تاریخ ارسال";
+            worksheet.Cell(1, 8).Value = "کد ارسال";
+            worksheet.Cell(1, 9).Value = "عنوان";
+            worksheet.Cell(1, 10).Value = "نوع ارسال";
+            worksheet.Cell(1, 11).Value = "متن پیام";
+            worksheet.Cell(1, 12).Value = "وضعیت نهایی";
+            worksheet.Row(1).Style.Font.Bold = true;
+
+            for (var i = 0; i < records.Count; i++)
+            {
+                var record = records[i];
+                var row = i + 2;
+                var categoryLabel = ResolveCategoryLabel(record);
+                var statusMessage = !string.IsNullOrWhiteSpace(record.ProviderStatusMessage)
+                    ? record.ProviderStatusMessage!
+                    : categoryLabel;
+                var title = !string.IsNullOrWhiteSpace(record.SourceEntityLabel)
+                    ? record.SourceEntityLabel!
+                    : batchTitle;
+                var messageText = !string.IsNullOrWhiteSpace(record.MessageText)
+                    ? record.MessageText!
+                    : (batchMessageText ?? string.Empty);
+                var rowSendTypeLabel = string.IsNullOrWhiteSpace(sendTypeLabel)
+                    ? SmsSourceModules.GetPersianLabel(record.SourceModule)
+                    : sendTypeLabel;
+
+                worksheet.Cell(row, 1).Value = i + 1;
+                worksheet.Cell(row, 2).Value = record.Mobile ?? string.Empty;
+                worksheet.Cell(row, 3).Value = string.IsNullOrWhiteSpace(_senderNumber) ? "-" : _senderNumber;
+                worksheet.Cell(row, 4).Value = categoryLabel;
+                worksheet.Cell(row, 5).Value = record.ProviderStatusCode?.ToString() ?? "-";
+                worksheet.Cell(row, 6).Value = statusMessage;
+                worksheet.Cell(row, 7).Value = record.SentAt.ToString("yyyy-MM-dd HH:mm:ss");
+                worksheet.Cell(row, 8).Value = record.Sid.ToString();
+                worksheet.Cell(row, 9).Value = title;
+                worksheet.Cell(row, 10).Value = rowSendTypeLabel;
+                worksheet.Cell(row, 11).Value = string.IsNullOrWhiteSpace(messageText) ? "-" : messageText;
+                worksheet.Cell(row, 12).Value = record.IsDeliveryFinal ? "بله" : "خیر";
+            }
+
+            worksheet.Columns().AdjustToContents();
+
+            using var stream = new MemoryStream();
+            workbook.SaveAs(stream);
+            var fileContent = stream.ToArray();
+
+            var safeTitle = string.Join("_", (batch?.Title ?? $"send-{sendId}").Split(Path.GetInvalidFileNameChars()));
+            if (string.IsNullOrWhiteSpace(safeTitle))
+                safeTitle = $"send-{sendId}";
+
+            var result = new ExportExcelResultDto
+            {
+                FileContent = fileContent,
+                FileName = $"SmsReport_{safeTitle}_{sendId}_{DateTime.UtcNow:yyyyMMdd_HHmmss}.xlsx",
+                ContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                TotalCount = totalMatching,
+                ExportedCount = records.Count,
+                PageNumber = 1,
+                PageSize = records.Count,
+                TotalPages = 1,
+                IsTruncated = isTruncated
+            };
+
+            _logger.LogInformation(
+                "SMS recipients exported — UserId: {UserId}, Sid: {Sid}, SendId: {SendId}, Exported: {Exported}, Total: {Total}, Truncated: {Truncated}",
+                userId, sid, sendId, records.Count, totalMatching, isTruncated);
+
+            var message = isTruncated
+                ? $"فایل اکسل با {records.Count} ردیف از {totalMatching} آماده دانلود است (سقف خروجی اعمال شد)"
+                : $"فایل اکسل با {records.Count} ردیف آماده دانلود است";
+
+            return ApiResponse<ExportExcelResultDto>.CreateSuccess(result, message);
         }
 
         private async Task<Dictionary<int, int>> LoadPartsMapAsync(IEnumerable<SmsSendBatchProjection> items)
@@ -409,7 +567,12 @@ namespace Api_Vapp.Services
 
         private async Task<string?> ResolveBatchMessageTextAsync(int userId, SmsSendBatchProjection batch)
         {
-            var stored = await _repository.GetSampleMessageTextBySidAsync(userId, batch.Sid);
+            string? stored;
+            if (batch.IsCampaignBatch && batch.SourceEntityId.HasValue)
+                stored = await _repository.GetSampleMessageTextByCampaignAsync(userId, batch.SourceEntityId.Value);
+            else
+                stored = await _repository.GetSampleMessageTextBySidAsync(userId, batch.Sid);
+
             if (!string.IsNullOrWhiteSpace(stored))
                 return stored;
 

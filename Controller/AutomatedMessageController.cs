@@ -323,26 +323,42 @@ namespace Api_Vapp.Controller
         }
 
         /// <summary>
+        /// لغو پیام خودکار (توقف ارسال + لغو کمپین‌های باز — بدون حذف)
+        /// </summary>
+        /// <remarks>
+        /// پیام خودکار غیرفعال و Pause می‌شود؛ کمپین‌های باز مرتبط Cancelled می‌شوند.
+        /// بعداً می‌توان با toggle-status دوباره فعال کرد.
+        /// </remarks>
+        [HttpPost("{id}/cancel")]
+        [ProducesResponseType(typeof(ApiResponse<AutomatedMessageActionResultDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<AutomatedMessageActionResultDto>), StatusCodes.Status404NotFound)]
+        [ProducesResponseType(typeof(ApiResponse<AutomatedMessageActionResultDto>), StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<ApiResponse<AutomatedMessageActionResultDto>>> CancelAutomatedMessage(int id)
+        {
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _automatedMessageService.CancelAutomatedMessageAsync(id, userId);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        /// <summary>
         /// حذف پیام خودکار
         /// </summary>
-        /// <param name="id">شناسه پیام خودکار</param>
-        /// <returns>پاسخ شامل وضعیت حذف</returns>
         /// <remarks>
-        /// این endpoint برای حذف یک پیام خودکار استفاده می‌شود.
+        /// این endpoint برای حذف نرم یک پیام خودکار استفاده می‌شود.
         /// 
         /// **نکات مهم:**
         /// - پیام خودکار باید متعلق به کاربر فعلی باشد
-        /// - این عملیات قابل بازگشت نیست
-        /// - پس از حذف، پیام خودکار دیگر ارسال نمی‌شود
+        /// - کمپین‌های باز مرتبط به‌صورت خودکار لغو می‌شوند
+        /// - پس از حذف، پیام خودکار از لیست و ارسال خارج می‌شود
         /// </remarks>
         /// <response code="200">پیام خودکار با موفقیت حذف شد</response>
         /// <response code="404">پیام خودکار یافت نشد</response>
         /// <response code="500">خطای سرور</response>
         [HttpPost("{id}/delete")]
-        [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
-        [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status404NotFound)]
-        [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<ApiResponse<bool>>> DeleteAutomatedMessage(int id)
+        [ProducesResponseType(typeof(ApiResponse<AutomatedMessageActionResultDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<AutomatedMessageActionResultDto>), StatusCodes.Status404NotFound)]
+        [ProducesResponseType(typeof(ApiResponse<AutomatedMessageActionResultDto>), StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<ApiResponse<AutomatedMessageActionResultDto>>> DeleteAutomatedMessage(int id)
         {
             var userId = await GetCurrentUserIdAsync();
             var result = await _automatedMessageService.DeleteAutomatedMessageAsync(id, userId);
@@ -353,27 +369,33 @@ namespace Api_Vapp.Controller
         /// تغییر وضعیت پیام خودکار (فعال/غیرفعال)
         /// </summary>
         /// <param name="id">شناسه پیام خودکار</param>
-        /// <param name="isActive">وضعیت جدید (true = فعال، false = غیرفعال)</param>
+        /// <param name="dto">وضعیت جدید</param>
         /// <returns>پاسخ شامل وضعیت تغییر</returns>
         /// <remarks>
         /// این endpoint برای تغییر وضعیت فعال/غیرفعال یک پیام خودکار استفاده می‌شود.
         /// 
         /// **نکات مهم:**
-        /// - پیام خودکار غیرفعال ارسال نمی‌شود
+        /// - پیام خودکار غیرفعال ارسال نمی‌شود و کمپین‌های باز لغو می‌شوند
         /// - می‌توانید پیام خودکار را موقتاً غیرفعال کنید بدون حذف
         /// - پیام خودکار غیرفعال می‌تواند دوباره فعال شود
+        /// - برای سازگاری عقب‌رو، ارسال مستقیم bool هم پذیرفته می‌شود
         /// </remarks>
         /// <response code="200">وضعیت پیام خودکار با موفقیت تغییر کرد</response>
         /// <response code="404">پیام خودکار یافت نشد</response>
         /// <response code="500">خطای سرور</response>
         [HttpPost("{id}/toggle-status")]
-        [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
-        [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status404NotFound)]
-        [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<ApiResponse<bool>>> ToggleAutomatedMessageStatus(int id, [FromBody] bool isActive)
+        [ProducesResponseType(typeof(ApiResponse<AutomatedMessageActionResultDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<AutomatedMessageActionResultDto>), StatusCodes.Status404NotFound)]
+        [ProducesResponseType(typeof(ApiResponse<AutomatedMessageActionResultDto>), StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<ApiResponse<AutomatedMessageActionResultDto>>> ToggleAutomatedMessageStatus(
+            int id,
+            [FromBody] ToggleAutomatedMessageStatusDto dto)
         {
+            var invalid = InvalidModelStateResponse<AutomatedMessageActionResultDto>();
+            if (invalid != null) return invalid;
+
             var userId = await GetCurrentUserIdAsync();
-            var result = await _automatedMessageService.ToggleAutomatedMessageStatusAsync(id, userId, isActive);
+            var result = await _automatedMessageService.ToggleAutomatedMessageStatusAsync(id, userId, dto.IsActive);
             return StatusCode(result.StatusCode, result);
         }
 

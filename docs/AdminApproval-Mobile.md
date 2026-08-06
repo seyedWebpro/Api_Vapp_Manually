@@ -107,13 +107,19 @@ Content:              application/json
 - ارسال فوری / زمان‌بندی بدون صف → معمولاً `statusCode=200`
 - زمان‌بندی‌شده هم بدون صف تأیید پیام در زمان مقرر ارسال می‌شود
 
-در غیر این صورت (متن آزاد) درخواست `SmsApprovalRequest` ساخته می‌شود:
+در غیر این صورت (متن آزاد) درخواست `SmsApprovalRequest` ساخته می‌شود.
+
+**مهم — `calculate-summary`:** همین endpoint بعد از صف‌شدن هم `statusCode=202` و `message` صف تأیید را برمی‌گرداند و `data.autoSent=false` است. فقط `data` را parse نکن؛ `statusCode` و `message` ریشهٔ پاسخ را هم بخوان.
 
 ```json
 {
   "statusCode": 202,
   "success": true,
-  "message": "درخواست ارسال در صف تأیید ادمین قرار گرفت"
+  "message": "درخواست ارسال در صف تأیید ادمین قرار گرفت",
+  "data": {
+    "autoSent": false,
+    "sentCount": 0
+  }
 }
 ```
 

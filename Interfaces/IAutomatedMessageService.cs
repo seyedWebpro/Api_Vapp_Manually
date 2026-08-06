@@ -20,8 +20,9 @@ namespace Api_Vapp.Interfaces
         /// تست فوری ارسال پیام خودکار تولد (فقط برای توسعه)
         /// </summary>
         Task<ApiResponse<string>> TestSendBirthdayMessagesNowAsync(int userId);
-        Task<ApiResponse<bool>> DeleteAutomatedMessageAsync(int id, int userId);
-        Task<ApiResponse<bool>> ToggleAutomatedMessageStatusAsync(int id, int userId, bool isActive);
+        Task<ApiResponse<AutomatedMessageActionResultDto>> CancelAutomatedMessageAsync(int id, int userId);
+        Task<ApiResponse<AutomatedMessageActionResultDto>> DeleteAutomatedMessageAsync(int id, int userId);
+        Task<ApiResponse<AutomatedMessageActionResultDto>> ToggleAutomatedMessageStatusAsync(int id, int userId, bool isActive);
         
         // تنظیمات پایه (مرحله 3)
         Task<ApiResponse<AutomatedMessageResponseDto>> SaveBirthdaySettingsAsync(int automatedMessageId, int userId, BirthdaySettingsDto settingsDto);

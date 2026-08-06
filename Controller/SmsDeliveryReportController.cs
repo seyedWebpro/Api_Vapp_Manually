@@ -46,7 +46,7 @@ namespace Api_Vapp.Controller
         }
 
         /// <summary>
-        /// لیست ارسال‌ها (گروه‌بندی‌شده بر اساس کد ارسال / Sid)
+        /// لیست ارسال‌ها (کمپین = یک ردیف با sendCount؛ بقیه بر اساس Sid)
         /// </summary>
         [HttpGet("sends")]
         [ProducesResponseType(typeof(ApiResponse<SmsSendBatchListDto>), StatusCodes.Status200OK)]
@@ -67,7 +67,76 @@ namespace Api_Vapp.Controller
         }
 
         /// <summary>
-        /// جزئیات یک ارسال (هدر + آمار + متن پیام)
+        /// جزئیات یک کمپین (همه گیرندگان همان ارسال)
+        /// </summary>
+        [HttpGet("sends/campaign/{campaignId:int}")]
+        [ProducesResponseType(typeof(ApiResponse<SmsSendBatchDetailDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<SmsSendBatchDetailDto>), StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<ApiResponse<SmsSendBatchDetailDto>>> GetCampaignSendDetail(int campaignId)
+        {
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _smsReportService.GetSendBatchDetailByCampaignAsync(userId, campaignId);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        /// <summary>
+        /// لیست مخاطبین یک کمپین
+        /// </summary>
+        [HttpGet("sends/campaign/{campaignId:int}/recipients")]
+        [ProducesResponseType(typeof(ApiResponse<SmsSendRecipientListDto>), StatusCodes.Status200OK)]
+        public async Task<ActionResult<ApiResponse<SmsSendRecipientListDto>>> GetCampaignSendRecipients(
+            int campaignId,
+            [FromQuery] SmsSendRecipientFilterDto filter)
+        {
+            if (!ModelState.IsValid)
+            {
+                var errors = ExtractModelStateErrors();
+                return StatusCode(400, ApiResponse<SmsSendRecipientListDto>.BadRequest(
+                    "داده‌های ورودی نامعتبر است",
+                    errors,
+                    ErrorCodes.ValidationFailed));
+            }
+
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _smsReportService.GetRecipientsByCampaignAsync(userId, campaignId, filter);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        /// <summary>
+        /// خروجی اکسل مخاطبین یک کمپین
+        /// </summary>
+        [HttpGet("sends/campaign/{campaignId:int}/recipients/export-excel")]
+        [Produces("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/json")]
+        [ProducesResponseType(typeof(FileResult), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<ExportExcelResultDto>), StatusCodes.Status404NotFound)]
+        public async Task<ActionResult> ExportCampaignSendRecipients(int campaignId, [FromQuery] SmsSendRecipientFilterDto filter)
+        {
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _smsReportService.ExportRecipientsByCampaignToExcelAsync(userId, campaignId, filter);
+
+            if (!result.Success)
+                return StatusCode(result.StatusCode, result);
+
+            return File(
+                result.Data!.FileContent,
+                result.Data.ContentType,
+                result.Data.FileName);
+        }
+
+        /// <summary>
+        /// بروزرسانی وضعیت دلیوری همه Sidهای یک کمپین
+        /// </summary>
+        [HttpPost("sends/campaign/{campaignId:int}/refresh")]
+        [ProducesResponseType(typeof(ApiResponse<SmsDeliverySummaryDto>), StatusCodes.Status200OK)]
+        public async Task<ActionResult<ApiResponse<SmsDeliverySummaryDto>>> RefreshCampaignSend(int campaignId)
+        {
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _smsReportService.RefreshSendBatchByCampaignAsync(userId, campaignId);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        /// <summary>
+        /// جزئیات یک ارسال (هدر + آمار + متن پیام) — اگر Sid متعلق به کمپین باشد کل کمپین برگردانده می‌شود
         /// </summary>
         [HttpGet("sends/{sid:long}")]
         [ProducesResponseType(typeof(ApiResponse<SmsSendBatchDetailDto>), StatusCodes.Status200OK)]

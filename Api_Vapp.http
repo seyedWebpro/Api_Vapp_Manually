@@ -847,6 +847,32 @@ Content-Type: application/json
 GET {{Api_Vapp_HostAddress}}/api/AutomatedMessage/types?pageNumber=1&pageSize=10
 Authorization: Bearer {{accessToken}}
 
+### ایجاد draft پیام خودکار
+POST {{Api_Vapp_HostAddress}}/api/AutomatedMessage/create-draft
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "automationType": "Birthday"
+}
+
+### فعال/غیرفعال کردن پیام خودکار
+POST {{Api_Vapp_HostAddress}}/api/AutomatedMessage/1/toggle-status
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "isActive": false
+}
+
+### لغو پیام خودکار (توقف + لغو کمپین‌های باز — بدون حذف)
+POST {{Api_Vapp_HostAddress}}/api/AutomatedMessage/1/cancel
+Authorization: Bearer {{accessToken}}
+
+### حذف نرم پیام خودکار (کمپین‌های باز هم Cancelled می‌شوند)
+POST {{Api_Vapp_HostAddress}}/api/AutomatedMessage/1/delete
+Authorization: Bearer {{accessToken}}
+
 ### لیست انواع برای ادمین (شامل غیرفعال)
 GET {{Api_Vapp_HostAddress}}/api/Admin/AutomationType?includeInactive=true
 Authorization: Bearer {{accessToken}}
@@ -956,4 +982,90 @@ Authorization: Bearer {{token}}
 ### نمودارهای داشبورد (روند کاربران + فعالیت ماه + صفحات پیامک روزانه/هفتگی/ماهانه)
 GET {{Api_Vapp_HostAddress}}/api/Admin/Dashboard/charts
 Authorization: Bearer {{token}}
+
+
+###
+
+# --- In-App Notifications (زنگوله اپ) ---
+
+### لیست اعلان‌های من
+GET {{Api_Vapp_HostAddress}}/api/Notifications?page=1&pageSize=20
+Authorization: Bearer {{token}}
+
+###
+
+### فقط خوانده‌نشده‌ها
+GET {{Api_Vapp_HostAddress}}/api/Notifications?page=1&pageSize=20&isRead=false
+Authorization: Bearer {{token}}
+
+###
+
+### فیلتر نوع (TemplateApproved | TemplateRejected | MessageApproved | MessageRejected)
+GET {{Api_Vapp_HostAddress}}/api/Notifications?page=1&pageSize=20&type=TemplateApproved
+Authorization: Bearer {{token}}
+
+###
+
+### تعداد خوانده‌نشده (badge زنگوله)
+GET {{Api_Vapp_HostAddress}}/api/Notifications/unread-count
+Authorization: Bearer {{token}}
+
+###
+
+### علامت‌گذاری یک اعلان به‌عنوان خوانده‌شده
+POST {{Api_Vapp_HostAddress}}/api/Notifications/mark-read
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "notificationId": 1
+}
+
+###
+
+### علامت‌گذاری همه به‌عنوان خوانده‌شده
+POST {{Api_Vapp_HostAddress}}/api/Notifications/mark-all-read
+Authorization: Bearer {{token}}
+
+###
+
+### حذف اعلان
+POST {{Api_Vapp_HostAddress}}/api/Notifications/delete/1
+Authorization: Bearer {{token}}
+
+###
+
+# --- ایجاد اعلان از مسیر تأیید ادمین (پیش‌نیاز: قالب Pending) ---
+
+### تأیید قالب → نوتیف TemplateApproved برای کاربر
+POST {{Api_Vapp_HostAddress}}/api/Admin/TemplateApproval/1/approve
+Authorization: Bearer {{token}}
+
+###
+
+### رد قالب با دلیل → نوتیف TemplateRejected
+POST {{Api_Vapp_HostAddress}}/api/Admin/TemplateApproval/1/reject
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "reason": "محتوای قالب با قوانین ارسال پیامک هم‌خوانی ندارد"
+}
+
+###
+
+### تأیید پیام در صف → نوتیف MessageApproved
+POST {{Api_Vapp_HostAddress}}/api/Admin/MessageApproval/1/approve
+Authorization: Bearer {{token}}
+
+###
+
+### رد پیام با دلیل → نوتیف MessageRejected
+POST {{Api_Vapp_HostAddress}}/api/Admin/MessageApproval/1/reject
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "reason": "متن پیام نیاز به اصلاح دارد"
+}
 

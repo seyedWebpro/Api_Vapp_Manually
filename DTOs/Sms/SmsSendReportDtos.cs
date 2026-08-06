@@ -52,7 +52,21 @@ namespace Api_Vapp.DTOs.Sms
     /// </summary>
     public class SmsSendBatchListItemDto
     {
+        /// <summary>
+        /// کد ارسال نماینده (برای کمپین: Min(Sid) گیرندگان — برای مسیر /sends/{sid} کافی است)
+        /// </summary>
         public long Sid { get; set; }
+
+        /// <summary>
+        /// شناسه پایدار دسته ارسال — برای کمپین برابر شناسه کمپین، برای بقیه برابر Sid
+        /// </summary>
+        public long SendId { get; set; }
+
+        /// <summary>
+        /// true وقتی ردیف یک کمپین چندگیرنده است (جزئیات/اکسل باید کل کمپین را نشان دهد)
+        /// </summary>
+        public bool IsCampaignBatch { get; set; }
+
         public string Title { get; set; } = string.Empty;
         public string SourceModule { get; set; } = string.Empty;
         public string SourceModuleLabel { get; set; } = string.Empty;
@@ -79,6 +93,8 @@ namespace Api_Vapp.DTOs.Sms
     public class SmsSendBatchDetailDto
     {
         public long Sid { get; set; }
+        public long SendId { get; set; }
+        public bool IsCampaignBatch { get; set; }
         public string Title { get; set; } = string.Empty;
         public string SourceModule { get; set; } = string.Empty;
         public string SourceModuleLabel { get; set; } = string.Empty;
@@ -114,6 +130,8 @@ namespace Api_Vapp.DTOs.Sms
     public class SmsSendRecipientListDto
     {
         public long Sid { get; set; }
+        public long SendId { get; set; }
+        public bool IsCampaignBatch { get; set; }
         public List<SmsSendRecipientDto> Items { get; set; } = new();
         public int TotalCount { get; set; }
         public int PageNumber { get; set; }
@@ -162,6 +180,8 @@ namespace Api_Vapp.DTOs.Sms
     public class SmsSendBatchProjection
     {
         public long Sid { get; set; }
+        public long SendId { get; set; }
+        public bool IsCampaignBatch { get; set; }
         public string? Title { get; set; }
         public string SourceModule { get; set; } = string.Empty;
         public int? SourceEntityId { get; set; }

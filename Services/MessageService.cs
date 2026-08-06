@@ -690,7 +690,22 @@ namespace Api_Vapp.Services
                 {
                     // استفاده از منطق ConfirmAndSendMessageAsync برای ارسال
                     var sendResult = await ConfirmAndSendMessageAsync(userId, messageId, idempotencyKey);
-                    
+
+                    // صف تأیید ادمین: success=true ولی هنوز ارسال نشده — statusCode و message را حفظ کن
+                    if (sendResult.Success && sendResult.StatusCode == 202)
+                    {
+                        summary.AutoSent = false;
+                        summary.SentCount = sendResult.Data?.SentCount ?? 0;
+                        summary.FailedCount = sendResult.Data?.FailedCount ?? 0;
+                        _logger.LogInformation(
+                            "Send queued for admin approval - MessageId: {MessageId}, Message: {Message}",
+                            messageId, sendResult.Message);
+                        return ApiResponse<CampaignSummaryDto>.CreateSuccess(
+                            summary,
+                            sendResult.Message,
+                            202);
+                    }
+
                     if (sendResult.Success && sendResult.Data != null)
                     {
                         // به‌روزرسانی خلاصه با نتایج ارسال
@@ -698,17 +713,18 @@ namespace Api_Vapp.Services
                         summary.SentCount = sendResult.Data.SentCount;
                         summary.FailedCount = sendResult.Data.FailedCount;
                         summary.ActualCost = sendResult.Data.TotalCost;
-                        
-                        _logger.LogInformation("Send completed - MessageId: {MessageId}, Sent: {SentCount}, Failed: {FailedCount}", 
+
+                        _logger.LogInformation("Send completed - MessageId: {MessageId}, Sent: {SentCount}, Failed: {FailedCount}",
                             messageId, sendResult.Data.SentCount, sendResult.Data.FailedCount);
+
+                        return ApiResponse<CampaignSummaryDto>.CreateSuccess(summary, sendResult.Message);
                     }
-                    else
-                    {
-                        // اگر ارسال ناموفق بود، خلاصه را بدون نتایج برمی‌گردانیم
-                        summary.AutoSent = false;
-                        _logger.LogWarning("Send failed - MessageId: {MessageId}, Error: {Error}", 
-                            messageId, sendResult.Message);
-                    }
+
+                    // اگر ارسال ناموفق بود، خلاصه را بدون نتایج برمی‌گردانیم
+                    summary.AutoSent = false;
+                    _logger.LogWarning("Send failed - MessageId: {MessageId}, Error: {Error}",
+                        messageId, sendResult.Message);
+                    return ApiResponse<CampaignSummaryDto>.CreateSuccess(summary, sendResult.Message);
                 }
                 catch (Exception ex)
                 {
@@ -717,7 +733,7 @@ namespace Api_Vapp.Services
                     // خلاصه را بدون نتایج برمی‌گردانیم
                 }
 
-                            return ApiResponse<CampaignSummaryDto>.CreateSuccess(summary);
+                return ApiResponse<CampaignSummaryDto>.CreateSuccess(summary);
             }
             catch (Exception ex)
             {
@@ -1019,7 +1035,9 @@ namespace Api_Vapp.Services
                     sendDto.SendType = CampaignSendType.Scheduled;
 
                     var skipSmsApprovalForTemplate = await ShouldSkipSmsApprovalForApprovedTemplateAsync(message);
-                    var adminApprovedForSchedule = forceSendApplied || skipSmsApprovalForTemplate;
+                    // فقط قالب تأییدشده می‌تواند صف تأیید پیام را رد کند.
+                    // ForceSend فقط زمان تست را جابه‌جا می‌کند و هرگز جایگزین تأیید ادمین نیست.
+                    var adminApprovedForSchedule = skipSmsApprovalForTemplate;
 
                     // ذخیره زمان نهایی و وضعیت تأیید در Session (برای Background Service)
                     try
@@ -1036,7 +1054,7 @@ namespace Api_Vapp.Services
                         else
                             selectionCriteria.Remove("SelectedTagIds");
                         selectionCriteria["ForceSend"] = forceSend;
-                        // ForceSend یا قالب تأییدشده → بدون صف تأیید پیام
+                        // فقط قالب تأییدشده → بدون صف تأیید پیام (ForceSend دیگر AdminApproved نمی‌زند)
                         selectionCriteria["AdminApproved"] = adminApprovedForSchedule;
 
                         session.SelectionCriteria = JsonSerializer.Serialize(selectionCriteria);
@@ -4684,6 +4702,9 @@ namespace Api_Vapp.Services
                     message.PartsCount = SmsPartsCalculator.CalculateParts(personalizedContent, pricing.Rules);
                     message.IsPersonalized = false; // دیگر placeholder ندارد
                     message.Placeholders = null; // همه placeholder ها جایگزین شده‌اند
+                    // بعد از تغییر محتوا، TemplateId را دوباره resolve کن تا متن تغییریافته
+                    // به‌خاطر TemplateId قدیمیِ Approved از صف تأیید پیام رد نشود
+                    message.TemplateId = await TryResolveApprovedTemplateIdByContentAsync(userId, personalizedContent);
                     message.UpdatedAt = DateTime.UtcNow;
                     
                     await _messageRepository.UpdateAsync(message);

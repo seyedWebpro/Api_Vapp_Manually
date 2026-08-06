@@ -429,6 +429,8 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.INumberSeekerService, Api_Vapp.Se
 builder.Services.Configure<Api_Vapp.Configuration.FirebaseOptions>(
     builder.Configuration.GetSection(Api_Vapp.Configuration.FirebaseOptions.SectionName));
 builder.Services.AddScoped<Api_Vapp.Interfaces.INotificationSettingsService, Api_Vapp.Services.NotificationSettingsService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IInAppNotificationService, Api_Vapp.Services.InAppNotificationService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IUserAppNotifier, Api_Vapp.Services.UserAppNotifier>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IUserDeviceRepository, Api_Vapp.Repositories.UserDeviceRepository>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IUserDeviceService, Api_Vapp.Services.UserDeviceService>();
 builder.Services.AddSingleton<Api_Vapp.Interfaces.IPushNotificationService, Api_Vapp.Services.PushNotificationService>();

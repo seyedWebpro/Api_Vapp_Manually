@@ -185,6 +185,7 @@ Health پروکسی: `GET /api/NumberSeeker/health` فیلدهای `apiKeyValid`
 
 | مشکل | راه‌حل |
 |------|--------|
+| ادمین: «اسکرپر در دسترس نیست» | معمولاً `SCRAPER_API_KEY` در `docker/.env` خالی/غایب است → `NumberScraperApi__ApiKey` داخل container خالی می‌ماند. کلید را با `API_KEY` ربات یکسان کنید و API را recreate کنید (پایین). |
 | Vapp `SCRAPER_UNAVAILABLE` | `docker exec vapp_api_prod curl http://host.docker.internal:8000/health` — اگر timeout → `API_PORT_MAPPING=8000:8000` |
 | `token_not_configured` | sync `data/platform_tokens.json` + restart ربات |
 | `db_unavailable` در نتیجه اسکرپ | طبیعی — DB ربات اختیاری است |
@@ -195,6 +196,20 @@ Health پروکسی: `GET /api/NumberSeeker/health` فیلدهای `apiKeyValid`
 ```bash
 docker logs --tail 50 phonescraper_api_prod
 docker logs --tail 50 vapp_api_prod | grep -i NumberScraper
+
+# کلید خالی؟ (باید طول > 0 باشد)
+docker exec vapp_api_prod printenv NumberScraperApi__ApiKey | wc -c
+
+# همگام‌سازی کلید ربات → Vapp و recreate
+KEY=$(grep ^API_KEY= ~/scraping_Number_Vapp/.env | cut -d= -f2-)
+grep -q '^SCRAPER_API_KEY=' ~/Api_Vapp_Manually/docker/.env \
+  && sed -i "s|^SCRAPER_API_KEY=.*|SCRAPER_API_KEY=$KEY|" ~/Api_Vapp_Manually/docker/.env \
+  || printf '\nSCRAPER_API_KEY=%s\nNumberScraperApi__Enabled=true\nNumberScraperApi__BaseUrl=http://host.docker.internal:8000\nNumberScraperApi__ApiKey=${SCRAPER_API_KEY}\nNumberScraperApi__TimeoutSeconds=120\n' "$KEY" >> ~/Api_Vapp_Manually/docker/.env
+cd ~/Api_Vapp_Manually && docker compose -f docker/docker-compose.production.yml --env-file docker/.env up -d --no-deps --force-recreate --no-build api
+
+# تست auth از داخل Vapp
+VK=$(docker exec vapp_api_prod printenv NumberScraperApi__ApiKey)
+docker exec vapp_api_prod curl -s -H "X-API-Key: $VK" http://host.docker.internal:8000/api/integration/ping
 ```
 
 ---

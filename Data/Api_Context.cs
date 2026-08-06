@@ -38,6 +38,7 @@ namespace Api_Vapp.Data
         public DbSet<CashbackDraft> CashbackDrafts { get; set; }
         public DbSet<UserNotificationSettings> UserNotificationSettings { get; set; }
         public DbSet<UserDevice> UserDevices { get; set; }
+        public DbSet<InAppNotification> InAppNotifications { get; set; }
         public DbSet<ContactCashbackBalance> ContactCashbackBalances { get; set; }
         public DbSet<ManualCashbackTransaction> ManualCashbackTransactions { get; set; }
 
@@ -998,6 +999,59 @@ namespace Api_Vapp.Data
                 entity.HasIndex(d => d.UserId);
                 entity.HasIndex(d => new { d.UserId, d.IsActive });
                 entity.HasIndex(d => d.IsDeleted);
+            });
+
+            // اعلان‌های درون‌برنامه‌ای (زنگوله اپ)
+            modelBuilder.Entity<InAppNotification>(entity =>
+            {
+                entity.HasKey(n => n.Id);
+                entity.Property(n => n.Id).ValueGeneratedOnAdd();
+
+                entity.Property(n => n.UserId).IsRequired();
+
+                entity.Property(n => n.Title)
+                    .IsRequired()
+                    .HasMaxLength(200);
+
+                entity.Property(n => n.Body)
+                    .IsRequired()
+                    .HasMaxLength(2000);
+
+                entity.Property(n => n.Type)
+                    .IsRequired()
+                    .HasMaxLength(50);
+
+                entity.Property(n => n.Category)
+                    .IsRequired()
+                    .HasConversion<int>();
+
+                entity.Property(n => n.IsRead)
+                    .HasDefaultValue(false);
+
+                entity.Property(n => n.ActionUrl)
+                    .HasMaxLength(500);
+
+                entity.Property(n => n.RelatedEntityType)
+                    .HasMaxLength(100);
+
+                entity.Property(n => n.Metadata)
+                    .HasMaxLength(4000);
+
+                entity.Property(n => n.CreatedAt)
+                    .HasDefaultValueSql("GETUTCDATE()");
+
+                entity.Property(n => n.IsDeleted)
+                    .HasDefaultValue(false);
+
+                entity.HasOne(n => n.User)
+                    .WithMany()
+                    .HasForeignKey(n => n.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasIndex(n => n.UserId);
+                entity.HasIndex(n => new { n.UserId, n.IsRead });
+                entity.HasIndex(n => new { n.UserId, n.IsDeleted, n.CreatedAt });
+                entity.HasIndex(n => n.Type);
             });
 
             // تنظیمات ContactCashbackBalance

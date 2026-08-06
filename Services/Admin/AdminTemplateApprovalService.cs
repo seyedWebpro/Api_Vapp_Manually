@@ -14,12 +14,18 @@ namespace Api_Vapp.Services.Admin
     {
         private readonly Api_Context _context;
         private readonly IAuditService _audit;
+        private readonly IUserAppNotifier _appNotifier;
         private readonly ILogger<AdminTemplateApprovalService> _logger;
 
-        public AdminTemplateApprovalService(Api_Context context, IAuditService audit, ILogger<AdminTemplateApprovalService> logger)
+        public AdminTemplateApprovalService(
+            Api_Context context,
+            IAuditService audit,
+            IUserAppNotifier appNotifier,
+            ILogger<AdminTemplateApprovalService> logger)
         {
             _context = context;
             _audit = audit;
+            _appNotifier = appNotifier;
             _logger = logger;
         }
 
@@ -84,22 +90,29 @@ namespace Api_Vapp.Services.Admin
         {
             try
             {
-                var before = await _context.MessageTemplates.AsNoTracking()
-                    .Where(t => t.Id == id && !t.IsDeleted)
-                    .Select(t => new { t.Id, t.UserId, t.ApprovalStatus, t.Name })
-                    .FirstOrDefaultAsync();
+                var template = await _context.MessageTemplates
+                    .FirstOrDefaultAsync(t => t.Id == id && !t.IsDeleted);
 
-                var updated = await _context.MessageTemplates
-                    .Where(t => t.Id == id && t.ApprovalStatus == AdminApprovalStatuses.Pending && !t.IsDeleted)
-                    .ExecuteUpdateAsync(setters => setters
-                        .SetProperty(t => t.ApprovalStatus, AdminApprovalStatuses.Approved)
-                        .SetProperty(t => t.ApprovedAt, DateTime.UtcNow)
-                        .SetProperty(t => t.ApprovedByUserId, adminUserId)
-                        .SetProperty(t => t.RejectionReason, (string?)null)
-                        .SetProperty(t => t.UpdatedAt, DateTime.UtcNow));
+                if (template == null)
+                    return ApiResponse<bool>.NotFound("قالب یافت نشد");
 
-                if (updated == 0)
+                if (template.ApprovalStatus != AdminApprovalStatuses.Pending)
                     return ApiResponse<bool>.BadRequest("این قالب قبلاً بررسی شده است یا یافت نشد");
+
+                var before = new
+                {
+                    template.Id,
+                    template.UserId,
+                    template.ApprovalStatus,
+                    template.Name
+                };
+
+                template.ApprovalStatus = AdminApprovalStatuses.Approved;
+                template.ApprovedAt = DateTime.UtcNow;
+                template.ApprovedByUserId = adminUserId;
+                template.RejectionReason = null;
+                template.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
 
                 await _audit.WriteAsync(new AuditEntry
                 {
@@ -108,20 +121,30 @@ namespace Api_Vapp.Services.Admin
                     EntityType = AuditEntityTypes.MessageTemplate,
                     EntityId = id.ToString(),
                     ActorUserId = adminUserId,
-                    TargetUserId = before?.UserId,
-                    Before = before == null ? null : new
-                    {
-                        id = before.Id,
-                        userId = before.UserId,
-                        approvalStatus = before.ApprovalStatus,
-                        name = before.Name
-                    },
+                    TargetUserId = before.UserId,
+                    Before = before,
                     After = new
                     {
                         approvalStatus = AdminApprovalStatuses.Approved,
                         approvedByUserId = adminUserId
                     }
                 });
+
+                var copy = PushNotificationCopy.TemplateApproved(before.Name);
+                await _appNotifier.NotifyAsync(
+                    before.UserId,
+                    NotificationCategory.Suggestions,
+                    copy.Title,
+                    copy.Body,
+                    InAppNotificationTypes.TemplateApproved,
+                    relatedEntityId: before.Id,
+                    relatedEntityType: AuditEntityTypes.MessageTemplate,
+                    actionUrl: "/sms/templates",
+                    metadataJson: System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        decision = "Approved",
+                        templateName = before.Name
+                    }));
 
                 return ApiResponse<bool>.CreateSuccess(true, "قالب تأیید شد");
             }
@@ -136,22 +159,30 @@ namespace Api_Vapp.Services.Admin
         {
             try
             {
-                var before = await _context.MessageTemplates.AsNoTracking()
-                    .Where(t => t.Id == id && !t.IsDeleted)
-                    .Select(t => new { t.Id, t.UserId, t.ApprovalStatus, t.Name })
-                    .FirstOrDefaultAsync();
+                var template = await _context.MessageTemplates
+                    .FirstOrDefaultAsync(t => t.Id == id && !t.IsDeleted);
 
-                var updated = await _context.MessageTemplates
-                    .Where(t => t.Id == id && t.ApprovalStatus == AdminApprovalStatuses.Pending && !t.IsDeleted)
-                    .ExecuteUpdateAsync(setters => setters
-                        .SetProperty(t => t.ApprovalStatus, AdminApprovalStatuses.Rejected)
-                        .SetProperty(t => t.ApprovedAt, (DateTime?)null)
-                        .SetProperty(t => t.ApprovedByUserId, adminUserId)
-                        .SetProperty(t => t.RejectionReason, dto.Reason.Trim())
-                        .SetProperty(t => t.UpdatedAt, DateTime.UtcNow));
+                if (template == null)
+                    return ApiResponse<bool>.NotFound("قالب یافت نشد");
 
-                if (updated == 0)
+                if (template.ApprovalStatus != AdminApprovalStatuses.Pending)
                     return ApiResponse<bool>.BadRequest("این قالب قبلاً بررسی شده است یا یافت نشد");
+
+                var reason = dto.Reason.Trim();
+                var before = new
+                {
+                    template.Id,
+                    template.UserId,
+                    template.ApprovalStatus,
+                    template.Name
+                };
+
+                template.ApprovalStatus = AdminApprovalStatuses.Rejected;
+                template.ApprovedAt = null;
+                template.ApprovedByUserId = adminUserId;
+                template.RejectionReason = reason;
+                template.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
 
                 await _audit.WriteAsync(new AuditEntry
                 {
@@ -160,21 +191,32 @@ namespace Api_Vapp.Services.Admin
                     EntityType = AuditEntityTypes.MessageTemplate,
                     EntityId = id.ToString(),
                     ActorUserId = adminUserId,
-                    TargetUserId = before?.UserId,
-                    Before = before == null ? null : new
-                    {
-                        id = before.Id,
-                        userId = before.UserId,
-                        approvalStatus = before.ApprovalStatus,
-                        name = before.Name
-                    },
+                    TargetUserId = before.UserId,
+                    Before = before,
                     After = new
                     {
                         approvalStatus = AdminApprovalStatuses.Rejected,
                         approvedByUserId = adminUserId,
-                        rejectionReason = dto.Reason.Trim()
+                        rejectionReason = reason
                     }
                 });
+
+                var copy = PushNotificationCopy.TemplateRejected(before.Name, reason);
+                await _appNotifier.NotifyAsync(
+                    before.UserId,
+                    NotificationCategory.Suggestions,
+                    copy.Title,
+                    copy.Body,
+                    InAppNotificationTypes.TemplateRejected,
+                    relatedEntityId: before.Id,
+                    relatedEntityType: AuditEntityTypes.MessageTemplate,
+                    actionUrl: "/sms/templates",
+                    metadataJson: System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        decision = "Rejected",
+                        templateName = before.Name,
+                        rejectionReason = reason
+                    }));
 
                 return ApiResponse<bool>.CreateSuccess(true, "قالب رد شد");
             }
