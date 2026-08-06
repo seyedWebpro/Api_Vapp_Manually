@@ -159,7 +159,7 @@ namespace Api_Vapp.Services
                     throwOnMaxPages: false,
                     includeOptOutOverride: dto.IncludeOptOutSuffix);
 
-                var total = costPerPart * analysis.PartsCount * recipients;
+                var total = SmsPartsCalculator.CalculateCost(analysis.PartsCount, costPerPart, recipients);
                 var preparedPreview = analysis.PreparedContent.Length > 400
                     ? analysis.PreparedContent[..400] + "…"
                     : analysis.PreparedContent;
@@ -295,6 +295,10 @@ namespace Api_Vapp.Services
             if (string.IsNullOrWhiteSpace(dto.OptOutSuffix))
                 return "پسوند لغو نمی‌تواند خالی باشد";
 
+            // الزام سرویس پیامکی: پسوند لغو همیشه باید فعال باشد
+            if (!dto.IncludeOptOutSuffixInCalculation)
+                return "پسوند لغو طبق قوانین سرویس پیامکی همیشه باید فعال باشد";
+
             return null;
         }
 
@@ -315,8 +319,10 @@ namespace Api_Vapp.Services
             setting.CountLeadingTrailingSpaces = dto.CountLeadingTrailingSpaces;
             setting.LanguageDetectionSampleLength = dto.LanguageDetectionSampleLength;
             setting.DefaultLanguageIsPersian = dto.DefaultLanguageIsPersian;
-            setting.IncludeOptOutSuffixInCalculation = dto.IncludeOptOutSuffixInCalculation;
-            setting.OptOutSuffix = dto.OptOutSuffix.Trim();
+            setting.IncludeOptOutSuffixInCalculation = true; // الزام سرویس پیامکی — همیشه فعال
+            setting.OptOutSuffix = string.IsNullOrWhiteSpace(dto.OptOutSuffix)
+                ? "لغو11"
+                : dto.OptOutSuffix.Trim();
         }
 
         private static object SnapshotForAudit(SmsPricingSetting s) => new

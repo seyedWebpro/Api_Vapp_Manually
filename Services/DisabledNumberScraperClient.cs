@@ -42,11 +42,40 @@ namespace Api_Vapp.Services
             {
                 Status = "disabled",
                 ScraperReachable = false,
+                ApiKeyValid = false,
+                IntegrationReady = false,
                 Timestamp = DateTime.UtcNow.ToString("O")
             });
         }
 
         public Task<bool> IsAvailableAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(false);
+
+        public Task<ScraperPlatformTokenListRaw> GetPlatformTokensAsync(
+            CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("SCRAPER_DISABLED");
+
+        public Task<ScraperTokenAlertsRaw> GetPlatformTokenAlertsAsync(
+            CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("SCRAPER_DISABLED");
+
+        public Task<ScraperTokenSavedRaw> SaveDivarTokenAsync(
+            string token,
+            string? refreshToken,
+            string? frontToken,
+            CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("SCRAPER_DISABLED");
+
+        public Task<ScraperTokenSavedRaw> SaveSheypoorTokenAsync(
+            string accessToken,
+            string? refreshToken,
+            CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("SCRAPER_DISABLED");
+
+        public Task<ScraperTokenMaintenanceRaw> RunTokenMaintenanceAsync(
+            bool forceSheypoorRefresh = false,
+            bool forceDivarRefresh = false,
+            CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("SCRAPER_DISABLED");
     }
 }

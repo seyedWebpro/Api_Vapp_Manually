@@ -11,6 +11,7 @@ namespace Api_Vapp.DTOs.Automation
         public int EligibleRecipientsCount { get; set; }
         public int IneligibleRecipientsCount { get; set; }
         public EligibilityInfoDto EligibilityInfo { get; set; } = new EligibilityInfoDto();
+        public int PartsCount { get; set; }
         public decimal CostPerPart { get; set; }
         public decimal EstimatedTotalCost { get; set; }
         public string WalletStatus { get; set; } = string.Empty; // Sufficient, Insufficient

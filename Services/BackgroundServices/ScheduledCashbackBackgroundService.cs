@@ -260,6 +260,7 @@ namespace Api_Vapp.Services.BackgroundServices
             var failedCount = 0;
             var totalCashbackAmount = 0m;
             var smsSentCount = 0;
+            decimal totalSmsCost = 0m;
 
             using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
             try
@@ -350,6 +351,9 @@ namespace Api_Vapp.Services.BackgroundServices
                         {
                             cashbackTransaction.Description = "کش‌بک زمان‌بندی شده با موفقیت ارسال شد";
                             smsSentCount++;
+                            totalSmsCost += sendResult.ChargedAmount > 0
+                                ? sendResult.ChargedAmount
+                                : sendResult.Cost;
                         }
                         else if (sendResult.SkippedInsufficientBalance)
                         {
@@ -385,7 +389,7 @@ namespace Api_Vapp.Services.BackgroundServices
                 result.SuccessCount = successCount;
                 result.FailedCount = failedCount;
                 result.TotalCashbackAmount = totalCashbackAmount;
-                result.TotalSmsCost = smsSentCount * pricing.CostPerPart;
+                result.TotalSmsCost = totalSmsCost;
 
                 return result;
             }

@@ -173,15 +173,31 @@ namespace Api_Vapp.Services.Admin
                         errorCode: ErrorCodes.InvalidInput);
                 }
 
-                var title = dto.Title.Trim();
+                var title = (dto.Title ?? string.Empty).Trim();
                 if (string.IsNullOrWhiteSpace(title))
                 {
                     return ApiResponse<AppBannerResponseDto>.BadRequest(
                         "عنوان الزامی است",
                         errorCode: ErrorCodes.ValidationFailed);
                 }
+                if (title.Length > 200)
+                {
+                    return ApiResponse<AppBannerResponseDto>.BadRequest(
+                        "عنوان نمی‌تواند بیشتر از ۲۰۰ کاراکتر باشد",
+                        errorCode: ErrorCodes.ValidationFailed);
+                }
 
-                var linkType = (dto.LinkType ?? AppBannerLinkTypes.None).Trim().ToLowerInvariant();
+                var description = string.IsNullOrWhiteSpace(dto.Description) ? null : dto.Description.Trim();
+                if (description != null && description.Length > 1000)
+                {
+                    return ApiResponse<AppBannerResponseDto>.BadRequest(
+                        "توضیحات نمی‌تواند بیشتر از ۱۰۰۰ کاراکتر باشد",
+                        errorCode: ErrorCodes.ValidationFailed);
+                }
+
+                var linkType = string.IsNullOrWhiteSpace(dto.LinkType)
+                    ? AppBannerLinkTypes.None
+                    : dto.LinkType.Trim().ToLowerInvariant();
                 if (!AppBannerLinkTypes.IsValid(linkType))
                 {
                     return ApiResponse<AppBannerResponseDto>.BadRequest(
@@ -198,63 +214,25 @@ namespace Api_Vapp.Services.Admin
                         errorCode: ErrorCodes.ValidationFailed);
                 }
 
-                string? uploadedImagePath = null;
-                if (dto.ImageFile != null && dto.ImageFile.Length > 0)
-                {
-                    var validationError = SecureFileValidator.ValidateImage(
-                        dto.ImageFile,
-                        SecureFileValidator.ProfileImageMaxBytes,
-                        "۵ مگابایت");
-                    if (!string.IsNullOrEmpty(validationError))
-                    {
-                        return ApiResponse<AppBannerResponseDto>.BadRequest(
-                            validationError,
-                            errorCode: ErrorCodes.ValidationFailed);
-                    }
-
-                    try
-                    {
-                        uploadedImagePath = await _fileUploadService.UploadFileAsync(
-                            dto.ImageFile,
-                            FileUploadConstants.EntityType_AppBanner,
-                            banner.Id,
-                            FileUploadConstants.SubFolder_Images);
-                    }
-                    catch (ArgumentException ex)
-                    {
-                        _logger.LogWarning(ex, "اعتبارسنجی آپلود تصویر بنر ناموفق — Id: {Id}", id);
-                        return ApiResponse<AppBannerResponseDto>.BadRequest(
-                            ControlledErrorHelper.SanitizeArgumentMessage(ex.Message, ControlledErrorHelper.FileUploadFailed),
-                            errorCode: ErrorCodes.ValidationFailed);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "خطا در آپلود تصویر بنر — Id: {Id}", id);
-                        return ApiResponse<AppBannerResponseDto>.InternalServerError(
-                            ControlledErrorHelper.FileUploadFailed,
-                            ErrorCodes.FileUploadFailed);
-                    }
-                }
-
                 var before = Snapshot(banner);
                 var oldImage = banner.ImageUrl;
+                var clearImage = dto.ClearImage == true;
+                var isActive = dto.IsActive ?? true;
 
                 banner.Title = title;
-                banner.Description = string.IsNullOrWhiteSpace(dto.Description) ? null : dto.Description.Trim();
+                banner.Description = description;
                 banner.LinkType = linkType;
                 banner.LinkUrl = linkType == AppBannerLinkTypes.None ? null : linkUrl;
-                banner.SortOrder = dto.SortOrder;
-                banner.IsActive = dto.IsActive;
+                banner.SortOrder = dto.SortOrder ?? banner.SortOrder;
+                banner.IsActive = isActive;
                 banner.UpdatedAt = DateTime.UtcNow;
 
-                if (uploadedImagePath != null)
-                    banner.ImageUrl = uploadedImagePath;
-                else if (dto.ClearImage)
+                if (clearImage)
                     banner.ImageUrl = null;
 
                 await _context.SaveChangesAsync();
 
-                if ((uploadedImagePath != null || dto.ClearImage) && !string.IsNullOrWhiteSpace(oldImage))
+                if (clearImage && !string.IsNullOrWhiteSpace(oldImage))
                 {
                     try
                     {
@@ -292,6 +270,118 @@ namespace Api_Vapp.Services.Admin
             }
         }
 
+        public async Task<ApiResponse<AppBannerResponseDto>> UpdateImageAsync(int id, IFormFile? imageFile, bool clearImage)
+        {
+            try
+            {
+                _logger.LogInformation("شروع به‌روزرسانی تصویر بنر اپ — Id: {Id}", id);
+
+                var banner = await _context.AppBanners.FirstOrDefaultAsync(b => b.Id == id && !b.IsDeleted);
+                if (banner == null)
+                    return ApiResponse<AppBannerResponseDto>.NotFound("بنر یافت نشد");
+
+                if (!AppBannerKeys.IsKnown(banner.Key))
+                {
+                    return ApiResponse<AppBannerResponseDto>.BadRequest(
+                        "این بنر قابل ویرایش نیست",
+                        errorCode: ErrorCodes.InvalidInput);
+                }
+
+                var hasFile = imageFile != null && imageFile.Length > 0;
+                if (!hasFile && !clearImage)
+                {
+                    return ApiResponse<AppBannerResponseDto>.BadRequest(
+                        "فایل تصویر یا درخواست حذف تصویر الزامی است",
+                        errorCode: ErrorCodes.ValidationFailed);
+                }
+
+                string? uploadedImagePath = null;
+                if (hasFile)
+                {
+                    var validationError = SecureFileValidator.ValidateImage(
+                        imageFile!,
+                        SecureFileValidator.ProfileImageMaxBytes,
+                        "۵ مگابایت");
+                    if (!string.IsNullOrEmpty(validationError))
+                    {
+                        return ApiResponse<AppBannerResponseDto>.BadRequest(
+                            validationError,
+                            errorCode: ErrorCodes.ValidationFailed);
+                    }
+
+                    try
+                    {
+                        uploadedImagePath = await _fileUploadService.UploadFileAsync(
+                            imageFile!,
+                            FileUploadConstants.EntityType_AppBanner,
+                            banner.Id,
+                            FileUploadConstants.SubFolder_Images);
+                    }
+                    catch (ArgumentException ex)
+                    {
+                        _logger.LogWarning(ex, "اعتبارسنجی آپلود تصویر بنر ناموفق — Id: {Id}", id);
+                        return ApiResponse<AppBannerResponseDto>.BadRequest(
+                            ControlledErrorHelper.SanitizeArgumentMessage(ex.Message, ControlledErrorHelper.FileUploadFailed),
+                            errorCode: ErrorCodes.ValidationFailed);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "خطا در آپلود تصویر بنر — Id: {Id}", id);
+                        return ApiResponse<AppBannerResponseDto>.InternalServerError(
+                            ControlledErrorHelper.FileUploadFailed,
+                            ErrorCodes.FileUploadFailed);
+                    }
+                }
+
+                var before = Snapshot(banner);
+                var oldImage = banner.ImageUrl;
+                banner.UpdatedAt = DateTime.UtcNow;
+
+                if (uploadedImagePath != null)
+                    banner.ImageUrl = uploadedImagePath;
+                else if (clearImage)
+                    banner.ImageUrl = null;
+
+                await _context.SaveChangesAsync();
+
+                if ((uploadedImagePath != null || clearImage) && !string.IsNullOrWhiteSpace(oldImage))
+                {
+                    try
+                    {
+                        await _fileUploadService.DeleteFileAsync(
+                            oldImage!,
+                            FileUploadConstants.EntityType_AppBanner,
+                            banner.Id,
+                            FileUploadConstants.SubFolder_Images);
+                    }
+                    catch (Exception deleteEx)
+                    {
+                        _logger.LogWarning(deleteEx, "خطا در حذف تصویر قدیمی بنر — BannerId: {BannerId}", banner.Id);
+                    }
+                }
+
+                InvalidateActiveCache();
+
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Admin,
+                    Action = AuditActions.AppBannerUpdated,
+                    EntityType = AuditEntityTypes.AppBanner,
+                    EntityId = banner.Id.ToString(),
+                    Before = before,
+                    After = Snapshot(banner)
+                });
+
+                _logger.LogInformation("پایان به‌روزرسانی تصویر بنر اپ — Id: {Id}, Key: {Key}", id, banner.Key);
+                return ApiResponse<AppBannerResponseDto>.CreateSuccess(Map(banner), "تصویر بنر به‌روزرسانی شد");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "خطا در به‌روزرسانی تصویر بنر اپ — Id: {Id}", id);
+                return ApiResponse<AppBannerResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
         private void InvalidateActiveCache() => _cache.Remove(AppBannerCacheKeys.ActiveList);
 
         private static string? ValidateLink(string linkType, string? linkUrl)
@@ -311,8 +401,13 @@ namespace Api_Vapp.Services.Admin
                 }
             }
 
-            if (linkType == AppBannerLinkTypes.AppRoute && linkUrl.Contains(' '))
-                return "کلید مسیر اپ نباید فاصله داشته باشد";
+            if (linkType == AppBannerLinkTypes.AppRoute)
+            {
+                if (linkUrl.Contains(' '))
+                    return "کلید مسیر اپ نباید فاصله داشته باشد";
+                if (!linkUrl.StartsWith('/'))
+                    return "مسیر داخل اپ باید با / شروع شود";
+            }
 
             return null;
         }

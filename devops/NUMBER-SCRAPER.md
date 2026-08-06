@@ -175,6 +175,10 @@ ssh vapp-prod 'API_KEY=$(grep ^API_KEY= ~/scraping_Number_Vapp/.env | cut -d= -f
 
 Webhook داخلی (فقط ربات): `POST /api/NumberSeeker/internal/webhook/task-completed`
 
+بدنه webhook (camelCase) شامل `phones[]` است — Vapp شماره‌ها را در `NumberSeekerTasks.PhonesJson` ذخیره می‌کند تا import بدون وابستگی به ربات ممکن باشد.
+
+Health پروکسی: `GET /api/NumberSeeker/health` فیلدهای `apiKeyValid`، `integrationReady`، `tokenAlerts` و `platformTokens` را برمی‌گرداند.
+
 ---
 
 ## عیب‌یابی

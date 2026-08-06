@@ -5,6 +5,8 @@ namespace Api_Vapp.Utilities
     /// <summary>
     /// اعتبارسنجی امن آپلود فایل — Content-Type به‌تنهایی کافی نیست (قابل جعل است).
     /// پسوند + امضای باینری (magic bytes) + سقف حجم الزامی است.
+    /// Content-Type و پسوند اعلام‌شده advisory هستند؛ منبع حقیقت محتوای باینری است
+    /// (مثلاً JPEG واقعی با پسوند .png که مرورگر/اسکرین‌شات‌ها اغلب می‌سازند).
     /// </summary>
     public static class SecureFileValidator
     {
@@ -92,21 +94,17 @@ namespace Api_Vapp.Utilities
                 return $"حجم فایل ({sizeMb} مگابایت) بیشتر از حد مجاز ({maxSizeLabelFa}) است";
             }
 
-            var contentType = (file.ContentType ?? string.Empty).Trim().ToLowerInvariant();
-            if (string.IsNullOrWhiteSpace(contentType) ||
-                !allowedContentTypes.Any(t => t.Equals(contentType, StringComparison.OrdinalIgnoreCase)))
-            {
-                return "نوع فایل مجاز نیست";
-            }
-
-            if (!ContentTypeToExtensions.TryGetValue(contentType, out var allowedExts) ||
-                !allowedExts.Contains(extension, StringComparer.OrdinalIgnoreCase))
-            {
-                return "پسوند فایل با نوع اعلام‌شده هم‌خوانی ندارد";
-            }
-
-            if (!MatchesMagicBytes(file, contentType))
+            var actualType = DetectContentTypeFromMagic(file);
+            if (actualType == null)
                 return "محتوای فایل با نوع اعلام‌شده مطابقت ندارد (احتمال فایل مخرب)";
+
+            if (!IsAllowedContentType(actualType, allowedContentTypes))
+                return "نوع فایل مجاز نیست";
+
+            // پسوند باید متعلق به همان خانوادهٔ مجاز باشد (مثلاً تصویر→تصویر)،
+            // نه لزوماً دقیقاً همان نوع اعلام‌شده — JPEG با پسوند .png رایج است.
+            if (!IsExtensionCompatible(extension, actualType, allowedContentTypes))
+                return "پسوند فایل با نوع اعلام‌شده هم‌خوانی ندارد";
 
             return null;
         }
@@ -132,15 +130,80 @@ namespace Api_Vapp.Utilities
             return Validate(file, VideoContentTypes, maxBytes, $"{maxGb} گیگابایت");
         }
 
-        private static bool MatchesMagicBytes(IFormFile file, string contentType)
+        /// <summary>
+        /// پسوند مناسب بر اساس محتوای واقعی فایل (برای ذخیرهٔ صحیح روی دیسک).
+        /// </summary>
+        public static string? GetPreferredExtension(IFormFile file)
+        {
+            var actualType = DetectContentTypeFromMagic(file);
+            if (actualType == null)
+                return null;
+
+            if (ContentTypeToExtensions.TryGetValue(actualType, out var exts) && exts.Length > 0)
+                return exts[0];
+
+            return null;
+        }
+
+        private static bool IsAllowedContentType(string contentType, IReadOnlyCollection<string> allowed)
+        {
+            if (allowed.Any(t => t.Equals(contentType, StringComparison.OrdinalIgnoreCase)))
+                return true;
+
+            // image/jpg و image/jpeg را معادل بگیر
+            if (contentType.Equals("image/jpeg", StringComparison.OrdinalIgnoreCase)
+                && allowed.Any(t => t.Equals("image/jpg", StringComparison.OrdinalIgnoreCase)))
+                return true;
+            if (contentType.Equals("image/jpg", StringComparison.OrdinalIgnoreCase)
+                && allowed.Any(t => t.Equals("image/jpeg", StringComparison.OrdinalIgnoreCase)))
+                return true;
+
+            return false;
+        }
+
+        private static bool IsExtensionCompatible(
+            string extension,
+            string actualType,
+            IReadOnlyCollection<string> allowedContentTypes)
+        {
+            if (ContentTypeToExtensions.TryGetValue(actualType, out var exactExts)
+                && exactExts.Contains(extension, StringComparer.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            var slash = actualType.IndexOf('/');
+            if (slash <= 0)
+                return false;
+
+            var category = actualType[..slash]; // image / video / audio / application
+            foreach (var kv in ContentTypeToExtensions)
+            {
+                if (!IsAllowedContentType(kv.Key, allowedContentTypes))
+                    continue;
+
+                var keySlash = kv.Key.IndexOf('/');
+                if (keySlash <= 0)
+                    continue;
+
+                if (!kv.Key.AsSpan(0, keySlash).Equals(category, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (kv.Value.Contains(extension, StringComparer.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>تشخیص Content-Type واقعی از امضای باینری؛ در صورت ناشناخته بودن null.</summary>
+        public static string? DetectContentTypeFromMagic(IFormFile file)
         {
             try
             {
-                // FormFile.OpenReadStream() معمولاً همان استریم زیر را برمی‌گرداند —
-                // نباید dispose شود و بعد از خواندن باید Position برگردد تا اعتبارسنجی/آپلود بعدی کار کند.
                 var stream = file.OpenReadStream();
                 if (!stream.CanRead)
-                    return false;
+                    return null;
 
                 long? originalPosition = stream.CanSeek ? stream.Position : null;
                 if (stream.CanSeek)
@@ -153,58 +216,54 @@ namespace Api_Vapp.Utilities
                     stream.Position = originalPosition.Value;
 
                 if (read < 4)
-                    return false;
+                    return null;
 
-                return contentType switch
-                {
-                    "image/jpeg" or "image/jpg" =>
-                        header[0] == 0xFF && header[1] == 0xD8 && header[2] == 0xFF,
+                if (header[0] == 0xFF && header[1] == 0xD8 && header[2] == 0xFF)
+                    return "image/jpeg";
 
-                    "image/png" =>
-                        header[0] == 0x89 && header[1] == 0x50 && header[2] == 0x4E && header[3] == 0x47,
+                if (header[0] == 0x89 && header[1] == 0x50 && header[2] == 0x4E && header[3] == 0x47)
+                    return "image/png";
 
-                    "image/gif" =>
-                        header[0] == 0x47 && header[1] == 0x49 && header[2] == 0x46 && header[3] == 0x38,
+                if (header[0] == 0x47 && header[1] == 0x49 && header[2] == 0x46 && header[3] == 0x38)
+                    return "image/gif";
 
-                    "image/webp" =>
-                        read >= 12
-                        && header[0] == 0x52 && header[1] == 0x49 && header[2] == 0x46 && header[3] == 0x46
-                        && header[8] == 0x57 && header[9] == 0x45 && header[10] == 0x42 && header[11] == 0x50,
+                if (read >= 12
+                    && header[0] == 0x52 && header[1] == 0x49 && header[2] == 0x46 && header[3] == 0x46
+                    && header[8] == 0x57 && header[9] == 0x45 && header[10] == 0x42 && header[11] == 0x50)
+                    return "image/webp";
 
-                    "application/pdf" =>
-                        header[0] == 0x25 && header[1] == 0x50 && header[2] == 0x44 && header[3] == 0x46, // %PDF
+                if (header[0] == 0x25 && header[1] == 0x50 && header[2] == 0x44 && header[3] == 0x46)
+                    return "application/pdf";
 
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" =>
-                        header[0] == 0x50 && header[1] == 0x4B, // ZIP/OOXML
+                if (header[0] == 0x50 && header[1] == 0x4B)
+                    return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
-                    "application/vnd.ms-excel" =>
-                        (header[0] == 0xD0 && header[1] == 0xCF && header[2] == 0x11 && header[3] == 0xE0) // OLE
-                        || (header[0] == 0x50 && header[1] == 0x4B), // occasional xlsx mislabeled
+                if (header[0] == 0xD0 && header[1] == 0xCF && header[2] == 0x11 && header[3] == 0xE0)
+                    return "application/vnd.ms-excel";
 
-                    "video/mp4" or "video/quicktime" =>
-                        read >= 8 && header[4] == 0x66 && header[5] == 0x74 && header[6] == 0x79 && header[7] == 0x70, // ftyp
+                if (read >= 8 && header[4] == 0x66 && header[5] == 0x74 && header[6] == 0x79 && header[7] == 0x70)
+                    return "video/mp4";
 
-                    "video/x-msvideo" or "video/avi" =>
-                        read >= 12
-                        && header[0] == 0x52 && header[1] == 0x49 && header[2] == 0x46 && header[3] == 0x46
-                        && header[8] == 0x41 && header[9] == 0x56 && header[10] == 0x49 && header[11] == 0x20, // AVI
+                if (read >= 12
+                    && header[0] == 0x52 && header[1] == 0x49 && header[2] == 0x46 && header[3] == 0x46
+                    && header[8] == 0x41 && header[9] == 0x56 && header[10] == 0x49 && header[11] == 0x20)
+                    return "video/avi";
 
-                    "audio/mpeg" =>
-                        (header[0] == 0xFF && (header[1] & 0xE0) == 0xE0) // frame sync
-                        || (header[0] == 0x49 && header[1] == 0x44 && header[2] == 0x33), // ID3
+                if ((header[0] == 0xFF && (header[1] & 0xE0) == 0xE0)
+                    || (header[0] == 0x49 && header[1] == 0x44 && header[2] == 0x33))
+                    return "audio/mpeg";
 
-                    "audio/wav" =>
-                        header[0] == 0x52 && header[1] == 0x49 && header[2] == 0x46 && header[3] == 0x46,
+                if (header[0] == 0x52 && header[1] == 0x49 && header[2] == 0x46 && header[3] == 0x46)
+                    return "audio/wav";
 
-                    "audio/ogg" =>
-                        header[0] == 0x4F && header[1] == 0x67 && header[2] == 0x67 && header[3] == 0x53, // OggS
+                if (header[0] == 0x4F && header[1] == 0x67 && header[2] == 0x67 && header[3] == 0x53)
+                    return "audio/ogg";
 
-                    _ => false
-                };
+                return null;
             }
             catch
             {
-                return false;
+                return null;
             }
         }
     }

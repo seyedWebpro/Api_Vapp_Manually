@@ -81,6 +81,7 @@ namespace Api_Vapp.Interfaces
         Task<ApiResponse<List<AppBannerResponseDto>>> GetAllAsync(bool includeInactive = true);
         Task<ApiResponse<AppBannerResponseDto>> GetByIdAsync(int id);
         Task<ApiResponse<AppBannerResponseDto>> UpdateAsync(int id, UpdateAppBannerDto dto);
+        Task<ApiResponse<AppBannerResponseDto>> UpdateImageAsync(int id, IFormFile? imageFile, bool clearImage);
         Task<ApiResponse<List<AppBannerResponseDto>>> GetActiveBannersAsync();
     }
 

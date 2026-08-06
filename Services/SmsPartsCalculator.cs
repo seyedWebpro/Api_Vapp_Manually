@@ -18,6 +18,101 @@ namespace Api_Vapp.Services
             return analysis.PartsCount;
         }
 
+        /// <summary>
+        /// تلاش برای محاسبه پارت بدون پرتاب استثنا.
+        /// اگر از MaxPages بیشتر باشد false برمی‌گرداند.
+        /// </summary>
+        public static bool TryCalculateParts(
+            string? content,
+            SmsPartsRules? rules,
+            out int partsCount,
+            out SmsPartsAnalysis analysis)
+        {
+            rules ??= SmsPartsRules.Defaults;
+            analysis = Analyze(content, rules, throwOnMaxPages: false);
+            partsCount = analysis.PartsCount;
+            return !analysis.ExceedsMaxPages;
+        }
+
+        /// <summary>
+        /// متن نهایی دقیقاً همان‌طور که هنگام ارسال آماده می‌شود.
+        /// پسوند لغو (لغو11) طبق الزام سرویس پیامکی همیشه اعمال می‌شود.
+        /// </summary>
+        public static string PrepareForSend(string? content, SmsPartsRules? rules = null)
+        {
+            rules ??= SmsPartsRules.Defaults;
+            return PrepareContent(content, rules, applyOptOut: true);
+        }
+
+        /// <summary>هزینه = پارت × تعرفه × تعداد گیرنده (گرد شده به ۲ رقم)</summary>
+        public static decimal CalculateCost(int partsCount, decimal costPerPart, int recipientsCount = 1)
+        {
+            if (recipientsCount < 0)
+                recipientsCount = 0;
+
+            var safeParts = Math.Max(1, partsCount);
+            return Math.Round(costPerPart * safeParts * recipientsCount, 2, MidpointRounding.AwayFromZero);
+        }
+
+        /// <summary>
+        /// تخمین زنده پارت/هزینه برای ارسال انبوه بر اساس تعرفه فعلی.
+        /// برای پیام شخصی‌سازی‌شده، placeholder با مقادیر نمونهٔ بلند جایگزین می‌شود تا کم‌برآورد نشود.
+        /// </summary>
+        public static (int PartsCount, decimal TotalCost, bool ExceedsMaxPages) EstimateBulkCost(
+            string? content,
+            bool isPersonalized,
+            int recipientsCount,
+            SmsPricingRuntime pricing)
+        {
+            var estimateContent = isPersonalized
+                ? ExpandPlaceholdersForCostEstimate(content ?? string.Empty)
+                : (content ?? string.Empty);
+
+            var analysis = Analyze(estimateContent, pricing.Rules, throwOnMaxPages: false);
+            var total = CalculateCost(analysis.PartsCount, pricing.CostPerPart, recipientsCount);
+            return (analysis.PartsCount, total, analysis.ExceedsMaxPages);
+        }
+
+        /// <summary>
+        /// جایگزینی محافظه‌کارانهٔ placeholderها برای تخمین سقف هزینه (بدون دسترسی به دیتابیس).
+        /// </summary>
+        public static string ExpandPlaceholdersForCostEstimate(string template)
+        {
+            const string sampleName = "نام‌خانوادگی‌بلندنمونه";
+            const string sampleAmount = "۱۲۳,۴۵۶,۷۸۹ تومان";
+            const string sampleBrand = "نام‌برند‌نمونه‌بلند";
+            const string sampleDate = "۱۴۰۴/۱۲/۲۹";
+
+            var result = template;
+            result = System.Text.RegularExpressions.Regex.Replace(
+                result,
+                @"\{\{نام\}\}|\{\{name\}\}|\(نام\)|\{نام\}",
+                sampleName,
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+            result = System.Text.RegularExpressions.Regex.Replace(
+                result,
+                @"\{\{مبلغ کش بک\}\}|\{\{cashback amount\}\}|\{\{cashbackamount\}\}|\{مبلغ کش بک\}",
+                sampleAmount,
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+            result = System.Text.RegularExpressions.Regex.Replace(
+                result,
+                @"\{\{نام برند\}\}|\{\{brand name\}\}|\{\{brandname\}\}|\{نام برند\}",
+                sampleBrand,
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+            result = System.Text.RegularExpressions.Regex.Replace(
+                result,
+                @"\{\{تاریخ عضویت\}\}|\{\{membership date\}\}|\{\{membershipdate\}\}|\{تاریخ عضویت\}",
+                sampleDate,
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+            result = System.Text.RegularExpressions.Regex.Replace(
+                result,
+                @"\{\{تاریخ خرید\}\}|\{\{purchase date\}\}|\{\{purchasedate\}\}|\{تاریخ خرید\}",
+                sampleDate,
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+            result = System.Text.RegularExpressions.Regex.Replace(result, @"\(\(.+?\)\)|\{\{.+?\}\}", sampleName);
+            return result;
+        }
+
         /// <summary>شمارش وزن‌دار کاراکترها (فاصله/ایموجی با وزن تنظیم‌شده)</summary>
         public static int CountMessageCharacters(string content, SmsPartsRules? rules = null)
         {
@@ -46,7 +141,9 @@ namespace Api_Vapp.Services
             bool? includeOptOutOverride = null)
         {
             rules ??= SmsPartsRules.Defaults;
-            var applyOptOut = includeOptOutOverride ?? rules.IncludeOptOutSuffixInCalculation;
+            // پسوند لغو طبق الزام سرویس پیامکی همیشه در محاسبه لحاظ می‌شود
+            // (includeOptOutOverride فقط برای سناریوهای تستی صریح false می‌تواند باشد)
+            var applyOptOut = includeOptOutOverride ?? true;
             var prepared = PrepareContent(content, rules, applyOptOut);
 
             if (string.IsNullOrEmpty(prepared))
@@ -258,7 +355,7 @@ namespace Api_Vapp.Services
                 {
                     var codePoint = char.ConvertToUtf32(element, 0);
                     if ((codePoint >= 0x1F300 && codePoint <= 0x1F9FF) ||
-                        (codePoint >= 0x1F900 && codePoint <= 0x1F9FF) ||
+                        (codePoint >= 0x1FA00 && codePoint <= 0x1FAFF) ||
                         (codePoint >= 0x1F1E0 && codePoint <= 0x1F1FF))
                     {
                         return true;

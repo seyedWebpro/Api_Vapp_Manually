@@ -2294,6 +2294,12 @@ namespace Api_Vapp.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
+                    b.Property<string>("PhonesJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("PhonesPersistedAt")
+                        .HasColumnType("datetime2");
+
                     b.Property<string>("ResultCode")
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
@@ -2315,6 +2321,9 @@ namespace Api_Vapp.Migrations
 
                     b.Property<int>("TargetCount")
                         .HasColumnType("int");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
 
                     b.Property<int>("UserId")
                         .HasColumnType("int");

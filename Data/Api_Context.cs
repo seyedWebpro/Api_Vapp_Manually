@@ -1930,6 +1930,9 @@ namespace Api_Vapp.Data
                 entity.Property(t => t.Message)
                     .HasMaxLength(500);
 
+                entity.Property(t => t.PhonesJson)
+                    .HasColumnType("nvarchar(max)");
+
                 entity.Property(t => t.ImportedCount)
                     .HasDefaultValue(0);
 

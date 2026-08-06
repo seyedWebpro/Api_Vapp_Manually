@@ -246,19 +246,26 @@ namespace Api_Vapp.Services
                     return ApiResponse<WalletTransactionDto>.BadRequest("مبلغ باید بزرگتر از صفر باشد");
                 }
 
-                var user = await _userRepository.GetByIdAsync(userId);
-                if (user == null)
-                {
-                    return ApiResponse<WalletTransactionDto>.NotFound("کاربر یافت نشد");
-                }
-
                 var ownsTransaction = _context.Database.CurrentTransaction == null;
                 IDbContextTransaction? transaction = null;
                 if (ownsTransaction)
-                    transaction = await _context.Database.BeginTransactionAsync();
+                    transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
 
                 try
                 {
+                    var user = await _context.Users
+                        .FromSqlRaw(
+                            "SELECT * FROM Users WITH (UPDLOCK, ROWLOCK) WHERE Id = {0}",
+                            userId)
+                        .FirstOrDefaultAsync();
+
+                    if (user == null)
+                    {
+                        if (ownsTransaction && transaction != null)
+                            await transaction.RollbackAsync();
+                        return ApiResponse<WalletTransactionDto>.NotFound("کاربر یافت نشد");
+                    }
+
                     var balanceBefore = user.WalletBalance;
                     var balanceAfter = balanceBefore + amount;
 
@@ -371,35 +378,43 @@ namespace Api_Vapp.Services
                     return ApiResponse<WalletTransactionDto>.BadRequest("مبلغ باید بزرگتر از صفر باشد");
                 }
 
-                var user = await _userRepository.GetByIdAsync(userId);
-                if (user == null)
-                {
-                    return ApiResponse<WalletTransactionDto>.NotFound("کاربر یافت نشد");
-                }
-
-                if (user.WalletBalance < amount)
-                {
-                    var warn = PushNotificationCopy.InsufficientWallet(amount, user.WalletBalance);
-                    await _pushNotifier.NotifyAsync(
-                        userId,
-                        NotificationCategory.SystemWarnings,
-                        warn.Title,
-                        warn.Body);
-                    return ApiResponse<WalletTransactionDto>.BadRequest("موجودی کیف پول کافی نیست");
-                }
-
-                using var transaction = await _context.Database.BeginTransactionAsync();
+                using var transaction = await _context.Database.BeginTransactionAsync(
+                    System.Data.IsolationLevel.Serializable);
                 try
                 {
+                    // قفل سطح ردیف تا دو ارسال هم‌زمان باعث overdraw / پیامک رایگان نشوند
+                    var user = await _context.Users
+                        .FromSqlRaw(
+                            "SELECT * FROM Users WITH (UPDLOCK, ROWLOCK) WHERE Id = {0}",
+                            userId)
+                        .FirstOrDefaultAsync();
+
+                    if (user == null)
+                    {
+                        await transaction.RollbackAsync();
+                        return ApiResponse<WalletTransactionDto>.NotFound("کاربر یافت نشد");
+                    }
+
+                    if (user.WalletBalance < amount)
+                    {
+                        await transaction.RollbackAsync();
+                        var warn = PushNotificationCopy.InsufficientWallet(amount, user.WalletBalance);
+                        await _pushNotifier.NotifyAsync(
+                            userId,
+                            NotificationCategory.SystemWarnings,
+                            warn.Title,
+                            warn.Body);
+                        return ApiResponse<WalletTransactionDto>.BadRequest("موجودی کیف پول کافی نیست");
+                    }
+
                     var balanceBefore = user.WalletBalance;
                     var balanceAfter = balanceBefore - amount;
 
-                    // ایجاد تراکنش کیف پول
                     var walletTransaction = new WalletTransaction
                     {
                         UserId = userId,
                         TransactionType = WalletTransactionTypes.Purchase,
-                        Amount = -amount, // منفی برای کسر از موجودی
+                        Amount = -amount,
                         BalanceBefore = balanceBefore,
                         BalanceAfter = balanceAfter,
                         Title = title,
@@ -411,14 +426,14 @@ namespace Api_Vapp.Services
 
                     await _context.WalletTransactions.AddAsync(walletTransaction);
 
-                    // به‌روزرسانی موجودی کاربر
                     user.WalletBalance = balanceAfter;
                     user.UpdatedAt = DateTime.UtcNow;
 
                     await _context.SaveChangesAsync();
                     await transaction.CommitAsync();
 
-                    _logger.LogInformation("موجودی کیف پول کاربر {UserId} به مبلغ {Amount} تومان کاهش یافت. موجودی جدید: {NewBalance}", 
+                    _logger.LogInformation(
+                        "موجودی کیف پول کاربر {UserId} به مبلغ {Amount} تومان کاهش یافت. موجودی جدید: {NewBalance}",
                         userId, amount, balanceAfter);
 
                     await _audit.WriteAsync(new AuditEntry
@@ -448,7 +463,7 @@ namespace Api_Vapp.Services
                         debitCopy.Body);
 
                     return ApiResponse<WalletTransactionDto>.CreateSuccess(
-                        MapToWalletTransactionDto(walletTransaction), 
+                        MapToWalletTransactionDto(walletTransaction),
                         "موجودی با موفقیت کسر شد");
                 }
                 catch

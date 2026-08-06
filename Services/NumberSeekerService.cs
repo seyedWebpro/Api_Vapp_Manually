@@ -26,11 +26,27 @@ namespace Api_Vapp.Services
 
         private static readonly List<NumberSeekerSourceInfoDto> KnownSources = new()
         {
-            new() { Code = "sheypoor", DisplayName = "شیپور" },
-            new() { Code = "divar", DisplayName = "دیوار" },
-            new() { Code = "nshan", DisplayName = "نشان" },
-            new() { Code = "balad", DisplayName = "بلد" },
-            new() { Code = "googlemaps", DisplayName = "گوگل مپ" }
+            new() { Code = "divar", DisplayName = "دیوار", IconKey = "divar", SortOrder = 1, Enabled = true },
+            new() { Code = "googlemaps", DisplayName = "گوگل مپ", IconKey = "googlemaps", SortOrder = 2, Enabled = true },
+            new() { Code = "sheypoor", DisplayName = "شیپور", IconKey = "sheypoor", SortOrder = 3, Enabled = true },
+            new() { Code = "nshan", DisplayName = "نشان", IconKey = "nshan", SortOrder = 4, Enabled = true },
+            new() { Code = "balad", DisplayName = "بلد", IconKey = "balad", SortOrder = 5, Enabled = true }
+        };
+
+        private static readonly string[] KnownCities =
+        {
+            "تهران", "مشهد", "اصفهان", "شیراز", "تبریز", "کرج", "اهواز", "قم",
+            "کرمانشاه", "رشت", "یزد", "کرمان", "همدان", "ارومیه", "زاهدان",
+            "اردبیل", "بندرعباس", "زنجان", "سنندج", "قزوین", "ساری", "گرگان",
+            "اراک", "بوشهر", "خرم‌آباد", "سمنان", "شهرکرد", "یاسوج", "ایلام", "بجنورد"
+        };
+
+        private static readonly string[] KnownCategories =
+        {
+            "رستوران", "کافه", "کافه رستوران", "فست‌فود", "شیرینی‌فروشی",
+            "آرایشگاه", "سالن زیبایی", "پوشاک", "موبایل فروشی", "لوازم خانگی",
+            "املاک", "خودرو", "کلینیک", "داروخانه", "سوپرمارکت",
+            "میوه و تره‌بار", "نانوایی", "آموزشگاه", "باشگاه ورزشی", "هتل"
         };
 
         private readonly INumberScraperClient _scraperClient;
@@ -66,7 +82,7 @@ namespace Api_Vapp.Services
             if (!_scraperClient.IsEnabled)
             {
                 return ApiResponse<NumberSeekerTaskCreatedDto>.Error(
-                    "سرویس شماره‌جو در حال حاضر غیرفعال است.",
+                    NumberSeekerUserMessages.ServiceDisabled,
                     503,
                     errorCode: "SCRAPER_DISABLED");
             }
@@ -75,7 +91,7 @@ namespace Api_Vapp.Services
             if (!allowed)
             {
                 return ApiResponse<NumberSeekerTaskCreatedDto>.Error(
-                    $"محدودیت تعداد درخواست — لطفاً {retryAfter} ثانیه دیگر تلاش کنید.",
+                    NumberSeekerUserMessages.RateLimited,
                     429,
                     errorCode: "RATE_LIMITED");
             }
@@ -94,7 +110,9 @@ namespace Api_Vapp.Services
                     TargetCount = request.MaxPhones,
                     Status = created.Status,
                     CurrentCount = 0,
-                    Message = created.Message,
+                    Message = NumberSeekerUserMessages.SanitizeIncomingUserMessage(
+                        created.Message,
+                        "درخواست شما ثبت شد و در حال پردازش است."),
                     CreatedAt = DateTime.UtcNow
                 };
 
@@ -130,6 +148,9 @@ namespace Api_Vapp.Services
                 });
 
                 created.PollUrl = $"/api/NumberSeeker/task/{created.TaskId}";
+                created.SourceDisplayName = NumberSeekerUiMapper.GetSourceDisplayName(created.Source);
+                created.StatusDisplayName = NumberSeekerUiMapper.GetStatusDisplayName(created.Status);
+                created.Message = ownedTask.Message;
 
                 return ApiResponse<NumberSeekerTaskCreatedDto>.CreateSuccess(
                     created,
@@ -139,23 +160,39 @@ namespace Api_Vapp.Services
             catch (UnauthorizedAccessException ex)
             {
                 _logger.LogError(ex, "Scraper API key rejected for user {UserId}", userId);
-                return ApiResponse<NumberSeekerTaskCreatedDto>.InternalServerError(
-                    ControlledErrorHelper.Unexpected,
-                    "SCRAPER_AUTH_FAILED");
+                return ApiResponse<NumberSeekerTaskCreatedDto>.Error(
+                    NumberSeekerUserMessages.ExtractionFailed,
+                    503,
+                    errorCode: "SCRAPER_AUTH_FAILED");
             }
             catch (ArgumentException ex)
             {
-                return ApiResponse<NumberSeekerTaskCreatedDto>.BadRequest(ex.Message, errorCode: ErrorCodes.InvalidInput);
+                _logger.LogWarning(ex, "Invalid scrape input for user {UserId}", userId);
+                return ApiResponse<NumberSeekerTaskCreatedDto>.BadRequest(
+                    NumberSeekerUserMessages.InvalidInput,
+                    errorCode: ErrorCodes.InvalidInput);
             }
-            catch (InvalidOperationException ex) when (ex.Message.Contains("محدودیت نرخ"))
+            catch (InvalidOperationException ex) when (
+                ex.Message.Contains("RATE_LIMITED", StringComparison.Ordinal) ||
+                ex.Message.Contains("محدودیت", StringComparison.Ordinal))
             {
-                return ApiResponse<NumberSeekerTaskCreatedDto>.Error(ex.Message, 429, errorCode: "RATE_LIMITED");
+                return ApiResponse<NumberSeekerTaskCreatedDto>.Error(
+                    NumberSeekerUserMessages.RateLimited,
+                    429,
+                    errorCode: "RATE_LIMITED");
+            }
+            catch (InvalidOperationException ex) when (ex.Message.Contains("SCRAPER_DISABLED", StringComparison.Ordinal))
+            {
+                return ApiResponse<NumberSeekerTaskCreatedDto>.Error(
+                    NumberSeekerUserMessages.ServiceDisabled,
+                    503,
+                    errorCode: "SCRAPER_DISABLED");
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to start number seeker scrape for user {UserId}", userId);
                 return ApiResponse<NumberSeekerTaskCreatedDto>.Error(
-                    "سرویس شماره‌جو در دسترس نیست. لطفاً بعداً تلاش کنید.",
+                    NumberSeekerUserMessages.ExtractionFailed,
                     503,
                     errorCode: "SCRAPER_UNAVAILABLE");
             }
@@ -167,30 +204,57 @@ namespace Api_Vapp.Services
         {
             if (string.IsNullOrWhiteSpace(taskId))
             {
-                return ApiResponse<NumberSeekerTaskStatusDto>.BadRequest("شناسه تسک الزامی است.");
+                return ApiResponse<NumberSeekerTaskStatusDto>.BadRequest(
+                    NumberSeekerUserMessages.TaskIdRequired,
+                    errorCode: ErrorCodes.InvalidInput);
             }
 
             var ownedTask = await _taskRepository.GetByScraperTaskIdAndUserIdAsync(taskId.Trim(), userId);
             if (ownedTask == null)
             {
-                return ApiResponse<NumberSeekerTaskStatusDto>.NotFound("تسک یافت نشد یا متعلق به شما نیست.");
+                return ApiResponse<NumberSeekerTaskStatusDto>.NotFound(NumberSeekerUserMessages.TaskNotFound);
+            }
+
+            // Performance: terminal + cached phones → بدون فراخوانی ربات
+            var cachedPhones = NumberSeekerPhoneStorage.Deserialize(ownedTask.PhonesJson);
+            if (TerminalStatuses.Contains(ownedTask.Status) && cachedPhones.Count > 0)
+            {
+                var cachedStatus = BuildStatusFromOwnedTask(ownedTask, cachedPhones);
+                EnrichStatusForUi(cachedStatus, ownedTask.CreatedAt);
+                return ApiResponse<NumberSeekerTaskStatusDto>.CreateSuccess(cachedStatus);
             }
 
             try
             {
                 var status = await _scraperClient.GetTaskStatusAsync(taskId.Trim());
                 await SyncOwnedTaskAsync(ownedTask, status);
+                EnrichStatusForUi(status, ownedTask.CreatedAt);
                 return ApiResponse<NumberSeekerTaskStatusDto>.CreateSuccess(status);
             }
             catch (KeyNotFoundException)
             {
-                return ApiResponse<NumberSeekerTaskStatusDto>.NotFound("تسک در سرویس اسکرپ یافت نشد.");
+                if (cachedPhones.Count > 0)
+                {
+                    var cachedStatus = BuildStatusFromOwnedTask(ownedTask, cachedPhones);
+                    EnrichStatusForUi(cachedStatus, ownedTask.CreatedAt);
+                    return ApiResponse<NumberSeekerTaskStatusDto>.CreateSuccess(cachedStatus);
+                }
+
+                return ApiResponse<NumberSeekerTaskStatusDto>.NotFound(NumberSeekerUserMessages.TaskNotFound);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to get task status {TaskId} for user {UserId}", taskId, userId);
+
+                if (cachedPhones.Count > 0)
+                {
+                    var cachedStatus = BuildStatusFromOwnedTask(ownedTask, cachedPhones);
+                    EnrichStatusForUi(cachedStatus, ownedTask.CreatedAt);
+                    return ApiResponse<NumberSeekerTaskStatusDto>.CreateSuccess(cachedStatus);
+                }
+
                 return ApiResponse<NumberSeekerTaskStatusDto>.Error(
-                    "دریافت وضعیت تسک با خطا مواجه شد.",
+                    NumberSeekerUserMessages.ExtractionFailed,
                     503,
                     errorCode: "SCRAPER_UNAVAILABLE");
             }
@@ -202,13 +266,15 @@ namespace Api_Vapp.Services
         {
             if (string.IsNullOrWhiteSpace(taskId))
             {
-                return ApiResponse<NumberSeekerCancelResultDto>.BadRequest("شناسه تسک الزامی است.");
+                return ApiResponse<NumberSeekerCancelResultDto>.BadRequest(
+                    NumberSeekerUserMessages.TaskIdRequired,
+                    errorCode: ErrorCodes.InvalidInput);
             }
 
             var ownedTask = await _taskRepository.GetByScraperTaskIdAndUserIdAsync(taskId.Trim(), userId);
             if (ownedTask == null)
             {
-                return ApiResponse<NumberSeekerCancelResultDto>.NotFound("تسک یافت نشد یا متعلق به شما نیست.");
+                return ApiResponse<NumberSeekerCancelResultDto>.NotFound(NumberSeekerUserMessages.TaskNotFound);
             }
 
             try
@@ -217,7 +283,7 @@ namespace Api_Vapp.Services
 
                 ownedTask.Status = "cancelled";
                 ownedTask.CompletedAt = DateTime.UtcNow;
-                ownedTask.Message = result.Message;
+                ownedTask.Message = NumberSeekerUserMessages.Cancelled;
                 await _taskRepository.UpdateAsync(ownedTask);
 
                 await _audit.WriteAsync(new AuditEntry
@@ -229,17 +295,25 @@ namespace Api_Vapp.Services
                     ActorUserId = userId
                 });
 
-                return ApiResponse<NumberSeekerCancelResultDto>.CreateSuccess(result, result.Message);
+                return ApiResponse<NumberSeekerCancelResultDto>.CreateSuccess(
+                    new NumberSeekerCancelResultDto
+                    {
+                        TaskId = result.TaskId,
+                        Message = NumberSeekerUserMessages.Cancelled,
+                        Status = "cancelled",
+                        StatusDisplayName = NumberSeekerUiMapper.GetStatusDisplayName("cancelled")
+                    },
+                    NumberSeekerUserMessages.Cancelled);
             }
             catch (KeyNotFoundException)
             {
-                return ApiResponse<NumberSeekerCancelResultDto>.NotFound("تسک در سرویس اسکرپ یافت نشد.");
+                return ApiResponse<NumberSeekerCancelResultDto>.NotFound(NumberSeekerUserMessages.TaskNotFound);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to cancel task {TaskId} for user {UserId}", taskId, userId);
                 return ApiResponse<NumberSeekerCancelResultDto>.Error(
-                    "لغو تسک با خطا مواجه شد.",
+                    NumberSeekerUserMessages.ExtractionFailed,
                     503,
                     errorCode: "SCRAPER_UNAVAILABLE");
             }
@@ -252,14 +326,16 @@ namespace Api_Vapp.Services
         {
             if (string.IsNullOrWhiteSpace(taskId))
             {
-                return ApiResponse<NumberSeekerImportResultDto>.BadRequest("شناسه تسک الزامی است.");
+                return ApiResponse<NumberSeekerImportResultDto>.BadRequest(
+                    NumberSeekerUserMessages.TaskIdRequired,
+                    errorCode: ErrorCodes.InvalidInput);
             }
 
             var (allowed, retryAfter) = await _rateLimiter.CheckImportAsync(userId);
             if (!allowed)
             {
                 return ApiResponse<NumberSeekerImportResultDto>.Error(
-                    $"محدودیت import — لطفاً {retryAfter} ثانیه دیگر تلاش کنید.",
+                    NumberSeekerUserMessages.RateLimited,
                     429,
                     errorCode: "RATE_LIMITED");
             }
@@ -267,43 +343,57 @@ namespace Api_Vapp.Services
             var ownedTask = await _taskRepository.GetByScraperTaskIdAndUserIdAsync(taskId.Trim(), userId);
             if (ownedTask == null)
             {
-                return ApiResponse<NumberSeekerImportResultDto>.NotFound("تسک یافت نشد یا متعلق به شما نیست.");
+                return ApiResponse<NumberSeekerImportResultDto>.NotFound(NumberSeekerUserMessages.TaskNotFound);
             }
 
             if (ownedTask.ImportedAt != null && !request.Force)
             {
                 return ApiResponse<NumberSeekerImportResultDto>.Error(
-                    "این تسک قبلاً به دفترچه import شده است. برای import مجدد Force=true بفرستید.",
+                    NumberSeekerUserMessages.AlreadyImported,
                     409,
                     errorCode: "ALREADY_IMPORTED");
             }
 
-            NumberSeekerTaskStatusDto status;
-            try
+            // Performance: اول از کش پایدار Vapp؛ در صورت نبود از ربات
+            var phones = NumberSeekerPhoneStorage.Deserialize(ownedTask.PhonesJson);
+            var taskStatus = ownedTask.Status;
+
+            if (phones.Count == 0 || !ImportableStatuses.Contains(taskStatus))
             {
-                status = await _scraperClient.GetTaskStatusAsync(taskId.Trim());
-                await SyncOwnedTaskAsync(ownedTask, status);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to fetch phones for import task {TaskId}", taskId);
-                return ApiResponse<NumberSeekerImportResultDto>.Error(
-                    "دریافت شماره‌ها از سرویس اسکرپ با خطا مواجه شد.",
-                    503,
-                    errorCode: "SCRAPER_UNAVAILABLE");
+                try
+                {
+                    var status = await _scraperClient.GetTaskStatusAsync(taskId.Trim());
+                    await SyncOwnedTaskAsync(ownedTask, status);
+                    taskStatus = status.Status;
+                    if (status.Phones is { Count: > 0 })
+                    {
+                        phones = status.Phones;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to fetch phones for import task {TaskId}", taskId);
+                    if (phones.Count == 0)
+                    {
+                        return ApiResponse<NumberSeekerImportResultDto>.Error(
+                            NumberSeekerUserMessages.ExtractionFailed,
+                            503,
+                            errorCode: "SCRAPER_UNAVAILABLE");
+                    }
+                }
             }
 
-            if (!ImportableStatuses.Contains(status.Status))
+            if (!ImportableStatuses.Contains(taskStatus))
             {
                 return ApiResponse<NumberSeekerImportResultDto>.BadRequest(
-                    "تسک هنوز تمام نشده — ابتدا تا وضعیت completed یا partial صبر کنید.",
+                    NumberSeekerUserMessages.NotReadyForImport,
                     errorCode: ErrorCodes.InvalidInput);
             }
 
-            if (status.Phones == null || status.Phones.Count == 0)
+            if (phones.Count == 0)
             {
                 return ApiResponse<NumberSeekerImportResultDto>.BadRequest(
-                    "شماره‌ای برای import وجود ندارد.",
+                    NumberSeekerUserMessages.NoPhonesForAction,
                     errorCode: ErrorCodes.InvalidInput);
             }
 
@@ -314,7 +404,7 @@ namespace Api_Vapp.Services
             var importDto = new ImportContactsFromListDto
             {
                 ContactNotebookId = request.ContactNotebookId,
-                Contacts = status.Phones
+                Contacts = phones
                     .Select((phone, index) => new ImportContactItemDto
                     {
                         MobileNumber = phone,
@@ -326,11 +416,15 @@ namespace Api_Vapp.Services
             var importResult = await _contactService.ImportFromListAsync(userId, importDto);
             if (!importResult.Success)
             {
-                return ApiResponse<NumberSeekerImportResultDto>.Error(
+                // پیام سرویس مخاطبین اگر امن نبود، پیام عمومی کاربر-محور
+                var safeMessage = NumberSeekerUserMessages.SanitizeIncomingUserMessage(
                     importResult.Message,
+                    NumberSeekerUserMessages.NoPhonesForAction);
+                return ApiResponse<NumberSeekerImportResultDto>.Error(
+                    safeMessage,
                     importResult.StatusCode,
                     importResult.Errors,
-                    importResult.ErrorCode);
+                    importResult.ErrorCode ?? ErrorCodes.InvalidInput);
             }
 
             await _rateLimiter.RecordImportAsync(userId);
@@ -355,7 +449,7 @@ namespace Api_Vapp.Services
             {
                 TaskId = taskId.Trim(),
                 ContactNotebookId = request.ContactNotebookId,
-                TotalPhones = status.Phones.Count,
+                TotalPhones = phones.Count,
                 SuccessCount = data.SuccessCount,
                 DuplicateCount = data.DuplicateCount,
                 SkippedCount = data.SkippedCount,
@@ -378,20 +472,37 @@ namespace Api_Vapp.Services
         {
             if (string.IsNullOrWhiteSpace(webhook.TaskId))
             {
-                return ApiResponse<bool>.BadRequest("شناسه تسک الزامی است.");
+                return ApiResponse<bool>.BadRequest(
+                    NumberSeekerUserMessages.TaskIdRequired,
+                    errorCode: ErrorCodes.InvalidInput);
             }
 
             var ownedTask = await _taskRepository.GetByScraperTaskIdTrackedAsync(webhook.TaskId.Trim());
             if (ownedTask == null)
             {
-                _logger.LogDebug("Webhook for unknown task {TaskId} — ignored", webhook.TaskId);
+                _logger.LogWarning("Webhook for unknown task {TaskId} — ignored", webhook.TaskId);
                 return ApiResponse<bool>.CreateSuccess(true, "تسک در Vapp ثبت نشده — نادیده گرفته شد.");
             }
 
             ownedTask.Status = webhook.Status;
-            ownedTask.CurrentCount = webhook.CurrentCount;
+            ownedTask.CurrentCount = webhook.CurrentCount > 0
+                ? webhook.CurrentCount
+                : (webhook.Phones?.Count ?? ownedTask.CurrentCount);
             ownedTask.ResultCode = webhook.ResultCode;
-            ownedTask.Message = webhook.Message;
+            ownedTask.Message = NumberSeekerUserMessages.ForTaskStatus(
+                webhook.Status,
+                webhook.ResultCode,
+                ownedTask.CurrentCount);
+            ownedTask.UpdatedAt = DateTime.UtcNow;
+
+            if (webhook.Phones is { Count: > 0 })
+            {
+                PersistPhones(ownedTask, webhook.Phones);
+                _logger.LogInformation(
+                    "Webhook persisted {PhoneCount} phones for task {TaskId}",
+                    webhook.Phones.Count,
+                    webhook.TaskId);
+            }
 
             if (TerminalStatuses.Contains(webhook.Status) && ownedTask.CompletedAt == null)
             {
@@ -399,6 +510,40 @@ namespace Api_Vapp.Services
             }
 
             await _taskRepository.UpdateAsync(ownedTask);
+
+            if (TerminalStatuses.Contains(webhook.Status))
+            {
+                var action = string.Equals(webhook.Status, "failed", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(webhook.Status, "cancelled", StringComparison.OrdinalIgnoreCase)
+                    ? (string.Equals(webhook.Status, "cancelled", StringComparison.OrdinalIgnoreCase)
+                        ? AuditActions.NumberSeekerTaskCancelled
+                        : AuditActions.NumberSeekerTaskFailed)
+                    : AuditActions.NumberSeekerTaskCompleted;
+
+                try
+                {
+                    await _audit.WriteAsync(new AuditEntry
+                    {
+                        Category = AuditCategories.NumberSeeker,
+                        Action = action,
+                        EntityType = AuditEntityTypes.NumberSeekerTask,
+                        EntityId = ownedTask.ScraperTaskId,
+                        ActorUserId = ownedTask.UserId,
+                        After = new
+                        {
+                            status = ownedTask.Status,
+                            currentCount = ownedTask.CurrentCount,
+                            resultCode = ownedTask.ResultCode,
+                            phonesPersisted = !string.IsNullOrEmpty(ownedTask.PhonesJson)
+                        }
+                    });
+                }
+                catch (Exception auditEx)
+                {
+                    _logger.LogWarning(auditEx, "Audit write failed for webhook task {TaskId}", webhook.TaskId);
+                }
+            }
+
             return ApiResponse<bool>.CreateSuccess(true, "وضعیت تسک به‌روزرسانی شد.");
         }
 
@@ -406,24 +551,9 @@ namespace Api_Vapp.Services
             int userId,
             int limit = 20)
         {
-            var tasks = await _taskRepository.GetRecentByUserIdAsync(userId, limit);
+            var tasks = await _taskRepository.GetRecentByUserIdAsync(userId, Math.Clamp(limit, 1, 100));
 
-            var summaries = tasks.Select(t => new NumberSeekerTaskSummaryDto
-            {
-                TaskId = t.ScraperTaskId,
-                Source = t.Source,
-                City = t.City,
-                Category = t.Category,
-                Status = t.Status,
-                CurrentCount = t.CurrentCount,
-                TargetCount = t.TargetCount,
-                ProgressPercent = t.TargetCount > 0
-                    ? Math.Round(t.CurrentCount * 100.0 / t.TargetCount, 1)
-                    : 0,
-                CreatedAt = t.CreatedAt.ToString("O"),
-                ImportedAt = t.ImportedAt?.ToString("O"),
-                ImportedCount = t.ImportedCount
-            }).ToList();
+            var summaries = tasks.Select(MapSummary).ToList();
 
             return ApiResponse<NumberSeekerTaskListDto>.CreateSuccess(new NumberSeekerTaskListDto
             {
@@ -435,6 +565,23 @@ namespace Api_Vapp.Services
         public async Task<ApiResponse<NumberSeekerHealthDto>> GetHealthAsync()
         {
             var health = await _scraperClient.GetHealthAsync();
+
+            if (!health.ScraperReachable)
+            {
+                _logger.LogWarning("NumberSeeker health: scraper unreachable — status={Status}", health.Status);
+            }
+            else if (!health.ApiKeyValid)
+            {
+                _logger.LogError("ALERT NumberSeeker API key mismatch between Vapp and scraper");
+            }
+            else if (health.TokenAlerts.Any(a =>
+                string.Equals(a.Level, "critical", StringComparison.OrdinalIgnoreCase)))
+            {
+                _logger.LogError(
+                    "ALERT NumberSeeker critical token alerts: {Count}",
+                    health.TokenAlertsCount);
+            }
+
             return ApiResponse<NumberSeekerHealthDto>.CreateSuccess(health);
         }
 
@@ -442,7 +589,104 @@ namespace Api_Vapp.Services
         {
             return ApiResponse<NumberSeekerSourcesDto>.CreateSuccess(new NumberSeekerSourcesDto
             {
-                Sources = KnownSources.ToList()
+                Sources = KnownSources.OrderBy(s => s.SortOrder).ToList()
+            });
+        }
+
+        public ApiResponse<NumberSeekerCitiesDto> GetCities()
+        {
+            var cities = KnownCities
+                .Select((name, index) => new NumberSeekerCityDto { Name = name, SortOrder = index + 1 })
+                .ToList();
+
+            return ApiResponse<NumberSeekerCitiesDto>.CreateSuccess(new NumberSeekerCitiesDto
+            {
+                Cities = cities,
+                DefaultCity = "تهران"
+            });
+        }
+
+        public ApiResponse<NumberSeekerCategoriesDto> GetCategories()
+        {
+            var categories = KnownCategories
+                .Select((name, index) => new NumberSeekerCategoryDto { Name = name, SortOrder = index + 1 })
+                .ToList();
+
+            return ApiResponse<NumberSeekerCategoriesDto>.CreateSuccess(new NumberSeekerCategoriesDto
+            {
+                Categories = categories,
+                Placeholder = "مثال : کافه - رستوران و ..."
+            });
+        }
+
+        public ApiResponse<NumberSeekerFormMetaDto> GetFormMeta()
+        {
+            return ApiResponse<NumberSeekerFormMetaDto>.CreateSuccess(new NumberSeekerFormMetaDto
+            {
+                Sources = KnownSources.OrderBy(s => s.SortOrder).ToList(),
+                Cities = KnownCities
+                    .Select((name, index) => new NumberSeekerCityDto { Name = name, SortOrder = index + 1 })
+                    .ToList(),
+                Categories = KnownCategories
+                    .Select((name, index) => new NumberSeekerCategoryDto { Name = name, SortOrder = index + 1 })
+                    .ToList(),
+                DefaultCity = "تهران",
+                CategoryPlaceholder = "مثال : کافه - رستوران و ...",
+                MinPhones = 1,
+                MaxPhones = 1000,
+                DefaultPhones = 50
+            });
+        }
+
+        public async Task<ApiResponse<NumberSeekerExportDto>> ExportPhonesAsync(int userId, string taskId)
+        {
+            if (string.IsNullOrWhiteSpace(taskId))
+            {
+                return ApiResponse<NumberSeekerExportDto>.BadRequest(
+                    NumberSeekerUserMessages.TaskIdRequired,
+                    errorCode: ErrorCodes.InvalidInput);
+            }
+
+            var ownedTask = await _taskRepository.GetByScraperTaskIdAndUserIdAsync(taskId.Trim(), userId);
+            if (ownedTask == null)
+            {
+                return ApiResponse<NumberSeekerExportDto>.NotFound(NumberSeekerUserMessages.TaskNotFound);
+            }
+
+            var phones = NumberSeekerPhoneStorage.Deserialize(ownedTask.PhonesJson);
+            if (phones.Count == 0 && !TerminalStatuses.Contains(ownedTask.Status))
+            {
+                try
+                {
+                    var status = await _scraperClient.GetTaskStatusAsync(taskId.Trim());
+                    await SyncOwnedTaskAsync(ownedTask, status);
+                    phones = status.Phones ?? new List<string>();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Export fetch failed for task {TaskId}", taskId);
+                }
+            }
+
+            if (phones.Count == 0)
+            {
+                return ApiResponse<NumberSeekerExportDto>.BadRequest(
+                    NumberSeekerUserMessages.NoPhonesForAction,
+                    errorCode: ErrorCodes.InvalidInput);
+            }
+
+            return ApiResponse<NumberSeekerExportDto>.CreateSuccess(new NumberSeekerExportDto
+            {
+                TaskId = ownedTask.ScraperTaskId,
+                Source = ownedTask.Source,
+                SourceDisplayName = NumberSeekerUiMapper.GetSourceDisplayName(ownedTask.Source),
+                City = ownedTask.City,
+                Category = ownedTask.Category,
+                Status = ownedTask.Status,
+                Count = phones.Count,
+                Phones = phones,
+                Format = "json",
+                TextContent = string.Join("\n", phones)
             });
         }
 
@@ -470,7 +714,16 @@ namespace Api_Vapp.Services
 
             if (!string.Equals(ownedTask.Message, status.Message, StringComparison.Ordinal))
             {
-                ownedTask.Message = status.Message;
+                ownedTask.Message = NumberSeekerUserMessages.ForTaskStatus(
+                    status.Status,
+                    status.ResultCode,
+                    status.CurrentCount);
+                changed = true;
+            }
+
+            if (status.Phones is { Count: > 0 })
+            {
+                PersistPhones(ownedTask, status.Phones);
                 changed = true;
             }
 
@@ -482,8 +735,134 @@ namespace Api_Vapp.Services
 
             if (changed)
             {
+                ownedTask.UpdatedAt = DateTime.UtcNow;
                 await _taskRepository.UpdateAsync(ownedTask);
             }
+        }
+
+        private static void PersistPhones(NumberSeekerTask ownedTask, IReadOnlyList<string> phones)
+        {
+            var json = NumberSeekerPhoneStorage.Serialize(phones);
+            if (string.IsNullOrEmpty(json))
+                return;
+
+            ownedTask.PhonesJson = json;
+            ownedTask.PhonesPersistedAt = DateTime.UtcNow;
+            if (ownedTask.CurrentCount < phones.Count)
+            {
+                ownedTask.CurrentCount = phones.Count;
+            }
+        }
+
+        private static NumberSeekerTaskSummaryDto MapSummary(NumberSeekerTask t)
+        {
+            var hasPhones = !string.IsNullOrWhiteSpace(t.PhonesJson);
+            var progress = t.TargetCount > 0
+                ? Math.Round(t.CurrentCount * 100.0 / t.TargetCount, 1)
+                : 0;
+
+            return new NumberSeekerTaskSummaryDto
+            {
+                TaskId = t.ScraperTaskId,
+                Source = t.Source,
+                SourceDisplayName = NumberSeekerUiMapper.GetSourceDisplayName(t.Source),
+                City = t.City,
+                Category = t.Category,
+                Subtitle = NumberSeekerUiMapper.BuildSubtitle(t.City, t.Category),
+                Status = t.Status,
+                StatusDisplayName = NumberSeekerUiMapper.GetStatusDisplayName(t.Status),
+                StatusTone = NumberSeekerUiMapper.GetStatusTone(t.Status),
+                CurrentCount = t.CurrentCount,
+                TargetCount = t.TargetCount,
+                ProgressPercent = progress,
+                CountLabel = $"{t.CurrentCount}/{t.TargetCount}",
+                CreatedAt = t.CreatedAt.ToString("O"),
+                CreatedAtPersian = NumberSeekerUiMapper.ToPersianDate(t.CreatedAt),
+                CompletedAt = t.CompletedAt?.ToString("O"),
+                CompletedAtPersian = t.CompletedAt.HasValue
+                    ? NumberSeekerUiMapper.ToPersianDate(t.CompletedAt.Value)
+                    : null,
+                ImportedAt = t.ImportedAt?.ToString("O"),
+                ImportedCount = t.ImportedCount,
+                CanDownload = hasPhones && NumberSeekerUiMapper.IsImportable(t.Status),
+                CanImport = hasPhones && NumberSeekerUiMapper.IsImportable(t.Status),
+                IsTerminal = NumberSeekerUiMapper.IsTerminal(t.Status)
+            };
+        }
+
+        private static void EnrichStatusForUi(NumberSeekerTaskStatusDto status, DateTime createdAt)
+        {
+            var allPhones = status.Phones ?? new List<string>();
+            var terminal = NumberSeekerUiMapper.IsTerminal(status.Status);
+            var running = string.Equals(status.Status, "running", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(status.Status, "pending", StringComparison.OrdinalIgnoreCase);
+
+            status.SourceDisplayName = NumberSeekerUiMapper.GetSourceDisplayName(status.Source);
+            status.StatusDisplayName = NumberSeekerUiMapper.GetStatusDisplayName(status.Status);
+            status.StatusTone = NumberSeekerUiMapper.GetStatusTone(status.Status);
+            status.Subtitle = NumberSeekerUiMapper.BuildSubtitle(status.City, status.Category);
+            status.IsTerminal = terminal;
+            status.IsRunning = running;
+            status.CanCancel = running;
+            status.CanImport = NumberSeekerUiMapper.IsImportable(status.Status) && allPhones.Count > 0;
+            status.CanDownload = NumberSeekerUiMapper.IsImportable(status.Status) && allPhones.Count > 0;
+            status.ProgressLabel = NumberSeekerUiMapper.BuildProgressLabel(status.CurrentCount, status.TargetCount);
+            status.PhonesPreviewLimit = NumberSeekerUiMapper.PhonesPreviewLimit;
+            status.PhonesPreview = NumberSeekerUiMapper.TakePreview(allPhones);
+            status.CreatedAtPersian = NumberSeekerUiMapper.ToPersianDate(createdAt);
+            status.ResultTitle = NumberSeekerUiMapper.BuildResultTitle(status.Status);
+            status.ResultCountLabel = NumberSeekerUiMapper.BuildResultCountLabel(status.CurrentCount);
+
+            // هرگز Error/Message فنی اسکرپر را به موبایل نده
+            status.Error = null;
+            status.Message = NumberSeekerUserMessages.ForTaskStatus(
+                status.Status,
+                status.ResultCode,
+                status.CurrentCount);
+
+            // صفحه در حال جستجو: فقط preview؛ نتایج: لیست کامل
+            if (!terminal)
+            {
+                status.Phones = status.PhonesPreview;
+            }
+
+            if (status.ElapsedSeconds is null or <= 0 && !terminal)
+            {
+                status.ElapsedSeconds = Math.Max(0, (DateTime.UtcNow - createdAt).TotalSeconds);
+            }
+
+            var (etaSeconds, etaText) = NumberSeekerUiMapper.EstimateRemaining(
+                status.Status,
+                status.CurrentCount,
+                status.TargetCount,
+                status.ElapsedSeconds,
+                status.QueuePosition);
+            status.EstimatedSecondsRemaining = etaSeconds;
+            status.EstimatedRemainingText = etaText;
+        }
+
+        private static NumberSeekerTaskStatusDto BuildStatusFromOwnedTask(
+            NumberSeekerTask ownedTask,
+            List<string> phones)
+        {
+            return new NumberSeekerTaskStatusDto
+            {
+                TaskId = ownedTask.ScraperTaskId,
+                Source = ownedTask.Source,
+                City = ownedTask.City,
+                Category = ownedTask.Category,
+                Status = ownedTask.Status,
+                TargetCount = ownedTask.TargetCount,
+                CurrentCount = phones.Count > 0 ? phones.Count : ownedTask.CurrentCount,
+                ProgressPercent = ownedTask.TargetCount > 0
+                    ? Math.Round((phones.Count > 0 ? phones.Count : ownedTask.CurrentCount) * 100.0 / ownedTask.TargetCount, 1)
+                    : 0,
+                Phones = phones,
+                Message = ownedTask.Message,
+                ResultCode = ownedTask.ResultCode,
+                StartedAt = ownedTask.CreatedAt.ToString("O"),
+                CompletedAt = ownedTask.CompletedAt?.ToString("O")
+            };
         }
     }
 }

@@ -447,9 +447,14 @@ namespace Api_Vapp.Services.BackgroundServices
                     {
                         partsCount = SmsPartsCalculator.CalculateParts(messageContent, pricing.Rules);
                     }
-                    catch (ArgumentException)
+                    catch (ArgumentException ex)
                     {
-                        partsCount = pricing.Rules.MaxPages;
+                        _logger.LogWarning(
+                            ex,
+                            "Automated message content exceeds max pages — AutomatedMessageId: {Id}",
+                            automatedMessage.Id);
+                        await transaction.RollbackAsync(cancellationToken);
+                        return 0;
                     }
 
                     message = new Message

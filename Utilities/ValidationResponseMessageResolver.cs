@@ -27,9 +27,10 @@ namespace Api_Vapp.Utilities
                 return ControlledErrorHelper.OtpIncorrect;
             }
 
-            if (errors.Count == 1 && ControlledErrorHelper.IsSafeUserMessage(errors[0]))
+            var safe = errors.Where(ControlledErrorHelper.IsSafeUserMessage).ToList();
+            if (safe.Count >= 1)
             {
-                return errors[0];
+                return safe[0];
             }
 
             return GenericValidationMessage;

@@ -1,7 +1,7 @@
 namespace Api_Vapp.Models
 {
     /// <summary>
-    /// نگاشت تسک اسکرپ ربات به کاربر Vapp — برای امنیت و تاریخچه.
+    /// نگاشت تسک اسکرپ ربات به کاربر Vapp — برای امنیت، تاریخچه و کش شماره‌ها.
     /// </summary>
     public class NumberSeekerTask
     {
@@ -28,7 +28,15 @@ namespace Api_Vapp.Models
 
         public string? Message { get; set; }
 
+        /// <summary>کش JSON لیست شماره‌ها (از webhook یا poll) — برای import بدون وابستگی به ربات</summary>
+        public string? PhonesJson { get; set; }
+
+        /// <summary>زمان آخرین ذخیره شماره‌ها در Vapp</summary>
+        public DateTime? PhonesPersistedAt { get; set; }
+
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+        public DateTime? UpdatedAt { get; set; }
 
         public DateTime? CompletedAt { get; set; }
 

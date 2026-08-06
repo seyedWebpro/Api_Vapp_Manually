@@ -9,8 +9,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Api_Vapp.Controller
 {
     /// <summary>
-    /// شماره‌جو — پروکسی امن به سرویس Python Number Scraper.
-    /// موبایل فقط این API را صدا می‌زند؛ ربات از شبکه داخلی در دسترس است.
+    /// شماره‌جو — API موبایل برای تاریخچه، جستجوی جدید، پیشرفت، نتایج و ذخیره در دفترچه.
     /// </summary>
     [ApiController]
     [Route("api/[controller]")]
@@ -30,7 +29,55 @@ namespace Api_Vapp.Controller
             _numberSeekerService = numberSeekerService;
         }
 
-        /// <summary>شروع اسکرپ شماره از پلتفرم (دیوار، شیپور، ...)</summary>
+        /// <summary>تاریخچه اسکرپ‌های اخیر — صفحه اول</summary>
+        [HttpGet("tasks")]
+        [ProducesResponseType(typeof(ApiResponse<NumberSeekerTaskListDto>), StatusCodes.Status200OK)]
+        public async Task<ActionResult<ApiResponse<NumberSeekerTaskListDto>>> GetRecentTasks(
+            [FromQuery] int limit = 20)
+        {
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _numberSeekerService.GetRecentTasksAsync(userId, limit);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        /// <summary>متادیتای فرم جستجوی جدید (پلتفرم + شهر + دسته + محدودیت تعداد)</summary>
+        [HttpGet("form-meta")]
+        [ProducesResponseType(typeof(ApiResponse<NumberSeekerFormMetaDto>), StatusCodes.Status200OK)]
+        public async Task<ActionResult<ApiResponse<NumberSeekerFormMetaDto>>> GetFormMeta()
+        {
+            await GetCurrentUserIdAsync();
+            var result = _numberSeekerService.GetFormMeta();
+            return StatusCode(result.StatusCode, result);
+        }
+
+        /// <summary>لیست پلتفرم‌ها</summary>
+        [HttpGet("sources")]
+        [ProducesResponseType(typeof(ApiResponse<NumberSeekerSourcesDto>), StatusCodes.Status200OK)]
+        public ActionResult<ApiResponse<NumberSeekerSourcesDto>> GetSources()
+        {
+            var result = _numberSeekerService.GetSources();
+            return StatusCode(result.StatusCode, result);
+        }
+
+        /// <summary>لیست شهرها برای دراپ‌داون</summary>
+        [HttpGet("cities")]
+        [ProducesResponseType(typeof(ApiResponse<NumberSeekerCitiesDto>), StatusCodes.Status200OK)]
+        public ActionResult<ApiResponse<NumberSeekerCitiesDto>> GetCities()
+        {
+            var result = _numberSeekerService.GetCities();
+            return StatusCode(result.StatusCode, result);
+        }
+
+        /// <summary>پیشنهاد دسته‌ها / نوع کسب‌وکار</summary>
+        [HttpGet("categories")]
+        [ProducesResponseType(typeof(ApiResponse<NumberSeekerCategoriesDto>), StatusCodes.Status200OK)]
+        public ActionResult<ApiResponse<NumberSeekerCategoriesDto>> GetCategories()
+        {
+            var result = _numberSeekerService.GetCategories();
+            return StatusCode(result.StatusCode, result);
+        }
+
+        /// <summary>شروع اسکرپ — صفحه جستجوی جدید</summary>
         [HttpPost("scrape")]
         [ProducesResponseType(typeof(ApiResponse<NumberSeekerTaskCreatedDto>), StatusCodes.Status201Created)]
         [ProducesResponseType(typeof(ApiResponse<NumberSeekerTaskCreatedDto>), StatusCodes.Status400BadRequest)]
@@ -46,7 +93,7 @@ namespace Api_Vapp.Controller
             return StatusCode(result.StatusCode, result);
         }
 
-        /// <summary>Poll وضعیت تسک — هر ۲–۳ ثانیه تا completed/failed</summary>
+        /// <summary>Poll وضعیت — صفحه در حال جستجو / نتایج (هر ۲–۳ ثانیه)</summary>
         [HttpGet("task/{taskId}")]
         [ProducesResponseType(typeof(ApiResponse<NumberSeekerTaskStatusDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<NumberSeekerTaskStatusDto>), StatusCodes.Status404NotFound)]
@@ -57,7 +104,7 @@ namespace Api_Vapp.Controller
             return StatusCode(result.StatusCode, result);
         }
 
-        /// <summary>لغو تسک در حال اجرا یا در صف</summary>
+        /// <summary>لغو جستجو</summary>
         [HttpPost("task/{taskId}/cancel")]
         [ProducesResponseType(typeof(ApiResponse<NumberSeekerCancelResultDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<NumberSeekerCancelResultDto>), StatusCodes.Status404NotFound)]
@@ -68,36 +115,19 @@ namespace Api_Vapp.Controller
             return StatusCode(result.StatusCode, result);
         }
 
-        /// <summary>تاریخچه تسک‌های اخیر کاربر</summary>
-        [HttpGet("tasks")]
-        [ProducesResponseType(typeof(ApiResponse<NumberSeekerTaskListDto>), StatusCodes.Status200OK)]
-        public async Task<ActionResult<ApiResponse<NumberSeekerTaskListDto>>> GetRecentTasks(
-            [FromQuery] int limit = 20)
+        /// <summary>دانلود / کپی همه شماره‌ها — آیکن دانلود تاریخچه و دکمه کپی همه</summary>
+        [HttpGet("task/{taskId}/export")]
+        [ProducesResponseType(typeof(ApiResponse<NumberSeekerExportDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<NumberSeekerExportDto>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(ApiResponse<NumberSeekerExportDto>), StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<ApiResponse<NumberSeekerExportDto>>> ExportPhones(string taskId)
         {
             var userId = await GetCurrentUserIdAsync();
-            var result = await _numberSeekerService.GetRecentTasksAsync(userId, limit);
+            var result = await _numberSeekerService.ExportPhonesAsync(userId, taskId);
             return StatusCode(result.StatusCode, result);
         }
 
-        /// <summary>سلامت سرویس اسکرپ (برای دیباگ اپ)</summary>
-        [HttpGet("health")]
-        [ProducesResponseType(typeof(ApiResponse<NumberSeekerHealthDto>), StatusCodes.Status200OK)]
-        public async Task<ActionResult<ApiResponse<NumberSeekerHealthDto>>> GetHealth()
-        {
-            var result = await _numberSeekerService.GetHealthAsync();
-            return StatusCode(result.StatusCode, result);
-        }
-
-        /// <summary>لیست پلتفرم‌های پشتیبانی‌شده</summary>
-        [HttpGet("sources")]
-        [ProducesResponseType(typeof(ApiResponse<NumberSeekerSourcesDto>), StatusCodes.Status200OK)]
-        public ActionResult<ApiResponse<NumberSeekerSourcesDto>> GetSources()
-        {
-            var result = _numberSeekerService.GetSources();
-            return StatusCode(result.StatusCode, result);
-        }
-
-        /// <summary>Import شماره‌های تسک به دفترچه تلفن</summary>
+        /// <summary>ذخیره در دفترچه تلفن</summary>
         [HttpPost("task/{taskId}/import")]
         [RequireSubscriptionFeature(SubscriptionFeatureCodes.Phonebook)]
         [ProducesResponseType(typeof(ApiResponse<NumberSeekerImportResultDto>), StatusCodes.Status200OK)]
@@ -113,6 +143,15 @@ namespace Api_Vapp.Controller
 
             var userId = await GetCurrentUserIdAsync();
             var result = await _numberSeekerService.ImportPhonesAsync(userId, taskId, request);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        /// <summary>سلامت سرویس اسکرپ</summary>
+        [HttpGet("health")]
+        [ProducesResponseType(typeof(ApiResponse<NumberSeekerHealthDto>), StatusCodes.Status200OK)]
+        public async Task<ActionResult<ApiResponse<NumberSeekerHealthDto>>> GetHealth()
+        {
+            var result = await _numberSeekerService.GetHealthAsync();
             return StatusCode(result.StatusCode, result);
         }
     }

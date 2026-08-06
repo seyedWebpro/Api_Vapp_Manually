@@ -32,6 +32,10 @@ namespace Api_Vapp.Utilities
         public const string OtpIncorrect = "کد تایید را اشتباه وارد کرده‌اید.";
         public const string OtpExpired = "کد تایید شما منقضی شده است.";
 
+        /// <summary>خطای استخراج شماره — NumberSeeker / اسکرپر</summary>
+        public const string NumberExtractionFailed =
+            "مشکل در استخراج شماره‌ها پیش آمده. لطفاً مجدد تلاش کنید و در صورت تکرار با پشتیبانی تماس بگیرید.";
+
         /// <summary>
         /// آیا پیام از قبل توسط توسعه‌دهنده به فارسی و به‌صورت کنترل‌شده نوشته شده؟
         /// </summary>

@@ -4,7 +4,7 @@ using Api_Vapp.DTOs.NumberSeeker;
 namespace Api_Vapp.Interfaces
 {
     /// <summary>
-    /// لایه کسب‌وکار شماره‌جو — مالکیت تسک، امنیت، نگاشت پاسخ.
+    /// لایه کسب‌وکار شماره‌جو — مالکیت تسک، امنیت، نگاشت پاسخ UI موبایل.
     /// </summary>
     public interface INumberSeekerService
     {
@@ -27,6 +27,16 @@ namespace Api_Vapp.Interfaces
         Task<ApiResponse<NumberSeekerHealthDto>> GetHealthAsync();
 
         ApiResponse<NumberSeekerSourcesDto> GetSources();
+
+        ApiResponse<NumberSeekerCitiesDto> GetCities();
+
+        ApiResponse<NumberSeekerCategoriesDto> GetCategories();
+
+        ApiResponse<NumberSeekerFormMetaDto> GetFormMeta();
+
+        Task<ApiResponse<NumberSeekerExportDto>> ExportPhonesAsync(
+            int userId,
+            string taskId);
 
         Task<ApiResponse<NumberSeekerImportResultDto>> ImportPhonesAsync(
             int userId,

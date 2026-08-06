@@ -1,11 +1,16 @@
+using Api_Vapp.Constants;
 using Api_Vapp.DTOs.Sms;
 using Api_Vapp.Interfaces;
+using Api_Vapp.Models;
+using Api_Vapp.Utilities;
 using Microsoft.Extensions.Logging;
 
 namespace Api_Vapp.Services
 {
     /// <summary>
     /// لایه یکپارچه ارسال پیامک پولی از کیف پول کاربر اپ.
+    /// الگوی مالی: اول کسر اتمیک → سپس ارسال → در صورت شکست ارسال، برگشت موجودی.
+    /// کمبود موجودی = پیامک ارسال نمی‌شود؛ عملیات اصلی فراخوان‌کننده می‌تواند ادامه یابد.
     /// </summary>
     public class UserSmsBillingService : IUserSmsBillingService
     {
@@ -34,8 +39,13 @@ namespace Api_Vapp.Services
             CancellationToken cancellationToken = default)
         {
             var pricing = await _smsPricing.GetRuntimeAsync(cancellationToken);
-            var parts = SafePartsCount(message, pricing.Rules);
-            var cost = Math.Round(pricing.CostPerPart * parts, 2, MidpointRounding.AwayFromZero);
+            var prepared = SmsPartsCalculator.PrepareForSend(message, pricing.Rules);
+            if (!SmsPartsCalculator.TryCalculateParts(prepared, pricing.Rules, out var parts, out _))
+            {
+                parts = Math.Max(1, pricing.Rules.MaxPages);
+            }
+
+            var cost = SmsPartsCalculator.CalculateCost(parts, pricing.CostPerPart);
             return (cost, parts);
         }
 
@@ -56,21 +66,44 @@ namespace Api_Vapp.Services
             }
 
             var pricing = await _smsPricing.GetRuntimeAsync(cancellationToken);
-            var prepared = EnsureOptOutSuffix(message, pricing.Rules.OptOutSuffix);
-            var parts = SafePartsCount(prepared, pricing.Rules);
-            var cost = Math.Round(pricing.CostPerPart * parts, 2, MidpointRounding.AwayFromZero);
+            var prepared = SmsPartsCalculator.PrepareForSend(message, pricing.Rules);
 
-            if (pricing.IsBillingEffectivelyEnabled && cost > 0)
+            if (!SmsPartsCalculator.TryCalculateParts(prepared, pricing.Rules, out var parts, out var analysis)
+                || analysis.ExceedsMaxPages)
             {
-                var balance = await _walletService.GetBalanceAsync(userId);
-                if (balance < cost)
+                _logger.LogWarning(
+                    "SMS rejected — exceeds max pages. UserId={UserId}, Parts={Parts}, Max={Max}, Module={Module}",
+                    userId, analysis.PartsCount, pricing.Rules.MaxPages, sourceModule);
+
+                return UserSmsSendResult.Failed(
+                    0,
+                    analysis.PartsCount,
+                    $"تعداد صفحات پیامک از حداکثر مجاز ({pricing.Rules.MaxPages} صفحه) بیشتر است");
+            }
+
+            var cost = SmsPartsCalculator.CalculateCost(parts, pricing.CostPerPart);
+            var shouldBill = pricing.IsBillingEffectivelyEnabled && cost > 0;
+            decimal reserved = 0;
+
+            // اول کسر با قفل — اگر موجودی کافی نباشد هیچ پیامکی ارسال نمی‌شود
+            if (shouldBill)
+            {
+                var deduct = await _walletService.DeductBalanceAsync(
+                    userId,
+                    cost,
+                    walletTitle,
+                    walletDescription ?? $"هزینه ارسال پیامک ({parts} پارت) — {sourceModule}");
+
+                if (!deduct.Success)
                 {
                     _logger.LogInformation(
-                        "SMS skipped — insufficient wallet. UserId={UserId}, Cost={Cost}, Balance={Balance}, Module={Module}",
-                        userId, cost, balance, sourceModule);
+                        "SMS skipped — insufficient wallet (pre-deduct). UserId={UserId}, Cost={Cost}, Module={Module}",
+                        userId, cost, sourceModule);
 
                     return UserSmsSendResult.Skipped(cost, parts);
                 }
+
+                reserved = cost;
             }
 
             try
@@ -86,36 +119,15 @@ namespace Api_Vapp.Services
 
                 if (!isSuccess)
                 {
+                    await RefundIfNeededAsync(userId, reserved, sourceModule, "ارسال ناموفق به سرویس پیامک");
                     _logger.LogWarning(
-                        "SMS provider failed. UserId={UserId}, Module={Module}, Message={Message}",
+                        "SMS provider failed after wallet reserve. UserId={UserId}, Module={Module}, Message={Message}",
                         userId, sourceModule, smsResult.Message);
 
-                    return UserSmsSendResult.Failed(cost, parts, smsResult.Message);
+                    return UserSmsSendResult.Failed(cost, parts, ControlledErrorHelper.SmsFailed);
                 }
 
                 var sid = smsResult.Data!.Sid;
-                decimal charged = 0;
-
-                if (pricing.IsBillingEffectivelyEnabled && cost > 0)
-                {
-                    var deduct = await _walletService.DeductBalanceAsync(
-                        userId,
-                        cost,
-                        walletTitle,
-                        walletDescription ?? $"هزینه ارسال پیامک ({parts} پارت) — {sourceModule}");
-
-                    if (!deduct.Success)
-                    {
-                        // ارسال انجام شده اما کسر ناموفق؛ لاگ هشدار — پیامک را برگشت نمی‌زنیم
-                        _logger.LogWarning(
-                            "SMS sent but wallet deduct failed. UserId={UserId}, Cost={Cost}, Sid={Sid}, Error={Error}",
-                            userId, cost, sid, deduct.Message);
-                    }
-                    else
-                    {
-                        charged = cost;
-                    }
-                }
 
                 await _deliveryTracking.TrackSuccessfulSendAsync(new SmsDeliveryTrackRequestDto
                 {
@@ -128,12 +140,13 @@ namespace Api_Vapp.Services
                     MessageText = prepared
                 });
 
-                return UserSmsSendResult.Success(sid, cost, parts, charged);
+                return UserSmsSendResult.Success(sid, cost, parts, chargedAmount: reserved);
             }
             catch (Exception ex)
             {
+                await RefundIfNeededAsync(userId, reserved, sourceModule, "خطای غیرمنتظره هنگام ارسال");
                 _logger.LogError(ex, "Error sending billed SMS. UserId={UserId}, Module={Module}", userId, sourceModule);
-                return UserSmsSendResult.Failed(cost, parts, ex.Message);
+                return UserSmsSendResult.Failed(cost, parts, ControlledErrorHelper.SmsFailed);
             }
         }
 
@@ -162,6 +175,36 @@ namespace Api_Vapp.Services
                 cancellationToken);
         }
 
+        private async Task RefundIfNeededAsync(int userId, decimal reserved, string sourceModule, string reason)
+        {
+            if (reserved <= 0)
+                return;
+
+            try
+            {
+                var refund = await _walletService.AddBalanceAsync(
+                    userId,
+                    reserved,
+                    WalletTransactionTypes.Refund,
+                    "برگشت هزینه پیامک",
+                    $"برگشت رزرو پیامک — {sourceModule} — {reason}");
+
+                if (!refund.Success)
+                {
+                    _logger.LogError(
+                        "CRITICAL: SMS wallet refund failed. UserId={UserId}, Amount={Amount}, Module={Module}, Reason={Reason}, Error={Error}",
+                        userId, reserved, sourceModule, reason, refund.Message);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "CRITICAL: SMS wallet refund exception. UserId={UserId}, Amount={Amount}, Module={Module}",
+                    userId, reserved, sourceModule);
+            }
+        }
+
         private static string BuildOtpMessage(string otpCode, string templateType) =>
             templateType switch
             {
@@ -171,28 +214,5 @@ namespace Api_Vapp.Services
                 "Registration" => $"کد تایید ثبت نام: {otpCode}",
                 _ => $"کد تایید شما: {otpCode}"
             };
-
-        private static string EnsureOptOutSuffix(string message, string? optOutSuffix)
-        {
-            var suffix = string.IsNullOrWhiteSpace(optOutSuffix) ? "لغو11" : optOutSuffix.Trim();
-            if (string.IsNullOrWhiteSpace(message))
-                return message;
-
-            return message.TrimEnd().EndsWith(suffix, StringComparison.Ordinal)
-                ? message
-                : $"{message.TrimEnd()}\n{suffix}";
-        }
-
-        private static int SafePartsCount(string message, SmsPartsRules rules)
-        {
-            try
-            {
-                return SmsPartsCalculator.CalculateParts(message, rules);
-            }
-            catch (ArgumentException)
-            {
-                return Math.Max(1, rules.MaxPages);
-            }
-        }
     }
 }

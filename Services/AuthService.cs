@@ -8,6 +8,7 @@ using Api_Vapp.Utilities;
 using BCrypt.Net;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Caching;
 
@@ -25,6 +26,7 @@ namespace Api_Vapp.Services
         private readonly Api_Context _context;
         private readonly IWalletReferralService _walletReferralService;
         private readonly IAuditService _audit;
+        private readonly IHostEnvironment _environment;
         private readonly ILogger<AuthService> _logger;
         
         private const int OtpExpirationMinutes = 5;
@@ -44,6 +46,7 @@ namespace Api_Vapp.Services
             Api_Context context,
             IWalletReferralService walletReferralService,
             IAuditService audit,
+            IHostEnvironment environment,
             ILogger<AuthService> logger)
         {
             _userRepository = userRepository;
@@ -56,6 +59,7 @@ namespace Api_Vapp.Services
             _context = context;
             _walletReferralService = walletReferralService;
             _audit = audit;
+            _environment = environment;
             _logger = logger;
         }
 
@@ -194,6 +198,15 @@ namespace Api_Vapp.Services
             _logger.LogWarning(
                 "OTP SMS delivery failed for {Purpose} - Phone: {PhoneNumber} from IP {IpAddress}",
                 purpose, phoneNumber, ipAddress);
+
+            // Local/dev: keep OTP in cache when SMS provider DNS/network fails (VPN, etc.)
+            if (_environment.IsDevelopment())
+            {
+                _logger.LogWarning(
+                    "OTP SMS failed in Development — continuing with cached OTP for {Purpose}, phone {PhoneNumber}",
+                    purpose, phoneNumber);
+                return (true, null);
+            }
 
             RollbackFailedOtpSend(phoneNumber, otpCacheKey);
             return (false, CreateSmsFailedOtpResponse());

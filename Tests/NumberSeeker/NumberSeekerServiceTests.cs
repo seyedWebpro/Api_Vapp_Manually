@@ -5,6 +5,7 @@ using Api_Vapp.DTOs.NumberSeeker;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
 using Api_Vapp.Services;
+using Api_Vapp.Utilities;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -99,13 +100,116 @@ public class NumberSeekerServiceTests
         {
             TaskId = "task-wh",
             Status = "completed",
-            CurrentCount = 5,
-            ResultCode = "success"
+            CurrentCount = 2,
+            ResultCode = "success",
+            Phones = new List<string> { "09121111111", "09122222222" }
         });
 
         Assert.True(result.Success);
         Assert.Equal("completed", repo.Tasks[0].Status);
         Assert.NotNull(repo.Tasks[0].CompletedAt);
+        Assert.False(string.IsNullOrWhiteSpace(repo.Tasks[0].PhonesJson));
+        Assert.NotNull(repo.Tasks[0].PhonesPersistedAt);
+    }
+
+    [Fact]
+    public async Task GetTaskStatus_UsesCachedPhonesWithoutScraperCall()
+    {
+        var client = new FakeScraperClient { ThrowOnGetStatus = true };
+        var repo = new InMemoryTaskRepository();
+        repo.Tasks.Add(new NumberSeekerTask
+        {
+            UserId = 10,
+            ScraperTaskId = "task-cache",
+            Source = "divar",
+            City = "تهران",
+            Category = "x",
+            TargetCount = 2,
+            Status = "completed",
+            PhonesJson = "[\"09121111111\",\"09122222222\"]",
+            PhonesPersistedAt = DateTime.UtcNow
+        });
+
+        var service = BuildService(client, repo);
+        var result = await service.GetTaskStatusAsync(10, "task-cache");
+
+        Assert.True(result.Success);
+        Assert.Equal(2, result.Data?.Phones.Count);
+    }
+
+    [Fact]
+    public async Task ImportPhones_UsesPersistedPhonesWhenScraperUnavailable()
+    {
+        var client = new FakeScraperClient { ThrowOnGetStatus = true };
+        var repo = new InMemoryTaskRepository();
+        repo.Tasks.Add(new NumberSeekerTask
+        {
+            UserId = 10,
+            ScraperTaskId = "task-import-cache",
+            Source = "divar",
+            City = "تهران",
+            Category = "رستوران",
+            TargetCount = 1,
+            Status = "completed",
+            PhonesJson = "[\"09121234567\"]",
+            PhonesPersistedAt = DateTime.UtcNow
+        });
+
+        var service = BuildService(client, repo);
+        var result = await service.ImportPhonesAsync(10, "task-import-cache", new ImportNumberSeekerPhonesDto
+        {
+            ContactNotebookId = 1,
+            ContactNamePrefix = "رستوران"
+        });
+
+        Assert.True(result.Success);
+        Assert.Equal(1, result.Data?.SuccessCount);
+    }
+
+    [Fact]
+    public void UserMessages_HideTechnicalDetails()
+    {
+        Assert.Contains("استخراج", NumberSeekerUserMessages.ForTaskStatus("failed", "platform_error", 0));
+        Assert.Contains("پشتیبانی", NumberSeekerUserMessages.ForTaskStatus("failed", "token_expired", 0));
+        Assert.Contains("شهر یا دسته", NumberSeekerUserMessages.ForTaskStatus("failed", "no_listings", 0));
+        Assert.DoesNotContain("پشتیبانی", NumberSeekerUserMessages.ForTaskStatus("failed", "no_listings", 0));
+        Assert.Contains("لغو", NumberSeekerUserMessages.ForTaskStatus("cancelled", "cancelled", 0));
+        Assert.Contains("شماره دریافت", NumberSeekerUserMessages.ForTaskStatus("completed", "db_unavailable", 3));
+        Assert.Equal(
+            NumberSeekerUserMessages.ExtractionFailed,
+            NumberSeekerUserMessages.SanitizeIncomingUserMessage("SqlException at ODBC Driver", NumberSeekerUserMessages.ExtractionFailed));
+    }
+
+    [Fact]
+    public async Task GetRecentTasks_IncludesUiFields()
+    {
+        var repo = new InMemoryTaskRepository();
+        repo.Tasks.Add(new NumberSeekerTask
+        {
+            UserId = 10,
+            ScraperTaskId = "task-ui",
+            Source = "divar",
+            City = "تهران",
+            Category = "رستوران",
+            TargetCount = 82,
+            CurrentCount = 82,
+            Status = "completed",
+            PhonesJson = "[\"09121111111\"]",
+            CreatedAt = DateTime.UtcNow
+        });
+
+        var service = BuildService(new FakeScraperClient(), repo);
+        var result = await service.GetRecentTasksAsync(10);
+
+        Assert.True(result.Success);
+        var item = Assert.Single(result.Data!.Tasks);
+        Assert.Equal("دیوار", item.SourceDisplayName);
+        Assert.Equal("تکمیل شد", item.StatusDisplayName);
+        Assert.Equal("success", item.StatusTone);
+        Assert.Equal("تهران - رستوران", item.Subtitle);
+        Assert.Equal("82/82", item.CountLabel);
+        Assert.False(string.IsNullOrWhiteSpace(item.CreatedAtPersian));
+        Assert.True(item.CanDownload);
     }
 
     [Fact]
@@ -158,6 +262,7 @@ public class NumberSeekerServiceTests
     private sealed class FakeScraperClient : INumberScraperClient
     {
         public bool IsEnabled => true;
+        public bool ThrowOnGetStatus { get; set; }
 
         public Task<NumberSeekerTaskCreatedDto> StartScrapeAsync(
             StartNumberSeekerScrapeDto request,
@@ -176,6 +281,9 @@ public class NumberSeekerServiceTests
             string taskId,
             CancellationToken cancellationToken = default)
         {
+            if (ThrowOnGetStatus)
+                throw new HttpRequestException("scraper down");
+
             return Task.FromResult(new NumberSeekerTaskStatusDto
             {
                 TaskId = taskId,
@@ -193,10 +301,43 @@ public class NumberSeekerServiceTests
             => Task.FromResult(new NumberSeekerCancelResultDto { TaskId = taskId, Message = "cancelled" });
 
         public Task<NumberSeekerHealthDto> GetHealthAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(new NumberSeekerHealthDto { Status = "healthy", ScraperReachable = true });
+            => Task.FromResult(new NumberSeekerHealthDto
+            {
+                Status = "healthy",
+                ScraperReachable = true,
+                ApiKeyValid = true,
+                IntegrationReady = true
+            });
 
         public Task<bool> IsAvailableAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(true);
+
+        public Task<ScraperPlatformTokenListRaw> GetPlatformTokensAsync(
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new ScraperPlatformTokenListRaw());
+
+        public Task<ScraperTokenAlertsRaw> GetPlatformTokenAlertsAsync(
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new ScraperTokenAlertsRaw());
+
+        public Task<ScraperTokenSavedRaw> SaveDivarTokenAsync(
+            string token,
+            string? refreshToken,
+            string? frontToken,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new ScraperTokenSavedRaw { Platform = "divar", Message = "ok" });
+
+        public Task<ScraperTokenSavedRaw> SaveSheypoorTokenAsync(
+            string accessToken,
+            string? refreshToken,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new ScraperTokenSavedRaw { Platform = "sheypoor", Message = "ok" });
+
+        public Task<ScraperTokenMaintenanceRaw> RunTokenMaintenanceAsync(
+            bool forceSheypoorRefresh = false,
+            bool forceDivarRefresh = false,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new ScraperTokenMaintenanceRaw());
     }
 
     private sealed class InMemoryTaskRepository : INumberSeekerTaskRepository

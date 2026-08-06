@@ -1,4 +1,7 @@
 @Api_Vapp_HostAddress = http://localhost:5054
+@scraperApiKey = dev-local-key
+@token = REPLACE_ME
+@taskId = REPLACE_ME
 
 GET {{Api_Vapp_HostAddress}}/weatherforecast/
 Accept: application/json
@@ -278,12 +281,24 @@ Authorization: Bearer {{token}}
 
 # --- NumberSeeker (شماره‌جو) — JWT + number_seeker + Python scraper روی :8000 ---
 
-### سلامت سرویس اسکرپ
-GET {{Api_Vapp_HostAddress}}/api/NumberSeeker/health
+### تاریخچه صفحه اول
+GET {{Api_Vapp_HostAddress}}/api/NumberSeeker/tasks?limit=20
 Authorization: Bearer {{token}}
 
-### لیست پلتفرم‌ها
+### متادیتای فرم جستجوی جدید (پلتفرم+شهر+دسته+حد تعداد)
+GET {{Api_Vapp_HostAddress}}/api/NumberSeeker/form-meta
+Authorization: Bearer {{token}}
+
+### پلتفرم‌ها
 GET {{Api_Vapp_HostAddress}}/api/NumberSeeker/sources
+Authorization: Bearer {{token}}
+
+### شهرها
+GET {{Api_Vapp_HostAddress}}/api/NumberSeeker/cities
+Authorization: Bearer {{token}}
+
+### دسته‌ها
+GET {{Api_Vapp_HostAddress}}/api/NumberSeeker/categories
 Authorization: Bearer {{token}}
 
 ### شروع اسکرپ
@@ -292,25 +307,25 @@ Content-Type: application/json
 Authorization: Bearer {{token}}
 
 {
-  "source": "sheypoor",
+  "source": "divar",
   "city": "تهران",
   "category": "رستوران",
-  "maxPhones": 10
+  "maxPhones": 50
 }
 
-### Poll وضعیت — taskId را جایگزین کنید
+### Poll وضعیت — صفحه در حال جستجو / نتایج
 GET {{Api_Vapp_HostAddress}}/api/NumberSeeker/task/{{taskId}}
 Authorization: Bearer {{token}}
 
-### تاریخچه تسک‌ها
-GET {{Api_Vapp_HostAddress}}/api/NumberSeeker/tasks?limit=20
-Authorization: Bearer {{token}}
-
-### لغو تسک
+### لغو جستجو
 POST {{Api_Vapp_HostAddress}}/api/NumberSeeker/task/{{taskId}}/cancel
 Authorization: Bearer {{token}}
 
-### Import شماره‌ها به دفترچه
+### دانلود / کپی همه
+GET {{Api_Vapp_HostAddress}}/api/NumberSeeker/task/{{taskId}}/export
+Authorization: Bearer {{token}}
+
+### ذخیره در دفترچه
 POST {{Api_Vapp_HostAddress}}/api/NumberSeeker/task/{{taskId}}/import
 Content-Type: application/json
 Authorization: Bearer {{token}}
@@ -319,6 +334,53 @@ Authorization: Bearer {{token}}
   "contactNotebookId": 1,
   "contactNamePrefix": "رستوران",
   "force": false
+}
+
+### سلامت
+GET {{Api_Vapp_HostAddress}}/api/NumberSeeker/health
+Authorization: Bearer {{token}}
+
+### Admin — وضعیت توکن اسکرپر (دیوار/شیپور)
+GET {{Api_Vapp_HostAddress}}/api/Admin/ScraperToken
+Authorization: Bearer {{adminToken}}
+
+### Admin — ذخیره توکن دیوار
+POST {{Api_Vapp_HostAddress}}/api/Admin/ScraperToken/divar
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "token": "sAccessToken_here",
+  "refreshToken": "sRefreshToken_optional",
+  "frontToken": null
+}
+
+### Admin — ذخیره توکن شیپور
+POST {{Api_Vapp_HostAddress}}/api/Admin/ScraperToken/sheypoor
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "accessToken": "access_token_here",
+  "refreshToken": "refresh_token_optional"
+}
+
+### Admin — تمدید / نگهداری توکن‌ها
+POST {{Api_Vapp_HostAddress}}/api/Admin/ScraperToken/maintenance?forceSheypoorRefresh=true&forceDivarRefresh=true
+Authorization: Bearer {{adminToken}}
+
+### Webhook داخلی ربات → Vapp
+POST {{Api_Vapp_HostAddress}}/api/NumberSeeker/internal/webhook/task-completed
+Content-Type: application/json
+X-API-Key: {{scraperApiKey}}
+
+{
+  "taskId": "{{taskId}}",
+  "status": "completed",
+  "currentCount": 2,
+  "resultCode": "success",
+  "message": "ok",
+  "phones": ["09121111111", "09122222222"]
 }
 
 ###

@@ -2289,10 +2289,13 @@ namespace Api_Vapp.Services
                 var eligibleRecipientsCount = recipients.Count(r => r.IsEligible);
                 var ineligibleRecipientsCount = recipients.Count(r => !r.IsEligible);
 
-                // محاسبه هزینه بر اساس eligibleRecipientsCount
-                var partsCount = message.PartsCount;
+                // محاسبه هزینه بر اساس eligibleRecipientsCount و تعرفه/پارت زنده
                 var pricing = await _smsPricing.GetRuntimeAsync();
-                var estimatedTotalCost = eligibleRecipientsCount * partsCount * pricing.CostPerPart;
+                var (partsCount, estimatedTotalCost, _) = SmsPartsCalculator.EstimateBulkCost(
+                    message.Content,
+                    message.IsPersonalized,
+                    eligibleRecipientsCount,
+                    pricing);
 
                 // بررسی موجودی کیف پول
                 var user = await _userRepository.GetByIdAsync(userId);
@@ -2316,6 +2319,7 @@ namespace Api_Vapp.Services
                     EligibleRecipientsCount = eligibleRecipientsCount,
                     IneligibleRecipientsCount = ineligibleRecipientsCount,
                     EligibilityInfo = eligibilityInfo,
+                    PartsCount = partsCount,
                     CostPerPart = pricing.CostPerPart,
                     EstimatedTotalCost = estimatedTotalCost,
                     WalletStatus = walletStatus,
@@ -2435,10 +2439,13 @@ namespace Api_Vapp.Services
                 var eligibleRecipientsCount = recipients.Count(r => r.IsEligible);
                 var ineligibleRecipientsCount = recipients.Count(r => !r.IsEligible);
 
-                // محاسبه هزینه بر اساس eligibleRecipientsCount
-                var partsCount = message.PartsCount;
+                // محاسبه هزینه بر اساس eligibleRecipientsCount و تعرفه/پارت زنده
                 var pricing = await _smsPricing.GetRuntimeAsync();
-                var estimatedTotalCost = eligibleRecipientsCount * partsCount * pricing.CostPerPart;
+                var (partsCount, estimatedTotalCost, _) = SmsPartsCalculator.EstimateBulkCost(
+                    message.Content,
+                    message.IsPersonalized,
+                    eligibleRecipientsCount,
+                    pricing);
 
                 // بررسی موجودی کیف پول
                 var user = await _userRepository.GetByIdAsync(userId);
@@ -2462,6 +2469,7 @@ namespace Api_Vapp.Services
                     EligibleRecipientsCount = eligibleRecipientsCount,
                     IneligibleRecipientsCount = ineligibleRecipientsCount,
                     EligibilityInfo = eligibilityInfo,
+                    PartsCount = partsCount,
                     CostPerPart = pricing.CostPerPart,
                     EstimatedTotalCost = estimatedTotalCost,
                     WalletStatus = walletStatus,
@@ -2586,10 +2594,13 @@ namespace Api_Vapp.Services
                 var eligibleRecipientsCount = recipients.Count(r => r.IsEligible);
                 var ineligibleRecipientsCount = recipients.Count(r => !r.IsEligible);
 
-                // محاسبه هزینه بر اساس eligibleRecipientsCount
-                var partsCount = message.PartsCount;
+                // محاسبه هزینه بر اساس eligibleRecipientsCount و تعرفه/پارت زنده
                 var pricing = await _smsPricing.GetRuntimeAsync();
-                var estimatedTotalCost = eligibleRecipientsCount * partsCount * pricing.CostPerPart;
+                var (partsCount, estimatedTotalCost, _) = SmsPartsCalculator.EstimateBulkCost(
+                    message.Content,
+                    message.IsPersonalized,
+                    eligibleRecipientsCount,
+                    pricing);
 
                 // بررسی موجودی کیف پول
                 var user = await _userRepository.GetByIdAsync(userId);
@@ -2749,6 +2760,7 @@ namespace Api_Vapp.Services
                     EligibleRecipientsCount = eligibleRecipientsCount,
                     IneligibleRecipientsCount = ineligibleRecipientsCount,
                     EligibilityInfo = eligibilityInfo,
+                    PartsCount = partsCount,
                     CostPerPart = pricing.CostPerPart,
                     EstimatedTotalCost = estimatedTotalCost,
                     WalletStatus = walletStatus,

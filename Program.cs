@@ -411,6 +411,7 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.ISpecialOccasionService, Api_Vapp
 builder.Services.AddScoped<Api_Vapp.Interfaces.IWalletService, Api_Vapp.Services.WalletService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IWalletReferralService, Api_Vapp.Services.WalletReferralService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.ISmsPricingService, Api_Vapp.Services.SmsPricingService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminScraperTokenService, Api_Vapp.Services.AdminScraperTokenService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IUserSmsBillingService, Api_Vapp.Services.UserSmsBillingService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IPaymentService, Api_Vapp.Services.PaymentService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.ICashbackService, Api_Vapp.Services.CashbackService>();

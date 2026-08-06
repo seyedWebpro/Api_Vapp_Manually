@@ -500,9 +500,12 @@ namespace Api_Vapp.Services
                 }
 
                 var recipientsCount = recipients.Count;
-                var partsCount = message.PartsCount;
                 var pricing = await _smsPricing.GetRuntimeAsync();
-                var totalCost = recipientsCount * partsCount * pricing.CostPerPart;
+                var (partsCount, totalCost, _) = EstimateLiveBulkCost(
+                    message.Content,
+                    message.IsPersonalized,
+                    recipientsCount,
+                    pricing);
 
                 // بررسی موجودی کیف پول
                 var user = await _userRepository.GetByIdAsync(userId);
@@ -575,9 +578,12 @@ namespace Api_Vapp.Services
                 // این باعث می‌شود که هزینه در calculate-summary تخمینی باشد و در confirm-and-send دقیق شود
 
                 var recipientsCount = recipients.Count;
-                var partsCount = message.PartsCount;
                 var pricing = await _smsPricing.GetRuntimeAsync();
-                var totalCost = recipientsCount * partsCount * pricing.CostPerPart;
+                var (partsCount, totalCost, _) = EstimateLiveBulkCost(
+                    message.Content,
+                    message.IsPersonalized,
+                    recipientsCount,
+                    pricing);
 
                 // بررسی موجودی کیف پول
                 var user = await _userRepository.GetByIdAsync(userId);
@@ -1309,7 +1315,26 @@ namespace Api_Vapp.Services
                 }
 
                 var pricing = await _smsPricing.GetRuntimeAsync();
-                if (pricing.IsBillingEffectivelyEnabled && user.WalletBalance < campaign.EstimatedTotalCost)
+                var pendingRecipients = campaign.Recipients.Where(r => r.Status == "Pending").ToList();
+                var (liveParts, freshEstimate, exceedsMax) = EstimateLiveBulkCost(
+                    message.Content,
+                    message.IsPersonalized,
+                    pendingRecipients.Count,
+                    pricing);
+
+                if (exceedsMax)
+                {
+                    return ApiResponse<bool>.BadRequest(
+                        $"تعداد صفحات پیامک از حداکثر مجاز ({pricing.Rules.MaxPages} صفحه) بیشتر است. لطفاً محتوا را کوتاه کنید.");
+                }
+
+                // به‌روزرسانی تخمین با تعرفه و پارت زنده (نه مقدار ذخیره‌شدهٔ قدیمی)
+                campaign.PartsCount = liveParts;
+                campaign.CostPerPart = pricing.CostPerPart;
+                campaign.EstimatedTotalCost = freshEstimate;
+                campaign.UpdatedAt = DateTime.UtcNow;
+
+                if (pricing.IsBillingEffectivelyEnabled && user.WalletBalance < freshEstimate)
                 {
                     return ApiResponse<bool>.BadRequest("موجودی کیف پول کافی نیست");
                 }
@@ -1323,8 +1348,9 @@ namespace Api_Vapp.Services
                 int failedCount = 0;
                 decimal actualCost = 0;
 
-                foreach (var recipient in campaign.Recipients.Where(r => r.Status == "Pending"))
+                foreach (var recipient in pendingRecipients)
                 {
+                    decimal reserved = 0;
                     try
                     {
                         // آماده‌سازی متن پیام (شخصی‌سازی در صورت نیاز)
@@ -1347,29 +1373,46 @@ namespace Api_Vapp.Services
                             messageContent = recipient.PersonalizedContent;
                         }
 
-                        // اضافه کردن پسوند لغو در انتهای پیامک (الزام API / قابل تنظیم ادمین)
-                        var optOut = string.IsNullOrWhiteSpace(pricing.Rules.OptOutSuffix) ? "لغو11" : pricing.Rules.OptOutSuffix.Trim();
-                        if (!messageContent.TrimEnd().EndsWith(optOut, StringComparison.Ordinal))
-                        {
-                            messageContent = $"{messageContent.TrimEnd()}\n{optOut}";
-                        }
+                        // پسوند لغو طبق الزام سرویس پیامکی همیشه اعمال می‌شود
+                        messageContent = SmsPartsCalculator.PrepareForSend(messageContent, pricing.Rules);
 
-                        // محاسبه دقیق تعداد پارت‌ها برای پیام نهایی (با در نظر گیری شخصی‌سازی و پسوند لغو)
-                        int actualPartsCount;
-                        try
-                        {
-                            actualPartsCount = SmsPartsCalculator.CalculateParts(messageContent, pricing.Rules);
-                        }
-                        catch (ArgumentException ex)
+                        // محاسبه دقیق تعداد پارت‌ها برای پیام نهایی
+                        if (!SmsPartsCalculator.TryCalculateParts(messageContent, pricing.Rules, out var actualPartsCount, out _))
                         {
                             // پیام بیش از حداکثر صفحات است
                             recipient.Status = "Failed";
                             recipient.ErrorMessage = ControlledErrorHelper.SendFailed;
                             recipient.RetryCount++;
                             failedCount++;
-                            _logger.LogWarning("Message exceeds max pages for {Mobile} - Campaign: {CampaignId}, Error: {Error}", 
-                                recipient.MobileNumber, campaignId, ex.Message);
+                            _logger.LogWarning("Message exceeds max pages for {Mobile} - Campaign: {CampaignId}", 
+                                recipient.MobileNumber, campaignId);
                             continue;
+                        }
+
+                        var messageCost = SmsPartsCalculator.CalculateCost(actualPartsCount, pricing.CostPerPart);
+
+                        // اول کسر اتمیک — بدون موجودی هیچ پیامکی ارسال نمی‌شود
+                        if (pricing.IsBillingEffectivelyEnabled && messageCost > 0)
+                        {
+                            var deduct = await _walletService.DeductBalanceAsync(
+                                userId,
+                                messageCost,
+                                "ارسال کمپین پیامک",
+                                $"رزرو هزینه پیامک کمپین #{campaignId} — {recipient.MobileNumber}");
+
+                            if (!deduct.Success)
+                            {
+                                recipient.Status = "Failed";
+                                recipient.ErrorMessage = "موجودی کیف پول کافی نیست";
+                                recipient.RetryCount++;
+                                failedCount++;
+                                _logger.LogWarning(
+                                    "Campaign SMS skipped — insufficient wallet. CampaignId={CampaignId}, Mobile={Mobile}",
+                                    campaignId, recipient.MobileNumber);
+                                continue;
+                            }
+
+                            reserved = messageCost;
                         }
 
                         // ارسال پیامک
@@ -1393,7 +1436,7 @@ namespace Api_Vapp.Services
                             recipient.SmsServiceId = smsResult.Data!.Sid.ToString();
                             recipient.ErrorMessage = null;
                             sentCount++;
-                            actualCost += pricing.CostPerPart * actualPartsCount;
+                            actualCost += messageCost;
 
                             await _deliveryTracking.TrackSuccessfulSendAsync(new SmsDeliveryTrackRequestDto
                             {
@@ -1412,6 +1455,15 @@ namespace Api_Vapp.Services
                         }
                         else
                         {
+                            if (reserved > 0)
+                            {
+                                await RefundSmsReserveAsync(
+                                    userId,
+                                    reserved,
+                                    $"برگشت رزرو کمپین #{campaignId} — ارسال ناموفق به {recipient.MobileNumber}");
+                                reserved = 0;
+                            }
+
                             // ارسال ناموفق
                             recipient.Status = "Failed";
                             recipient.ErrorMessage = ControlledErrorHelper.SendFailed;
@@ -1424,6 +1476,14 @@ namespace Api_Vapp.Services
                     }
                     catch (Exception ex)
                     {
+                        if (reserved > 0)
+                        {
+                            await RefundSmsReserveAsync(
+                                userId,
+                                reserved,
+                                $"برگشت رزرو کمپین #{campaignId} — خطای غیرمنتظره برای {recipient.MobileNumber}");
+                        }
+
                         // خطا در ارسال
                         recipient.Status = "Failed";
                         recipient.ErrorMessage = ControlledErrorHelper.SendFailed;
@@ -1459,21 +1519,8 @@ namespace Api_Vapp.Services
 
                 await _campaignRepository.UpdateAsync(campaign);
 
-                if (pricing.IsBillingEffectivelyEnabled && actualCost > 0)
-                {
-                    var deductResult = await _walletService.DeductBalanceAsync(
-                        userId,
-                        actualCost,
-                        "ارسال کمپین پیامک",
-                        $"هزینه ارسال کمپین #{campaignId} — {sentCount} پیام موفق");
-                    if (!deductResult.Success)
-                    {
-                        _logger.LogWarning(
-                            "کسر کیف پول کمپین ناموفق — CampaignId: {CampaignId}, Cost: {Cost}, Message: {Message}",
-                            campaignId, actualCost, deductResult.Message);
-                    }
-                }
-                else if (actualCost > 0)
+                // هزینه هر پیام موفق قبلاً در حلقه با قفل کسر شده است
+                if (!pricing.IsBillingEffectivelyEnabled && actualCost > 0)
                 {
                     _logger.LogInformation(
                         "صورتحساب پیامک غیرفعال — CampaignId: {CampaignId}, Cost: {Cost} (not deducted)",
@@ -4024,11 +4071,20 @@ namespace Api_Vapp.Services
                         "بعد از اعمال فیلترها، هیچ گیرنده‌ای باقی نمانده است");
                 }
 
-                // محاسبه مجدد هزینه (مشکل 4.3) - با تعداد گیرندگان به‌روزرسانی شده
+                // محاسبه مجدد هزینه با تعرفه و پارت زنده (نه PartsCount ذخیره‌شده)
                 var recipientsCount = recipients.Count;
-                var partsCount = message.PartsCount;
                 var pricing = await _smsPricing.GetRuntimeAsync();
-                var totalCost = recipientsCount * partsCount * pricing.CostPerPart;
+                var (partsCount, totalCost, exceedsMax) = EstimateLiveBulkCost(
+                    message.Content,
+                    message.IsPersonalized,
+                    recipientsCount,
+                    pricing);
+
+                if (exceedsMax)
+                {
+                    return ApiResponse<DirectSendResultDto>.BadRequest(
+                        $"تعداد صفحات پیامک از حداکثر مجاز ({pricing.Rules.MaxPages} صفحه) بیشتر است. لطفاً محتوا را کوتاه کنید.");
+                }
 
                 var user = await _userRepository.GetByIdAsync(userId);
                 if (user == null)
@@ -4056,13 +4112,12 @@ namespace Api_Vapp.Services
                     sendDto.SendType = CampaignSendType.Quick;
                 }
 
-                // ارسال پیام‌ها با Compensation Pattern (مشکل 6.1)
+                // ارسال پیام‌ها — کسر اتمیک قبل از هر ارسال موفق
                 int sentCount = 0;
                 int failedCount = 0;
                 decimal actualCost = 0;
                 var failedNumbers = new List<string>();
                 decimal deductedAmount = 0;
-                bool walletDeducted = false;
                 
                 _logger.LogInformation("=== شروع ارسال به {RecipientsCount} گیرنده ===", recipients.Count);
                 _logger.LogInformation("گیرندگان: {Recipients}", 
@@ -4074,6 +4129,7 @@ namespace Api_Vapp.Services
                 foreach (var recipient in recipients)
                 {
                     recipientIndex++;
+                    decimal reserved = 0;
                     try
                     {
                         _logger.LogInformation("📤 [{Index}/{Total}] در حال ارسال به گیرنده: {FullName} ({Mobile})", 
@@ -4093,27 +4149,41 @@ namespace Api_Vapp.Services
                             }
                         }
 
-                        var optOut = string.IsNullOrWhiteSpace(pricing.Rules.OptOutSuffix) ? "لغو11" : pricing.Rules.OptOutSuffix.Trim();
-                        if (!messageContent.TrimEnd().EndsWith(optOut, StringComparison.Ordinal))
-                        {
-                            messageContent = $"{messageContent.TrimEnd()}\n{optOut}";
-                            _logger.LogDebug("پسوند لغو به پیام اضافه شد برای {Mobile}", recipient.MobileNumber);
-                        }
+                        messageContent = SmsPartsCalculator.PrepareForSend(messageContent, pricing.Rules);
 
-                        // محاسبه دقیق تعداد پارت‌ها برای پیام نهایی (با در نظر گیری شخصی‌سازی و 'لغو11')
-                        int actualPartsCount;
-                        try
+                        // محاسبه دقیق تعداد پارت‌ها برای پیام نهایی
+                        if (!SmsPartsCalculator.TryCalculateParts(messageContent, pricing.Rules, out var actualPartsCount, out _))
                         {
-                            actualPartsCount = SmsPartsCalculator.CalculateParts(messageContent, pricing.Rules);
-                        }
-                        catch (ArgumentException ex)
-                        {
-                            // پیام بیش از 10 صفحه است
+                            // پیام بیش از حداکثر صفحات است
                             failedCount++;
                             failedNumbers.Add(recipient.MobileNumber);
-                            _logger.LogWarning("Message exceeds max pages for {Mobile} - MessageId: {MessageId}, Error: {Error}", 
-                                recipient.MobileNumber, messageId, ex.Message);
+                            _logger.LogWarning("Message exceeds max pages for {Mobile} - MessageId: {MessageId}", 
+                                recipient.MobileNumber, messageId);
                             continue;
+                        }
+
+                        var messageCost = SmsPartsCalculator.CalculateCost(actualPartsCount, pricing.CostPerPart);
+
+                        // اول کسر اتمیک — بدون موجودی پیامک ارسال نمی‌شود
+                        if (pricing.IsBillingEffectivelyEnabled && messageCost > 0)
+                        {
+                            var deduct = await _walletService.DeductBalanceAsync(
+                                userId,
+                                messageCost,
+                                "ارسال پیام مستقیم",
+                                $"رزرو هزینه پیام مستقیم #{messageId} — {recipient.MobileNumber}");
+
+                            if (!deduct.Success)
+                            {
+                                failedCount++;
+                                failedNumbers.Add(recipient.MobileNumber);
+                                _logger.LogWarning(
+                                    "Direct SMS skipped — insufficient wallet. MessageId={MessageId}, Mobile={Mobile}",
+                                    messageId, recipient.MobileNumber);
+                                continue;
+                            }
+
+                            reserved = messageCost;
                         }
 
                         // ارسال پیامک با Retry Mechanism (مشکل 6.2)
@@ -4136,7 +4206,11 @@ namespace Api_Vapp.Services
                         {
                             // ارسال موفق
                             sentCount++;
-                            actualCost += pricing.CostPerPart * actualPartsCount;
+                            actualCost += messageCost;
+                            if (reserved > 0)
+                            {
+                                deductedAmount += reserved;
+                            }
 
                             await _deliveryTracking.TrackSuccessfulSendAsync(new SmsDeliveryTrackRequestDto
                             {
@@ -4155,6 +4229,15 @@ namespace Api_Vapp.Services
                         }
                         else
                         {
+                            if (reserved > 0)
+                            {
+                                await RefundSmsReserveAsync(
+                                    userId,
+                                    reserved,
+                                    $"برگشت رزرو پیام مستقیم #{messageId} — ارسال ناموفق به {recipient.MobileNumber}");
+                                reserved = 0;
+                            }
+
                             // ارسال ناموفق (بعد از Retry)
                             failedCount++;
                             failedNumbers.Add(recipient.MobileNumber);
@@ -4166,6 +4249,14 @@ namespace Api_Vapp.Services
                     }
                     catch (Exception ex)
                     {
+                        if (reserved > 0)
+                        {
+                            await RefundSmsReserveAsync(
+                                userId,
+                                reserved,
+                                $"برگشت رزرو پیام مستقیم #{messageId} — خطای غیرمنتظره برای {recipient.MobileNumber}");
+                        }
+
                         failedCount++;
                         failedNumbers.Add(recipient.MobileNumber);
                         
@@ -4174,29 +4265,8 @@ namespace Api_Vapp.Services
                     }
                 }
 
-                    if (pricing.IsBillingEffectivelyEnabled && actualCost > 0)
-                    {
-                        var deductResult = await _walletService.DeductBalanceAsync(
-                            userId,
-                            actualCost,
-                            "ارسال پیام مستقیم",
-                            $"هزینه ارسال پیام مستقیم — پیام #{messageId}");
-                        if (!deductResult.Success)
-                        {
-                            _logger.LogWarning(
-                                "کسر کیف پول پیام مستقیم ناموفق — MessageId: {MessageId}, Cost: {Cost}, Message: {Message}",
-                                messageId, actualCost, deductResult.Message);
-                            return ApiResponse<DirectSendResultDto>.BadRequest(
-                                deductResult.Message ?? "موجودی کیف پول کافی نیست");
-                        }
-
-                        deductedAmount = actualCost;
-                        walletDeducted = true;
-                        _logger.LogInformation(
-                            "Wallet balance deducted - UserId: {UserId}, Amount: {Amount}",
-                            userId, actualCost);
-                    }
-                    else if (actualCost > 0)
+                    // هزینه هر پیام موفق در حلقه کسر شده است
+                    if (!pricing.IsBillingEffectivelyEnabled && actualCost > 0)
                     {
                         _logger.LogInformation(
                             "صورتحساب پیامک غیرفعال — UserId: {UserId}, Cost: {Cost} (not deducted)",
@@ -4205,23 +4275,8 @@ namespace Api_Vapp.Services
                 }
                 catch (Exception ex)
                 {
-                    if (walletDeducted && deductedAmount > 0 && pricing.IsBillingEffectivelyEnabled)
-                    {
-                        try
-                        {
-                            _logger.LogWarning("Compensating wallet balance - UserId: {UserId}, Amount: {Amount}", userId, deductedAmount);
-                            await _walletService.AddBalanceAsync(
-                                userId,
-                                deductedAmount,
-                                "SmsSendCompensation",
-                                "برگشت موجودی - خطا در ارسال",
-                                $"برگشت موجودی به دلیل خطا در ارسال پیام - پیام ID: {messageId}");
-                        }
-                        catch (Exception compensationEx)
-                        {
-                            _logger.LogError(compensationEx, "Critical error in compensation - UserId: {UserId}", userId);
-                        }
-                    }
+                    // رزروها per-message برگشت داده می‌شوند؛ اینجا فقط لاگ کلی
+                    _logger.LogError(ex, "Error in direct send batch — MessageId: {MessageId}, UserId: {UserId}", messageId, userId);
 
                     // Re-throw خطای اصلی
                     _logger.LogError(ex, "Error during SMS sending - MessageId: {MessageId}, UserId: {UserId}", messageId, userId);
@@ -4667,6 +4722,45 @@ namespace Api_Vapp.Services
         #region Helper Methods
 
         // متد CalculateMessageParts حذف شد - از SmsPartsCalculator.CalculateParts استفاده می‌شود
+
+        /// <summary>
+        /// تخمین زنده پارت و هزینه بر اساس تعرفه فعلی (نه PartsCount ذخیره‌شده).
+        /// برای پیام شخصی‌سازی‌شده، placeholder با مقادیر نمونهٔ بلند جایگزین می‌شود تا کم‌برآورد نشود.
+        /// </summary>
+        private static (int PartsCount, decimal TotalCost, bool ExceedsMaxPages) EstimateLiveBulkCost(
+            string? content,
+            bool isPersonalized,
+            int recipientsCount,
+            SmsPricingRuntime pricing)
+            => SmsPartsCalculator.EstimateBulkCost(content, isPersonalized, recipientsCount, pricing);
+
+        /// <summary>برگشت رزرو کیف پول پس از شکست ارسال پیامک</summary>
+        private async Task RefundSmsReserveAsync(int userId, decimal amount, string description)
+        {
+            if (amount <= 0)
+                return;
+
+            try
+            {
+                var refund = await _walletService.AddBalanceAsync(
+                    userId,
+                    amount,
+                    WalletTransactionTypes.Refund,
+                    "برگشت هزینه پیامک",
+                    description);
+
+                if (!refund.Success)
+                {
+                    _logger.LogError(
+                        "CRITICAL: SMS wallet refund failed. UserId={UserId}, Amount={Amount}, Desc={Desc}, Error={Error}",
+                        userId, amount, description, refund.Message);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "CRITICAL: SMS wallet refund exception. UserId={UserId}, Amount={Amount}", userId, amount);
+            }
+        }
 
         private bool ContainsPlaceholders(string content)
         {

@@ -623,10 +623,16 @@ namespace Api_Vapp.Services
                         .CountAsync();
                 }
 
-                // محاسبه هزینه تخمینی (هزینه ارسال پیامک)
+                // محاسبه هزینه تخمینی (بر اساس پارت واقعی متن نمونهٔ پیامک کش‌بک)
                 var pricing = await _smsPricing.GetRuntimeAsync();
                 decimal costPerPart = pricing.CostPerPart;
-                decimal estimatedTotalCost = contactsCount * costPerPart;
+                var (_, estimatedTotalCost, _) = EstimateCashbackBulkSmsCost(
+                    pricing,
+                    contactsCount,
+                    step1Dto.Percentage,
+                    step1Dto.FixedAmount,
+                    step1Dto.ValidityDays,
+                    step1Dto.TotalPurchaseAmount);
 
                 var currentWalletBalance = await _walletService.GetBalanceAsync(userId);
                 var hasSufficientBalance = !pricing.IsBillingEffectivelyEnabled || currentWalletBalance >= estimatedTotalCost;
@@ -924,10 +930,16 @@ namespace Api_Vapp.Services
                         .CountAsync();
                 }
 
-                // محاسبه هزینه تخمینی
+                // محاسبه هزینه تخمینی بر اساس پارت واقعی متن نمونه
                 var pricing = await _smsPricing.GetRuntimeAsync();
                 decimal costPerPart = pricing.CostPerPart;
-                decimal estimatedTotalCost = contactsCount * costPerPart;
+                var (_, estimatedTotalCost, _) = EstimateCashbackBulkSmsCost(
+                    pricing,
+                    contactsCount,
+                    cashbackDto.Percentage,
+                    cashbackDto.FixedAmount,
+                    cashbackDto.ValidityDays,
+                    null);
 
                 var balance = await _walletService.GetBalanceAsync(userId);
                 var hasSufficientBalance = !pricing.IsBillingEffectivelyEnabled || balance >= estimatedTotalCost;
@@ -1466,6 +1478,7 @@ namespace Api_Vapp.Services
                 var failedCount = 0;
                 var totalCashbackAmount = 0m;
                 var smsSentCount = 0;
+                decimal totalSmsCost = 0m;
 
                 using var transaction = await _context.Database.BeginTransactionAsync();
                 try
@@ -1554,6 +1567,9 @@ namespace Api_Vapp.Services
                             {
                                 cashbackTransaction.Description = "کش‌بک با موفقیت ارسال شد";
                                 smsSentCount++;
+                                totalSmsCost += sendResult.ChargedAmount > 0
+                                    ? sendResult.ChargedAmount
+                                    : sendResult.Cost;
                             }
                             else if (sendResult.SkippedInsufficientBalance)
                             {
@@ -1585,8 +1601,8 @@ namespace Api_Vapp.Services
                         FailedCount = failedCount,
                         TotalCashbackAmount = totalCashbackAmount,
                         FormattedTotalCashbackAmount = $"{totalCashbackAmount:N0} تومان",
-                        SmsCost = smsSentCount * pricing.CostPerPart,
-                        FormattedSmsCost = $"{(smsSentCount * pricing.CostPerPart):N0} تومان"
+                        SmsCost = totalSmsCost,
+                        FormattedSmsCost = $"{totalSmsCost:N0} تومان"
                     };
 
                     _logger.LogInformation("کش‌بک {CashbackId} برای کاربر {UserId} اعمال شد - موفق: {Success}, ناموفق: {Failed}", 
@@ -2119,6 +2135,39 @@ namespace Api_Vapp.Services
             }
 
             return message;
+        }
+
+        /// <summary>
+        /// تخمین هزینه پیامک کش‌بک بر اساس متن نمونهٔ واقعی (چندپارت) نه فرض ۱ پارت.
+        /// </summary>
+        private (int PartsCount, decimal TotalCost, bool ExceedsMaxPages) EstimateCashbackBulkSmsCost(
+            SmsPricingRuntime pricing,
+            int contactsCount,
+            decimal? percentage,
+            decimal? fixedAmount,
+            int validityDays,
+            decimal? samplePurchaseAmount)
+        {
+            var sampleCashback = new Cashback
+            {
+                Percentage = percentage,
+                FixedAmount = fixedAmount,
+                ValidityDays = validityDays > 0 ? validityDays : 30
+            };
+
+            var sampleAmount = fixedAmount is > 0
+                ? fixedAmount.Value
+                : percentage is > 0 && samplePurchaseAmount is > 0
+                    ? Math.Round(samplePurchaseAmount.Value * percentage.Value / 100m, 0)
+                    : 50_000m;
+
+            if (sampleAmount <= 0)
+                sampleAmount = 50_000m;
+
+            var sampleMessage = GenerateCashbackMessage(sampleCashback, sampleAmount, samplePurchaseAmount);
+            var analysis = SmsPartsCalculator.Analyze(sampleMessage, pricing.Rules, throwOnMaxPages: false);
+            var total = SmsPartsCalculator.CalculateCost(analysis.PartsCount, pricing.CostPerPart, contactsCount);
+            return (analysis.PartsCount, total, analysis.ExceedsMaxPages);
         }
 
         private static string ToPersianDate(DateTime date)

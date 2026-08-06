@@ -51,7 +51,7 @@ namespace Api_Vapp.Models
         /// <summary>اگر زبان تشخیص داده نشود، پیش‌فرض فارسی باشد</summary>
         public bool DefaultLanguageIsPersian { get; set; } = true;
 
-        /// <summary>در محاسبه هزینه/پارت، پسوند لغو اجباری را هم لحاظ کند</summary>
+        /// <summary>در محاسبه و ارسال، پسوند لغو اجباری همیشه لحاظ می‌شود (الزام سرویس پیامکی).</summary>
         public bool IncludeOptOutSuffixInCalculation { get; set; } = true;
 
         /// <summary>متن پسوند لغو (بدون خط جدید؛ خط جدید جداگانه اضافه می‌شود)</summary>

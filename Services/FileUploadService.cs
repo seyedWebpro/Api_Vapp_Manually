@@ -108,8 +108,8 @@ namespace Api_Vapp.Services
             ValidateFile(file);
             ValidateEntityInfo(entityType, entityId);
 
-            // تولید نام یکتا برای فایل (GUID + Timestamp)
-            string fileName = GenerateUniqueFileName(file!.FileName);
+            // تولید نام یکتا — پسوند از محتوای واقعی (نه فقط نام فایل اعلام‌شده)
+            string fileName = GenerateUniqueFileName(file!);
             
             // ساخت مسیر کامل فایل با ساختار: {entityType}/{entityId}/{subFolder}/{fileName}
             // اگر subFolder نباشد: {entityType}/{entityId}/{fileName}
@@ -239,35 +239,7 @@ namespace Api_Vapp.Services
             {
                 ValidateEntityInfo(entityType, entityId);
 
-                string fullPath;
-                
-                // اگر filePath یک مسیر نسبی است
-                if (filePath.StartsWith("/") || !Path.IsPathRooted(filePath))
-                {
-                    // حذف / ابتدایی اگر وجود دارد
-                    filePath = filePath.TrimStart('/');
-
-                    // اگر مسیر با uploads/ شروع می‌شود، آن را حذف می‌کنیم چون _baseUploadsPath خودش شامل uploads است
-                    if (filePath.StartsWith("uploads/", StringComparison.OrdinalIgnoreCase))
-                    {
-                        filePath = filePath.Substring("uploads/".Length);
-                    }
-                    
-                    // اگر فقط نام فایل است، مسیر کامل را بساز
-                    if (!filePath.Contains("/"))
-                    {
-                        fullPath = GenerateFilePath(filePath, entityType, entityId, subFolder);
-                    }
-                    else
-                    {
-                        // مسیر نسبی کامل است
-                        fullPath = Path.Combine(_baseUploadsPath, filePath.Replace("/", "\\"));
-                    }
-                }
-                else
-                {
-                    fullPath = filePath;
-                }
+                var fullPath = ResolveUploadFullPath(filePath, entityType, entityId, subFolder);
 
                 if (File.Exists(fullPath))
                 {
@@ -279,15 +251,11 @@ namespace Api_Vapp.Services
                 }
                 else
                 {
-                    _logger.LogWarning("⚠️ فایل یافت نشد: {FullPath}", fullPath);
-                    throw new FileNotFoundException(ControlledErrorHelper.FileUploadFailed);
+                    // حذف باید idempotent باشد — فایل از قبل نبوده مشکلی نیست
+                    _logger.LogWarning("⚠️ فایل برای حذف یافت نشد (نادیده گرفته شد): {FullPath}", fullPath);
                 }
             }
-            catch (FileNotFoundException)
-            {
-                throw;
-            }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not ArgumentException)
             {
                 _logger.LogError(ex, "❌ خطا در حذف فایل: {FilePath}", filePath);
                 throw new InvalidOperationException(ControlledErrorHelper.FileUploadFailed, ex);
@@ -329,32 +297,7 @@ namespace Api_Vapp.Services
         {
             ValidateEntityInfo(entityType, entityId);
 
-            string fullPath;
-
-            if (filePath.StartsWith("/") || !Path.IsPathRooted(filePath))
-            {
-                filePath = filePath.TrimStart('/');
-
-                // اگر مسیر با uploads/ شروع می‌شود، آن را حذف می‌کنیم چون _baseUploadsPath خودش شامل uploads است
-                if (filePath.StartsWith("uploads/", StringComparison.OrdinalIgnoreCase))
-                {
-                    filePath = filePath.Substring("uploads/".Length);
-                }
-                
-                if (!filePath.Contains("/"))
-                {
-                    fullPath = GenerateFilePath(filePath, entityType, entityId, subFolder);
-                }
-                else
-                {
-                    fullPath = Path.Combine(_baseUploadsPath, filePath.Replace("/", "\\"));
-                }
-            }
-            else
-            {
-                fullPath = filePath;
-            }
-
+            var fullPath = ResolveUploadFullPath(filePath, entityType, entityId, subFolder);
             bool exists = File.Exists(fullPath);
             return Task.FromResult(exists);
         }
@@ -554,10 +497,15 @@ namespace Api_Vapp.Services
             }
         }
 
-        private string GenerateUniqueFileName(string originalFileName)
+        private string GenerateUniqueFileName(IFormFile file)
         {
+            var originalFileName = file.FileName;
             string safeFileName = SanitizeFileName(Path.GetFileNameWithoutExtension(originalFileName));
-            string extension = Path.GetExtension(originalFileName).ToLower();
+            string extension = SecureFileValidator.GetPreferredExtension(file)
+                ?? Path.GetExtension(originalFileName).ToLowerInvariant();
+
+            if (string.IsNullOrWhiteSpace(extension))
+                extension = ".bin";
 
             if (string.IsNullOrWhiteSpace(safeFileName))
             {
@@ -578,6 +526,32 @@ namespace Api_Vapp.Services
                 string timestamp = DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
                 return $"{guid}_{timestamp}{extension}";
             }
+        }
+
+        /// <summary>
+        /// تبدیل مسیر نسبی ذخیره‌شده به مسیر مطلق سیستم‌عامل‌مستقل
+        /// (بدون Replace به بک‌اسلش ویندوزی که روی macOS/Linux می‌شکند).
+        /// </summary>
+        private string ResolveUploadFullPath(string filePath, string entityType, int entityId, string? subFolder)
+        {
+            if (string.IsNullOrWhiteSpace(filePath))
+                throw new ArgumentException("مسیر فایل خالی است.");
+
+            // مسیر مطلق ویندوزی (C:\... یا \\share\...)
+            if ((filePath.Length >= 2 && filePath[1] == ':') || filePath.StartsWith(@"\\", StringComparison.Ordinal))
+                return filePath;
+
+            var relative = filePath.Replace('\\', '/').TrimStart('/');
+
+            if (relative.StartsWith("uploads/", StringComparison.OrdinalIgnoreCase))
+                relative = relative.Substring("uploads/".Length);
+
+            // فقط نام فایل
+            if (!relative.Contains('/'))
+                return GenerateFilePath(relative, entityType, entityId, subFolder);
+
+            var parts = relative.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            return Path.Combine(new[] { _baseUploadsPath }.Concat(parts).ToArray());
         }
 
         private string GenerateFilePath(string fileName, string entityType, int entityId, string? subFolder = null)

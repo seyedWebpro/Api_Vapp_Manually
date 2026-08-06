@@ -25,6 +25,9 @@ All commands, options and server-side commands are in [`COMMANDS.txt`](COMMANDS.
 devops/
   COMMANDS.txt          ← all deploy/ops commands (cheat sheet)
   MAC-QUICK-DEPLOY.md   ← Mac deploy guide by change type
+  SERVER-LOGS.md        ← where/how to read server logs
+  ADMIN-AUDIT.md        ← AdminAuditLogs table usage (short)
+  AUDIT_RUNBOOK.md      ← audit search scenarios (detailed)
   PUBLIC-VAPP.md        ← public form/wheel details
   NUMBER-SCRAPER.md     ← number-scraper robot
   MAC-SERVER.md         ← SSH / first-time setup
@@ -76,6 +79,9 @@ Mobile → Vapp .NET API → Number Scraper (:8000 internally)
 
 - [`COMMANDS.txt`](COMMANDS.txt) — **all commands in one place**
 - [`MAC-QUICK-DEPLOY.md`](MAC-QUICK-DEPLOY.md) — which mode to pick
+- [`SERVER-LOGS.md`](SERVER-LOGS.md) — server logs location & commands
+- [`ADMIN-AUDIT.md`](ADMIN-AUDIT.md) — AdminAuditLogs usage (short)
+- [`AUDIT_RUNBOOK.md`](AUDIT_RUNBOOK.md) — audit search scenarios
 - [`PUBLIC-VAPP.md`](PUBLIC-VAPP.md) — public form/wheel deploy
 - [`NUMBER-SCRAPER.md`](NUMBER-SCRAPER.md) — scraper deploy, env, test
 - [`MAC-SERVER.md`](MAC-SERVER.md) — SSH port 3031 and first setup
