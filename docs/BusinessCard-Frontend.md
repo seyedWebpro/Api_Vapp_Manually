@@ -55,6 +55,7 @@ Public:    /api/BusinessCardPublic/{slug}  (بدون Auth)
 | انتشار + لینک | `POST /{id}/publish` |
 | تنظیمات — سوئیچ فعال بودن | `POST /{id}/toggle-active` *(alias: `toggle-status`)* |
 | حذف | `POST /{id}/delete` |
+| ارسال سریع SMS به مخاطب | `POST /quick-send` — نیاز به `business_card` + `free_quick_send` |
 | صفحه عمومی وب | `GET /api/BusinessCardPublic/{slug}` |
 
 ---
@@ -158,6 +159,28 @@ Public URL مثال: `https://ok-sms.ir/card/{slug}` (از `BusinessCard:PublicB
 ```
 
 فقط برای کارت‌های `Published`.
+
+---
+
+## `POST /quick-send` — ارسال سریع به مخاطب
+
+پس از ذخیره مخاطب در مودال «ارسال سریع»، کاربر کارت را انتخاب می‌کند و لینک عمومی کارت با SMS ارسال می‌شود.
+
+```json
+{
+  "contactId": 12,
+  "businessCardId": 3
+}
+```
+
+شرایط:
+- مخاطب متعلق به کاربر باشد
+- کارت متعلق به کاربر، `Published` و `IsActive=true` باشد و `publicUrl` داشته باشد
+- Feature اشتراک: `business_card` (کلاس) + `free_quick_send` (این endpoint)
+
+پاسخ موفق: `DirectSendResultDto` (`sentCount`, `failedCount`, `totalCost`, …) — مشابه `SocialMediaLink/quick-send`.
+
+لیست کارت‌ها برای انتخاب در UI: همان `GET /api/BusinessCard`.
 
 ---
 

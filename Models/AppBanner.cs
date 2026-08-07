@@ -7,7 +7,7 @@ namespace Api_Vapp.Models
     {
         public int Id { get; set; }
 
-        /// <summary>کلید پایدار اسلات (مثلاً home، tools_wheel) — اپ با این کلید بنر را پیدا می‌کند.</summary>
+        /// <summary>کلید پایدار اسلات (مثلاً home، tool) — اپ با این کلید بنر را پیدا می‌کند.</summary>
         public string Key { get; set; } = string.Empty;
 
         /// <summary>نام نمایشی در پنل ادمین.</summary>

@@ -99,6 +99,7 @@ Content:              application/json
 |----|------------|
 | خلاصه و ارسال | `POST /api/Message/campaign/calculate-summary` |
 | quick send | `POST /api/Message/quick-send` |
+| BusinessCard quick-send | `POST /api/BusinessCard/quick-send` |
 | تأیید کمپین | `POST /api/Message/campaign/{id}/confirm-and-send` |
 | QuickAction | `.../quick-send` |
 

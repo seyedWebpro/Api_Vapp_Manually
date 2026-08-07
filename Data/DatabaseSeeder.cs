@@ -331,6 +331,35 @@ namespace Api_Vapp.Data
 
         private static async Task SeedAppBannersAsync(Api_Context context, ILogger logger)
         {
+            // مهاجرت یک‌باره: کلید قدیمی tools_wheel → tool
+            var legacyTools = await context.AppBanners
+                .Where(b => b.Key == "tools_wheel")
+                .ToListAsync();
+            foreach (var legacy in legacyTools)
+            {
+                var conflict = await context.AppBanners
+                    .AnyAsync(b => b.Key == AppBannerKeys.Tool && b.Id != legacy.Id);
+                if (conflict)
+                {
+                    legacy.IsDeleted = true;
+                    legacy.UpdatedAt = DateTime.UtcNow;
+                    logger.LogWarning(
+                        "بنر legacy با کلید tools_wheel حذف نرم شد چون tool از قبل وجود دارد — Id: {Id}",
+                        legacy.Id);
+                }
+                else
+                {
+                    legacy.Key = AppBannerKeys.Tool;
+                    legacy.UpdatedAt = DateTime.UtcNow;
+                    logger.LogInformation(
+                        "کلید بنر از tools_wheel به tool تغییر کرد — Id: {Id}",
+                        legacy.Id);
+                }
+            }
+
+            if (legacyTools.Count > 0)
+                await context.SaveChangesAsync();
+
             var existingByKey = await context.AppBanners
                 .Where(b => !b.IsDeleted)
                 .ToDictionaryAsync(b => b.Key, StringComparer.OrdinalIgnoreCase);

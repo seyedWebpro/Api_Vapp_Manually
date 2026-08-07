@@ -1,5 +1,6 @@
 using Api_Vapp.DTOs.BusinessCard;
 using Api_Vapp.DTOs.Common;
+using Api_Vapp.DTOs.Message;
 using Api_Vapp.DTOs.User;
 using Api_Vapp.Interfaces;
 using Microsoft.AspNetCore.Authorization;
@@ -229,6 +230,38 @@ namespace Api_Vapp.Controller
 
             var userId = await GetCurrentUserIdAsync();
             var result = await _businessCardService.SetActiveStatusAsync(id, userId, statusDto.IsActive);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        /// <summary>
+        /// ارسال سریع لینک کارت ویزیت به یک مخاطب (SMS)
+        /// </summary>
+        /// <remarks>
+        /// موبایل: پس از ذخیره مخاطب، لیست کارت‌ها با GET /api/BusinessCard و سپس این endpoint.
+        /// Body: { "contactId": 1, "businessCardId": 2 }
+        /// </remarks>
+        [HttpPost("quick-send")]
+        [RequireSubscriptionFeature(SubscriptionFeatureCodes.FreeQuickSend)]
+        [ProducesResponseType(typeof(ApiResponse<DirectSendResultDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<DirectSendResultDto>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(ApiResponse<DirectSendResultDto>), StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(typeof(ApiResponse<DirectSendResultDto>), StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<ApiResponse<DirectSendResultDto>>> QuickSendBusinessCard(
+            [FromBody] QuickSendBusinessCardDto? quickSendDto)
+        {
+            if (quickSendDto == null)
+            {
+                return StatusCode(400, ApiResponse<DirectSendResultDto>.BadRequest(
+                    "داده‌های ورودی نامعتبر است",
+                    errorCode: ErrorCodes.ValidationFailed));
+            }
+
+            var invalid = InvalidModelStateResponse<DirectSendResultDto>();
+            if (invalid != null)
+                return invalid;
+
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _businessCardService.QuickSendBusinessCardAsync(userId, quickSendDto);
             return StatusCode(result.StatusCode, result);
         }
     }

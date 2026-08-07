@@ -8,13 +8,13 @@ namespace Api_Vapp.Constants
         /// <summary>بنر صفحه اصلی (جایگزین assets/example/banner_home.png)</summary>
         public const string Home = "home";
 
-        /// <summary>بنر گردونه شانس در صفحه ابزارها</summary>
-        public const string ToolsWheel = "tools_wheel";
+        /// <summary>بنر صفحه ابزارها (جایگزین بنر استاتیک ابزارها)</summary>
+        public const string Tool = "tool";
 
         public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             Home,
-            ToolsWheel
+            Tool
         };
 
         public static bool IsKnown(string key) =>
@@ -61,9 +61,9 @@ namespace Api_Vapp.Constants
                 null,
                 1),
             new(
-                AppBannerKeys.ToolsWheel,
-                "بنر گردونه شانس (ابزارها)",
-                "بنر صفحه ابزارها که به ساخت گردونه شانس لینک می‌شود.",
+                AppBannerKeys.Tool,
+                "بنر ابزارها",
+                "بنر صفحه ابزارها — در صورت خالی بودن تصویر، اپ می‌تواند fallback محلی نشان دهد.",
                 AppBannerLinkTypes.AppRoute,
                 "/CreateWheelOfFortune",
                 2),

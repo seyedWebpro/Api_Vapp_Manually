@@ -623,6 +623,15 @@ Content-Type: application/json
 ### حذف
 POST {{Api_Vapp_HostAddress}}/api/BusinessCard/1/delete
 
+### ارسال سریع کارت ویزیت به مخاطب
+POST {{Api_Vapp_HostAddress}}/api/BusinessCard/quick-send
+Content-Type: application/json
+
+{
+  "contactId": 1,
+  "businessCardId": 1
+}
+
 ### عمومی
 GET {{Api_Vapp_HostAddress}}/api/BusinessCardPublic/zahra-salon-test
 

@@ -2,6 +2,7 @@ using Api_Vapp.Constants;
 using Api_Vapp.DTOs.BusinessCard;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.DTOs.File;
+using Api_Vapp.DTOs.Message;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
 using Api_Vapp.Services.Audit;
@@ -20,6 +21,9 @@ namespace Api_Vapp.Services
     public class BusinessCardService : IBusinessCardService
     {
         private readonly IBusinessCardRepository _businessCardRepository;
+        private readonly IContactRepository _contactRepository;
+        private readonly IContactNotebookRepository _notebookRepository;
+        private readonly IMessageService _messageService;
         private readonly Api_Vapp.Data.Api_Context _context;
         private readonly BusinessCardOptions _options;
         private readonly IFileUploadService _fileUploadService;
@@ -29,6 +33,9 @@ namespace Api_Vapp.Services
 
         public BusinessCardService(
             IBusinessCardRepository businessCardRepository,
+            IContactRepository contactRepository,
+            IContactNotebookRepository notebookRepository,
+            IMessageService messageService,
             Api_Vapp.Data.Api_Context context,
             IOptions<BusinessCardOptions> options,
             IFileUploadService fileUploadService,
@@ -37,6 +44,9 @@ namespace Api_Vapp.Services
             ILogger<BusinessCardService> logger)
         {
             _businessCardRepository = businessCardRepository;
+            _contactRepository = contactRepository;
+            _notebookRepository = notebookRepository;
+            _messageService = messageService;
             _context = context;
             _options = options.Value;
             _fileUploadService = fileUploadService;
@@ -678,6 +688,138 @@ namespace Api_Vapp.Services
             {
                 _logger.LogError(ex, "Error uploading business card image for card {CardId} and user {UserId}", id, userId);
                 return ApiResponse<string>.InternalServerError(ControlledErrorHelper.FileUploadFailed);
+            }
+        }
+
+        /// <summary>
+        /// ارسال سریع لینک عمومی کارت ویزیت به یک مخاطب (SMS) — الگوی مشابه SocialMediaLink
+        /// </summary>
+        public async Task<ApiResponse<DirectSendResultDto>> QuickSendBusinessCardAsync(
+            int userId,
+            QuickSendBusinessCardDto quickSendDto)
+        {
+            _logger.LogInformation(
+                "ارسال سریع کارت ویزیت — UserId: {UserId}, ContactId: {ContactId}, BusinessCardId: {BusinessCardId}",
+                userId,
+                quickSendDto.ContactId,
+                quickSendDto.BusinessCardId);
+
+            try
+            {
+                if (quickSendDto.ContactId <= 0 || quickSendDto.BusinessCardId <= 0)
+                {
+                    return ApiResponse<DirectSendResultDto>.BadRequest(
+                        "شناسه مخاطب و کارت ویزیت الزامی است",
+                        errorCode: ErrorCodes.InvalidInput);
+                }
+
+                var contact = await _contactRepository.GetByIdAsync(quickSendDto.ContactId);
+                if (contact == null || contact.IsDeleted)
+                    return ApiResponse<DirectSendResultDto>.NotFound("مخاطب یافت نشد");
+
+                var notebook = await _notebookRepository.GetByIdAsync(contact.ContactNotebookId);
+                if (notebook == null || notebook.UserId != userId || notebook.IsDeleted)
+                    return ApiResponse<DirectSendResultDto>.Forbidden("مخاطب متعلق به شما نیست");
+
+                var card = await _businessCardRepository.GetOwnedCardAsync(
+                    quickSendDto.BusinessCardId,
+                    userId,
+                    tracked: false);
+
+                if (card == null)
+                    return ApiResponse<DirectSendResultDto>.NotFound("کارت ویزیت یافت نشد");
+
+                if (card.UserId != userId)
+                    return ApiResponse<DirectSendResultDto>.Forbidden("کارت ویزیت متعلق به شما نیست");
+
+                if (card.Status != BusinessCardStatus.Published || !card.IsActive)
+                {
+                    return ApiResponse<DirectSendResultDto>.BadRequest(
+                        "فقط کارت ویزیت منتشرشده و فعال قابل ارسال است",
+                        errorCode: ErrorCodes.InvalidInput);
+                }
+
+                var publicUrl = BuildPublicUrl(card.Slug);
+                if (string.IsNullOrWhiteSpace(publicUrl))
+                {
+                    return ApiResponse<DirectSendResultDto>.BadRequest(
+                        "لینک عمومی کارت ویزیت در دسترس نیست",
+                        errorCode: ErrorCodes.InvalidInput);
+                }
+
+                var createMessageResult = await _messageService.CreateMessageAsync(userId, new CreateMessageDto
+                {
+                    Content = publicUrl
+                });
+
+                if (!createMessageResult.Success || createMessageResult.Data == null)
+                {
+                    return ApiResponse<DirectSendResultDto>.BadRequest(
+                        createMessageResult.Message ?? "خطا در ایجاد پیام",
+                        errorCode: ErrorCodes.InvalidInput);
+                }
+
+                var messageId = createMessageResult.Data.Id;
+
+                var selectResult = await _messageService.SelectRecipientsAsync(userId, new SelectRecipientsDto
+                {
+                    MessageId = messageId,
+                    SelectionType = "Individual",
+                    MobileNumbers = new List<string> { contact.MobileNumber },
+                    FullNames = new List<string> { contact.FullName ?? string.Empty }
+                });
+
+                if (!selectResult.Success || selectResult.Data == null)
+                {
+                    return ApiResponse<DirectSendResultDto>.BadRequest(
+                        selectResult.Message ?? "خطا در انتخاب گیرندگان",
+                        errorCode: ErrorCodes.InvalidInput);
+                }
+
+                var session = await _context.MessageSessions
+                    .Where(s =>
+                        s.MessageId == messageId &&
+                        s.UserId == userId &&
+                        !s.IsDeleted &&
+                        !s.IsUsed)
+                    .OrderByDescending(s => s.CreatedAt)
+                    .FirstOrDefaultAsync();
+
+                if (session == null)
+                {
+                    return ApiResponse<DirectSendResultDto>.BadRequest(
+                        "خطا در ایجاد Session برای ارسال",
+                        errorCode: ErrorCodes.InvalidInput);
+                }
+
+                var sendResult = await _messageService.SendDirectMessageAsync(
+                    userId,
+                    messageId,
+                    new SendDirectMessageDto
+                    {
+                        SendType = CampaignSendType.Quick,
+                        PreventDuplicate = false,
+                        DuplicatePreventionHours = 24,
+                        SendToSpecificTags = false
+                    },
+                    session);
+
+                _logger.LogInformation(
+                    "ارسال سریع کارت ویزیت انجام شد — MessageId: {MessageId}, ContactId: {ContactId}, BusinessCardId: {BusinessCardId}",
+                    messageId,
+                    quickSendDto.ContactId,
+                    quickSendDto.BusinessCardId);
+
+                return sendResult;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "خطا در ارسال سریع کارت ویزیت — ContactId: {ContactId}, BusinessCardId: {BusinessCardId}",
+                    quickSendDto.ContactId,
+                    quickSendDto.BusinessCardId);
+                return ApiResponse<DirectSendResultDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 

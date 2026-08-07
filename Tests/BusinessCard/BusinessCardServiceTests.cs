@@ -28,6 +28,7 @@ public class BusinessCardServiceTests
             TemplateKey = "business",
             Title = "سالن زیبایی زهرا",
             DescriptionEnabled = true,
+            DescriptionText = "توضیحات تست",
             ContactEnabled = true,
             ContactPhone = "09121234567"
         });
@@ -124,16 +125,19 @@ public class BusinessCardServiceTests
         {
             Title = "عمومی",
             DescriptionEnabled = true,
-            DescriptionText = "متن"
+            DescriptionText = "متن",
+            ContactEnabled = true,
+            ContactPhone = "09121234567"
         });
 
         var before = await ctx.PublicService.GetPublicCardAsync("public-card-unit");
         Assert.False(before.Success);
 
-        await ctx.Service.PublishAsync(create.Data!.Id, ctx.OwnerUserId, new PublishBusinessCardDto
+        var publish = await ctx.Service.PublishAsync(create.Data!.Id, ctx.OwnerUserId, new PublishBusinessCardDto
         {
             Slug = "public-card-unit"
         });
+        Assert.True(publish.Success);
 
         var after = await ctx.PublicService.GetPublicCardAsync("public-card-unit");
         Assert.True(after.Success);
@@ -154,6 +158,20 @@ public class BusinessCardServiceTests
 
         Assert.False(result.Success);
         Assert.Equal(400, result.StatusCode);
+    }
+
+    [Fact]
+    public async Task QuickSend_InvalidIds_Fails()
+    {
+        await using var ctx = await BusinessCardTestContext.CreateAsync();
+
+        var result = await ctx.Service.QuickSendBusinessCardAsync(
+            ctx.OwnerUserId,
+            new QuickSendBusinessCardDto { ContactId = 0, BusinessCardId = 0 });
+
+        Assert.False(result.Success);
+        Assert.Equal(400, result.StatusCode);
+        Assert.Equal(ErrorCodes.InvalidInput, result.ErrorCode);
     }
 }
 
@@ -206,6 +224,9 @@ internal sealed class BusinessCardTestContext : IAsyncDisposable
         var cache = new MemoryCache(new MemoryCacheOptions());
         var service = new BusinessCardService(
             repo,
+            contactRepository: null!,
+            notebookRepository: null!,
+            messageService: null!,
             context,
             optionsMonitor,
             fileUpload,

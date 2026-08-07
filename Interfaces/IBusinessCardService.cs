@@ -1,5 +1,6 @@
 using Api_Vapp.DTOs.BusinessCard;
 using Api_Vapp.DTOs.Common;
+using Api_Vapp.DTOs.Message;
 using Microsoft.AspNetCore.Http;
 
 namespace Api_Vapp.Interfaces
@@ -23,5 +24,10 @@ namespace Api_Vapp.Interfaces
         Task<ApiResponse<BusinessCardResponseDto>> SetActiveStatusAsync(int id, int userId, bool isActive);
 
         Task<ApiResponse<string>> UploadImageAsync(int id, int userId, IFormFile imageFile, string? imageType = null);
+
+        /// <summary>
+        /// ارسال سریع لینک عمومی کارت ویزیت به یک مخاطب (SMS)
+        /// </summary>
+        Task<ApiResponse<DirectSendResultDto>> QuickSendBusinessCardAsync(int userId, QuickSendBusinessCardDto quickSendDto);
     }
 }
