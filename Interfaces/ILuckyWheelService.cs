@@ -1,5 +1,6 @@
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.DTOs.LuckyWheel;
+using Api_Vapp.DTOs.Message;
 
 namespace Api_Vapp.Interfaces
 {
@@ -32,5 +33,7 @@ namespace Api_Vapp.Interfaces
         Task<ApiResponse<bool>> DeleteAsync(int id, int userId);
 
         Task<ApiResponse<LuckyWheelResponseDto>> SetActiveStatusAsync(int id, int userId, bool isActive);
+
+        Task<ApiResponse<DirectSendResultDto>> QuickSendLuckyWheelAsync(int userId, QuickSendLuckyWheelDto quickSendDto);
     }
 }

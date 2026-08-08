@@ -104,9 +104,10 @@ namespace Api_Vapp.Controller
             return StatusCode(result.StatusCode, result);
         }
 
-        /// <summary>لغو جستجو</summary>
+        /// <summary>لغو جستجو وسط کار — صفحه در حال جستجو</summary>
         [HttpPost("task/{taskId}/cancel")]
         [ProducesResponseType(typeof(ApiResponse<NumberSeekerCancelResultDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<NumberSeekerCancelResultDto>), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(typeof(ApiResponse<NumberSeekerCancelResultDto>), StatusCodes.Status404NotFound)]
         public async Task<ActionResult<ApiResponse<NumberSeekerCancelResultDto>>> CancelTask(string taskId)
         {
@@ -115,7 +116,7 @@ namespace Api_Vapp.Controller
             return StatusCode(result.StatusCode, result);
         }
 
-        /// <summary>دانلود / کپی همه شماره‌ها — آیکن دانلود تاریخچه و دکمه کپی همه</summary>
+        /// <summary>دانلود / کپی همه شماره‌ها (JSON) — آیکن دانلود تاریخچه و دکمه کپی همه</summary>
         [HttpGet("task/{taskId}/export")]
         [ProducesResponseType(typeof(ApiResponse<NumberSeekerExportDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<NumberSeekerExportDto>), StatusCodes.Status400BadRequest)]
@@ -125,6 +126,22 @@ namespace Api_Vapp.Controller
             var userId = await GetCurrentUserIdAsync();
             var result = await _numberSeekerService.ExportPhonesAsync(userId, taskId);
             return StatusCode(result.StatusCode, result);
+        }
+
+        /// <summary>دانلود فایل اکسل لیست شماره‌ها</summary>
+        [HttpGet("task/{taskId}/export-excel")]
+        [Produces("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/json")]
+        [ProducesResponseType(typeof(FileResult), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+        public async Task<ActionResult> ExportPhonesExcel(string taskId)
+        {
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _numberSeekerService.ExportPhonesToExcelAsync(userId, taskId);
+            if (!result.Success || result.Data == null)
+                return StatusCode(result.StatusCode, result);
+
+            return File(result.Data.FileContent, result.Data.ContentType, result.Data.FileName);
         }
 
         /// <summary>ذخیره در دفترچه تلفن</summary>

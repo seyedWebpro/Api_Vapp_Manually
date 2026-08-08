@@ -47,7 +47,7 @@ Endpointهای `[AllowAnonymous]` (صفحات عمومی فرم/رزرو/کار�
 | Contact / ContactNotebook | `phonebook` |
 | Message (پایه) / Template | `messaging` |
 | Message `quick-send` / QuickAction | `free_quick_send` |
-| SocialMediaLink / BusinessCard `quick-send` | `free_quick_send` (+ ماژول مربوطه) |
+| SocialMediaLink / BusinessCard / UserForm / LuckyWheel / BookingSystem `quick-send` | `free_quick_send` (+ ماژول مربوطه در صورت وجود) |
 | Message `campaign/*` | `bulk_campaign` |
 | AutomatedMessage / SpecialOccasion | `message_automation` |
 | UserForm | `form_builder` |

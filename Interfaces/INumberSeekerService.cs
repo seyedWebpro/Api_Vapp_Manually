@@ -1,4 +1,5 @@
 using Api_Vapp.DTOs.Common;
+using Api_Vapp.DTOs.Contact;
 using Api_Vapp.DTOs.NumberSeeker;
 
 namespace Api_Vapp.Interfaces
@@ -35,6 +36,11 @@ namespace Api_Vapp.Interfaces
         ApiResponse<NumberSeekerFormMetaDto> GetFormMeta();
 
         Task<ApiResponse<NumberSeekerExportDto>> ExportPhonesAsync(
+            int userId,
+            string taskId);
+
+        /// <summary>دانلود فایل اکسل لیست شماره‌ها</summary>
+        Task<ApiResponse<ExportExcelResultDto>> ExportPhonesToExcelAsync(
             int userId,
             string taskId);
 

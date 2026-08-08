@@ -178,6 +178,9 @@ internal sealed class UserFormTestContext : IDisposable
 
         return new UserFormService(
             repository,
+            contactRepository: null!,
+            notebookRepository: null!,
+            messageService: null!,
             context,
             options,
             fileUploadService,

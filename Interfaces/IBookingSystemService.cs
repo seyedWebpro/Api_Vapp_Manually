@@ -1,5 +1,6 @@
 using Api_Vapp.DTOs.BookingSystem;
 using Api_Vapp.DTOs.Common;
+using Api_Vapp.DTOs.Message;
 
 namespace Api_Vapp.Interfaces
 {
@@ -10,6 +11,8 @@ namespace Api_Vapp.Interfaces
         Task<ApiResponse<BookingSystemDto>> ToggleStatusAsync(int id, int userId);
         Task<ApiResponse<bool>> DeleteAsync(int id, int userId);
         Task<ApiResponse<BookingSystemDto>> UpdateAsync(int id, int userId, UpdateBookingSystemDto updateDto);
+
+        Task<ApiResponse<DirectSendResultDto>> QuickSendBookingSystemAsync(int userId, QuickSendBookingSystemDto quickSendDto);
 
         Task<ApiResponse<List<BookingNotebookDto>>> GetNotebooksAsync(int userId);
         Task<ApiResponse<List<BookingActivityTypeDto>>> GetActivityTypesAsync();

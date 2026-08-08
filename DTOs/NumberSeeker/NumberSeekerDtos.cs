@@ -1,4 +1,6 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
+using Api_Vapp.Utilities;
 
 namespace Api_Vapp.DTOs.NumberSeeker
 {
@@ -62,6 +64,8 @@ namespace Api_Vapp.DTOs.NumberSeeker
 
         public int TargetCount { get; set; }
         public int CurrentCount { get; set; }
+
+        [JsonConverter(typeof(JsonAlwaysDoubleConverter))]
         public double ProgressPercent { get; set; }
 
         /// <summary>مثلاً «۳۸ از ۵۰ شماره»</summary>
@@ -117,6 +121,8 @@ namespace Api_Vapp.DTOs.NumberSeeker
 
         public int CurrentCount { get; set; }
         public int TargetCount { get; set; }
+
+        [JsonConverter(typeof(JsonAlwaysDoubleConverter))]
         public double ProgressPercent { get; set; }
 
         /// <summary>«۸۲/۸۲»</summary>
@@ -243,6 +249,13 @@ namespace Api_Vapp.DTOs.NumberSeeker
         public string Message { get; set; } = string.Empty;
         public string Status { get; set; } = "cancelled";
         public string StatusDisplayName { get; set; } = "لغو شد";
+        public int CurrentCount { get; set; }
+
+        [JsonConverter(typeof(JsonAlwaysDoubleConverter))]
+        public double ProgressPercent { get; set; }
+
+        public bool CanDownload { get; set; }
+        public bool CanImport { get; set; }
     }
 
     public class ImportNumberSeekerPhonesDto

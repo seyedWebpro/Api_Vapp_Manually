@@ -1,5 +1,8 @@
+using Api_Vapp.Attributes;
+using Api_Vapp.Constants;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.DTOs.LuckyWheel;
+using Api_Vapp.DTOs.Message;
 using Api_Vapp.DTOs.User;
 using Api_Vapp.Interfaces;
 using Microsoft.AspNetCore.Authorization;
@@ -210,6 +213,34 @@ namespace Api_Vapp.Controller
 
             var userId = await GetCurrentUserIdAsync();
             var result = await _luckyWheelService.SetActiveStatusAsync(id, userId, toggleActiveDto.IsActive);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        /// <summary>
+        /// ارسال سریع لینک گردونه به یک مخاطب (SMS)
+        /// </summary>
+        [HttpPost("quick-send")]
+        [RequireSubscriptionFeature(SubscriptionFeatureCodes.FreeQuickSend)]
+        [ProducesResponseType(typeof(ApiResponse<DirectSendResultDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<DirectSendResultDto>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(ApiResponse<DirectSendResultDto>), StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(typeof(ApiResponse<DirectSendResultDto>), StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<ApiResponse<DirectSendResultDto>>> QuickSendLuckyWheel(
+            [FromBody] QuickSendLuckyWheelDto? quickSendDto)
+        {
+            if (quickSendDto == null)
+            {
+                return StatusCode(400, ApiResponse<DirectSendResultDto>.BadRequest(
+                    "داده‌های ورودی نامعتبر است",
+                    errorCode: ErrorCodes.ValidationFailed));
+            }
+
+            var invalid = InvalidModelStateResponse<DirectSendResultDto>();
+            if (invalid != null)
+                return invalid;
+
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _luckyWheelService.QuickSendLuckyWheelAsync(userId, quickSendDto);
             return StatusCode(result.StatusCode, result);
         }
     }

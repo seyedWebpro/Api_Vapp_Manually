@@ -2,6 +2,7 @@ using Api_Vapp.Constants;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.DTOs.File;
 using Api_Vapp.DTOs.LuckyWheel;
+using Api_Vapp.DTOs.Message;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
 using Api_Vapp.Services.Audit;
@@ -18,6 +19,9 @@ namespace Api_Vapp.Services
     public class LuckyWheelService : ILuckyWheelService
     {
         private readonly ILuckyWheelRepository _luckyWheelRepository;
+        private readonly IContactRepository _contactRepository;
+        private readonly IContactNotebookRepository _notebookRepository;
+        private readonly IMessageService _messageService;
         private readonly Api_Vapp.Data.Api_Context _context;
         private readonly LuckyWheelOptions _luckyWheelOptions;
         private readonly IFileUploadService _fileUploadService;
@@ -26,6 +30,9 @@ namespace Api_Vapp.Services
 
         public LuckyWheelService(
             ILuckyWheelRepository luckyWheelRepository,
+            IContactRepository contactRepository,
+            IContactNotebookRepository notebookRepository,
+            IMessageService messageService,
             Api_Vapp.Data.Api_Context context,
             IOptions<LuckyWheelOptions> luckyWheelOptions,
             IFileUploadService fileUploadService,
@@ -33,6 +40,9 @@ namespace Api_Vapp.Services
             ILogger<LuckyWheelService> logger)
         {
             _luckyWheelRepository = luckyWheelRepository;
+            _contactRepository = contactRepository;
+            _notebookRepository = notebookRepository;
+            _messageService = messageService;
             _context = context;
             _luckyWheelOptions = luckyWheelOptions.Value;
             _fileUploadService = fileUploadService;
@@ -830,6 +840,135 @@ namespace Api_Vapp.Services
             {
                 _logger.LogError(ex, "Error setting active status for lucky wheel {WheelId} for user {UserId}", id, userId);
                 return ApiResponse<LuckyWheelResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
+        /// <summary>
+        /// ارسال سریع لینک عمومی گردونه به یک مخاطب (SMS)
+        /// </summary>
+        public async Task<ApiResponse<DirectSendResultDto>> QuickSendLuckyWheelAsync(
+            int userId,
+            QuickSendLuckyWheelDto quickSendDto)
+        {
+            _logger.LogInformation(
+                "ارسال سریع گردونه — UserId: {UserId}, ContactId: {ContactId}, LuckyWheelId: {LuckyWheelId}",
+                userId,
+                quickSendDto.ContactId,
+                quickSendDto.LuckyWheelId);
+
+            try
+            {
+                if (quickSendDto.ContactId <= 0 || quickSendDto.LuckyWheelId <= 0)
+                {
+                    return ApiResponse<DirectSendResultDto>.BadRequest(
+                        "شناسه مخاطب و گردونه الزامی است",
+                        errorCode: ErrorCodes.InvalidInput);
+                }
+
+                var contact = await _contactRepository.GetByIdAsync(quickSendDto.ContactId);
+                if (contact == null || contact.IsDeleted)
+                    return ApiResponse<DirectSendResultDto>.NotFound("مخاطب یافت نشد");
+
+                var notebook = await _notebookRepository.GetByIdAsync(contact.ContactNotebookId);
+                if (notebook == null || notebook.UserId != userId || notebook.IsDeleted)
+                    return ApiResponse<DirectSendResultDto>.Forbidden("مخاطب متعلق به شما نیست");
+
+                var wheel = await _luckyWheelRepository.GetOwnedWheelAsync(
+                    quickSendDto.LuckyWheelId,
+                    userId,
+                    tracked: false);
+
+                if (wheel == null)
+                    return ApiResponse<DirectSendResultDto>.NotFound("گردونه یافت نشد");
+
+                if (wheel.Status != LuckyWheelStatus.Published || !wheel.IsActive)
+                {
+                    return ApiResponse<DirectSendResultDto>.BadRequest(
+                        "فقط گردونه منتشرشده و فعال قابل ارسال است",
+                        errorCode: ErrorCodes.InvalidInput);
+                }
+
+                var publicUrl = BuildPublicUrl(wheel.Slug);
+                if (string.IsNullOrWhiteSpace(publicUrl))
+                {
+                    return ApiResponse<DirectSendResultDto>.BadRequest(
+                        "لینک عمومی گردونه در دسترس نیست",
+                        errorCode: ErrorCodes.InvalidInput);
+                }
+
+                var createMessageResult = await _messageService.CreateMessageAsync(userId, new CreateMessageDto
+                {
+                    Content = publicUrl
+                });
+
+                if (!createMessageResult.Success || createMessageResult.Data == null)
+                {
+                    return ApiResponse<DirectSendResultDto>.BadRequest(
+                        createMessageResult.Message ?? "خطا در ایجاد پیام",
+                        errorCode: ErrorCodes.InvalidInput);
+                }
+
+                var messageId = createMessageResult.Data.Id;
+
+                var selectResult = await _messageService.SelectRecipientsAsync(userId, new SelectRecipientsDto
+                {
+                    MessageId = messageId,
+                    SelectionType = "Individual",
+                    MobileNumbers = new List<string> { contact.MobileNumber },
+                    FullNames = new List<string> { contact.FullName ?? string.Empty }
+                });
+
+                if (!selectResult.Success || selectResult.Data == null)
+                {
+                    return ApiResponse<DirectSendResultDto>.BadRequest(
+                        selectResult.Message ?? "خطا در انتخاب گیرندگان",
+                        errorCode: ErrorCodes.InvalidInput);
+                }
+
+                var session = await _context.MessageSessions
+                    .Where(s =>
+                        s.MessageId == messageId &&
+                        s.UserId == userId &&
+                        !s.IsDeleted &&
+                        !s.IsUsed)
+                    .OrderByDescending(s => s.CreatedAt)
+                    .FirstOrDefaultAsync();
+
+                if (session == null)
+                {
+                    return ApiResponse<DirectSendResultDto>.BadRequest(
+                        "خطا در ایجاد Session برای ارسال",
+                        errorCode: ErrorCodes.InvalidInput);
+                }
+
+                var sendResult = await _messageService.SendDirectMessageAsync(
+                    userId,
+                    messageId,
+                    new SendDirectMessageDto
+                    {
+                        SendType = CampaignSendType.Quick,
+                        PreventDuplicate = false,
+                        DuplicatePreventionHours = 24,
+                        SendToSpecificTags = false
+                    },
+                    session);
+
+                _logger.LogInformation(
+                    "ارسال سریع گردونه انجام شد — MessageId: {MessageId}, ContactId: {ContactId}, LuckyWheelId: {LuckyWheelId}",
+                    messageId,
+                    quickSendDto.ContactId,
+                    quickSendDto.LuckyWheelId);
+
+                return sendResult;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "خطا در ارسال سریع گردونه — ContactId: {ContactId}, LuckyWheelId: {LuckyWheelId}",
+                    quickSendDto.ContactId,
+                    quickSendDto.LuckyWheelId);
+                return ApiResponse<DirectSendResultDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 

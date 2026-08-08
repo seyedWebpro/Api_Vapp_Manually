@@ -1,4 +1,5 @@
 using Api_Vapp.DTOs.Common;
+using Api_Vapp.DTOs.Message;
 using Api_Vapp.DTOs.User;
 using Api_Vapp.DTOs.UserForm;
 using Api_Vapp.Interfaces;
@@ -188,6 +189,34 @@ namespace Api_Vapp.Controller
 
             var userId = await GetCurrentUserIdAsync();
             var result = await _userFormService.SetActiveStatusAsync(id, userId, statusDto.IsActive);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        /// <summary>
+        /// ارسال سریع لینک فرم به یک مخاطب (SMS)
+        /// </summary>
+        [HttpPost("quick-send")]
+        [RequireSubscriptionFeature(SubscriptionFeatureCodes.FreeQuickSend)]
+        [ProducesResponseType(typeof(ApiResponse<DirectSendResultDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<DirectSendResultDto>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(ApiResponse<DirectSendResultDto>), StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(typeof(ApiResponse<DirectSendResultDto>), StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<ApiResponse<DirectSendResultDto>>> QuickSendUserForm(
+            [FromBody] QuickSendUserFormDto? quickSendDto)
+        {
+            if (quickSendDto == null)
+            {
+                return StatusCode(400, ApiResponse<DirectSendResultDto>.BadRequest(
+                    "داده‌های ورودی نامعتبر است",
+                    errorCode: ErrorCodes.ValidationFailed));
+            }
+
+            var invalid = InvalidModelStateResponse<DirectSendResultDto>();
+            if (invalid != null)
+                return invalid;
+
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _userFormService.QuickSendUserFormAsync(userId, quickSendDto);
             return StatusCode(result.StatusCode, result);
         }
 

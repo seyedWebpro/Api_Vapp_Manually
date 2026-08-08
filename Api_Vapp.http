@@ -104,6 +104,15 @@ Content-Type: application/json
 ### حذف گردونه
 POST {{Api_Vapp_HostAddress}}/api/LuckyWheel/1/delete
 
+### ارسال سریع گردونه به مخاطب
+POST {{Api_Vapp_HostAddress}}/api/LuckyWheel/quick-send
+Content-Type: application/json
+
+{
+  "contactId": 1,
+  "luckyWheelId": 1
+}
+
 ###
 
 # --- FormPublic (فرم عمومی) — بدون Auth ---
@@ -248,6 +257,18 @@ Content-Type: application/json
 
 # --- BookingSystem (رزرو نوبت) ---
 
+### ارسال سریع سیستم رزرو به مخاطب
+POST {{Api_Vapp_HostAddress}}/api/BookingSystem/quick-send
+Content-Type: application/json
+
+{
+  "contactId": 1,
+  "bookingSystemId": 1
+}
+
+### لیست سیستم‌های رزرو
+GET {{Api_Vapp_HostAddress}}/api/BookingSystem?pageNumber=1&pageSize=10&isActive=true
+
 ### عمومی — اطلاعات صفحه رزرو (بدون Auth)
 GET {{Api_Vapp_HostAddress}}/api/BookingPublic/beauty-salon
 
@@ -317,12 +338,16 @@ Authorization: Bearer {{token}}
 GET {{Api_Vapp_HostAddress}}/api/NumberSeeker/task/{{taskId}}
 Authorization: Bearer {{token}}
 
-### لغو جستجو
+### لغو جستجو (وسط کار — صفحه در حال جستجو)
 POST {{Api_Vapp_HostAddress}}/api/NumberSeeker/task/{{taskId}}/cancel
 Authorization: Bearer {{token}}
 
-### دانلود / کپی همه
+### دانلود / کپی همه (JSON)
 GET {{Api_Vapp_HostAddress}}/api/NumberSeeker/task/{{taskId}}/export
+Authorization: Bearer {{token}}
+
+### دانلود اکسل لیست شماره‌ها
+GET {{Api_Vapp_HostAddress}}/api/NumberSeeker/task/{{taskId}}/export-excel
 Authorization: Bearer {{token}}
 
 ### ذخیره در دفترچه
@@ -630,6 +655,15 @@ Content-Type: application/json
 {
   "contactId": 1,
   "businessCardId": 1
+}
+
+### ارسال سریع فرم به مخاطب
+POST {{Api_Vapp_HostAddress}}/api/UserForm/quick-send
+Content-Type: application/json
+
+{
+  "contactId": 1,
+  "userFormId": 1
 }
 
 ### عمومی

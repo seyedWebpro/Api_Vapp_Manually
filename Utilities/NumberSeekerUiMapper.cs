@@ -54,6 +54,21 @@ namespace Api_Vapp.Utilities
             return s is "completed" or "partial";
         }
 
+        /// <summary>دانلود اکسل/لیست — completed/partial/cancelled با شماره</summary>
+        public static bool IsDownloadable(string? status)
+        {
+            var s = (status ?? string.Empty).Trim().ToLowerInvariant();
+            return s is "completed" or "partial" or "cancelled";
+        }
+
+        public static double ComputeProgressPercent(int currentCount, int targetCount)
+        {
+            if (targetCount <= 0)
+                return 0;
+            var pct = currentCount * 100.0 / targetCount;
+            return Math.Round(Math.Clamp(pct, 0, 100), 1, MidpointRounding.AwayFromZero);
+        }
+
         public static string BuildSubtitle(string? city, string? category)
         {
             var c = city?.Trim() ?? string.Empty;

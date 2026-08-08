@@ -2,6 +2,7 @@ using Api_Vapp.Constants;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.DTOs.Contact;
 using Api_Vapp.DTOs.File;
+using Api_Vapp.DTOs.Message;
 using Api_Vapp.DTOs.UserForm;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
@@ -21,6 +22,9 @@ namespace Api_Vapp.Services
     public class UserFormService : IUserFormService
     {
         private readonly IUserFormRepository _userFormRepository;
+        private readonly IContactRepository _contactRepository;
+        private readonly IContactNotebookRepository _notebookRepository;
+        private readonly IMessageService _messageService;
         private readonly Api_Vapp.Data.Api_Context _context;
         private readonly FormBuilderOptions _formBuilderOptions;
         private readonly IFileUploadService _fileUploadService;
@@ -29,6 +33,9 @@ namespace Api_Vapp.Services
 
         public UserFormService(
             IUserFormRepository userFormRepository,
+            IContactRepository contactRepository,
+            IContactNotebookRepository notebookRepository,
+            IMessageService messageService,
             Api_Vapp.Data.Api_Context context,
             IOptions<FormBuilderOptions> formBuilderOptions,
             IFileUploadService fileUploadService,
@@ -36,6 +43,9 @@ namespace Api_Vapp.Services
             ILogger<UserFormService> logger)
         {
             _userFormRepository = userFormRepository;
+            _contactRepository = contactRepository;
+            _notebookRepository = notebookRepository;
+            _messageService = messageService;
             _context = context;
             _formBuilderOptions = formBuilderOptions.Value;
             _fileUploadService = fileUploadService;
@@ -501,6 +511,147 @@ namespace Api_Vapp.Services
                 _logger.LogError(ex, "Error setting active status for user form {FormId} for user {UserId}", id, userId);
                 return ApiResponse<UserFormResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
+        }
+
+        /// <summary>
+        /// ارسال سریع لینک عمومی فرم به یک مخاطب (SMS)
+        /// </summary>
+        public async Task<ApiResponse<DirectSendResultDto>> QuickSendUserFormAsync(
+            int userId,
+            QuickSendUserFormDto quickSendDto)
+        {
+            _logger.LogInformation(
+                "ارسال سریع فرم — UserId: {UserId}, ContactId: {ContactId}, UserFormId: {UserFormId}",
+                userId,
+                quickSendDto.ContactId,
+                quickSendDto.UserFormId);
+
+            try
+            {
+                if (quickSendDto.ContactId <= 0 || quickSendDto.UserFormId <= 0)
+                {
+                    return ApiResponse<DirectSendResultDto>.BadRequest(
+                        "شناسه مخاطب و فرم الزامی است",
+                        errorCode: ErrorCodes.InvalidInput);
+                }
+
+                var contact = await _contactRepository.GetByIdAsync(quickSendDto.ContactId);
+                if (contact == null || contact.IsDeleted)
+                    return ApiResponse<DirectSendResultDto>.NotFound("مخاطب یافت نشد");
+
+                var notebook = await _notebookRepository.GetByIdAsync(contact.ContactNotebookId);
+                if (notebook == null || notebook.UserId != userId || notebook.IsDeleted)
+                    return ApiResponse<DirectSendResultDto>.Forbidden("مخاطب متعلق به شما نیست");
+
+                var form = await _userFormRepository.GetOwnedFormAsync(
+                    quickSendDto.UserFormId,
+                    userId,
+                    tracked: false);
+
+                if (form == null)
+                    return ApiResponse<DirectSendResultDto>.NotFound("فرم یافت نشد");
+
+                if (form.Status != UserFormStatus.Published || !form.IsActive)
+                {
+                    return ApiResponse<DirectSendResultDto>.BadRequest(
+                        "فقط فرم منتشرشده و فعال قابل ارسال است",
+                        errorCode: ErrorCodes.InvalidInput);
+                }
+
+                var publicUrl = BuildPublicUrl(form.Slug);
+                if (string.IsNullOrWhiteSpace(publicUrl))
+                {
+                    return ApiResponse<DirectSendResultDto>.BadRequest(
+                        "لینک عمومی فرم در دسترس نیست",
+                        errorCode: ErrorCodes.InvalidInput);
+                }
+
+                return await SendPublicUrlQuickAsync(userId, contact, publicUrl, "فرم", quickSendDto.ContactId, quickSendDto.UserFormId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "خطا در ارسال سریع فرم — ContactId: {ContactId}, UserFormId: {UserFormId}",
+                    quickSendDto.ContactId,
+                    quickSendDto.UserFormId);
+                return ApiResponse<DirectSendResultDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
+        private async Task<ApiResponse<DirectSendResultDto>> SendPublicUrlQuickAsync(
+            int userId,
+            Contact contact,
+            string publicUrl,
+            string entityLabel,
+            int contactId,
+            int entityId)
+        {
+            var createMessageResult = await _messageService.CreateMessageAsync(userId, new CreateMessageDto
+            {
+                Content = publicUrl
+            });
+
+            if (!createMessageResult.Success || createMessageResult.Data == null)
+            {
+                return ApiResponse<DirectSendResultDto>.BadRequest(
+                    createMessageResult.Message ?? "خطا در ایجاد پیام",
+                    errorCode: ErrorCodes.InvalidInput);
+            }
+
+            var messageId = createMessageResult.Data.Id;
+
+            var selectResult = await _messageService.SelectRecipientsAsync(userId, new SelectRecipientsDto
+            {
+                MessageId = messageId,
+                SelectionType = "Individual",
+                MobileNumbers = new List<string> { contact.MobileNumber },
+                FullNames = new List<string> { contact.FullName ?? string.Empty }
+            });
+
+            if (!selectResult.Success || selectResult.Data == null)
+            {
+                return ApiResponse<DirectSendResultDto>.BadRequest(
+                    selectResult.Message ?? "خطا در انتخاب گیرندگان",
+                    errorCode: ErrorCodes.InvalidInput);
+            }
+
+            var session = await _context.MessageSessions
+                .Where(s =>
+                    s.MessageId == messageId &&
+                    s.UserId == userId &&
+                    !s.IsDeleted &&
+                    !s.IsUsed)
+                .OrderByDescending(s => s.CreatedAt)
+                .FirstOrDefaultAsync();
+
+            if (session == null)
+            {
+                return ApiResponse<DirectSendResultDto>.BadRequest(
+                    "خطا در ایجاد Session برای ارسال",
+                    errorCode: ErrorCodes.InvalidInput);
+            }
+
+            var sendResult = await _messageService.SendDirectMessageAsync(
+                userId,
+                messageId,
+                new SendDirectMessageDto
+                {
+                    SendType = CampaignSendType.Quick,
+                    PreventDuplicate = false,
+                    DuplicatePreventionHours = 24,
+                    SendToSpecificTags = false
+                },
+                session);
+
+            _logger.LogInformation(
+                "ارسال سریع {EntityLabel} انجام شد — MessageId: {MessageId}, ContactId: {ContactId}, EntityId: {EntityId}",
+                entityLabel,
+                messageId,
+                contactId,
+                entityId);
+
+            return sendResult;
         }
 
         public async Task<ApiResponse<UserFormSubmissionsPageDto>> GetSubmissionsAsync(

@@ -176,6 +176,9 @@ internal sealed class LuckyWheelTestContext : IDisposable
 
             return new LuckyWheelService(
                 repository,
+                contactRepository: null!,
+                notebookRepository: null!,
+                messageService: null!,
                 context,
                 options,
                 new FakeFileUploadService(),

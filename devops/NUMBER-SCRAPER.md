@@ -167,8 +167,10 @@ ssh vapp-prod 'API_KEY=$(grep ^API_KEY= ~/scraping_Number_Vapp/.env | cut -d= -f
 |--------|------|--------|
 | POST | `/api/NumberSeeker/scrape` | شروع اسکرپ |
 | GET | `/api/NumberSeeker/task/{id}` | poll وضعیت |
+| POST | `/api/NumberSeeker/task/{id}/cancel` | لغو وسط جستجو |
+| GET | `/api/NumberSeeker/task/{id}/export` | دانلود JSON / کپی شماره‌ها |
+| GET | `/api/NumberSeeker/task/{id}/export-excel` | دانلود فایل اکسل شماره‌ها |
 | POST | `/api/NumberSeeker/task/{id}/import` | import به Contact |
-| POST | `/api/NumberSeeker/task/{id}/cancel` | لغو |
 | GET | `/api/NumberSeeker/tasks` | تاریخچه |
 | GET | `/api/NumberSeeker/sources` | لیست پلتفرم‌ها |
 | GET | `/api/NumberSeeker/health` | سلامت proxy |

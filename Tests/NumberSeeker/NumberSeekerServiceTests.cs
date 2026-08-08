@@ -80,6 +80,130 @@ public class NumberSeekerServiceTests
     }
 
     [Fact]
+    public async Task GetTaskStatus_ProgressPercentIsFractionalDouble()
+    {
+        var client = new FakeScraperClient();
+        var repo = new InMemoryTaskRepository();
+        repo.Tasks.Add(new NumberSeekerTask
+        {
+            UserId = 10,
+            ScraperTaskId = "task-progress",
+            Source = "divar",
+            City = "تهران",
+            Category = "x",
+            TargetCount = 3,
+            CurrentCount = 1,
+            Status = "completed",
+            PhonesJson = "[\"09121111111\"]",
+            PhonesPersistedAt = DateTime.UtcNow
+        });
+
+        var service = BuildService(client, repo);
+        var result = await service.GetTaskStatusAsync(10, "task-progress");
+
+        Assert.True(result.Success);
+        Assert.Equal(33.3, result.Data!.ProgressPercent, 1);
+    }
+
+    [Fact]
+    public async Task CancelTask_MarksCancelledAndIsIdempotent()
+    {
+        var client = new FakeScraperClient();
+        var repo = new InMemoryTaskRepository();
+        repo.Tasks.Add(new NumberSeekerTask
+        {
+            UserId = 10,
+            ScraperTaskId = "task-cancel",
+            Source = "divar",
+            City = "تهران",
+            Category = "x",
+            TargetCount = 10,
+            CurrentCount = 2,
+            Status = "running",
+            PhonesJson = "[\"09121111111\",\"09122222222\"]"
+        });
+
+        var service = BuildService(client, repo);
+        var first = await service.CancelTaskAsync(10, "task-cancel");
+        Assert.True(first.Success);
+        Assert.Equal("cancelled", repo.Tasks[0].Status);
+        Assert.Equal("cancelled", first.Data!.Status);
+        Assert.True(first.Data.CanDownload);
+
+        var second = await service.CancelTaskAsync(10, "task-cancel");
+        Assert.True(second.Success);
+        Assert.Equal("cancelled", second.Data!.Status);
+    }
+
+    [Fact]
+    public async Task CancelTask_RejectsCompletedTask()
+    {
+        var client = new FakeScraperClient();
+        var repo = new InMemoryTaskRepository();
+        repo.Tasks.Add(new NumberSeekerTask
+        {
+            UserId = 10,
+            ScraperTaskId = "task-done",
+            Source = "divar",
+            City = "تهران",
+            Category = "x",
+            TargetCount = 1,
+            Status = "completed",
+            PhonesJson = "[\"09121111111\"]"
+        });
+
+        var service = BuildService(client, repo);
+        var result = await service.CancelTaskAsync(10, "task-done");
+        Assert.False(result.Success);
+        Assert.Equal(400, result.StatusCode);
+    }
+
+    [Fact]
+    public async Task ExportPhonesToExcel_ReturnsXlsxBytes()
+    {
+        var client = new FakeScraperClient();
+        var repo = new InMemoryTaskRepository();
+        repo.Tasks.Add(new NumberSeekerTask
+        {
+            UserId = 10,
+            ScraperTaskId = "task-xlsx",
+            Source = "divar",
+            City = "تهران",
+            Category = "رستوران",
+            TargetCount = 2,
+            Status = "completed",
+            PhonesJson = "[\"09121111111\",\"09122222222\"]",
+            PhonesPersistedAt = DateTime.UtcNow
+        });
+
+        var service = BuildService(client, repo);
+        var result = await service.ExportPhonesToExcelAsync(10, "task-xlsx");
+
+        Assert.True(result.Success);
+        Assert.NotNull(result.Data);
+        Assert.True(result.Data!.FileContent.Length > 100);
+        Assert.EndsWith(".xlsx", result.Data.FileName);
+        Assert.Equal(2, result.Data.ExportedCount);
+
+        using var stream = new MemoryStream(result.Data.FileContent);
+        using var workbook = new ClosedXML.Excel.XLWorkbook(stream);
+        var sheet = workbook.Worksheet(1);
+        Assert.Equal("شماره موبایل", sheet.Cell(1, 2).GetString());
+        Assert.Equal("09121111111", sheet.Cell(2, 2).GetString());
+    }
+
+    [Fact]
+    public void JsonAlwaysDoubleConverter_WritesFractionalToken()
+    {
+        var options = new System.Text.Json.JsonSerializerOptions();
+        options.Converters.Add(new JsonAlwaysDoubleConverter());
+        var json = System.Text.Json.JsonSerializer.Serialize(100.0, options);
+        Assert.Equal("100.0", json);
+        var json2 = System.Text.Json.JsonSerializer.Serialize(33.333, options);
+        Assert.Equal("33.3", json2);
+    }
+
+    [Fact]
     public async Task HandleWebhook_UpdatesTrackedTask()
     {
         var client = new FakeScraperClient();

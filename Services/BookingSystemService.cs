@@ -2,6 +2,7 @@ using Api_Vapp.Constants;
 using Api_Vapp.Data;
 using Api_Vapp.DTOs.BookingSystem;
 using Api_Vapp.DTOs.Common;
+using Api_Vapp.DTOs.Message;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
 using Api_Vapp.Services.Audit;
@@ -18,6 +19,9 @@ namespace Api_Vapp.Services
         private readonly Api_Context _context;
         private readonly IBookingSystemRepository _systemRepository;
         private readonly IBookingSystemDraftRepository _draftRepository;
+        private readonly IContactRepository _contactRepository;
+        private readonly IContactNotebookRepository _notebookRepository;
+        private readonly IMessageService _messageService;
         private readonly BookingSystemOptions _options;
         private readonly IAuditService _audit;
         private readonly ILogger<BookingSystemService> _logger;
@@ -29,6 +33,9 @@ namespace Api_Vapp.Services
             Api_Context context,
             IBookingSystemRepository systemRepository,
             IBookingSystemDraftRepository draftRepository,
+            IContactRepository contactRepository,
+            IContactNotebookRepository notebookRepository,
+            IMessageService messageService,
             IOptions<BookingSystemOptions> options,
             IAuditService audit,
             ILogger<BookingSystemService> logger)
@@ -36,6 +43,9 @@ namespace Api_Vapp.Services
             _context = context;
             _systemRepository = systemRepository;
             _draftRepository = draftRepository;
+            _contactRepository = contactRepository;
+            _notebookRepository = notebookRepository;
+            _messageService = messageService;
             _options = options.Value;
             _audit = audit;
             _logger = logger;
@@ -119,6 +129,132 @@ namespace Api_Vapp.Services
             await _context.SaveChangesAsync();
 
             return ApiResponse<bool>.CreateSuccess(true, "سیستم رزرو حذف شد");
+        }
+
+        /// <summary>
+        /// ارسال سریع لینک عمومی سیستم رزرو به یک مخاطب (SMS)
+        /// </summary>
+        public async Task<ApiResponse<DirectSendResultDto>> QuickSendBookingSystemAsync(
+            int userId,
+            QuickSendBookingSystemDto quickSendDto)
+        {
+            _logger.LogInformation(
+                "ارسال سریع رزرو نوبت — UserId: {UserId}, ContactId: {ContactId}, BookingSystemId: {BookingSystemId}",
+                userId,
+                quickSendDto.ContactId,
+                quickSendDto.BookingSystemId);
+
+            try
+            {
+                if (quickSendDto.ContactId <= 0 || quickSendDto.BookingSystemId <= 0)
+                {
+                    return ApiResponse<DirectSendResultDto>.BadRequest(
+                        "شناسه مخاطب و سیستم رزرو الزامی است",
+                        errorCode: ErrorCodes.InvalidInput);
+                }
+
+                var contact = await _contactRepository.GetByIdAsync(quickSendDto.ContactId);
+                if (contact == null || contact.IsDeleted)
+                    return ApiResponse<DirectSendResultDto>.NotFound("مخاطب یافت نشد");
+
+                var notebook = await _notebookRepository.GetByIdAsync(contact.ContactNotebookId);
+                if (notebook == null || notebook.UserId != userId || notebook.IsDeleted)
+                    return ApiResponse<DirectSendResultDto>.Forbidden("مخاطب متعلق به شما نیست");
+
+                var system = await _systemRepository.GetByIdAndUserIdAsync(quickSendDto.BookingSystemId, userId);
+                if (system == null)
+                    return ApiResponse<DirectSendResultDto>.NotFound("سیستم رزرو یافت نشد");
+
+                if (system.Status != BookingSystemStatus.Published || !system.IsActive)
+                {
+                    return ApiResponse<DirectSendResultDto>.BadRequest(
+                        "فقط سیستم رزرو منتشرشده و فعال قابل ارسال است",
+                        errorCode: ErrorCodes.InvalidInput);
+                }
+
+                if (string.IsNullOrWhiteSpace(system.Slug))
+                {
+                    return ApiResponse<DirectSendResultDto>.BadRequest(
+                        "لینک عمومی سیستم رزرو در دسترس نیست",
+                        errorCode: ErrorCodes.InvalidInput);
+                }
+
+                var publicUrl = BuildPublicUrl(system.Slug);
+
+                var createMessageResult = await _messageService.CreateMessageAsync(userId, new CreateMessageDto
+                {
+                    Content = publicUrl
+                });
+
+                if (!createMessageResult.Success || createMessageResult.Data == null)
+                {
+                    return ApiResponse<DirectSendResultDto>.BadRequest(
+                        createMessageResult.Message ?? "خطا در ایجاد پیام",
+                        errorCode: ErrorCodes.InvalidInput);
+                }
+
+                var messageId = createMessageResult.Data.Id;
+
+                var selectResult = await _messageService.SelectRecipientsAsync(userId, new SelectRecipientsDto
+                {
+                    MessageId = messageId,
+                    SelectionType = "Individual",
+                    MobileNumbers = new List<string> { contact.MobileNumber },
+                    FullNames = new List<string> { contact.FullName ?? string.Empty }
+                });
+
+                if (!selectResult.Success || selectResult.Data == null)
+                {
+                    return ApiResponse<DirectSendResultDto>.BadRequest(
+                        selectResult.Message ?? "خطا در انتخاب گیرندگان",
+                        errorCode: ErrorCodes.InvalidInput);
+                }
+
+                var session = await _context.MessageSessions
+                    .Where(s =>
+                        s.MessageId == messageId &&
+                        s.UserId == userId &&
+                        !s.IsDeleted &&
+                        !s.IsUsed)
+                    .OrderByDescending(s => s.CreatedAt)
+                    .FirstOrDefaultAsync();
+
+                if (session == null)
+                {
+                    return ApiResponse<DirectSendResultDto>.BadRequest(
+                        "خطا در ایجاد Session برای ارسال",
+                        errorCode: ErrorCodes.InvalidInput);
+                }
+
+                var sendResult = await _messageService.SendDirectMessageAsync(
+                    userId,
+                    messageId,
+                    new SendDirectMessageDto
+                    {
+                        SendType = CampaignSendType.Quick,
+                        PreventDuplicate = false,
+                        DuplicatePreventionHours = 24,
+                        SendToSpecificTags = false
+                    },
+                    session);
+
+                _logger.LogInformation(
+                    "ارسال سریع رزرو نوبت انجام شد — MessageId: {MessageId}, ContactId: {ContactId}, BookingSystemId: {BookingSystemId}",
+                    messageId,
+                    quickSendDto.ContactId,
+                    quickSendDto.BookingSystemId);
+
+                return sendResult;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "خطا در ارسال سریع رزرو نوبت — ContactId: {ContactId}, BookingSystemId: {BookingSystemId}",
+                    quickSendDto.ContactId,
+                    quickSendDto.BookingSystemId);
+                return ApiResponse<DirectSendResultDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
         }
 
         public async Task<ApiResponse<BookingSystemDto>> UpdateAsync(int id, int userId, UpdateBookingSystemDto updateDto)

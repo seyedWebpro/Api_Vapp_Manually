@@ -7,6 +7,7 @@ using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
 using Api_Vapp.Services.Audit;
 using Api_Vapp.Utilities;
+using ClosedXML.Excel;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -277,46 +278,76 @@ namespace Api_Vapp.Services
                 return ApiResponse<NumberSeekerCancelResultDto>.NotFound(NumberSeekerUserMessages.TaskNotFound);
             }
 
+            // قبلاً لغو شده — پاسخ موفق یکسان (idempotent)
+            if (string.Equals(ownedTask.Status, "cancelled", StringComparison.OrdinalIgnoreCase))
+            {
+                return ApiResponse<NumberSeekerCancelResultDto>.CreateSuccess(
+                    BuildCancelResult(ownedTask),
+                    NumberSeekerUserMessages.Cancelled);
+            }
+
+            if (NumberSeekerUiMapper.IsTerminal(ownedTask.Status))
+            {
+                return ApiResponse<NumberSeekerCancelResultDto>.BadRequest(
+                    NumberSeekerUserMessages.CancelNotAllowed,
+                    errorCode: ErrorCodes.InvalidInput);
+            }
+
+            var scraperCancelOk = false;
             try
             {
-                var result = await _scraperClient.CancelTaskAsync(taskId.Trim());
-
-                ownedTask.Status = "cancelled";
-                ownedTask.CompletedAt = DateTime.UtcNow;
-                ownedTask.Message = NumberSeekerUserMessages.Cancelled;
-                await _taskRepository.UpdateAsync(ownedTask);
-
-                await _audit.WriteAsync(new AuditEntry
-                {
-                    Category = AuditCategories.NumberSeeker,
-                    Action = AuditActions.NumberSeekerTaskCancelled,
-                    EntityType = AuditEntityTypes.NumberSeekerTask,
-                    EntityId = ownedTask.ScraperTaskId,
-                    ActorUserId = userId
-                });
-
-                return ApiResponse<NumberSeekerCancelResultDto>.CreateSuccess(
-                    new NumberSeekerCancelResultDto
-                    {
-                        TaskId = result.TaskId,
-                        Message = NumberSeekerUserMessages.Cancelled,
-                        Status = "cancelled",
-                        StatusDisplayName = NumberSeekerUiMapper.GetStatusDisplayName("cancelled")
-                    },
-                    NumberSeekerUserMessages.Cancelled);
+                await _scraperClient.CancelTaskAsync(taskId.Trim());
+                scraperCancelOk = true;
             }
             catch (KeyNotFoundException)
             {
-                return ApiResponse<NumberSeekerCancelResultDto>.NotFound(NumberSeekerUserMessages.TaskNotFound);
+                _logger.LogWarning(
+                    "Scraper task {TaskId} not found during cancel — marking cancelled locally",
+                    taskId);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to cancel task {TaskId} for user {UserId}", taskId, userId);
-                return ApiResponse<NumberSeekerCancelResultDto>.Error(
-                    NumberSeekerUserMessages.ExtractionFailed,
-                    503,
-                    errorCode: "SCRAPER_UNAVAILABLE");
+                // کاربر وسط کار لغو کرده — حتی اگر اسکرپر لحظه‌ای در دسترس نباشد، وضعیت محلی را لغو می‌کنیم
+                _logger.LogWarning(
+                    ex,
+                    "Scraper cancel failed for task {TaskId}; cancelling locally",
+                    taskId);
             }
+
+            // سعی کن شماره‌های جزئی را قبل از بستن تسک ذخیره کنی
+            try
+            {
+                var status = await _scraperClient.GetTaskStatusAsync(taskId.Trim());
+                if (status.Phones is { Count: > 0 })
+                    PersistPhones(ownedTask, status.Phones);
+                if (status.CurrentCount > ownedTask.CurrentCount)
+                    ownedTask.CurrentCount = status.CurrentCount;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Post-cancel status fetch skipped for task {TaskId}", taskId);
+            }
+
+            ownedTask.Status = "cancelled";
+            ownedTask.CompletedAt = DateTime.UtcNow;
+            ownedTask.UpdatedAt = DateTime.UtcNow;
+            ownedTask.Message = NumberSeekerUserMessages.Cancelled;
+            ownedTask.ResultCode = "cancelled";
+            await _taskRepository.UpdateAsync(ownedTask);
+
+            await _audit.WriteAsync(new AuditEntry
+            {
+                Category = AuditCategories.NumberSeeker,
+                Action = AuditActions.NumberSeekerTaskCancelled,
+                EntityType = AuditEntityTypes.NumberSeekerTask,
+                EntityId = ownedTask.ScraperTaskId,
+                ActorUserId = userId,
+                Metadata = scraperCancelOk ? null : new { localOnly = true }
+            });
+
+            return ApiResponse<NumberSeekerCancelResultDto>.CreateSuccess(
+                BuildCancelResult(ownedTask),
+                NumberSeekerUserMessages.Cancelled);
         }
 
         public async Task<ApiResponse<NumberSeekerImportResultDto>> ImportPhonesAsync(
@@ -640,9 +671,86 @@ namespace Api_Vapp.Services
 
         public async Task<ApiResponse<NumberSeekerExportDto>> ExportPhonesAsync(int userId, string taskId)
         {
+            var resolved = await ResolvePhonesForExportAsync(userId, taskId);
+            if (!resolved.Success)
+            {
+                return ApiResponse<NumberSeekerExportDto>.Error(
+                    resolved.Message ?? NumberSeekerUserMessages.ExtractionFailed,
+                    resolved.StatusCode,
+                    errorCode: resolved.ErrorCode);
+            }
+
+            var (ownedTask, phones) = resolved.Data!;
+            return ApiResponse<NumberSeekerExportDto>.CreateSuccess(new NumberSeekerExportDto
+            {
+                TaskId = ownedTask.ScraperTaskId,
+                Source = ownedTask.Source,
+                SourceDisplayName = NumberSeekerUiMapper.GetSourceDisplayName(ownedTask.Source),
+                City = ownedTask.City,
+                Category = ownedTask.Category,
+                Status = ownedTask.Status,
+                Count = phones.Count,
+                Phones = phones,
+                Format = "json",
+                TextContent = string.Join("\n", phones)
+            });
+        }
+
+        public async Task<ApiResponse<ExportExcelResultDto>> ExportPhonesToExcelAsync(int userId, string taskId)
+        {
+            try
+            {
+                var resolved = await ResolvePhonesForExportAsync(userId, taskId);
+                if (!resolved.Success)
+                {
+                    return ApiResponse<ExportExcelResultDto>.Error(
+                        resolved.Message ?? NumberSeekerUserMessages.ExtractionFailed,
+                        resolved.StatusCode,
+                        errorCode: resolved.ErrorCode);
+                }
+
+                var (ownedTask, phones) = resolved.Data!;
+                var bytes = BuildPhonesExcel(
+                    phones,
+                    NumberSeekerUiMapper.GetSourceDisplayName(ownedTask.Source),
+                    ownedTask.City,
+                    ownedTask.Category,
+                    ownedTask.ScraperTaskId);
+
+                var safeSource = SanitizeFilePart(ownedTask.Source);
+                var safeCity = SanitizeFilePart(ownedTask.City);
+                var fileName =
+                    $"NumberSeeker_{safeSource}_{safeCity}_{DateTime.UtcNow:yyyyMMdd_HHmmss}.xlsx";
+
+                return ApiResponse<ExportExcelResultDto>.CreateSuccess(
+                    new ExportExcelResultDto
+                    {
+                        FileContent = bytes,
+                        FileName = fileName,
+                        ContentType =
+                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        TotalCount = phones.Count,
+                        ExportedCount = phones.Count,
+                        PageNumber = 1,
+                        PageSize = phones.Count,
+                        TotalPages = 1
+                    },
+                    "فایل اکسل شماره‌ها آماده دانلود است");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Excel export failed for NumberSeeker task {TaskId}", taskId);
+                return ApiResponse<ExportExcelResultDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
+        private async Task<ApiResponse<(NumberSeekerTask Task, List<string> Phones)>> ResolvePhonesForExportAsync(
+            int userId,
+            string taskId)
+        {
             if (string.IsNullOrWhiteSpace(taskId))
             {
-                return ApiResponse<NumberSeekerExportDto>.BadRequest(
+                return ApiResponse<(NumberSeekerTask, List<string>)>.BadRequest(
                     NumberSeekerUserMessages.TaskIdRequired,
                     errorCode: ErrorCodes.InvalidInput);
             }
@@ -650,7 +758,7 @@ namespace Api_Vapp.Services
             var ownedTask = await _taskRepository.GetByScraperTaskIdAndUserIdAsync(taskId.Trim(), userId);
             if (ownedTask == null)
             {
-                return ApiResponse<NumberSeekerExportDto>.NotFound(NumberSeekerUserMessages.TaskNotFound);
+                return ApiResponse<(NumberSeekerTask, List<string>)>.NotFound(NumberSeekerUserMessages.TaskNotFound);
             }
 
             var phones = NumberSeekerPhoneStorage.Deserialize(ownedTask.PhonesJson);
@@ -670,24 +778,82 @@ namespace Api_Vapp.Services
 
             if (phones.Count == 0)
             {
-                return ApiResponse<NumberSeekerExportDto>.BadRequest(
+                return ApiResponse<(NumberSeekerTask, List<string>)>.BadRequest(
                     NumberSeekerUserMessages.NoPhonesForAction,
                     errorCode: ErrorCodes.InvalidInput);
             }
 
-            return ApiResponse<NumberSeekerExportDto>.CreateSuccess(new NumberSeekerExportDto
+            return ApiResponse<(NumberSeekerTask, List<string>)>.CreateSuccess((ownedTask, phones));
+        }
+
+        private static byte[] BuildPhonesExcel(
+            IReadOnlyList<string> phones,
+            string sourceDisplayName,
+            string city,
+            string category,
+            string taskId)
+        {
+            using var workbook = new XLWorkbook();
+            var worksheet = workbook.Worksheets.Add("شماره‌ها");
+            worksheet.RightToLeft = true;
+
+            worksheet.Cell(1, 1).Value = "ردیف";
+            worksheet.Cell(1, 2).Value = "شماره موبایل";
+            worksheet.Cell(1, 3).Value = "منبع";
+            worksheet.Cell(1, 4).Value = "شهر";
+            worksheet.Cell(1, 5).Value = "دسته";
+            worksheet.Cell(1, 6).Value = "شناسه جستجو";
+
+            var headerRange = worksheet.Range(1, 1, 1, 6);
+            headerRange.Style.Font.Bold = true;
+            headerRange.Style.Fill.BackgroundColor = XLColor.FromHtml("#0D9488");
+            headerRange.Style.Font.FontColor = XLColor.White;
+            headerRange.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+            headerRange.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+            headerRange.Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+
+            for (var i = 0; i < phones.Count; i++)
+            {
+                var row = i + 2;
+                worksheet.Cell(row, 1).Value = i + 1;
+                worksheet.Cell(row, 2).Value = phones[i];
+                worksheet.Cell(row, 2).Style.NumberFormat.Format = "@";
+                worksheet.Cell(row, 3).Value = sourceDisplayName;
+                worksheet.Cell(row, 4).Value = city;
+                worksheet.Cell(row, 5).Value = category;
+                worksheet.Cell(row, 6).Value = taskId;
+            }
+
+            worksheet.Columns().AdjustToContents();
+            using var stream = new MemoryStream();
+            workbook.SaveAs(stream);
+            return stream.ToArray();
+        }
+
+        private static string SanitizeFilePart(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return "na";
+            var cleaned = string.Concat(value.Trim().Where(ch =>
+                !Path.GetInvalidFileNameChars().Contains(ch) && ch != ' ' && ch != '/'));
+            return string.IsNullOrWhiteSpace(cleaned) ? "na" : cleaned;
+        }
+
+        private static NumberSeekerCancelResultDto BuildCancelResult(NumberSeekerTask ownedTask)
+        {
+            var phones = NumberSeekerPhoneStorage.Deserialize(ownedTask.PhonesJson);
+            var count = phones.Count > 0 ? phones.Count : ownedTask.CurrentCount;
+            return new NumberSeekerCancelResultDto
             {
                 TaskId = ownedTask.ScraperTaskId,
-                Source = ownedTask.Source,
-                SourceDisplayName = NumberSeekerUiMapper.GetSourceDisplayName(ownedTask.Source),
-                City = ownedTask.City,
-                Category = ownedTask.Category,
-                Status = ownedTask.Status,
-                Count = phones.Count,
-                Phones = phones,
-                Format = "json",
-                TextContent = string.Join("\n", phones)
-            });
+                Message = NumberSeekerUserMessages.Cancelled,
+                Status = "cancelled",
+                StatusDisplayName = NumberSeekerUiMapper.GetStatusDisplayName("cancelled"),
+                CurrentCount = count,
+                ProgressPercent = NumberSeekerUiMapper.ComputeProgressPercent(count, ownedTask.TargetCount),
+                CanDownload = phones.Count > 0,
+                CanImport = false
+            };
         }
 
         private async Task SyncOwnedTaskAsync(NumberSeekerTask ownedTask, NumberSeekerTaskStatusDto status)
@@ -757,9 +923,7 @@ namespace Api_Vapp.Services
         private static NumberSeekerTaskSummaryDto MapSummary(NumberSeekerTask t)
         {
             var hasPhones = !string.IsNullOrWhiteSpace(t.PhonesJson);
-            var progress = t.TargetCount > 0
-                ? Math.Round(t.CurrentCount * 100.0 / t.TargetCount, 1)
-                : 0;
+            var progress = NumberSeekerUiMapper.ComputeProgressPercent(t.CurrentCount, t.TargetCount);
 
             return new NumberSeekerTaskSummaryDto
             {
@@ -784,7 +948,7 @@ namespace Api_Vapp.Services
                     : null,
                 ImportedAt = t.ImportedAt?.ToString("O"),
                 ImportedCount = t.ImportedCount,
-                CanDownload = hasPhones && NumberSeekerUiMapper.IsImportable(t.Status),
+                CanDownload = hasPhones && NumberSeekerUiMapper.IsDownloadable(t.Status),
                 CanImport = hasPhones && NumberSeekerUiMapper.IsImportable(t.Status),
                 IsTerminal = NumberSeekerUiMapper.IsTerminal(t.Status)
             };
@@ -797,6 +961,11 @@ namespace Api_Vapp.Services
             var running = string.Equals(status.Status, "running", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(status.Status, "pending", StringComparison.OrdinalIgnoreCase);
 
+            // همیشه progress را از شمارنده‌ها به‌صورت double با یک رقم اعشار محاسبه کن
+            status.ProgressPercent = NumberSeekerUiMapper.ComputeProgressPercent(
+                status.CurrentCount,
+                status.TargetCount);
+
             status.SourceDisplayName = NumberSeekerUiMapper.GetSourceDisplayName(status.Source);
             status.StatusDisplayName = NumberSeekerUiMapper.GetStatusDisplayName(status.Status);
             status.StatusTone = NumberSeekerUiMapper.GetStatusTone(status.Status);
@@ -805,7 +974,7 @@ namespace Api_Vapp.Services
             status.IsRunning = running;
             status.CanCancel = running;
             status.CanImport = NumberSeekerUiMapper.IsImportable(status.Status) && allPhones.Count > 0;
-            status.CanDownload = NumberSeekerUiMapper.IsImportable(status.Status) && allPhones.Count > 0;
+            status.CanDownload = NumberSeekerUiMapper.IsDownloadable(status.Status) && allPhones.Count > 0;
             status.ProgressLabel = NumberSeekerUiMapper.BuildProgressLabel(status.CurrentCount, status.TargetCount);
             status.PhonesPreviewLimit = NumberSeekerUiMapper.PhonesPreviewLimit;
             status.PhonesPreview = NumberSeekerUiMapper.TakePreview(allPhones);
@@ -845,6 +1014,7 @@ namespace Api_Vapp.Services
             NumberSeekerTask ownedTask,
             List<string> phones)
         {
+            var count = phones.Count > 0 ? phones.Count : ownedTask.CurrentCount;
             return new NumberSeekerTaskStatusDto
             {
                 TaskId = ownedTask.ScraperTaskId,
@@ -853,10 +1023,8 @@ namespace Api_Vapp.Services
                 Category = ownedTask.Category,
                 Status = ownedTask.Status,
                 TargetCount = ownedTask.TargetCount,
-                CurrentCount = phones.Count > 0 ? phones.Count : ownedTask.CurrentCount,
-                ProgressPercent = ownedTask.TargetCount > 0
-                    ? Math.Round((phones.Count > 0 ? phones.Count : ownedTask.CurrentCount) * 100.0 / ownedTask.TargetCount, 1)
-                    : 0,
+                CurrentCount = count,
+                ProgressPercent = NumberSeekerUiMapper.ComputeProgressPercent(count, ownedTask.TargetCount),
                 Phones = phones,
                 Message = ownedTask.Message,
                 ResultCode = ownedTask.ResultCode,

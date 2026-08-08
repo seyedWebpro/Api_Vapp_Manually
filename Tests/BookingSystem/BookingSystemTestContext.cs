@@ -269,6 +269,9 @@ internal sealed class BookingSystemTestContext : IDisposable
             context,
             new BookingSystemRepository(context),
             new BookingSystemDraftRepository(context),
+            contactRepository: null!,
+            notebookRepository: null!,
+            messageService: null!,
             options,
             new NoOpAuditService(),
             NullLogger<BookingSystemService>.Instance);

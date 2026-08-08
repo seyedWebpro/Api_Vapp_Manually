@@ -34,6 +34,9 @@ namespace Api_Vapp.Utilities
 
         public const string Cancelled = "جستجو توسط شما لغو شد.";
 
+        public const string CancelNotAllowed =
+            "این جستجو دیگر در حال اجرا نیست و قابل لغو نیست.";
+
         public const string NoListings =
             "با این شهر و دسته موردی پیدا نشد. لطفاً شهر یا دسته را تغییر دهید و دوباره تلاش کنید.";
 
