@@ -435,5 +435,6 @@ Base: `/api/BookingPublic` — **AllowAnonymous**
 
 - Background job هر **۱ دقیقه**
 - فقط برای نوبت‌های `Confirmed`
-- زمان ارسال: `StartUtc - ReminderOffsetMinutes` (پنجره ۲ دقیقه‌ای)
+- زمان ارسال: از `StartUtc - ReminderOffsetMinutes` تا قبل از شروع نوبت (catch-up؛ اگر جاب دیر شد هم تا قبل از StartUtc ارسال می‌شود)
+- در صورت کسری کیف‌پول علامت `ReminderSentAt` زده نمی‌شود تا بعد از شارژ دوباره تلاش شود
 - ماژول گزارش SMS: `BookingReminder`

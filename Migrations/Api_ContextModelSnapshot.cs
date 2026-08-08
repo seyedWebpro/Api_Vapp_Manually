@@ -802,6 +802,23 @@ namespace Api_Vapp.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("BankAccountNumber")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("BankCardNumber")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<bool>("BankingEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<string>("BankShebaNumber")
+                        .HasMaxLength(26)
+                        .HasColumnType("nvarchar(26)");
+
                     b.Property<string>("ContactEmail")
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
@@ -952,6 +969,43 @@ namespace Api_Vapp.Migrations
                     b.HasIndex("BusinessCardId");
 
                     b.ToTable("BusinessCardServiceItems");
+                });
+
+            modelBuilder.Entity("Api_Vapp.Models.BusinessCardSocialLink", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("BusinessCardId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Label")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("NetworkType")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("Value")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BusinessCardId");
+
+                    b.HasIndex("BusinessCardId", "DisplayOrder");
+
+                    b.ToTable("BusinessCardSocialLinks");
                 });
 
             modelBuilder.Entity("Api_Vapp.Models.BusinessCardSliderImage", b =>
@@ -4743,6 +4797,17 @@ namespace Api_Vapp.Migrations
                     b.Navigation("BusinessCard");
                 });
 
+            modelBuilder.Entity("Api_Vapp.Models.BusinessCardSocialLink", b =>
+                {
+                    b.HasOne("Api_Vapp.Models.BusinessCard", "BusinessCard")
+                        .WithMany("SocialLinks")
+                        .HasForeignKey("BusinessCardId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("BusinessCard");
+                });
+
             modelBuilder.Entity("Api_Vapp.Models.BusinessCardSliderImage", b =>
                 {
                     b.HasOne("Api_Vapp.Models.BusinessCard", "BusinessCard")
@@ -5589,6 +5654,8 @@ namespace Api_Vapp.Migrations
                     b.Navigation("ServiceItems");
 
                     b.Navigation("SliderImages");
+
+                    b.Navigation("SocialLinks");
                 });
 
             modelBuilder.Entity("Api_Vapp.Models.Cashback", b =>

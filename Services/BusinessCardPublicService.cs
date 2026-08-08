@@ -102,6 +102,29 @@ namespace Api_Vapp.Services
 
         private BusinessCardPublicDto MapToPublicDto(Models.BusinessCard card)
         {
+            var socialLinks = card.SocialLinks
+                .OrderBy(i => i.DisplayOrder)
+                .Select(i => new BusinessCardSocialLinkDto
+                {
+                    Id = i.Id,
+                    NetworkType = i.NetworkType,
+                    Label = BusinessCardSocialNetworkHelper.ResolveDisplayLabel(i.NetworkType, i.Label),
+                    Value = i.Value,
+                    DisplayOrder = i.DisplayOrder
+                })
+                .ToList();
+
+            if (socialLinks.Count == 0 && !string.IsNullOrWhiteSpace(card.ContactInstagram))
+            {
+                socialLinks.Add(new BusinessCardSocialLinkDto
+                {
+                    NetworkType = "instagram",
+                    Label = BusinessCardSocialNetworkHelper.ResolveDisplayLabel("instagram", null),
+                    Value = card.ContactInstagram,
+                    DisplayOrder = 0
+                });
+            }
+
             return new BusinessCardPublicDto
             {
                 Title = card.Title,
@@ -112,6 +135,7 @@ namespace Api_Vapp.Services
                 ServicesEnabled = card.ServicesEnabled,
                 MapEnabled = card.MapEnabled,
                 ContactEnabled = card.ContactEnabled,
+                BankingEnabled = card.BankingEnabled,
                 DescriptionTitle = card.DescriptionTitle,
                 DescriptionText = card.DescriptionText,
                 MapLatitude = card.MapLatitude,
@@ -120,6 +144,9 @@ namespace Api_Vapp.Services
                 ContactPhone = card.ContactPhone,
                 ContactEmail = card.ContactEmail,
                 ContactInstagram = card.ContactInstagram,
+                BankAccountNumber = card.BankingEnabled ? card.BankAccountNumber : null,
+                BankCardNumber = card.BankingEnabled ? card.BankCardNumber : null,
+                BankShebaNumber = card.BankingEnabled ? card.BankShebaNumber : null,
                 SliderImages = card.SliderEnabled
                     ? card.SliderImages
                         .OrderBy(i => i.DisplayOrder)
@@ -142,7 +169,10 @@ namespace Api_Vapp.Services
                             DisplayOrder = i.DisplayOrder
                         })
                         .ToList()
-                    : new List<BusinessCardServiceItemDto>()
+                    : new List<BusinessCardServiceItemDto>(),
+                SocialLinks = card.ContactEnabled
+                    ? socialLinks
+                    : new List<BusinessCardSocialLinkDto>()
             };
         }
 

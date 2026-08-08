@@ -117,7 +117,11 @@ namespace Api_Vapp.Repositories
                     a.Status == BookingAppointmentStatuses.Confirmed &&
                     a.ReminderSentAt == null &&
                     a.StartUtc > utcNow &&
-                    a.StartUtc <= maxStartUtc)
+                    a.StartUtc <= maxStartUtc &&
+                    a.BookingServiceItem != null &&
+                    a.BookingServiceItem.ReminderOffsetMinutes >= 1 &&
+                    // reminderAt = StartUtc - offset <= now  ⇒  StartUtc <= now + offset
+                    a.StartUtc <= utcNow.AddMinutes(a.BookingServiceItem.ReminderOffsetMinutes))
                 .ToListAsync();
         }
 

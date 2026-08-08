@@ -595,11 +595,23 @@ Content-Type: application/json
   "servicesEnabled": true,
   "mapEnabled": true,
   "contactEnabled": true,
+  "bankingEnabled": true,
   "descriptionTitle": "درباره سالن",
   "descriptionText": "توضیحات تست",
   "contactPhone": "09121234567",
   "contactEmail": "info@example.com",
   "contactInstagram": "zahra_salon",
+  "bankAccountNumber": "1234567890",
+  "bankCardNumber": "6037991234567890",
+  "bankShebaNumber": "IR120170000000123456789001",
+  "socialLinks": [
+    { "networkType": "instagram", "label": "اینستاگرام کاری", "value": "zahra_salon_work", "displayOrder": 0 },
+    { "networkType": "instagram", "label": "اینستاگرام شخصی", "value": "zahra_personal", "displayOrder": 1 },
+    { "networkType": "whatsapp", "label": "واتساپ پشتیبانی", "value": "09121234567", "displayOrder": 2 },
+    { "networkType": "telegram", "value": "zahra_salon", "displayOrder": 3 },
+    { "networkType": "eitaa", "value": "zahra_salon", "displayOrder": 4 },
+    { "networkType": "rubika", "value": "zahra_salon", "displayOrder": 5 }
+  ],
   "serviceItems": [
     { "title": "فیشیال تخصصی", "price": 350000, "displayOrder": 0 }
   ]
@@ -628,7 +640,16 @@ Content-Type: application/json
   "descriptionEnabled": true,
   "descriptionText": "متن به‌روزشده",
   "contactEnabled": true,
-  "contactPhone": "09121234567"
+  "contactPhone": "09121234567",
+  "bankingEnabled": true,
+  "bankAccountNumber": "1234567890",
+  "bankCardNumber": "6037991234567890",
+  "bankShebaNumber": "IR120170000000123456789001",
+  "socialLinks": [
+    { "networkType": "instagram", "label": "اینستاگرام کاری", "value": "zahra_work", "displayOrder": 0 },
+    { "networkType": "whatsapp", "label": "واتساپ شخصی", "value": "09121234567", "displayOrder": 1 },
+    { "networkType": "eitaa", "value": "zahra_salon", "displayOrder": 2 }
+  ]
 }
 
 ### انتشار

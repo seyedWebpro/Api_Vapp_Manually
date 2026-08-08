@@ -59,6 +59,11 @@ namespace Api_Vapp.Models
 
         public bool ContactEnabled { get; set; } = true;
 
+        /// <summary>
+        /// بخش اطلاعات بانکی (شماره حساب / کارت / شبا)
+        /// </summary>
+        public bool BankingEnabled { get; set; }
+
         public string? DescriptionTitle { get; set; }
 
         public string? DescriptionText { get; set; }
@@ -73,12 +78,33 @@ namespace Api_Vapp.Models
 
         public string? ContactEmail { get; set; }
 
+        /// <summary>
+        /// فیلد قدیمی اینستاگرام — برای سازگاری با کلاینت‌های قبلی نگه داشته می‌شود
+        /// و از اولین لینک Instagram در SocialLinks همگام می‌شود.
+        /// </summary>
         public string? ContactInstagram { get; set; }
+
+        /// <summary>
+        /// شماره حساب بانکی
+        /// </summary>
+        public string? BankAccountNumber { get; set; }
+
+        /// <summary>
+        /// شماره کارت ۱۶ رقمی
+        /// </summary>
+        public string? BankCardNumber { get; set; }
+
+        /// <summary>
+        /// شماره شبا (IR + ۲۴ رقم)
+        /// </summary>
+        public string? BankShebaNumber { get; set; }
 
         public virtual User User { get; set; } = null!;
 
         public virtual ICollection<BusinessCardSliderImage> SliderImages { get; set; } = new List<BusinessCardSliderImage>();
 
         public virtual ICollection<BusinessCardServiceItem> ServiceItems { get; set; } = new List<BusinessCardServiceItem>();
+
+        public virtual ICollection<BusinessCardSocialLink> SocialLinks { get; set; } = new List<BusinessCardSocialLink>();
     }
 }

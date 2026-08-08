@@ -734,7 +734,11 @@ namespace Api_Vapp.Services
                 DepositAmount = dto.DepositAmount,
                 BufferMinutesBetweenAppointments = dto.BufferMinutesBetweenAppointments,
                 MaxDailyReservations = dto.MaxDailyReservations,
-                ReminderOffsetMinutes = dto.ReminderOffsetMinutes ?? 0,
+                // پیش‌فرض ۱ ساعت — اگر کلاینت نفرستد/۰ بفرستد، یادآوری خاموش نشود
+                ReminderOffsetMinutes =
+                    dto.ReminderOffsetMinutes.HasValue && dto.ReminderOffsetMinutes.Value > 0
+                        ? dto.ReminderOffsetMinutes.Value
+                        : 60,
                 SortOrder = maxOrder + 1,
                 CreatedAt = now
             };

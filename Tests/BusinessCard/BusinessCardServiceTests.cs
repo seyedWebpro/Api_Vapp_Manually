@@ -81,6 +81,115 @@ public class BusinessCardServiceTests
     }
 
     [Fact]
+    public async Task UpdateSections_ReplacesSocialLinksAndBanking()
+    {
+        await using var ctx = await BusinessCardTestContext.CreateAsync();
+
+        var create = await ctx.Service.CreateDraftAsync(ctx.OwnerUserId, new CreateBusinessCardDto
+        {
+            Title = "کارت شبکه",
+            DescriptionEnabled = false,
+            ContactEnabled = true,
+            ContactPhone = "09121234567",
+            ContactInstagram = "old_insta"
+        });
+
+        Assert.True(create.Success);
+        Assert.Single(create.Data!.SocialLinks);
+        Assert.Equal("instagram", create.Data.SocialLinks[0].NetworkType);
+
+        var update = await ctx.Service.UpdateSectionsAsync(create.Data.Id, ctx.OwnerUserId, new UpdateBusinessCardSectionsDto
+        {
+            ContactEnabled = true,
+            BankingEnabled = true,
+            BankAccountNumber = "1234567890",
+            BankCardNumber = "6037-9912-3456-7890",
+            BankShebaNumber = "IR12 0170 0000 0012 3456 7890 01",
+            SocialLinks =
+            [
+                new BusinessCardSocialLinkDto
+                {
+                    NetworkType = "instagram",
+                    Label = "اینستاگرام کاری",
+                    Value = "work_page",
+                    DisplayOrder = 0
+                },
+                new BusinessCardSocialLinkDto
+                {
+                    NetworkType = "instagram",
+                    Label = "اینستاگرام شخصی",
+                    Value = "personal_page",
+                    DisplayOrder = 1
+                },
+                new BusinessCardSocialLinkDto
+                {
+                    NetworkType = "whatsapp",
+                    Label = "واتساپ پشتیبانی",
+                    Value = "09121234567",
+                    DisplayOrder = 2
+                },
+                new BusinessCardSocialLinkDto
+                {
+                    NetworkType = "eitaa",
+                    Value = "eitaa_channel",
+                    DisplayOrder = 3
+                }
+            ]
+        });
+
+        Assert.True(update.Success);
+        Assert.Equal(4, update.Data!.SocialLinks.Count);
+        Assert.Equal("اینستاگرام کاری", update.Data.SocialLinks[0].Label);
+        Assert.Equal("اینستاگرام شخصی", update.Data.SocialLinks[1].Label);
+        Assert.Equal("work_page", update.Data.ContactInstagram);
+        Assert.True(update.Data.BankingEnabled);
+        Assert.Equal("1234567890", update.Data.BankAccountNumber);
+        Assert.Equal("6037991234567890", update.Data.BankCardNumber);
+        Assert.Equal("IR120170000000123456789001", update.Data.BankShebaNumber);
+
+        var publish = await ctx.Service.PublishAsync(create.Data.Id, ctx.OwnerUserId, new PublishBusinessCardDto
+        {
+            Slug = "social-bank-card"
+        });
+        Assert.True(publish.Success);
+
+        var publicCard = await ctx.PublicService.GetPublicCardAsync("social-bank-card");
+        Assert.True(publicCard.Success);
+        Assert.Equal(4, publicCard.Data!.SocialLinks.Count);
+        Assert.Equal("IR120170000000123456789001", publicCard.Data.BankShebaNumber);
+    }
+
+    [Fact]
+    public async Task UpdateSections_InvalidNetworkType_FailsValidation()
+    {
+        await using var ctx = await BusinessCardTestContext.CreateAsync();
+
+        var create = await ctx.Service.CreateDraftAsync(ctx.OwnerUserId, new CreateBusinessCardDto
+        {
+            Title = "کارت",
+            ContactEnabled = true,
+            ContactPhone = "09121234567"
+        });
+
+        var update = await ctx.Service.UpdateSectionsAsync(create.Data!.Id, ctx.OwnerUserId, new UpdateBusinessCardSectionsDto
+        {
+            SocialLinks =
+            [
+                new BusinessCardSocialLinkDto
+                {
+                    NetworkType = "unknown_network",
+                    Value = "x",
+                    DisplayOrder = 0
+                }
+            ]
+        });
+
+        Assert.False(update.Success);
+        Assert.Equal(400, update.StatusCode);
+        Assert.Equal(ErrorCodes.ValidationFailed, update.ErrorCode);
+    }
+
+    [Fact]
     public async Task ToggleActive_OnDraft_Fails()
     {
         await using var ctx = await BusinessCardTestContext.CreateAsync();

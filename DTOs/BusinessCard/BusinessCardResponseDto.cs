@@ -30,6 +30,8 @@ namespace Api_Vapp.DTOs.BusinessCard
 
         public bool ContactEnabled { get; set; }
 
+        public bool BankingEnabled { get; set; }
+
         public string? DescriptionTitle { get; set; }
 
         public string? DescriptionText { get; set; }
@@ -46,9 +48,17 @@ namespace Api_Vapp.DTOs.BusinessCard
 
         public string? ContactInstagram { get; set; }
 
+        public string? BankAccountNumber { get; set; }
+
+        public string? BankCardNumber { get; set; }
+
+        public string? BankShebaNumber { get; set; }
+
         public List<BusinessCardSliderImageDto> SliderImages { get; set; } = new();
 
         public List<BusinessCardServiceItemDto> ServiceItems { get; set; } = new();
+
+        public List<BusinessCardSocialLinkDto> SocialLinks { get; set; } = new();
 
         public DateTime CreatedAt { get; set; }
 

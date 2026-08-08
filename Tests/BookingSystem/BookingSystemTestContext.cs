@@ -35,6 +35,8 @@ internal sealed class BookingSystemTestContext : IDisposable
 
     public Api_Context Context => _context;
 
+    public RecordingUserSmsBillingService SmsBilling { get; private set; } = null!;
+
     public int OwnerUserId { get; private set; }
 
     public int OtherUserId { get; private set; }
@@ -253,8 +255,9 @@ internal sealed class BookingSystemTestContext : IDisposable
 
     private async Task InitializeAsync()
     {
+        SmsBilling = new RecordingUserSmsBillingService();
         Service = CreateBookingSystemService(_context);
-        AppointmentService = CreateAppointmentService(_context);
+        AppointmentService = CreateAppointmentService(_context, SmsBilling);
         await SeedAsync();
     }
 
@@ -277,21 +280,26 @@ internal sealed class BookingSystemTestContext : IDisposable
             NullLogger<BookingSystemService>.Instance);
     }
 
-    private static IBookingAppointmentService CreateAppointmentService(Api_Context context)
+    private static IBookingAppointmentService CreateAppointmentService(
+        Api_Context context,
+        IUserSmsBillingService smsBilling)
     {
             return new BookingAppointmentService(
                 context,
                 new BookingAppointmentRepository(context),
                 new BookingSystemRepository(context),
                 new PublicPhonebookService(context),
-                new FakeUserSmsBillingService(),
+                smsBilling,
                 Microsoft.Extensions.Options.Options.Create(new BookingSystemOptions()),
                 new Api_Vapp.Tests.Shared.NoOpAuditService(),
                 NullLogger<BookingAppointmentService>.Instance);
     }
 
-    private sealed class FakeUserSmsBillingService : IUserSmsBillingService
+    internal sealed class RecordingUserSmsBillingService : IUserSmsBillingService
     {
+        public List<(int UserId, string Mobile, string Message, string SourceModule, int? EntityId)> Sent { get; } = new();
+        public bool ForceInsufficientBalance { get; set; }
+
         public Task<(decimal Cost, int PartsCount)> EstimateCostAsync(
             string message,
             CancellationToken cancellationToken = default) =>
@@ -306,8 +314,16 @@ internal sealed class BookingSystemTestContext : IDisposable
             string? walletDescription = null,
             int? sourceEntityId = null,
             string? sourceEntityLabel = null,
-            CancellationToken cancellationToken = default) =>
-            Task.FromResult(UserSmsSendResult.Success(1, 160m, 1, 0));
+            CancellationToken cancellationToken = default)
+        {
+            if (ForceInsufficientBalance)
+            {
+                return Task.FromResult(UserSmsSendResult.Skipped(160m, 1));
+            }
+
+            Sent.Add((userId, mobile, message, sourceModule, sourceEntityId));
+            return Task.FromResult(UserSmsSendResult.Success(1, 160m, 1, 0));
+        }
 
         public Task<UserSmsSendResult> TrySendOtpAsync(
             int userId,
@@ -320,7 +336,9 @@ internal sealed class BookingSystemTestContext : IDisposable
             int? sourceEntityId = null,
             string? sourceEntityLabel = null,
             CancellationToken cancellationToken = default) =>
-            Task.FromResult(UserSmsSendResult.Success(1, 160m, 1, 0));
+            TrySendAsync(
+                userId, mobile, otpCode, sourceModule, walletTitle,
+                walletDescription, sourceEntityId, sourceEntityLabel, cancellationToken);
     }
 
     private sealed class FakeSmsService : ISmsService

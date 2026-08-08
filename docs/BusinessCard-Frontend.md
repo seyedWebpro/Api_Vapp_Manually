@@ -97,11 +97,20 @@ Public URL مثال: `https://ok-sms.ir/card/{slug}` (از `BusinessCard:PublicB
   "contactPhone": "09121234567",
   "contactEmail": "info@example.com",
   "contactInstagram": "zahra_salon",
+  "bankingEnabled": true,
+  "bankAccountNumber": "1234567890",
+  "bankCardNumber": "6037991234567890",
+  "bankShebaNumber": "IR120170000000123456789001",
+  "socialLinks": [
+    { "networkType": "instagram", "label": "اینستاگرام کاری", "value": "zahra_work", "displayOrder": 0 },
+    { "networkType": "whatsapp", "label": "واتساپ شخصی", "value": "09121234567", "displayOrder": 1 }
+  ],
   "sliderImages": [{ "imageUrl": "/uploads/...", "displayOrder": 0 }],
   "serviceItems": [{ "title": "فیشیال", "price": 350000, "imageUrl": null, "displayOrder": 0 }]
 }
 ```
 
+> نکته: `contactInstagram` هنوز برای سازگاری کار می‌کند؛ ترجیح با `socialLinks` است. اگر فقط `contactInstagram` بفرستید، بک‌اند خودش یک لینک `instagram` می‌سازد.
 ---
 
 ## `POST /{id}/update-info`
@@ -121,7 +130,7 @@ Public URL مثال: `https://ok-sms.ir/card/{slug}` (از `BusinessCard:PublicB
 
 ## `POST /{id}/update-sections`
 
-اگر `sliderImages` یا `serviceItems` ارسال شوند، **جایگزین کامل** می‌شوند.
+اگر `sliderImages` یا `serviceItems` یا `socialLinks` ارسال شوند، **جایگزین کامل** می‌شوند.
 
 ```json
 {
@@ -130,15 +139,50 @@ Public URL مثال: `https://ok-sms.ir/card/{slug}` (از `BusinessCard:PublicB
   "servicesEnabled": true,
   "mapEnabled": false,
   "contactEnabled": true,
+  "bankingEnabled": true,
   "descriptionTitle": "درباره سالن",
   "descriptionText": "متن توضیحات",
   "contactPhone": "09121234567",
   "contactEmail": "info@example.com",
-  "contactInstagram": "zahra_salon",
+  "bankAccountNumber": "1234567890",
+  "bankCardNumber": "6037991234567890",
+  "bankShebaNumber": "IR120170000000123456789001",
+  "socialLinks": [
+    { "networkType": "instagram", "label": "اینستاگرام کاری", "value": "zahra_work", "displayOrder": 0 },
+    { "networkType": "instagram", "label": "اینستاگرام شخصی", "value": "zahra_personal", "displayOrder": 1 },
+    { "networkType": "whatsapp", "label": "واتساپ پشتیبانی", "value": "09121234567", "displayOrder": 2 },
+    { "networkType": "telegram", "value": "zahra_salon", "displayOrder": 3 },
+    { "networkType": "eitaa", "value": "zahra_salon", "displayOrder": 4 },
+    { "networkType": "rubika", "value": "zahra_salon", "displayOrder": 5 },
+    { "networkType": "bale", "value": "zahra_salon", "displayOrder": 6 },
+    { "networkType": "website", "value": "https://example.com", "displayOrder": 7 }
+  ],
   "sliderImages": [],
   "serviceItems": []
 }
 ```
+
+### `socialLinks`
+
+| فیلد | توضیح |
+|------|--------|
+| `networkType` | اجباری — یکی از: `instagram`, `telegram`, `whatsapp`, `linkedin`, `twitter`, `youtube`, `facebook`, `tiktok`, `snapchat`, `rubika`, `soroush`, `eitaa`, `bale`, `website`, `custom` |
+| `label` | اختیاری — نام نمایشی (مثلاً «اینستاگرام کاری»)؛ اگر خالی باشد برچسب فارسی پیش‌فرض نوع شبکه استفاده می‌شود |
+| `value` | اجباری — هندل / شماره / URL |
+| `displayOrder` | ترتیب نمایش |
+
+- می‌توان چند لینک از **یک نوع** داشت (دو اینستاگرام، دو واتساپ، …)
+- حداکثر ۳۰ لینک
+- `contactInstagram` برای سازگاری نگه داشته شده؛ با اولین لینک `instagram` در `socialLinks` همگام می‌شود
+
+### اطلاعات بانکی
+
+| فیلد | توضیح |
+|------|--------|
+| `bankingEnabled` | نمایش بخش بانکی در صفحه عمومی |
+| `bankAccountNumber` | شماره حساب (فقط ارقام) |
+| `bankCardNumber` | شماره کارت ۱۶ رقمی |
+| `bankShebaNumber` | شبا — `IR` + ۲۴ رقم (فاصله و حروف کوچک قبول و نرمال می‌شود) |
 
 ---
 
@@ -229,4 +273,6 @@ Public URL مثال: `https://ok-sms.ir/card/{slug}` (از `BusinessCard:PublicB
 - قالب‌ها سمت وب (هم‌تراز موبایل): `classic` | `shop` | `personal` | `corporate` | `creative`
 - Alias: `templateKey=business` → قالب `creative` (مثل Flutter)
 - `descriptionTitle` → tagline در هیرو
-- اکشن‌بار پایین صفحه: تماس / ایمیل / اینستاگرام / اشتراک لینک
+- بخش تماس: `contactPhone` / `contactEmail` / `socialLinks[]`
+- بخش بانکی: `bankingEnabled` + شماره حساب/کارت/شبا (با دکمه کپی)
+- اکشن‌بار پایین صفحه: تماس / **کپی لینک** / **اشتراک لینک** / **افزودن به مخاطب** (vCard)

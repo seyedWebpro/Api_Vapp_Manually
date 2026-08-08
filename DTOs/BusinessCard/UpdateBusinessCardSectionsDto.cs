@@ -17,6 +17,8 @@ namespace Api_Vapp.DTOs.BusinessCard
 
         public bool? ContactEnabled { get; set; }
 
+        public bool? BankingEnabled { get; set; }
+
         [MaxLength(200, ErrorMessage = "عنوان توضیحات نمی‌تواند بیشتر از 200 کاراکتر باشد")]
         public string? DescriptionTitle { get; set; }
 
@@ -39,6 +41,15 @@ namespace Api_Vapp.DTOs.BusinessCard
         [MaxLength(100, ErrorMessage = "اینستاگرام نمی‌تواند بیشتر از 100 کاراکتر باشد")]
         public string? ContactInstagram { get; set; }
 
+        [MaxLength(30, ErrorMessage = "شماره حساب نمی‌تواند بیشتر از 30 کاراکتر باشد")]
+        public string? BankAccountNumber { get; set; }
+
+        [MaxLength(19, ErrorMessage = "شماره کارت نامعتبر است")]
+        public string? BankCardNumber { get; set; }
+
+        [MaxLength(30, ErrorMessage = "شماره شبا نامعتبر است")]
+        public string? BankShebaNumber { get; set; }
+
         /// <summary>
         /// اگر ارسال شود، لیست تصاویر اسلایدر جایگزین می‌شود
         /// </summary>
@@ -48,5 +59,10 @@ namespace Api_Vapp.DTOs.BusinessCard
         /// اگر ارسال شود، لیست تعرفه‌ها جایگزین می‌شود
         /// </summary>
         public List<BusinessCardServiceItemDto>? ServiceItems { get; set; }
+
+        /// <summary>
+        /// اگر ارسال شود، لیست شبکه‌های اجتماعی جایگزین کامل می‌شود
+        /// </summary>
+        public List<BusinessCardSocialLinkDto>? SocialLinks { get; set; }
     }
 }

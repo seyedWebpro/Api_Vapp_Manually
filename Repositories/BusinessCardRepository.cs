@@ -26,6 +26,7 @@ namespace Api_Vapp.Repositories
                 .AsSplitQuery()
                 .Include(c => c.SliderImages.OrderBy(i => i.DisplayOrder))
                 .Include(c => c.ServiceItems.OrderBy(i => i.DisplayOrder))
+                .Include(c => c.SocialLinks.OrderBy(i => i.DisplayOrder))
                 .FirstOrDefaultAsync(c => c.Id == id && !c.IsDeleted);
         }
 
@@ -35,6 +36,7 @@ namespace Api_Vapp.Repositories
                 .AsSplitQuery()
                 .Include(c => c.SliderImages.OrderBy(i => i.DisplayOrder))
                 .Include(c => c.ServiceItems.OrderBy(i => i.DisplayOrder))
+                .Include(c => c.SocialLinks.OrderBy(i => i.DisplayOrder))
                 .FirstOrDefaultAsync(c => c.Id == id && !c.IsDeleted);
         }
 
@@ -44,6 +46,7 @@ namespace Api_Vapp.Repositories
                 .AsSplitQuery()
                 .Include(c => c.SliderImages.OrderBy(i => i.DisplayOrder))
                 .Include(c => c.ServiceItems.OrderBy(i => i.DisplayOrder))
+                .Include(c => c.SocialLinks.OrderBy(i => i.DisplayOrder))
                 .FirstOrDefaultAsync(c =>
                     c.Id == id &&
                     c.UserId == userId &&
@@ -70,6 +73,7 @@ namespace Api_Vapp.Repositories
                 .AsSplitQuery()
                 .Include(c => c.SliderImages.OrderBy(i => i.DisplayOrder))
                 .Include(c => c.ServiceItems.OrderBy(i => i.DisplayOrder))
+                .Include(c => c.SocialLinks.OrderBy(i => i.DisplayOrder))
                 .FirstOrDefaultAsync(c =>
                     c.Slug == slug &&
                     !c.IsDeleted &&

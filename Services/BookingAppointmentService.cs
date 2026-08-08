@@ -22,7 +22,6 @@ namespace Api_Vapp.Services
         private readonly ILogger<BookingAppointmentService> _logger;
         private readonly BookingSystemOptions _options;
 
-        private const int ReminderWindowMinutes = 2;
         private const int MaxReminderOffsetMinutes = 43200;
 
         public BookingAppointmentService(
@@ -913,7 +912,6 @@ namespace Api_Vapp.Services
         public async Task ProcessRemindersAsync(CancellationToken cancellationToken = default)
         {
             var now = DateTime.UtcNow;
-            var windowStart = now.AddMinutes(-ReminderWindowMinutes);
 
             var candidates = await _appointmentRepository.GetPendingRemindersAsync(now, MaxReminderOffsetMinutes);
 
@@ -924,8 +922,16 @@ namespace Api_Vapp.Services
                     break;
                 }
 
-                var reminderAt = candidate.StartUtc.AddMinutes(-candidate.BookingServiceItem.ReminderOffsetMinutes);
-                if (reminderAt > now || reminderAt <= windowStart)
+                var offsetMinutes = candidate.BookingServiceItem?.ReminderOffsetMinutes ?? 0;
+                if (offsetMinutes < 1)
+                {
+                    continue;
+                }
+
+                // Catch-up: هر زمان که موعد یادآوری گذشته و نوبت هنوز شروع نشده، ارسال کن.
+                // (پنجرهٔ ۲ دقیقه‌ای قبلی باعث miss دائمی هنگام تأخیر/ریستارت API می‌شد.)
+                var reminderAt = candidate.StartUtc.AddMinutes(-offsetMinutes);
+                if (reminderAt > now)
                 {
                     continue;
                 }
@@ -934,7 +940,8 @@ namespace Api_Vapp.Services
                     .FirstOrDefaultAsync(a =>
                         a.Id == candidate.Id &&
                         a.ReminderSentAt == null &&
-                        a.Status == BookingAppointmentStatuses.Confirmed,
+                        a.Status == BookingAppointmentStatuses.Confirmed &&
+                        a.StartUtc > now,
                         cancellationToken);
 
                 if (tracked == null)
@@ -942,7 +949,7 @@ namespace Api_Vapp.Services
                     continue;
                 }
 
-                var message = BuildReminderMessage(tracked, candidate.BookingSystem, candidate.BookingServiceItem);
+                var message = BuildReminderMessage(tracked, candidate.BookingSystem, candidate.BookingServiceItem!);
                 if (!message.TrimEnd().EndsWith("لغو11"))
                 {
                     message = $"{message.TrimEnd()}\nلغو11";
@@ -964,12 +971,9 @@ namespace Api_Vapp.Services
                     if (sendResult.SkippedInsufficientBalance)
                     {
                         _logger.LogInformation(
-                            "Booking reminder SMS skipped (insufficient wallet) for appointment {AppointmentId}",
+                            "Booking reminder SMS skipped (insufficient wallet) for appointment {AppointmentId} — will retry until start",
                             tracked.Id);
-                        // نوبت را علامت‌گذاری می‌کنیم تا دوباره تلاش نشود؛ عملیات نوبت دست‌نخورده است
-                        tracked.ReminderSentAt = DateTime.UtcNow;
-                        tracked.UpdatedAt = DateTime.UtcNow;
-                        await _context.SaveChangesAsync(cancellationToken);
+                        // علامت‌گذاری نمی‌کنیم تا بعد از شارژ کیف‌پول دوباره تلاش شود
                         continue;
                     }
 

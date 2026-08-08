@@ -48,8 +48,24 @@ namespace Api_Vapp.DTOs.BusinessCard
         [MaxLength(100, ErrorMessage = "اینستاگرام نمی‌تواند بیشتر از 100 کاراکتر باشد")]
         public string? ContactInstagram { get; set; }
 
+        public bool? BankingEnabled { get; set; }
+
+        [MaxLength(30, ErrorMessage = "شماره حساب نمی‌تواند بیشتر از 30 کاراکتر باشد")]
+        public string? BankAccountNumber { get; set; }
+
+        [MaxLength(19, ErrorMessage = "شماره کارت نامعتبر است")]
+        public string? BankCardNumber { get; set; }
+
+        [MaxLength(30, ErrorMessage = "شماره شبا نامعتبر است")]
+        public string? BankShebaNumber { get; set; }
+
         public List<BusinessCardSliderImageDto> SliderImages { get; set; } = new();
 
         public List<BusinessCardServiceItemDto> ServiceItems { get; set; } = new();
+
+        /// <summary>
+        /// لینک‌های شبکه‌های اجتماعی (امکان چند لینک از یک نوع با برچسب سفارشی)
+        /// </summary>
+        public List<BusinessCardSocialLinkDto> SocialLinks { get; set; } = new();
     }
 }

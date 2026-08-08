@@ -64,7 +64,11 @@ namespace Api_Vapp.Services
                 var sectionErrors = ValidateSectionsPayload(
                     createDto.SliderImages,
                     createDto.ServiceItems,
-                    createDto.ContactEmail);
+                    createDto.SocialLinks,
+                    createDto.ContactEmail,
+                    createDto.BankAccountNumber,
+                    createDto.BankCardNumber,
+                    createDto.BankShebaNumber);
                 if (sectionErrors.Count > 0)
                 {
                     return ApiResponse<BusinessCardResponseDto>.BadRequest(
@@ -100,6 +104,7 @@ namespace Api_Vapp.Services
                     ServicesEnabled = createDto.ServicesEnabled ?? false,
                     MapEnabled = createDto.MapEnabled ?? false,
                     ContactEnabled = createDto.ContactEnabled ?? true,
+                    BankingEnabled = createDto.BankingEnabled ?? false,
                     DescriptionTitle = NormalizeOptionalText(createDto.DescriptionTitle),
                     DescriptionText = NormalizeOptionalText(createDto.DescriptionText),
                     MapLatitude = createDto.MapLatitude,
@@ -110,8 +115,34 @@ namespace Api_Vapp.Services
                     ContactInstagram = NormalizeOptionalText(createDto.ContactInstagram)
                 };
 
+                ApplyBankingFields(
+                    card,
+                    createDto.BankAccountNumber,
+                    createDto.BankCardNumber,
+                    createDto.BankShebaNumber,
+                    applyAccount: true,
+                    applyCard: true,
+                    applySheba: true);
+
                 ApplySliderImages(card, createDto.SliderImages);
                 ApplyServiceItems(card, createDto.ServiceItems);
+
+                if (createDto.SocialLinks.Count > 0)
+                {
+                    ApplySocialLinks(card, createDto.SocialLinks);
+                }
+                else if (!string.IsNullOrWhiteSpace(card.ContactInstagram))
+                {
+                    ApplySocialLinks(card, new List<BusinessCardSocialLinkDto>
+                    {
+                        new()
+                        {
+                            NetworkType = "instagram",
+                            Value = card.ContactInstagram,
+                            DisplayOrder = 0
+                        }
+                    });
+                }
 
                 await _context.BusinessCards.AddAsync(card);
                 await _context.SaveChangesAsync();
@@ -261,7 +292,11 @@ namespace Api_Vapp.Services
                 var sectionErrors = ValidateSectionsPayload(
                     updateDto.SliderImages,
                     updateDto.ServiceItems,
-                    updateDto.ContactEmail);
+                    updateDto.SocialLinks,
+                    updateDto.ContactEmail,
+                    updateDto.BankAccountNumber,
+                    updateDto.BankCardNumber,
+                    updateDto.BankShebaNumber);
                 if (sectionErrors.Count > 0)
                 {
                     return ApiResponse<BusinessCardResponseDto>.BadRequest(
@@ -288,6 +323,8 @@ namespace Api_Vapp.Services
                     card.MapEnabled = updateDto.MapEnabled.Value;
                 if (updateDto.ContactEnabled.HasValue)
                     card.ContactEnabled = updateDto.ContactEnabled.Value;
+                if (updateDto.BankingEnabled.HasValue)
+                    card.BankingEnabled = updateDto.BankingEnabled.Value;
 
                 if (updateDto.DescriptionTitle != null)
                     card.DescriptionTitle = NormalizeOptionalText(updateDto.DescriptionTitle);
@@ -308,6 +345,15 @@ namespace Api_Vapp.Services
                 if (updateDto.ContactInstagram != null)
                     card.ContactInstagram = NormalizeOptionalText(updateDto.ContactInstagram);
 
+                ApplyBankingFields(
+                    card,
+                    updateDto.BankAccountNumber,
+                    updateDto.BankCardNumber,
+                    updateDto.BankShebaNumber,
+                    applyAccount: updateDto.BankAccountNumber != null,
+                    applyCard: updateDto.BankCardNumber != null,
+                    applySheba: updateDto.BankShebaNumber != null);
+
                 if (updateDto.SliderImages != null)
                 {
                     _context.BusinessCardSliderImages.RemoveRange(card.SliderImages);
@@ -320,6 +366,28 @@ namespace Api_Vapp.Services
                     _context.BusinessCardServiceItems.RemoveRange(card.ServiceItems);
                     card.ServiceItems.Clear();
                     ApplyServiceItems(card, updateDto.ServiceItems);
+                }
+
+                if (updateDto.SocialLinks != null)
+                {
+                    _context.BusinessCardSocialLinks.RemoveRange(card.SocialLinks);
+                    card.SocialLinks.Clear();
+                    ApplySocialLinks(card, updateDto.SocialLinks);
+                }
+                else if (updateDto.ContactInstagram != null
+                         && card.SocialLinks.Count == 0
+                         && !string.IsNullOrWhiteSpace(card.ContactInstagram))
+                {
+                    // سازگاری با کلاینت قدیمی که فقط contactInstagram می‌فرستد
+                    ApplySocialLinks(card, new List<BusinessCardSocialLinkDto>
+                    {
+                        new()
+                        {
+                            NetworkType = "instagram",
+                            Value = card.ContactInstagram,
+                            DisplayOrder = 0
+                        }
+                    });
                 }
 
                 card.UpdatedAt = DateTime.UtcNow;
@@ -960,7 +1028,8 @@ namespace Api_Vapp.Services
                    || card.DescriptionEnabled
                    || card.ServicesEnabled
                    || card.MapEnabled
-                   || card.ContactEnabled;
+                   || card.ContactEnabled
+                   || card.BankingEnabled;
         }
 
         /// <summary>
@@ -993,9 +1062,18 @@ namespace Api_Vapp.Services
             if (card.ContactEnabled
                 && string.IsNullOrWhiteSpace(card.ContactPhone)
                 && string.IsNullOrWhiteSpace(card.ContactEmail)
-                && string.IsNullOrWhiteSpace(card.ContactInstagram))
+                && string.IsNullOrWhiteSpace(card.ContactInstagram)
+                && card.SocialLinks.Count == 0)
             {
                 errors.Add("برای بخش تماس، حداقل یک کانال ارتباطی وارد کنید");
+            }
+
+            if (card.BankingEnabled
+                && string.IsNullOrWhiteSpace(card.BankAccountNumber)
+                && string.IsNullOrWhiteSpace(card.BankCardNumber)
+                && string.IsNullOrWhiteSpace(card.BankShebaNumber))
+            {
+                errors.Add("برای بخش بانکی، حداقل یک شماره حساب، کارت یا شبا وارد کنید");
             }
 
             if (!HasAtLeastOneActiveSection(card))
@@ -1134,10 +1212,70 @@ namespace Api_Vapp.Services
             }
         }
 
+        private static void ApplySocialLinks(BusinessCard card, List<BusinessCardSocialLinkDto> links)
+        {
+            var order = 0;
+            foreach (var link in links.OrderBy(i => i.DisplayOrder))
+            {
+                var networkType = BusinessCardSocialNetworkHelper.NormalizeType(link.NetworkType);
+                var value = NormalizeOptionalText(link.Value);
+                if (networkType == null || value == null)
+                {
+                    continue;
+                }
+
+                card.SocialLinks.Add(new BusinessCardSocialLink
+                {
+                    NetworkType = networkType,
+                    Label = NormalizeOptionalText(link.Label),
+                    Value = value,
+                    DisplayOrder = order++
+                });
+            }
+
+            // همگام‌سازی فیلد قدیمی اینستاگرام برای کلاینت‌های قبلی
+            var firstInstagram = card.SocialLinks
+                .OrderBy(l => l.DisplayOrder)
+                .FirstOrDefault(l => l.NetworkType.Equals("instagram", StringComparison.OrdinalIgnoreCase));
+            card.ContactInstagram = firstInstagram?.Value;
+        }
+
+        private static void ApplyBankingFields(
+            BusinessCard card,
+            string? accountNumber,
+            string? cardNumber,
+            string? shebaNumber,
+            bool applyAccount,
+            bool applyCard,
+            bool applySheba)
+        {
+            if (applyAccount)
+            {
+                var (normalized, _) = BusinessCardSocialNetworkHelper.NormalizeAccountNumber(accountNumber);
+                card.BankAccountNumber = normalized;
+            }
+
+            if (applyCard)
+            {
+                var (normalized, _) = BusinessCardSocialNetworkHelper.NormalizeCardNumber(cardNumber);
+                card.BankCardNumber = normalized;
+            }
+
+            if (applySheba)
+            {
+                var (normalized, _) = BusinessCardSocialNetworkHelper.NormalizeSheba(shebaNumber);
+                card.BankShebaNumber = normalized;
+            }
+        }
+
         private static List<string> ValidateSectionsPayload(
             List<BusinessCardSliderImageDto>? sliderImages,
             List<BusinessCardServiceItemDto>? serviceItems,
-            string? contactEmail)
+            List<BusinessCardSocialLinkDto>? socialLinks,
+            string? contactEmail,
+            string? bankAccountNumber,
+            string? bankCardNumber,
+            string? bankShebaNumber)
         {
             var errors = new List<string>();
 
@@ -1179,10 +1317,60 @@ namespace Api_Vapp.Services
                 }
             }
 
+            if (socialLinks != null && socialLinks.Count > BusinessCardConstants.MaxSocialLinks)
+            {
+                errors.Add($"حداکثر {BusinessCardConstants.MaxSocialLinks} لینک شبکه اجتماعی مجاز است");
+            }
+
+            if (socialLinks != null)
+            {
+                foreach (var link in socialLinks)
+                {
+                    if (!BusinessCardSocialNetworkHelper.IsAllowed(link.NetworkType))
+                    {
+                        errors.Add("نوع شبکه اجتماعی نامعتبر است");
+                        break;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(link.Value))
+                    {
+                        errors.Add("مقدار لینک شبکه اجتماعی الزامی است");
+                        break;
+                    }
+                }
+            }
+
             if (!string.IsNullOrWhiteSpace(contactEmail) &&
                 !contactEmail.Contains('@', StringComparison.Ordinal))
             {
                 errors.Add("فرمت ایمیل نامعتبر است");
+            }
+
+            if (bankAccountNumber != null)
+            {
+                var (_, accountError) = BusinessCardSocialNetworkHelper.NormalizeAccountNumber(bankAccountNumber);
+                if (accountError != null)
+                {
+                    errors.Add(accountError);
+                }
+            }
+
+            if (bankCardNumber != null)
+            {
+                var (_, cardError) = BusinessCardSocialNetworkHelper.NormalizeCardNumber(bankCardNumber);
+                if (cardError != null)
+                {
+                    errors.Add(cardError);
+                }
+            }
+
+            if (bankShebaNumber != null)
+            {
+                var (_, shebaError) = BusinessCardSocialNetworkHelper.NormalizeSheba(bankShebaNumber);
+                if (shebaError != null)
+                {
+                    errors.Add(shebaError);
+                }
             }
 
             return errors;
@@ -1203,6 +1391,7 @@ namespace Api_Vapp.Services
                    || dto.ServicesEnabled.HasValue
                    || dto.MapEnabled.HasValue
                    || dto.ContactEnabled.HasValue
+                   || dto.BankingEnabled.HasValue
                    || dto.DescriptionTitle != null
                    || dto.DescriptionText != null
                    || dto.MapLatitude.HasValue
@@ -1211,8 +1400,12 @@ namespace Api_Vapp.Services
                    || dto.ContactPhone != null
                    || dto.ContactEmail != null
                    || dto.ContactInstagram != null
+                   || dto.BankAccountNumber != null
+                   || dto.BankCardNumber != null
+                   || dto.BankShebaNumber != null
                    || dto.SliderImages != null
-                   || dto.ServiceItems != null;
+                   || dto.ServiceItems != null
+                   || dto.SocialLinks != null;
         }
 
         private static bool GetEffectiveIsActive(BusinessCard card)
@@ -1238,6 +1431,7 @@ namespace Api_Vapp.Services
                 ServicesEnabled = card.ServicesEnabled,
                 MapEnabled = card.MapEnabled,
                 ContactEnabled = card.ContactEnabled,
+                BankingEnabled = card.BankingEnabled,
                 DescriptionTitle = card.DescriptionTitle,
                 DescriptionText = card.DescriptionText,
                 MapLatitude = card.MapLatitude,
@@ -1246,6 +1440,9 @@ namespace Api_Vapp.Services
                 ContactPhone = card.ContactPhone,
                 ContactEmail = card.ContactEmail,
                 ContactInstagram = card.ContactInstagram,
+                BankAccountNumber = card.BankAccountNumber,
+                BankCardNumber = card.BankCardNumber,
+                BankShebaNumber = card.BankShebaNumber,
                 SliderImages = card.SliderImages
                     .OrderBy(i => i.DisplayOrder)
                     .Select(i => new BusinessCardSliderImageDto
@@ -1265,10 +1462,40 @@ namespace Api_Vapp.Services
                         DisplayOrder = i.DisplayOrder
                     })
                     .ToList(),
+                SocialLinks = MapSocialLinks(card),
                 CreatedAt = EnsureUtc(card.CreatedAt),
                 UpdatedAt = EnsureUtc(card.UpdatedAt),
                 PublishedAt = EnsureUtc(card.PublishedAt)
             };
+        }
+
+        private static List<BusinessCardSocialLinkDto> MapSocialLinks(BusinessCard card)
+        {
+            var links = card.SocialLinks
+                .OrderBy(i => i.DisplayOrder)
+                .Select(i => new BusinessCardSocialLinkDto
+                {
+                    Id = i.Id,
+                    NetworkType = i.NetworkType,
+                    Label = BusinessCardSocialNetworkHelper.ResolveDisplayLabel(i.NetworkType, i.Label),
+                    Value = i.Value,
+                    DisplayOrder = i.DisplayOrder
+                })
+                .ToList();
+
+            // سازگاری: اگر جدول خالی است ولی ContactInstagram قدیمی پر است
+            if (links.Count == 0 && !string.IsNullOrWhiteSpace(card.ContactInstagram))
+            {
+                links.Add(new BusinessCardSocialLinkDto
+                {
+                    NetworkType = "instagram",
+                    Label = BusinessCardSocialNetworkHelper.ResolveDisplayLabel("instagram", null),
+                    Value = card.ContactInstagram,
+                    DisplayOrder = 0
+                });
+            }
+
+            return links;
         }
 
         private string? ToPublicFileUrl(string? storedPath)

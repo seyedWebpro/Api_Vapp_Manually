@@ -81,6 +81,7 @@ namespace Api_Vapp.Data
         public DbSet<BusinessCard> BusinessCards { get; set; }
         public DbSet<BusinessCardSliderImage> BusinessCardSliderImages { get; set; }
         public DbSet<BusinessCardServiceItem> BusinessCardServiceItems { get; set; }
+        public DbSet<BusinessCardSocialLink> BusinessCardSocialLinks { get; set; }
         public DbSet<AdminAuditLog> AdminAuditLogs { get; set; }
 
         public Api_Context(DbContextOptions<Api_Context> options) : base(options)
@@ -1869,12 +1870,16 @@ namespace Api_Vapp.Data
                 entity.Property(c => c.ServicesEnabled).HasDefaultValue(false);
                 entity.Property(c => c.MapEnabled).HasDefaultValue(false);
                 entity.Property(c => c.ContactEnabled).HasDefaultValue(true);
+                entity.Property(c => c.BankingEnabled).HasDefaultValue(false);
                 entity.Property(c => c.DescriptionTitle).HasMaxLength(200);
                 entity.Property(c => c.DescriptionText).HasMaxLength(4000);
                 entity.Property(c => c.MapAddress).HasMaxLength(500);
                 entity.Property(c => c.ContactPhone).HasMaxLength(20);
                 entity.Property(c => c.ContactEmail).HasMaxLength(200);
                 entity.Property(c => c.ContactInstagram).HasMaxLength(100);
+                entity.Property(c => c.BankAccountNumber).HasMaxLength(30);
+                entity.Property(c => c.BankCardNumber).HasMaxLength(16);
+                entity.Property(c => c.BankShebaNumber).HasMaxLength(26);
 
                 entity.HasOne(c => c.User)
                     .WithMany()
@@ -1920,6 +1925,24 @@ namespace Api_Vapp.Data
                     .OnDelete(DeleteBehavior.Cascade);
 
                 entity.HasIndex(i => i.BusinessCardId);
+            });
+
+            modelBuilder.Entity<BusinessCardSocialLink>(entity =>
+            {
+                entity.HasKey(i => i.Id);
+                entity.Property(i => i.Id).ValueGeneratedOnAdd();
+                entity.Property(i => i.BusinessCardId).IsRequired();
+                entity.Property(i => i.NetworkType).IsRequired().HasMaxLength(30);
+                entity.Property(i => i.Label).HasMaxLength(100);
+                entity.Property(i => i.Value).IsRequired().HasMaxLength(500);
+
+                entity.HasOne(i => i.BusinessCard)
+                    .WithMany(c => c.SocialLinks)
+                    .HasForeignKey(i => i.BusinessCardId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasIndex(i => i.BusinessCardId);
+                entity.HasIndex(i => new { i.BusinessCardId, i.DisplayOrder });
             });
 
             modelBuilder.Entity<SmsDeliveryRecord>(entity =>
