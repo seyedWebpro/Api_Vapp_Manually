@@ -450,8 +450,21 @@ namespace Api_Vapp.Migrations
                         .HasColumnType("bit")
                         .HasDefaultValue(false);
 
+                    b.Property<string>("PaymentReceiptPath")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
                     b.Property<DateTime?>("ReminderSentAt")
                         .HasColumnType("datetime2");
+
+                    b.Property<string>("ReminderSentOffsetsCsv")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<bool>("RemindersEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
 
                     b.Property<DateTime>("StartUtc")
                         .HasColumnType("datetime2");
@@ -597,6 +610,13 @@ namespace Api_Vapp.Migrations
 
                     b.Property<int>("ReminderOffsetMinutes")
                         .HasColumnType("int");
+
+                    b.Property<string>("ReminderOffsetsJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasDefaultValue("[60]");
 
                     b.Property<int>("SortOrder")
                         .HasColumnType("int");

@@ -13,6 +13,7 @@ namespace Api_Vapp.Utilities
         public const long TicketMaxBytes = 8 * 1024 * 1024; // 8 MB
         public const long ProfileImageMaxBytes = 5 * 1024 * 1024;
         public const long ContactImageMaxBytes = 10 * 1024 * 1024;
+        public const long PaymentReceiptMaxBytes = 10 * 1024 * 1024; // 10 MB
         public const long ContactAttachmentMaxBytes = 50 * 1024 * 1024;
         public const long IconMaxBytes = 2 * 1024 * 1024;
         public const long VideoMaxBytes = 2L * 1024 * 1024 * 1024; // 2 GB
@@ -111,6 +112,12 @@ namespace Api_Vapp.Utilities
 
         public static string? ValidateTicketAttachment(IFormFile? file) =>
             Validate(file, TicketContentTypes, TicketMaxBytes, "۸ مگابایت");
+
+        /// <summary>
+        /// فیش واریز رزرو نوبت — تصویر یا PDF، حداکثر ۱۰ مگابایت
+        /// </summary>
+        public static string? ValidatePaymentReceipt(IFormFile? file) =>
+            Validate(file, TicketContentTypes, PaymentReceiptMaxBytes, "۱۰ مگابایت");
 
         public static string? ValidateImage(
             IFormFile? file,

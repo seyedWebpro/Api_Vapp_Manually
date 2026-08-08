@@ -16,6 +16,7 @@ namespace Api_Vapp.Interfaces
 
         Task<ApiResponse<List<BookingNotebookDto>>> GetNotebooksAsync(int userId);
         Task<ApiResponse<List<BookingActivityTypeDto>>> GetActivityTypesAsync();
+        Task<ApiResponse<BookingReminderInfoDto>> GetReminderInfoAsync();
 
         Task<ApiResponse<BookingStep1ValidationResponseDto>> ValidateStep1Async(int userId, BookingStep1Dto step1Dto);
         Task<ApiResponse<BookingStep2ValidationResponseDto>> ValidateStep2Async(int userId, BookingStep2Dto step2Dto);

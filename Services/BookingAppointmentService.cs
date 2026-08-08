@@ -2,10 +2,12 @@ using Api_Vapp.Constants;
 using Api_Vapp.Data;
 using Api_Vapp.DTOs.BookingSystem;
 using Api_Vapp.DTOs.Common;
+using Api_Vapp.DTOs.File;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
 using Api_Vapp.Services.Audit;
 using Api_Vapp.Utilities;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -18,6 +20,7 @@ namespace Api_Vapp.Services
         private readonly IBookingSystemRepository _systemRepository;
         private readonly PublicPhonebookService _phonebookService;
         private readonly IUserSmsBillingService _userSmsBilling;
+        private readonly IFileUploadService _fileUploadService;
         private readonly IAuditService _audit;
         private readonly ILogger<BookingAppointmentService> _logger;
         private readonly BookingSystemOptions _options;
@@ -30,6 +33,7 @@ namespace Api_Vapp.Services
             IBookingSystemRepository systemRepository,
             PublicPhonebookService phonebookService,
             IUserSmsBillingService userSmsBilling,
+            IFileUploadService fileUploadService,
             Microsoft.Extensions.Options.IOptions<BookingSystemOptions> options,
             IAuditService audit,
             ILogger<BookingAppointmentService> logger)
@@ -39,6 +43,7 @@ namespace Api_Vapp.Services
             _systemRepository = systemRepository;
             _phonebookService = phonebookService;
             _userSmsBilling = userSmsBilling;
+            _fileUploadService = fileUploadService;
             _options = options.Value;
             _audit = audit;
             _logger = logger;
@@ -127,13 +132,27 @@ namespace Api_Vapp.Services
         }
 
         public async Task<ApiResponse<CreatePublicBookingResponseDto>> CreatePublicBookingAsync(
-            string slug, CreatePublicBookingDto dto)
+            string slug,
+            CreatePublicBookingDto dto,
+            IFormFile? paymentReceiptFile = null)
         {
             if (string.IsNullOrWhiteSpace(slug))
             {
                 return ApiResponse<CreatePublicBookingResponseDto>.BadRequest(
                     "لینک نامعتبر است",
                     errorCode: ErrorCodes.InvalidInput);
+            }
+
+            var hasReceiptFile = paymentReceiptFile is { Length: > 0 };
+            if (hasReceiptFile)
+            {
+                var receiptError = SecureFileValidator.ValidatePaymentReceipt(paymentReceiptFile);
+                if (receiptError != null)
+                {
+                    return ApiResponse<CreatePublicBookingResponseDto>.BadRequest(
+                        receiptError,
+                        errorCode: ErrorCodes.ValidationFailed);
+                }
             }
 
             var normalizedSlug = slug.Trim().ToLowerInvariant();
@@ -154,6 +173,22 @@ namespace Api_Vapp.Services
                     return availabilityError ?? ApiResponse<CreatePublicBookingResponseDto>.NotFound(BookingNotFoundMessage);
                 }
 
+                if (hasReceiptFile)
+                {
+                    var service = await _appointmentRepository.GetServiceForBookingAsync(system.Id, dto.ServiceId);
+                    if (service == null)
+                    {
+                        return ApiResponse<CreatePublicBookingResponseDto>.NotFound("خدمت یافت نشد");
+                    }
+
+                    if (!service.HasCost)
+                    {
+                        return ApiResponse<CreatePublicBookingResponseDto>.BadRequest(
+                            "آپلود فیش واریز فقط برای خدمات هزینه‌دار مجاز است",
+                            errorCode: ErrorCodes.ValidationFailed);
+                    }
+                }
+
                 var created = await CreateAppointmentInternalAsync(
                     system,
                     dto.ServiceId,
@@ -162,7 +197,8 @@ namespace Api_Vapp.Services
                     dto.CustomerMobile,
                     dto.CustomerNote,
                     BookingAppointmentStatuses.Pending,
-                    requireFutureSlot: true);
+                    requireFutureSlot: true,
+                    remindersEnabled: dto.RemindersEnabled ?? true);
 
                 if (!created.Success)
                 {
@@ -173,12 +209,48 @@ namespace Api_Vapp.Services
                         errorCode: created.ErrorCode);
                 }
 
+                if (hasReceiptFile)
+                {
+                    try
+                    {
+                        var relativePath = await _fileUploadService.UploadFileAsync(
+                            paymentReceiptFile!,
+                            FileUploadConstants.EntityType_BookingAppointment,
+                            created.Appointment!.Id,
+                            FileUploadConstants.SubFolder_PaymentReceipt);
+
+                        created.Appointment.PaymentReceiptPath = relativePath;
+                        created.Appointment.UpdatedAt = DateTime.UtcNow;
+                        await _context.SaveChangesAsync();
+                    }
+                    catch (ArgumentException ex)
+                    {
+                        await transaction.RollbackAsync();
+                        return ApiResponse<CreatePublicBookingResponseDto>.BadRequest(
+                            ControlledErrorHelper.SanitizeArgumentMessage(
+                                ex.Message,
+                                ControlledErrorHelper.FileUploadFailed),
+                            errorCode: ErrorCodes.ValidationFailed);
+                    }
+                    catch (Exception ex)
+                    {
+                        await transaction.RollbackAsync();
+                        _logger.LogError(
+                            ex,
+                            "Error uploading payment receipt for public booking slug {Slug}",
+                            slug);
+                        return ApiResponse<CreatePublicBookingResponseDto>.InternalServerError(
+                            ControlledErrorHelper.FileUploadFailed);
+                    }
+                }
+
                 await transaction.CommitAsync();
 
                 _logger.LogInformation(
-                    "Public booking created {AppointmentId} for system {SystemId}",
+                    "Public booking created {AppointmentId} for system {SystemId}, hasReceipt={HasReceipt}",
                     created.Appointment!.Id,
-                    system.Id);
+                    system.Id,
+                    hasReceiptFile);
 
                 return ApiResponse<CreatePublicBookingResponseDto>.CreateSuccess(
                     new CreatePublicBookingResponseDto { Appointment = MapToDto(created.Appointment) },
@@ -438,6 +510,48 @@ namespace Api_Vapp.Services
             }
         }
 
+        public async Task<ApiResponse<BookingPaymentReceiptDto>> GetPaymentReceiptAsync(
+            int systemId, int appointmentId, int userId)
+        {
+            try
+            {
+                var system = await _systemRepository.GetByIdAndUserIdAsync(systemId, userId);
+                if (system == null)
+                {
+                    return ApiResponse<BookingPaymentReceiptDto>.NotFound("سیستم رزرو یافت نشد");
+                }
+
+                var appointment = await _appointmentRepository.GetByIdAndSystemIdAsync(appointmentId, systemId);
+                if (appointment == null)
+                {
+                    return ApiResponse<BookingPaymentReceiptDto>.NotFound("نوبت یافت نشد");
+                }
+
+                var hasReceipt = !string.IsNullOrWhiteSpace(appointment.PaymentReceiptPath);
+                var url = hasReceipt
+                    ? _fileUploadService.GetFileUrl(appointment.PaymentReceiptPath!)
+                    : null;
+
+                return ApiResponse<BookingPaymentReceiptDto>.CreateSuccess(new BookingPaymentReceiptDto
+                {
+                    AppointmentId = appointment.Id,
+                    AppointmentNumber = appointment.Id,
+                    HasPaymentReceipt = hasReceipt,
+                    PaymentReceiptUrl = url,
+                    CustomerFullName = appointment.CustomerFullName,
+                    ServiceTitle = appointment.BookingServiceItem?.Title
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "Error loading payment receipt for appointment {AppointmentId}",
+                    appointmentId);
+                return ApiResponse<BookingPaymentReceiptDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
         public async Task<ApiResponse<BookingAppointmentDto>> CreateManualBookingAsync(
             int systemId, int userId, CreateManualBookingDto dto)
         {
@@ -462,7 +576,8 @@ namespace Api_Vapp.Services
                     dto.CustomerMobile,
                     dto.CustomerNote,
                     BookingAppointmentStatuses.Confirmed,
-                    requireFutureSlot: false);
+                    requireFutureSlot: false,
+                    remindersEnabled: dto.RemindersEnabled ?? true);
 
                 if (!created.Success)
                 {
@@ -512,7 +627,8 @@ namespace Api_Vapp.Services
                  dto.CustomerMobile == null &&
                  dto.CustomerNote == null &&
                  !dto.ServiceId.HasValue &&
-                 !dto.StartUtc.HasValue))
+                 !dto.StartUtc.HasValue &&
+                 !dto.RemindersEnabled.HasValue))
             {
                 return ApiResponse<BookingAppointmentDto>.BadRequest(
                     "هیچ موردی برای به‌روزرسانی ارسال نشده است",
@@ -625,6 +741,11 @@ namespace Api_Vapp.Services
 
                     appointment.StartUtc = startUtc;
                     appointment.EndUtc = startUtc.AddMinutes(service.DurationMinutes);
+                }
+
+                if (dto.RemindersEnabled.HasValue)
+                {
+                    appointment.RemindersEnabled = dto.RemindersEnabled.Value;
                 }
 
                 appointment.UpdatedAt = DateTime.UtcNow;
@@ -922,16 +1043,39 @@ namespace Api_Vapp.Services
                     break;
                 }
 
-                var offsetMinutes = candidate.BookingServiceItem?.ReminderOffsetMinutes ?? 0;
-                if (offsetMinutes < 1)
+                if (!candidate.RemindersEnabled)
                 {
                     continue;
                 }
 
-                // Catch-up: هر زمان که موعد یادآوری گذشته و نوبت هنوز شروع نشده، ارسال کن.
-                // (پنجرهٔ ۲ دقیقه‌ای قبلی باعث miss دائمی هنگام تأخیر/ریستارت API می‌شد.)
-                var reminderAt = candidate.StartUtc.AddMinutes(-offsetMinutes);
-                if (reminderAt > now)
+                var offsets = BookingReminderOffsetsHelper.FromJson(
+                    candidate.BookingServiceItem?.ReminderOffsetsJson,
+                    candidate.BookingServiceItem?.ReminderOffsetMinutes ?? 0);
+
+                if (offsets.Count == 0)
+                {
+                    continue;
+                }
+
+                var alreadySent = BookingReminderOffsetsHelper.ParseSentOffsets(candidate.ReminderSentOffsetsCsv);
+                // سازگاری: اگر ReminderSentAt قدیمی پر است ولی CSV خالی، همه offsetهای فعلی را ارسال‌شده فرض کن
+                if (alreadySent.Count == 0 &&
+                    candidate.ReminderSentAt.HasValue &&
+                    string.IsNullOrWhiteSpace(candidate.ReminderSentOffsetsCsv))
+                {
+                    foreach (var o in offsets)
+                    {
+                        alreadySent.Add(o);
+                    }
+                }
+
+                var dueOffsets = offsets
+                    .Where(o => !alreadySent.Contains(o))
+                    .Where(o => candidate.StartUtc.AddMinutes(-o) <= now)
+                    .OrderByDescending(o => o) // اول فاصله‌های بزرگ‌تر (روز قبل)
+                    .ToList();
+
+                if (dueOffsets.Count == 0)
                 {
                     continue;
                 }
@@ -939,7 +1083,7 @@ namespace Api_Vapp.Services
                 var tracked = await _context.BookingAppointments
                     .FirstOrDefaultAsync(a =>
                         a.Id == candidate.Id &&
-                        a.ReminderSentAt == null &&
+                        a.RemindersEnabled &&
                         a.Status == BookingAppointmentStatuses.Confirmed &&
                         a.StartUtc > now,
                         cancellationToken);
@@ -949,52 +1093,88 @@ namespace Api_Vapp.Services
                     continue;
                 }
 
+                var sentNow = BookingReminderOffsetsHelper.ParseSentOffsets(tracked.ReminderSentOffsetsCsv);
+                if (sentNow.Count == 0 &&
+                    tracked.ReminderSentAt.HasValue &&
+                    string.IsNullOrWhiteSpace(tracked.ReminderSentOffsetsCsv))
+                {
+                    foreach (var o in offsets)
+                    {
+                        sentNow.Add(o);
+                    }
+                }
+
                 var message = BuildReminderMessage(tracked, candidate.BookingSystem, candidate.BookingServiceItem!);
                 if (!message.TrimEnd().EndsWith("لغو11"))
                 {
                     message = $"{message.TrimEnd()}\nلغو11";
                 }
 
-                try
+                foreach (var offset in dueOffsets)
                 {
-                    var sendResult = await _userSmsBilling.TrySendAsync(
-                        candidate.BookingSystem.UserId,
-                        tracked.CustomerMobile,
-                        message,
-                        SmsSourceModules.BookingReminder,
-                        "یادآوری نوبت",
-                        $"هزینه پیامک یادآوری نوبت #{tracked.Id}",
-                        tracked.Id,
-                        candidate.BookingSystem.Title,
-                        cancellationToken);
-
-                    if (sendResult.SkippedInsufficientBalance)
+                    if (cancellationToken.IsCancellationRequested)
                     {
-                        _logger.LogInformation(
-                            "Booking reminder SMS skipped (insufficient wallet) for appointment {AppointmentId} — will retry until start",
-                            tracked.Id);
-                        // علامت‌گذاری نمی‌کنیم تا بعد از شارژ کیف‌پول دوباره تلاش شود
+                        break;
+                    }
+
+                    if (sentNow.Contains(offset))
+                    {
                         continue;
                     }
 
-                    if (!sendResult.Sent)
+                    try
                     {
-                        _logger.LogWarning(
-                            "Booking reminder SMS failed for appointment {AppointmentId}: {Message}",
+                        var sendResult = await _userSmsBilling.TrySendAsync(
+                            candidate.BookingSystem.UserId,
+                            tracked.CustomerMobile,
+                            message,
+                            SmsSourceModules.BookingReminder,
+                            "یادآوری نوبت",
+                            $"هزینه پیامک یادآوری نوبت #{tracked.Id} ({offset} دقیقه قبل)",
                             tracked.Id,
-                            sendResult.Message);
-                        continue;
+                            candidate.BookingSystem.Title,
+                            cancellationToken);
+
+                        if (sendResult.SkippedInsufficientBalance)
+                        {
+                            _logger.LogInformation(
+                                "Booking reminder SMS skipped (insufficient wallet) for appointment {AppointmentId} offset {Offset} — will retry until start",
+                                tracked.Id,
+                                offset);
+                            break;
+                        }
+
+                        if (!sendResult.Sent)
+                        {
+                            _logger.LogWarning(
+                                "Booking reminder SMS failed for appointment {AppointmentId} offset {Offset}: {Message}",
+                                tracked.Id,
+                                offset,
+                                sendResult.Message);
+                            // offsetهای دیگر را هم امتحان کن (شاید موقتی باشد)
+                            continue;
+                        }
+
+                        sentNow.Add(offset);
+                        tracked.ReminderSentOffsetsCsv = BookingReminderOffsetsHelper.FormatSentOffsets(sentNow);
+                        tracked.ReminderSentAt = DateTime.UtcNow;
+                        tracked.UpdatedAt = DateTime.UtcNow;
+                        await _context.SaveChangesAsync(cancellationToken);
+
+                        _logger.LogInformation(
+                            "Booking reminder sent for appointment {AppointmentId} offset {Offset}",
+                            tracked.Id,
+                            offset);
                     }
-
-                    tracked.ReminderSentAt = DateTime.UtcNow;
-                    tracked.UpdatedAt = DateTime.UtcNow;
-                    await _context.SaveChangesAsync(cancellationToken);
-
-                    _logger.LogInformation("Booking reminder sent for appointment {AppointmentId}", tracked.Id);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Failed to send booking reminder for appointment {AppointmentId}", tracked.Id);
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(
+                            ex,
+                            "Failed to send booking reminder for appointment {AppointmentId} offset {Offset}",
+                            tracked.Id,
+                            offset);
+                        break;
+                    }
                 }
             }
         }
@@ -1030,7 +1210,8 @@ namespace Api_Vapp.Services
             string customerMobile,
             string? customerNote,
             string status,
-            bool requireFutureSlot)
+            bool requireFutureSlot,
+            bool remindersEnabled = true)
         {
             var mobile = BookingMobileHelper.Normalize(customerMobile);
             if (!BookingMobileHelper.IsValidIranianMobile(mobile))
@@ -1083,6 +1264,7 @@ namespace Api_Vapp.Services
                 StartUtc = startUtc,
                 EndUtc = startUtc.AddMinutes(service.DurationMinutes),
                 Status = status,
+                RemindersEnabled = remindersEnabled,
                 CreatedAt = now
             };
 
@@ -1102,7 +1284,8 @@ namespace Api_Vapp.Services
                 }
             }
 
-            appointment.BookingServiceItem = service;
+            // سرویس از AsNoTracking آمده — به navigation انتساب نده (conflict با Include بعدی)
+            await _context.Entry(appointment).Reference(a => a.BookingServiceItem).LoadAsync();
             return AppointmentCreateResult.Ok(appointment);
         }
 
@@ -1217,7 +1400,10 @@ namespace Api_Vapp.Services
                     DurationMinutes = s.DurationMinutes,
                     HasCost = s.HasCost,
                     Price = s.Price,
-                    DepositAmount = s.DepositAmount
+                    DepositAmount = s.DepositAmount,
+                    ReminderOffsetsMinutes = BookingReminderOffsetsHelper.FromJson(
+                        s.ReminderOffsetsJson,
+                        s.ReminderOffsetMinutes)
                 })
                 .ToList()
         };
@@ -1235,10 +1421,15 @@ namespace Api_Vapp.Services
             StartUtc = EnsureUtc(appointment.StartUtc),
             EndUtc = EnsureUtc(appointment.EndUtc),
             Status = appointment.Status,
+            RemindersEnabled = appointment.RemindersEnabled,
             ReminderSentAt = appointment.ReminderSentAt.HasValue ? EnsureUtc(appointment.ReminderSentAt.Value) : null,
+            ReminderOffsetsSent = BookingReminderOffsetsHelper.ParseSentOffsets(appointment.ReminderSentOffsetsCsv)
+                .OrderBy(x => x)
+                .ToList(),
             CancelledAt = appointment.CancelledAt.HasValue ? EnsureUtc(appointment.CancelledAt.Value) : null,
             CancellationReason = appointment.CancellationReason,
-            CreatedAt = EnsureUtc(appointment.CreatedAt)
+            CreatedAt = EnsureUtc(appointment.CreatedAt),
+            HasPaymentReceipt = !string.IsNullOrWhiteSpace(appointment.PaymentReceiptPath)
         };
 
         private static PublicBookingStatusDto MapToPublicStatusDto(BookingAppointment appointment) => new()
@@ -1250,6 +1441,7 @@ namespace Api_Vapp.Services
             ServiceTitle = appointment.BookingServiceItem?.Title ?? string.Empty,
             CustomerFullName = appointment.CustomerFullName,
             CustomerMobileMasked = MaskMobile(appointment.CustomerMobile),
+            RemindersEnabled = appointment.RemindersEnabled,
             StartUtc = EnsureUtc(appointment.StartUtc),
             EndUtc = EnsureUtc(appointment.EndUtc)
         };
@@ -1354,10 +1546,10 @@ namespace Api_Vapp.Services
             BookingSystem system,
             BookingServiceItem service)
         {
-            return $"یادآوری نوبت\n" +
-                   $"{system.Title}\n" +
-                   $"خدمت: {service.Title}\n" +
-                   $"زمان: {FormatTehranDateTime(appointment.StartUtc)}";
+            return BookingReminderOffsetsHelper.BuildMessage(
+                system.Title,
+                service.Title,
+                FormatTehranDateTime(appointment.StartUtc));
         }
 
         private static string FormatTehranDateTime(DateTime utc)

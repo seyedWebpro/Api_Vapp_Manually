@@ -45,7 +45,13 @@ namespace Api_Vapp.DTOs.BookingSystem
         public decimal? DepositAmount { get; set; }
         public int BufferMinutesBetweenAppointments { get; set; }
         public int? MaxDailyReservations { get; set; }
+
+        /// <summary>سازگاری با کلاینت قدیمی — برابر Max(ReminderOffsetsMinutes)</summary>
         public int ReminderOffsetMinutes { get; set; }
+
+        /// <summary>لیست زمان‌های یادآوری (دقیقه قبل از نوبت)، مثلاً [60,1440]</summary>
+        public List<int> ReminderOffsetsMinutes { get; set; } = new();
+
         public int SortOrder { get; set; }
         public List<BookingDayScheduleDto> WeeklyDays { get; set; } = new();
         public List<BookingScheduleExceptionDto> Exceptions { get; set; } = new();
@@ -220,10 +226,29 @@ namespace Api_Vapp.DTOs.BookingSystem
         public int? MaxDailyReservations { get; set; }
 
         /// <summary>
-        /// چند دقیقه قبل از نوبت SMS یادآوری ارسال شود (مثلاً 1440 = یک روز قبل)
+        /// سازگاری قدیمی — اگر ReminderOffsetsMinutes خالی باشد استفاده می‌شود.
         /// </summary>
         [Range(1, 43200)]
         public int ReminderOffsetMinutes { get; set; }
+
+        /// <summary>
+        /// چند زمان یادآوری — مثلاً [1440, 60] یعنی یک روز قبل و یک ساعت قبل.
+        /// حداکثر ۴ مقدار بین ۱ تا ۴۳۲۰۰ دقیقه.
+        /// </summary>
+        public List<int>? ReminderOffsetsMinutes { get; set; }
+    }
+
+    /// <summary>اطلاعات ثابت یادآوری برای فرانت (بدون تأیید متن ادمین)</summary>
+    public class BookingReminderInfoDto
+    {
+        public bool RequiresTextApproval { get; set; }
+        public string MessageTemplate { get; set; } = string.Empty;
+        public string SampleMessage { get; set; } = string.Empty;
+        public List<int> SuggestedOffsetsMinutes { get; set; } = new();
+        public int MinOffsetMinutes { get; set; }
+        public int MaxOffsetMinutes { get; set; }
+        public int MaxOffsetsPerService { get; set; }
+        public bool CustomerCanDisableReminders { get; set; } = true;
     }
 
     public class BookingStep4ValidationResponseDto
@@ -303,6 +328,8 @@ namespace Api_Vapp.DTOs.BookingSystem
         [Range(1, 43200)]
         public int? ReminderOffsetMinutes { get; set; }
 
+        public List<int>? ReminderOffsetsMinutes { get; set; }
+
         public List<BookingDayScheduleDto> WeeklyDays { get; set; } = new();
         public List<BookingScheduleExceptionDto> Exceptions { get; set; } = new();
     }
@@ -330,6 +357,8 @@ namespace Api_Vapp.DTOs.BookingSystem
 
         [Range(1, 43200)]
         public int? ReminderOffsetMinutes { get; set; }
+
+        public List<int>? ReminderOffsetsMinutes { get; set; }
     }
 
     public class SaveBookingServiceScheduleDto

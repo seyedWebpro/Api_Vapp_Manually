@@ -58,6 +58,11 @@ namespace Api_Vapp.DTOs.File
         /// </summary>
         public const string EntityType_AppBanner = "appbanner";
 
+        /// <summary>
+        /// نوبت رزرو
+        /// </summary>
+        public const string EntityType_BookingAppointment = "bookingappointment";
+
         #endregion
 
         #region SubFolders (پوشه‌های فرعی)
@@ -116,6 +121,11 @@ namespace Api_Vapp.DTOs.File
         /// فایل‌های صوتی
         /// </summary>
         public const string SubFolder_Audios = "audios";
+
+        /// <summary>
+        /// فیش واریز رزرو نوبت
+        /// </summary>
+        public const string SubFolder_PaymentReceipt = "payment-receipt";
 
         #endregion
     }

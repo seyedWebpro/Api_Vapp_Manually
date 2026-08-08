@@ -622,6 +622,10 @@ namespace Api_Vapp.Services
                         return ApiResponse<ConfirmBookingSystemResponseDto>.BadRequest("برنامه هفتگی برای همه خدمات الزامی است");
                     }
 
+                    var reminderOffsets = BookingReminderOffsetsHelper.Normalize(
+                        settings.ReminderOffsetsMinutes,
+                        settings.ReminderOffsetMinutes);
+
                     var service = new BookingServiceItem
                     {
                         Title = serviceDraft.Title.Trim(),
@@ -631,7 +635,8 @@ namespace Api_Vapp.Services
                         DepositAmount = serviceDraft.DepositAmount,
                         BufferMinutesBetweenAppointments = settings.BufferMinutesBetweenAppointments,
                         MaxDailyReservations = settings.MaxDailyReservations,
-                        ReminderOffsetMinutes = settings.ReminderOffsetMinutes,
+                        ReminderOffsetMinutes = BookingReminderOffsetsHelper.ResolveLegacySingle(reminderOffsets),
+                        ReminderOffsetsJson = BookingReminderOffsetsHelper.ToJson(reminderOffsets),
                         SortOrder = i,
                         CreatedAt = now
                     };
@@ -725,6 +730,9 @@ namespace Api_Vapp.Services
 
             var now = DateTime.UtcNow;
             var maxOrder = system.Services.Where(s => !s.IsDeleted).Select(s => (int?)s.SortOrder).Max() ?? -1;
+            var reminderOffsets = BookingReminderOffsetsHelper.Normalize(
+                dto.ReminderOffsetsMinutes,
+                dto.ReminderOffsetMinutes);
             var service = new BookingServiceItem
             {
                 Title = dto.Title.Trim(),
@@ -734,11 +742,8 @@ namespace Api_Vapp.Services
                 DepositAmount = dto.DepositAmount,
                 BufferMinutesBetweenAppointments = dto.BufferMinutesBetweenAppointments,
                 MaxDailyReservations = dto.MaxDailyReservations,
-                // پیش‌فرض ۱ ساعت — اگر کلاینت نفرستد/۰ بفرستد، یادآوری خاموش نشود
-                ReminderOffsetMinutes =
-                    dto.ReminderOffsetMinutes.HasValue && dto.ReminderOffsetMinutes.Value > 0
-                        ? dto.ReminderOffsetMinutes.Value
-                        : 60,
+                ReminderOffsetMinutes = BookingReminderOffsetsHelper.ResolveLegacySingle(reminderOffsets),
+                ReminderOffsetsJson = BookingReminderOffsetsHelper.ToJson(reminderOffsets),
                 SortOrder = maxOrder + 1,
                 CreatedAt = now
             };
@@ -812,9 +817,12 @@ namespace Api_Vapp.Services
                 service.MaxDailyReservations = dto.MaxDailyReservations;
             }
 
-            if (dto.ReminderOffsetMinutes.HasValue)
+            if (dto.ReminderOffsetsMinutes != null || dto.ReminderOffsetMinutes.HasValue)
             {
-                service.ReminderOffsetMinutes = dto.ReminderOffsetMinutes.Value;
+                ApplyReminderOffsets(
+                    service,
+                    dto.ReminderOffsetsMinutes,
+                    dto.ReminderOffsetMinutes);
             }
 
             var costErrors = ValidateServiceDraftFields(
@@ -967,7 +975,34 @@ namespace Api_Vapp.Services
             dto.DepositAmount.HasValue ||
             dto.BufferMinutesBetweenAppointments.HasValue ||
             dto.MaxDailyReservations.HasValue ||
-            dto.ReminderOffsetMinutes.HasValue;
+            dto.ReminderOffsetMinutes.HasValue ||
+            dto.ReminderOffsetsMinutes != null;
+
+        public Task<ApiResponse<BookingReminderInfoDto>> GetReminderInfoAsync()
+        {
+            var sample = BookingReminderOffsetsHelper.BuildMessage(
+                "سالن نمونه",
+                "خدمت نمونه",
+                "1405/01/01 10:00");
+            if (!sample.TrimEnd().EndsWith("لغو11"))
+            {
+                sample = $"{sample.TrimEnd()}\nلغو11";
+            }
+
+            var dto = new BookingReminderInfoDto
+            {
+                RequiresTextApproval = false,
+                MessageTemplate = BookingReminderOffsetsHelper.BuildMessageTemplate(),
+                SampleMessage = sample,
+                SuggestedOffsetsMinutes = BookingReminderOffsetsHelper.SuggestedOffsetsMinutes.ToList(),
+                MinOffsetMinutes = BookingReminderOffsetsHelper.MinOffsetMinutes,
+                MaxOffsetMinutes = BookingReminderOffsetsHelper.MaxOffsetMinutes,
+                MaxOffsetsPerService = BookingReminderOffsetsHelper.MaxOffsetsPerService,
+                CustomerCanDisableReminders = true
+            };
+
+            return Task.FromResult(ApiResponse<BookingReminderInfoDto>.CreateSuccess(dto));
+        }
 
         private BookingSystemDto MapToListDto(BookingSystem system) => new()
         {
@@ -999,34 +1034,52 @@ namespace Api_Vapp.Services
             return dto;
         }
 
-        private static BookingServiceItemDto MapServiceToDto(BookingServiceItem service) => new()
+        private static BookingServiceItemDto MapServiceToDto(BookingServiceItem service)
         {
-            Id = service.Id,
-            Title = service.Title,
-            DurationMinutes = service.DurationMinutes,
-            HasCost = service.HasCost,
-            Price = service.Price,
-            DepositAmount = service.DepositAmount,
-            BufferMinutesBetweenAppointments = service.BufferMinutesBetweenAppointments,
-            MaxDailyReservations = service.MaxDailyReservations,
-            ReminderOffsetMinutes = service.ReminderOffsetMinutes,
-            SortOrder = service.SortOrder,
-            WeeklyDays = service.DaySchedules
-                .OrderBy(d => d.DayOfWeek)
-                .Select(d => new BookingDayScheduleDto
-                {
-                    DayOfWeek = d.DayOfWeek,
-                    IsOpen = d.IsOpen,
-                    StartTimeUtc = d.StartTimeUtc,
-                    EndTimeUtc = d.EndTimeUtc
-                })
-                .ToList(),
-            Exceptions = service.ScheduleExceptions
-                .Where(e => !e.IsDeleted)
-                .OrderBy(e => e.ExceptionDateUtc)
-                .Select(MapExceptionToDto)
-                .ToList()
-        };
+            var offsets = BookingReminderOffsetsHelper.FromJson(
+                service.ReminderOffsetsJson,
+                service.ReminderOffsetMinutes);
+
+            return new BookingServiceItemDto
+            {
+                Id = service.Id,
+                Title = service.Title,
+                DurationMinutes = service.DurationMinutes,
+                HasCost = service.HasCost,
+                Price = service.Price,
+                DepositAmount = service.DepositAmount,
+                BufferMinutesBetweenAppointments = service.BufferMinutesBetweenAppointments,
+                MaxDailyReservations = service.MaxDailyReservations,
+                ReminderOffsetMinutes = BookingReminderOffsetsHelper.ResolveLegacySingle(offsets),
+                ReminderOffsetsMinutes = offsets,
+                SortOrder = service.SortOrder,
+                WeeklyDays = service.DaySchedules
+                    .OrderBy(d => d.DayOfWeek)
+                    .Select(d => new BookingDayScheduleDto
+                    {
+                        DayOfWeek = d.DayOfWeek,
+                        IsOpen = d.IsOpen,
+                        StartTimeUtc = d.StartTimeUtc,
+                        EndTimeUtc = d.EndTimeUtc
+                    })
+                    .ToList(),
+                Exceptions = service.ScheduleExceptions
+                    .Where(e => !e.IsDeleted)
+                    .OrderBy(e => e.ExceptionDateUtc)
+                    .Select(MapExceptionToDto)
+                    .ToList()
+            };
+        }
+
+        private static void ApplyReminderOffsets(
+            BookingServiceItem service,
+            IEnumerable<int>? offsets,
+            int? legacySingle)
+        {
+            var normalized = BookingReminderOffsetsHelper.Normalize(offsets, legacySingle);
+            service.ReminderOffsetsJson = BookingReminderOffsetsHelper.ToJson(normalized);
+            service.ReminderOffsetMinutes = BookingReminderOffsetsHelper.ResolveLegacySingle(normalized);
+        }
 
         private static BookingScheduleExceptionDto MapExceptionToDto(BookingScheduleException exception) => new()
         {
@@ -1255,7 +1308,35 @@ namespace Api_Vapp.Services
 
             foreach (var settings in step4.ServiceSettings)
             {
-                if (settings.ReminderOffsetMinutes < 1)
+                var offsets = BookingReminderOffsetsHelper.Normalize(
+                    settings.ReminderOffsetsMinutes,
+                    settings.ReminderOffsetMinutes > 0 ? settings.ReminderOffsetMinutes : null);
+
+                if (offsets.Count == 0)
+                {
+                    errors.Add("حداقل یک زمان یادآوری الزامی است");
+                }
+
+                if (settings.ReminderOffsetsMinutes != null &&
+                    settings.ReminderOffsetsMinutes.Count > BookingReminderOffsetsHelper.MaxOffsetsPerService)
+                {
+                    errors.Add($"حداکثر {BookingReminderOffsetsHelper.MaxOffsetsPerService} زمان یادآوری برای هر خدمت مجاز است");
+                }
+
+                if (settings.ReminderOffsetsMinutes != null)
+                {
+                    foreach (var o in settings.ReminderOffsetsMinutes)
+                    {
+                        if (o < BookingReminderOffsetsHelper.MinOffsetMinutes ||
+                            o > BookingReminderOffsetsHelper.MaxOffsetMinutes)
+                        {
+                            errors.Add(
+                                $"زمان یادآوری باید بین {BookingReminderOffsetsHelper.MinOffsetMinutes} تا {BookingReminderOffsetsHelper.MaxOffsetMinutes} دقیقه باشد");
+                            break;
+                        }
+                    }
+                }
+                else if (settings.ReminderOffsetMinutes < 1)
                 {
                     errors.Add("زمان یادآوری باید حداقل 1 دقیقه باشد");
                 }

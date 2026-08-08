@@ -1,5 +1,6 @@
 using Api_Vapp.DTOs.BookingSystem;
 using Api_Vapp.DTOs.Common;
+using Microsoft.AspNetCore.Http;
 
 namespace Api_Vapp.Interfaces
 {
@@ -7,7 +8,10 @@ namespace Api_Vapp.Interfaces
     {
         Task<ApiResponse<BookingPublicSystemDto>> GetPublicSystemAsync(string slug);
         Task<ApiResponse<BookingAvailableSlotsDto>> GetAvailableSlotsAsync(string slug, int serviceId, DateOnly date);
-        Task<ApiResponse<CreatePublicBookingResponseDto>> CreatePublicBookingAsync(string slug, CreatePublicBookingDto dto);
+        Task<ApiResponse<CreatePublicBookingResponseDto>> CreatePublicBookingAsync(
+            string slug,
+            CreatePublicBookingDto dto,
+            IFormFile? paymentReceiptFile = null);
 
         Task<ApiResponse<PublicBookingStatusDto>> LookupPublicBookingStatusAsync(
             string slug,
@@ -30,6 +34,9 @@ namespace Api_Vapp.Interfaces
             string? searchName = null);
 
         Task<ApiResponse<BookingAppointmentDto>> GetAppointmentByIdAsync(
+            int systemId, int appointmentId, int userId);
+
+        Task<ApiResponse<BookingPaymentReceiptDto>> GetPaymentReceiptAsync(
             int systemId, int appointmentId, int userId);
 
         Task<ApiResponse<BookingAppointmentDto>> CreateManualBookingAsync(

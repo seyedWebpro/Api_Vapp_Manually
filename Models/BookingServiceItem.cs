@@ -36,9 +36,14 @@ namespace Api_Vapp.Models
         public int? MaxDailyReservations { get; set; }
 
         /// <summary>
-        /// ارسال یادآوری SMS — چند دقیقه قبل از شروع نوبت
+        /// حداکثر فاصله یادآوری (دقیقه) — برای سازگاری و فیلتر کوئری؛ با Max(ReminderOffsets) همگام می‌شود.
         /// </summary>
         public int ReminderOffsetMinutes { get; set; }
+
+        /// <summary>
+        /// لیست زمان‌های یادآوری به‌صورت JSON — مثلاً [60,1440] یعنی ۱ ساعت و ۱ روز قبل.
+        /// </summary>
+        public string ReminderOffsetsJson { get; set; } = "[60]";
 
         public int SortOrder { get; set; }
 

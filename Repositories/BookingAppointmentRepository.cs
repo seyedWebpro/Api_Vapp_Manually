@@ -115,12 +115,12 @@ namespace Api_Vapp.Repositories
                 .Where(a =>
                     !a.IsDeleted &&
                     a.Status == BookingAppointmentStatuses.Confirmed &&
-                    a.ReminderSentAt == null &&
+                    a.RemindersEnabled &&
                     a.StartUtc > utcNow &&
                     a.StartUtc <= maxStartUtc &&
                     a.BookingServiceItem != null &&
                     a.BookingServiceItem.ReminderOffsetMinutes >= 1 &&
-                    // reminderAt = StartUtc - offset <= now  ⇒  StartUtc <= now + offset
+                    // حداقل یکی از offsetها due شده (با Max offset روی ستون legacy)
                     a.StartUtc <= utcNow.AddMinutes(a.BookingServiceItem.ReminderOffsetMinutes))
                 .ToListAsync();
         }

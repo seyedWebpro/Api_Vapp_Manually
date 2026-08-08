@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using Api_Vapp.Models;
+using Microsoft.AspNetCore.Http;
 
 namespace Api_Vapp.DTOs.BookingSystem
 {
@@ -24,6 +25,9 @@ namespace Api_Vapp.DTOs.BookingSystem
         public bool HasCost { get; set; }
         public decimal? Price { get; set; }
         public decimal? DepositAmount { get; set; }
+
+        /// <summary>زمان‌های یادآوری SMS (دقیقه قبل از نوبت) — برای نمایش به مشتری</summary>
+        public List<int> ReminderOffsetsMinutes { get; set; } = new();
     }
 
     public class BookingTimeSlotDto
@@ -57,6 +61,49 @@ namespace Api_Vapp.DTOs.BookingSystem
 
         [MaxLength(1000, ErrorMessage = "یادداشت نمی‌تواند بیشتر از 1000 کاراکتر باشد")]
         public string? CustomerNote { get; set; }
+
+        /// <summary>
+        /// آیا پیامک یادآوری برای این نوبت ارسال شود؟ پیش‌فرض true.
+        /// </summary>
+        public bool? RemindersEnabled { get; set; }
+    }
+
+    /// <summary>
+    /// فرم multipart برای ثبت نوبت عمومی با فیش اختیاری
+    /// </summary>
+    public class CreatePublicBookingFormDto
+    {
+        [Required(ErrorMessage = "شناسه خدمت الزامی است")]
+        public int ServiceId { get; set; }
+
+        [Required(ErrorMessage = "زمان نوبت الزامی است")]
+        public DateTime StartUtc { get; set; }
+
+        [Required(ErrorMessage = "نام الزامی است")]
+        [MaxLength(200, ErrorMessage = "نام نمی‌تواند بیشتر از 200 کاراکتر باشد")]
+        public string CustomerFullName { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "شماره موبایل الزامی است")]
+        [MaxLength(20, ErrorMessage = "شماره موبایل نامعتبر است")]
+        public string CustomerMobile { get; set; } = string.Empty;
+
+        [MaxLength(1000, ErrorMessage = "یادداشت نمی‌تواند بیشتر از 1000 کاراکتر باشد")]
+        public string? CustomerNote { get; set; }
+
+        public bool? RemindersEnabled { get; set; }
+
+        /// <summary>فیش واریز — اختیاری؛ فقط برای خدمات هزینه‌دار</summary>
+        public IFormFile? PaymentReceiptFile { get; set; }
+
+        public CreatePublicBookingDto ToDto() => new()
+        {
+            ServiceId = ServiceId,
+            StartUtc = StartUtc,
+            CustomerFullName = CustomerFullName,
+            CustomerMobile = CustomerMobile,
+            CustomerNote = CustomerNote,
+            RemindersEnabled = RemindersEnabled
+        };
     }
 
     public class BookingAppointmentDto
@@ -75,10 +122,26 @@ namespace Api_Vapp.DTOs.BookingSystem
         public DateTime StartUtc { get; set; }
         public DateTime EndUtc { get; set; }
         public string Status { get; set; } = string.Empty;
+        public bool RemindersEnabled { get; set; } = true;
         public DateTime? ReminderSentAt { get; set; }
+        public List<int> ReminderOffsetsSent { get; set; } = new();
         public DateTime? CancelledAt { get; set; }
         public string? CancellationReason { get; set; }
         public DateTime CreatedAt { get; set; }
+
+        /// <summary>آیا مشتری فیش واریز آپلود کرده است</summary>
+        public bool HasPaymentReceipt { get; set; }
+    }
+
+    /// <summary>فیش واریز یک نوبت — برای مشاهده توسط مالک هنگام تأیید</summary>
+    public class BookingPaymentReceiptDto
+    {
+        public int AppointmentId { get; set; }
+        public int AppointmentNumber { get; set; }
+        public bool HasPaymentReceipt { get; set; }
+        public string? PaymentReceiptUrl { get; set; }
+        public string? CustomerFullName { get; set; }
+        public string? ServiceTitle { get; set; }
     }
 
     public class BookingAppointmentListDto
@@ -121,6 +184,7 @@ namespace Api_Vapp.DTOs.BookingSystem
         public string ServiceTitle { get; set; } = string.Empty;
         public string CustomerFullName { get; set; } = string.Empty;
         public string CustomerMobileMasked { get; set; } = string.Empty;
+        public bool RemindersEnabled { get; set; } = true;
         public DateTime StartUtc { get; set; }
         public DateTime EndUtc { get; set; }
     }
@@ -193,6 +257,9 @@ namespace Api_Vapp.DTOs.BookingSystem
 
         [Required(ErrorMessage = "زمان نوبت الزامی است")]
         public DateTime StartUtc { get; set; }
+
+        /// <summary>آیا پیامک یادآوری ارسال شود؟ پیش‌فرض true</summary>
+        public bool? RemindersEnabled { get; set; }
     }
 
     public class UpdateBookingAppointmentDto
@@ -209,6 +276,9 @@ namespace Api_Vapp.DTOs.BookingSystem
         public int? ServiceId { get; set; }
 
         public DateTime? StartUtc { get; set; }
+
+        /// <summary>فعال/غیرفعال کردن یادآوری برای این نوبت</summary>
+        public bool? RemindersEnabled { get; set; }
     }
 
     // ─── Free time / availability management ─────────────────────────

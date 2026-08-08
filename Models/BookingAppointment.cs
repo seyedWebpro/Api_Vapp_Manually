@@ -21,6 +21,11 @@ namespace Api_Vapp.Models
         public string? CustomerNote { get; set; }
 
         /// <summary>
+        /// مسیر نسبی فیش واریز (اختیاری) — فقط برای خدمات هزینه‌دار
+        /// </summary>
+        public string? PaymentReceiptPath { get; set; }
+
+        /// <summary>
         /// مخاطب ذخیره‌شده در دفترچه — در صورت فعال بودن SaveToPhonebook
         /// </summary>
         public int? ContactId { get; set; }
@@ -35,6 +40,16 @@ namespace Api_Vapp.Models
         public string Status { get; set; } = BookingAppointmentStatuses.Pending;
 
         public DateTime? ReminderSentAt { get; set; }
+
+        /// <summary>
+        /// آیا مشتری مایل به دریافت پیامک یادآوری است (پیش‌فرض true).
+        /// </summary>
+        public bool RemindersEnabled { get; set; } = true;
+
+        /// <summary>
+        /// Offsetهایی که برای این نوبت ارسال شده‌اند — CSV مثل "60,1440".
+        /// </summary>
+        public string? ReminderSentOffsetsCsv { get; set; }
 
         public DateTime? CancelledAt { get; set; }
 

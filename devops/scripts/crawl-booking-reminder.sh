@@ -10,12 +10,16 @@ BASE_URL="${BASE_URL:-http://127.0.0.1:5054}"
 CUSTOMER_MOBILE="${CUSTOMER_MOBILE:-09392615526}"
 WAIT_SECONDS="${WAIT_SECONDS:-120}"
 REMINDER_OFFSET_MINUTES="${REMINDER_OFFSET_MINUTES:-60}"
+# چند offset همزمان (اختیاری): مثلاً "60,1440"
+REMINDER_OFFSETS_CSV="${REMINDER_OFFSETS_CSV:-60,1440}"
+TEST_OPT_OUT="${TEST_OPT_OUT:-1}"
 TMP_DIR="$(mktemp -d)"
 PASS=0
 FAIL=0
 SYSTEM_ID=""
 SERVICE_ID=""
 APPOINTMENT_ID=""
+OPT_OUT_APPOINTMENT_ID=""
 
 cleanup() {
   rm -rf "$TMP_DIR"
@@ -80,11 +84,34 @@ http_ok() {
 }
 
 echo "=== Booking reminder crawl @ $BASE_URL ==="
-echo "      customer=$CUSTOMER_MOBILE offset=${REMINDER_OFFSET_MINUTES}m wait=${WAIT_SECONDS}s"
+echo "      customer=$CUSTOMER_MOBILE offsets=$REMINDER_OFFSETS_CSV wait=${WAIT_SECONDS}s"
 
 # 0) health
 code="$(curl -sS -m 10 -o /dev/null -w '%{http_code}' "$BASE_URL/health" || echo 000)"
 check "GET /health → 200" "$([[ "$code" == "200" ]] && echo 1 || echo 0)"
+
+# 0.05) reminder-info (no text approval + template)
+INFO_OUT="$TMP_DIR/reminder_info.json"
+code="$(http_json GET /api/BookingSystem/reminder-info "" "$INFO_OUT")"
+REQ_APPROVAL="$(json_get "$INFO_OUT" data.requiresTextApproval)"
+SAMPLE="$(json_get "$INFO_OUT" data.sampleMessage)"
+check "GET reminder-info → 200" "$([[ "$code" == "200" ]] && echo 1 || echo 0)"
+check "requiresTextApproval=false" "$([[ "$REQ_APPROVAL" == "false" ]] && echo 1 || echo 0)"
+HAS_TITLE="$(python3 - "$SAMPLE" <<'PY'
+import sys
+t=sys.argv[1]
+print('1' if ('یادآوری نوبت' in t) else '0')
+PY
+)"
+HAS_CANCEL="$(python3 - "$SAMPLE" <<'PY'
+import sys
+t=sys.argv[1]
+print('1' if ('لغو11' in t) else '0')
+PY
+)"
+check "sampleMessage contains یادآوری نوبت" "$([[ "$HAS_TITLE" == "1" ]] && echo 1 || echo 0)"
+check "sampleMessage contains لغو11" "$([[ "$HAS_CANCEL" == "1" ]] && echo 1 || echo 0)"
+echo "      sample=$SAMPLE"
 
 # 0.1) profile + wallet
 PROFILE_OUT="$TMP_DIR/profile.json"
@@ -206,13 +233,24 @@ PY
 )"
 fi
 check "GET services → has service" "$([[ "$code" == "200" && -n "$SERVICE_ID" && "$SERVICE_ID" != "0" ]] && echo 1 || echo 0)"
+OFFSETS_JSON="$(python3 - "$REMINDER_OFFSETS_CSV" <<'PY'
+import sys,json
+parts=[int(x) for x in sys.argv[1].split(',') if x.strip()]
+print(json.dumps(parts))
+PY
+)"
 UPD="$TMP_DIR/svc_upd.json"
 code="$(http_json POST "/api/BookingSystem/$SYSTEM_ID/services/$SERVICE_ID/update" \
-  "{\"reminderOffsetMinutes\":$REMINDER_OFFSET_MINUTES}" "$UPD")"
-OFFSET_SAVED="$(json_get "$UPD" data.reminderOffsetMinutes)"
-check "update reminderOffsetMinutes=$REMINDER_OFFSET_MINUTES" \
-  "$(http_ok "$code" && [[ "$OFFSET_SAVED" == "$REMINDER_OFFSET_MINUTES" ]] && echo 1 || echo 0)"
-echo "      serviceId=$SERVICE_ID offset=$OFFSET_SAVED"
+  "{\"reminderOffsetsMinutes\":$OFFSETS_JSON}" "$UPD")"
+OFFSETS_SAVED="$(python3 - "$UPD" <<'PY'
+import json,sys
+d=json.load(open(sys.argv[1],encoding='utf-8'))
+print(','.join(str(x) for x in ((d.get('data') or {}).get('reminderOffsetsMinutes') or [])))
+PY
+)"
+check "update reminderOffsetsMinutes=$REMINDER_OFFSETS_CSV" \
+  "$(http_ok "$code" && [[ -n "$OFFSETS_SAVED" ]] && echo 1 || echo 0)"
+echo "      serviceId=$SERVICE_ID offsets=$OFFSETS_SAVED"
 
 # 3) pick a free public slot that is already due for reminder (StartUtc - offset <= now < StartUtc)
 GET_SYS="$TMP_DIR/sys.json"
@@ -220,10 +258,12 @@ http_json GET "/api/BookingSystem/$SYSTEM_ID" "" "$GET_SYS" >/dev/null || true
 SLUG="$(json_get "$GET_SYS" data.slug)"
 echo "      slug=$SLUG"
 
-START_UTC="$(python3 - "$BASE_URL" "$SLUG" "$SERVICE_ID" "$REMINDER_OFFSET_MINUTES" <<'PY'
+START_UTC="$(python3 - "$BASE_URL" "$SLUG" "$SERVICE_ID" "$REMINDER_OFFSETS_CSV" <<'PY'
 import json,sys,urllib.request
 from datetime import datetime,timedelta,timezone
-base,slug,svc,offset=sys.argv[1],sys.argv[2],sys.argv[3],int(sys.argv[4])
+base,slug,svc=sys.argv[1],sys.argv[2],sys.argv[3]
+offsets=[int(x) for x in sys.argv[4].split(',') if x.strip()] or [60]
+max_offset=max(offsets)
 now=datetime.now(timezone.utc)
 picked=""
 for day in range(0,3):
@@ -243,15 +283,14 @@ for day in range(0,3):
       continue
     if start.tzinfo is None:
       start=start.replace(tzinfo=timezone.utc)
-    # due for reminder if Start - offset <= now < Start
     if start <= now:
       continue
-    if start - timedelta(minutes=offset) <= now:
+    # due for at least one configured offset
+    if any(start - timedelta(minutes=o) <= now for o in offsets):
       picked=start.strftime('%Y-%m-%dT%H:%M:%SZ')
       break
   if picked:
     break
-# fallback: nearest future slot (may need wait if offset large)
 if not picked:
   for day in range(0,3):
     date=(now+timedelta(days=day)).strftime('%Y-%m-%d')
@@ -287,13 +326,15 @@ fi
 
 MANUAL="$TMP_DIR/manual.json"
 code="$(http_json POST "/api/BookingSystem/$SYSTEM_ID/appointments/manual" \
-  "{\"customerFullName\":\"تست یادآوری کراول\",\"customerMobile\":\"$CUSTOMER_MOBILE\",\"serviceId\":$SERVICE_ID,\"startUtc\":\"$START_UTC\"}" \
+  "{\"customerFullName\":\"تست یادآوری کراول\",\"customerMobile\":\"$CUSTOMER_MOBILE\",\"serviceId\":$SERVICE_ID,\"startUtc\":\"$START_UTC\",\"remindersEnabled\":true}" \
   "$MANUAL")"
 APPOINTMENT_ID="$(json_get "$MANUAL" data.id)"
 STATUS="$(json_get "$MANUAL" data.status)"
 REMINDER_BEFORE="$(json_get "$MANUAL" data.reminderSentAt)"
+REMINDERS_ON="$(json_get "$MANUAL" data.remindersEnabled)"
 check "POST manual appointment → 201/200" "$(http_ok "$code" && echo 1 || echo 0)"
 check "appointment Confirmed" "$([[ "$STATUS" == "Confirmed" ]] && echo 1 || echo 0)"
+check "remindersEnabled=true" "$([[ "$REMINDERS_ON" == "true" ]] && echo 1 || echo 0)"
 check "reminderSentAt initially null" "$([[ -z "$REMINDER_BEFORE" ]] && echo 1 || echo 0)"
 if [[ -z "$APPOINTMENT_ID" || "$APPOINTMENT_ID" == "0" ]]; then
   echo "FAIL  could not create appointment — body:"
@@ -304,21 +345,82 @@ if [[ -z "$APPOINTMENT_ID" || "$APPOINTMENT_ID" == "0" ]]; then
 fi
 echo "      appointmentId=$APPOINTMENT_ID status=$STATUS"
 
+# 3.1) opt-out appointment should NOT get reminder
+if [[ "$TEST_OPT_OUT" == "1" ]]; then
+  START2="$(python3 - "$BASE_URL" "$SLUG" "$SERVICE_ID" <<'PY'
+import json,sys,urllib.request
+from datetime import datetime,timedelta,timezone
+base,slug,svc=sys.argv[1],sys.argv[2],sys.argv[3]
+now=datetime.now(timezone.utc)
+for day in range(0,3):
+  date=(now+timedelta(days=day)).strftime('%Y-%m-%d')
+  url=f"{base}/api/BookingPublic/{slug}/services/{svc}/slots?date={date}"
+  try:
+    with urllib.request.urlopen(url, timeout=20) as r:
+      d=json.load(r)
+  except Exception:
+    continue
+  for s in ((d.get('data') or {}).get('slots') or []):
+    raw=s.get('startUtc') or ''
+    try:
+      start=datetime.fromisoformat(raw.replace('Z','+00:00'))
+    except Exception:
+      continue
+    if start.tzinfo is None:
+      start=start.replace(tzinfo=timezone.utc)
+    if start > now:
+      print(start.strftime('%Y-%m-%dT%H:%M:%SZ'))
+      raise SystemExit
+print('')
+PY
+)"
+  if [[ -n "$START2" ]]; then
+    OPT="$TMP_DIR/optout.json"
+    code="$(http_json POST "/api/BookingSystem/$SYSTEM_ID/appointments/manual" \
+      "{\"customerFullName\":\"تست بدون یادآوری\",\"customerMobile\":\"$CUSTOMER_MOBILE\",\"serviceId\":$SERVICE_ID,\"startUtc\":\"$START2\",\"remindersEnabled\":false}" \
+      "$OPT")"
+    OPT_OUT_APPOINTMENT_ID="$(json_get "$OPT" data.id)"
+    OPT_FLAG="$(json_get "$OPT" data.remindersEnabled)"
+    check "opt-out appointment created" "$(http_ok "$code" && [[ -n "$OPT_OUT_APPOINTMENT_ID" ]] && echo 1 || echo 0)"
+    check "opt-out remindersEnabled=false" "$([[ "$OPT_FLAG" == "false" ]] && echo 1 || echo 0)"
+    echo "      optOutAppointmentId=$OPT_OUT_APPOINTMENT_ID start2=$START2"
+  else
+    echo "WARN  no second slot for opt-out test"
+  fi
+fi
+
 # 4) wait for background BookingReminderBackgroundService (1 min tick + 45s startup)
 echo "      waiting up to ${WAIT_SECONDS}s for ReminderSentAt..."
 DEADLINE=$((SECONDS + WAIT_SECONDS))
 GOT_SENT=""
+OFFSETS_SENT=""
 while (( SECONDS < DEADLINE )); do
   GET_APPT="$TMP_DIR/appt.json"
   http_json GET "/api/BookingSystem/$SYSTEM_ID/appointments/$APPOINTMENT_ID" "" "$GET_APPT" >/dev/null || true
   GOT_SENT="$(json_get "$GET_APPT" data.reminderSentAt)"
+  OFFSETS_SENT="$(python3 - "$GET_APPT" <<'PY'
+import json,sys
+d=json.load(open(sys.argv[1],encoding='utf-8'))
+print(','.join(str(x) for x in ((d.get('data') or {}).get('reminderOffsetsSent') or [])))
+PY
+)"
   if [[ -n "$GOT_SENT" ]]; then
     break
   fi
   sleep 5
 done
 check "ReminderSentAt set by background job" "$([[ -n "$GOT_SENT" ]] && echo 1 || echo 0)"
-echo "      reminderSentAt=$GOT_SENT"
+check "reminderOffsetsSent not empty" "$([[ -n "$OFFSETS_SENT" ]] && echo 1 || echo 0)"
+echo "      reminderSentAt=$GOT_SENT offsetsSent=$OFFSETS_SENT"
+
+# 4.1) opt-out must remain unsent
+if [[ -n "$OPT_OUT_APPOINTMENT_ID" ]]; then
+  sleep 2
+  GET_OPT="$TMP_DIR/opt_appt.json"
+  http_json GET "/api/BookingSystem/$SYSTEM_ID/appointments/$OPT_OUT_APPOINTMENT_ID" "" "$GET_OPT" >/dev/null || true
+  OPT_SENT="$(json_get "$GET_OPT" data.reminderSentAt)"
+  check "opt-out ReminderSentAt stays null" "$([[ -z "$OPT_SENT" ]] && echo 1 || echo 0)"
+fi
 
 # 5) SMS delivery report for BookingReminder
 REPORTS="$TMP_DIR/reports.json"
@@ -356,10 +458,14 @@ if [[ "$code" == "403" || "$code" == "401" ]]; then
 fi
 check "SMS delivery report has BookingReminder for appointment" "$([[ "$FOUND_SMS" == "1" ]] && echo 1 || echo 0)"
 
-# 6) cancel appointment to free slot (best effort)
+# 6) cancel appointments to free slots (best effort)
 CANCEL="$TMP_DIR/cancel.json"
 http_json POST "/api/BookingSystem/$SYSTEM_ID/appointments/$APPOINTMENT_ID/cancel" \
   '{"cancellationReason":"crawl cleanup"}' "$CANCEL" >/dev/null || true
+if [[ -n "$OPT_OUT_APPOINTMENT_ID" ]]; then
+  http_json POST "/api/BookingSystem/$SYSTEM_ID/appointments/$OPT_OUT_APPOINTMENT_ID/cancel" \
+    '{"cancellationReason":"crawl cleanup opt-out"}' "$CANCEL" >/dev/null || true
+fi
 
 echo
 echo "=== Summary: PASS=$PASS FAIL=$FAIL ==="

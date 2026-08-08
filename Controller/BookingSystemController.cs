@@ -132,6 +132,17 @@ namespace Api_Vapp.Controller
             return StatusCode(result.StatusCode, result);
         }
 
+        /// <summary>
+        /// اطلاعات ثابت یادآوری نوبت (متن پیام، بدون تأیید ادمین، محدودیت‌ها)
+        /// </summary>
+        [HttpGet("reminder-info")]
+        [ProducesResponseType(typeof(ApiResponse<BookingReminderInfoDto>), StatusCodes.Status200OK)]
+        public async Task<ActionResult<ApiResponse<BookingReminderInfoDto>>> GetReminderInfo()
+        {
+            var result = await _bookingSystemService.GetReminderInfoAsync();
+            return StatusCode(result.StatusCode, result);
+        }
+
         [HttpPost("validate-step1")]
         [ProducesResponseType(typeof(ApiResponse<BookingStep1ValidationResponseDto>), StatusCodes.Status200OK)]
         public async Task<ActionResult<ApiResponse<BookingStep1ValidationResponseDto>>> ValidateStep1([FromBody] BookingStep1Dto step1Dto)
@@ -336,6 +347,20 @@ namespace Api_Vapp.Controller
         {
             var userId = await GetCurrentUserIdAsync();
             var result = await _appointmentService.GetAppointmentByIdAsync(id, appointmentId, userId);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        /// <summary>
+        /// مشاهده فیش واریز نوبت (در صورت آپلود توسط مشتری) — برای بررسی قبل از تأیید
+        /// </summary>
+        [HttpGet("{id}/appointments/{appointmentId:int}/payment-receipt")]
+        [ProducesResponseType(typeof(ApiResponse<BookingPaymentReceiptDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<BookingPaymentReceiptDto>), StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<ApiResponse<BookingPaymentReceiptDto>>> GetPaymentReceipt(
+            int id, int appointmentId)
+        {
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _appointmentService.GetPaymentReceiptAsync(id, appointmentId, userId);
             return StatusCode(result.StatusCode, result);
         }
 

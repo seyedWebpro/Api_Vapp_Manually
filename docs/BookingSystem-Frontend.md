@@ -50,6 +50,7 @@ Content:   application/json
 | تقویم ماهانه | `GET /{id}/appointments/calendar?year=&month=` |
 | لیست/جدول نوبت‌ها | `GET /{id}/appointments?searchName=&status=&fromUtc=&toUtc=` |
 | جزئیات نوبت | `GET /{id}/appointments/{appointmentId}` |
+| فیش واریز نوبت | `GET /{id}/appointments/{appointmentId}/payment-receipt` |
 | رزرو دستی | `POST /{id}/appointments/manual` |
 | ویرایش نوبت | `POST /{id}/appointments/{appointmentId}/update` |
 | تأیید نوبت | `POST /{id}/appointments/{appointmentId}/confirm` |
@@ -304,6 +305,10 @@ Base: `/api/BookingPublic` — **AllowAnonymous**
 
 ### `POST /{slug}/book`
 
+پشتیبانی از **JSON** یا **multipart/form-data** (برای آپلود فیش اختیاری).
+
+**JSON** (بدون فایل — سازگار با قبل):
+
 ```json
 {
   "serviceId": 5,
@@ -314,10 +319,24 @@ Base: `/api/BookingPublic` — **AllowAnonymous**
 }
 ```
 
+**multipart** (فیش اختیاری — فقط برای خدمات `hasCost=true`):
+
+| فیلد | نوع | توضیح |
+|------|-----|--------|
+| `ServiceId` | int | الزامی |
+| `StartUtc` | datetime | الزامی |
+| `CustomerFullName` | string | الزامی |
+| `CustomerMobile` | string | الزامی |
+| `CustomerNote` | string | اختیاری |
+| `PaymentReceiptFile` | file | اختیاری — تصویر یا PDF، حداکثر ۱۰MB |
+
 - وضعیت اولیه نوبت عمومی: **`Pending`** (منتظر تأیید مالک)
 - `customerNote` اختیاری
+- فیش واریز **اجباری نیست**؛ بیعانه بودن/نبودن سرویس هم شرط نیست
+- اگر خدمت رایگان باشد و فایل ارسال شود → `400 VALIDATION_FAILED`
 - اگر `saveToPhonebook=true` → شماره در دفترچه‌های انتخاب‌شده ذخیره می‌شود
 - `startUtc` باید دقیقاً یکی از اسلات‌های برگشتی باشد
+- در پاسخ جزئیات نوبت، `hasPaymentReceipt` نشان می‌دهد فیش آپلود شده یا نه
 
 ### `POST /{slug}/status` — پیگیری وضعیت
 
@@ -359,6 +378,7 @@ Base: `/api/BookingPublic` — **AllowAnonymous**
 | خلاصه تقویم ماهانه | `GET /{id}/appointments/calendar?year=2026&month=7` |
 | لیست/جدول نوبت‌ها | `GET /{id}/appointments?pageNumber=1&status=&searchName=&fromUtc=&toUtc=&serviceId=` |
 | جزئیات نوبت | `GET /{id}/appointments/{appointmentId}` |
+| فیش واریز نوبت | `GET /{id}/appointments/{appointmentId}/payment-receipt` |
 | رزرو دستی | `POST /{id}/appointments/manual` |
 | ویرایش نوبت | `POST /{id}/appointments/{appointmentId}/update` |
 | تأیید نوبت Pending | `POST /{id}/appointments/{appointmentId}/confirm` |
@@ -373,6 +393,25 @@ Base: `/api/BookingPublic` — **AllowAnonymous**
 - رزرو عمومی → `Pending`
 - رزرو دستی مالک → `Confirmed`
 - `appointmentNumber` در پاسخ همان `id` است (نمایش `#۲۵۴۸`)
+- در DTO نوبت فیلد `hasPaymentReceipt` وجود دارد (لیست/جزئیات)
+
+### فیش واریز — `GET /{id}/appointments/{appointmentId}/payment-receipt`
+
+Auth: Bearer JWT (مالک سیستم)
+
+```json
+{
+  "appointmentId": 42,
+  "appointmentNumber": 42,
+  "hasPaymentReceipt": true,
+  "paymentReceiptUrl": "/uploads/bookingappointment/42/payment-receipt/....jpg",
+  "customerFullName": "علی رضایی",
+  "serviceTitle": "کوتاهی مو"
+}
+```
+
+- اگر فیش آپلود نشده باشد: `hasPaymentReceipt=false` و `paymentReceiptUrl=null` با وضعیت ۲۰۰
+- URL نسبی است؛ با base API / static uploads باز شود
 
 ### داشبورد — `GET /{id}/dashboard`
 
@@ -434,7 +473,11 @@ Base: `/api/BookingPublic` — **AllowAnonymous**
 ### SMS یادآوری
 
 - Background job هر **۱ دقیقه**
-- فقط برای نوبت‌های `Confirmed`
-- زمان ارسال: از `StartUtc - ReminderOffsetMinutes` تا قبل از شروع نوبت (catch-up؛ اگر جاب دیر شد هم تا قبل از StartUtc ارسال می‌شود)
-- در صورت کسری کیف‌پول علامت `ReminderSentAt` زده نمی‌شود تا بعد از شارژ دوباره تلاش شود
+- فقط برای نوبت‌های `Confirmed` با `remindersEnabled=true`
+- چند زمان یادآوری per service: `reminderOffsetsMinutes` (مثلاً `[1440,60]`)
+- فیلد قدیمی `reminderOffsetMinutes` = Max لیست (سازگاری)
+- زمان ارسال هر offset: از `StartUtc - offset` تا قبل از شروع نوبت (catch-up)
+- در صورت کسری کیف‌پول، offset علامت‌گذاری نمی‌شود تا بعد از شارژ دوباره تلاش شود
+- متن پیام ثابت است و **نیاز به تأیید ادمین ندارد** — `GET /api/BookingSystem/reminder-info`
 - ماژول گزارش SMS: `BookingReminder`
+- مشتری می‌تواند با `remindersEnabled: false` در رزرو عمومی/دستی opt-out کند

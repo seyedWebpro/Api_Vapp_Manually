@@ -1752,6 +1752,7 @@ namespace Api_Vapp.Data
                 entity.Property(s => s.DurationMinutes).IsRequired();
                 entity.Property(s => s.Price).HasColumnType("decimal(18,2)");
                 entity.Property(s => s.DepositAmount).HasColumnType("decimal(18,2)");
+                entity.Property(s => s.ReminderOffsetsJson).IsRequired().HasMaxLength(200).HasDefaultValue("[60]");
                 entity.Property(s => s.IsDeleted).HasDefaultValue(false);
                 entity.Property(s => s.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
 
@@ -1806,8 +1807,11 @@ namespace Api_Vapp.Data
                 entity.Property(a => a.CustomerFullName).IsRequired().HasMaxLength(200);
                 entity.Property(a => a.CustomerMobile).IsRequired().HasMaxLength(20);
                 entity.Property(a => a.CustomerNote).HasMaxLength(1000);
+                entity.Property(a => a.PaymentReceiptPath).HasMaxLength(500);
                 entity.Property(a => a.Status).IsRequired().HasMaxLength(20);
                 entity.Property(a => a.CancellationReason).HasMaxLength(500);
+                entity.Property(a => a.RemindersEnabled).HasDefaultValue(true);
+                entity.Property(a => a.ReminderSentOffsetsCsv).HasMaxLength(100);
                 entity.Property(a => a.IsDeleted).HasDefaultValue(false);
                 entity.Property(a => a.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
 
