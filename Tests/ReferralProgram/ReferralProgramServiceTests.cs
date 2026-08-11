@@ -89,7 +89,8 @@ public class ReferralProgramServiceTests : IAsyncLifetime
             DraftId = draftId,
             TargetAudience = ReferralTargetAudience.All
         });
-        Assert.Equal(1, step2Result.Data!.TotalContactsCount);
+        Assert.True(step2Result.Success);
+        Assert.Equal(3, step2Result.Data!.TotalContactsCount);
 
         var result = await _ctx.Service.SaveStep3SettingsAsync(_ctx.OwnerUserId, new SaveReferralStep3RequestDto
         {
@@ -98,7 +99,7 @@ public class ReferralProgramServiceTests : IAsyncLifetime
         });
 
         Assert.True(result.Success);
-        Assert.Equal(1, result.Data!.ContactsCount);
+        Assert.Equal(3, result.Data!.ContactsCount);
         AssertNoServerError(result);
     }
 
@@ -171,6 +172,140 @@ public class ReferralProgramServiceTests : IAsyncLifetime
         Assert.Equal(200, result.StatusCode);
         Assert.Contains(result.Data!, n => n.Id == _ctx.NotebookId);
         AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task GetContacts_ReturnsPagedContactsForOwner()
+    {
+        var result = await _ctx.Service.GetContactsAsync(_ctx.OwnerUserId, pageNumber: 1, pageSize: 20);
+
+        Assert.True(result.Success);
+        Assert.Equal(200, result.StatusCode);
+        Assert.True(result.Data!.TotalCount >= 3);
+        Assert.Contains(result.Data.Contacts, c => c.Id == _ctx.ContactId);
+        Assert.Contains(result.Data.Contacts, c => c.Id == _ctx.ContactId2);
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task GetContacts_FilterByNotebook_ReturnsOnlyNotebookMembers()
+    {
+        var result = await _ctx.Service.GetContactsAsync(
+            _ctx.OwnerUserId, pageNumber: 1, pageSize: 20, notebookId: _ctx.NotebookId);
+
+        Assert.True(result.Success);
+        Assert.All(result.Data!.Contacts, c => Assert.Equal(_ctx.NotebookId, c.ContactNotebookId));
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task GetContacts_InvalidNotebook_Returns404()
+    {
+        var result = await _ctx.Service.GetContactsAsync(
+            _ctx.OwnerUserId, notebookId: 99999999);
+
+        Assert.False(result.Success);
+        Assert.Equal(404, result.StatusCode);
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task ValidateStep2_Individual_EmptyContactIds_Returns400()
+    {
+        var step1Result = await _ctx.Service.ValidateStep1Async(_ctx.OwnerUserId, _ctx.BuildStep1Dto());
+        var draftId = step1Result.Data!.DraftId!;
+
+        var result = await _ctx.Service.ValidateStep2Async(_ctx.OwnerUserId, new ReferralStep2Dto
+        {
+            DraftId = draftId,
+            TargetAudience = ReferralTargetAudience.Individual,
+            TargetContactIds = new List<int>()
+        });
+
+        Assert.False(result.Success);
+        Assert.Equal(400, result.StatusCode);
+        Assert.Contains(result.Errors!, e => e.Contains("حداقل یک مخاطب"));
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task ValidateStep2_Individual_InvalidContactId_Returns400()
+    {
+        var step1Result = await _ctx.Service.ValidateStep1Async(_ctx.OwnerUserId, _ctx.BuildStep1Dto());
+        var draftId = step1Result.Data!.DraftId!;
+
+        var result = await _ctx.Service.ValidateStep2Async(_ctx.OwnerUserId, new ReferralStep2Dto
+        {
+            DraftId = draftId,
+            TargetAudience = ReferralTargetAudience.Individual,
+            TargetContactIds = new List<int> { 99999999 }
+        });
+
+        Assert.False(result.Success);
+        Assert.Equal(400, result.StatusCode);
+        Assert.Contains(result.Errors!, e => e.Contains("نامعتبر"));
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task ValidateStep2_Individual_ValidContacts_ReturnsCount()
+    {
+        var step1Result = await _ctx.Service.ValidateStep1Async(_ctx.OwnerUserId, _ctx.BuildStep1Dto());
+        var draftId = step1Result.Data!.DraftId!;
+
+        var result = await _ctx.Service.ValidateStep2Async(_ctx.OwnerUserId, new ReferralStep2Dto
+        {
+            DraftId = draftId,
+            TargetAudience = ReferralTargetAudience.Individual,
+            TargetContactIds = new List<int> { _ctx.ContactId, _ctx.ContactId2, _ctx.ContactId2 }
+        });
+
+        Assert.True(result.Success);
+        Assert.Equal(200, result.StatusCode);
+        Assert.Equal(2, result.Data!.TotalContactsCount);
+        Assert.Contains("انتخاب دستی", result.Data.TargetAudienceDescription);
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task Confirm_IndividualAudience_PersistsTargetContactIds()
+    {
+        var step1 = _ctx.BuildStep1Dto();
+        var step1Result = await _ctx.Service.ValidateStep1Async(_ctx.OwnerUserId, step1);
+        var draftId = step1Result.Data!.DraftId!;
+
+        var selected = new List<int> { _ctx.ContactId, _ctx.ContactId3 };
+        var step2Result = await _ctx.Service.ValidateStep2Async(_ctx.OwnerUserId, new ReferralStep2Dto
+        {
+            DraftId = draftId,
+            TargetAudience = ReferralTargetAudience.Individual,
+            TargetContactIds = selected
+        });
+        Assert.True(step2Result.Success);
+        Assert.Equal(2, step2Result.Data!.TotalContactsCount);
+
+        var step3Result = await _ctx.Service.SaveStep3SettingsAsync(_ctx.OwnerUserId, new SaveReferralStep3RequestDto
+        {
+            DraftId = draftId,
+            Settings = _ctx.BuildStep3Settings()
+        });
+        Assert.True(step3Result.Success);
+        Assert.Equal(2, step3Result.Data!.ContactsCount);
+
+        var confirmResult = await _ctx.Service.ConfirmAsync(_ctx.OwnerUserId, new ConfirmReferralProgramDto
+        {
+            DraftId = draftId
+        });
+
+        Assert.True(confirmResult.Success);
+        Assert.Equal(201, confirmResult.StatusCode);
+        Assert.Equal(ReferralTargetAudience.Individual, confirmResult.Data!.Program.TargetAudience);
+        Assert.NotNull(confirmResult.Data.Program.TargetContactIds);
+        Assert.Equal(2, confirmResult.Data.Program.TargetContactIds!.Count);
+        Assert.Contains(_ctx.ContactId, confirmResult.Data.Program.TargetContactIds);
+        Assert.Contains(_ctx.ContactId3, confirmResult.Data.Program.TargetContactIds);
+        Assert.Equal(2, confirmResult.Data.SmsSentCount);
+        AssertNoServerError(confirmResult);
     }
 
     [Fact]

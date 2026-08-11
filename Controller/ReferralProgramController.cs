@@ -257,6 +257,39 @@ namespace Api_Vapp.Controller
         }
 
         /// <summary>
+        /// دریافت لیست مخاطبین برای انتخاب دستی (Individual) در مرحله ۲ ویزارد
+        /// </summary>
+        /// <param name="pageNumber">شماره صفحه (پیش‌فرض: 1)</param>
+        /// <param name="pageSize">تعداد در هر صفحه (پیش‌فرض: 20، حداکثر: 100)</param>
+        /// <param name="searchTerm">جستجو بر اساس نام یا شماره موبایل</param>
+        /// <param name="notebookId">فیلتر اختیاری روی یک دفترچه خاص</param>
+        /// <returns>پاسخ شامل لیست مخاطبین و pagination</returns>
+        /// <remarks>
+        /// برای UI «انتخاب دستی مخاطبین»: لیست را با چک‌باکس نشان بده،
+        /// شناسه‌های انتخاب‌شده را در <c>targetContactIds</c> به <c>validate-step2</c> بفرست.
+        /// </remarks>
+        /// <response code="200">لیست مخاطبین با موفقیت برگردانده شد</response>
+        /// <response code="401">عدم احراز هویت</response>
+        /// <response code="404">دفترچه فیلترشده یافت نشد</response>
+        /// <response code="500">خطای سرور</response>
+        [HttpGet("contacts")]
+        [ProducesResponseType(typeof(ApiResponse<ReferralContactListDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<ReferralContactListDto>), StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(typeof(ApiResponse<ReferralContactListDto>), StatusCodes.Status404NotFound)]
+        [ProducesResponseType(typeof(ApiResponse<ReferralContactListDto>), StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<ApiResponse<ReferralContactListDto>>> GetContacts(
+            [FromQuery] int pageNumber = 1,
+            [FromQuery] int pageSize = 20,
+            [FromQuery] string? searchTerm = null,
+            [FromQuery] int? notebookId = null)
+        {
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _referralProgramService.GetContactsAsync(
+                userId, pageNumber, pageSize, searchTerm, notebookId);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        /// <summary>
         /// اعتبارسنجی مرحله ۱ ویزارد (اطلاعات پاداش)
         /// </summary>
         /// <param name="step1Dto">نام برنامه، نوع پاداش، مقدار پاداش معرف و مشتری</param>

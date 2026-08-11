@@ -64,7 +64,7 @@ Content:   application/json
 | ویرایش | `POST /{id}/update` |
 | تاریخچه مصرف | `GET /{id}/history?pageNumber=1&pageSize=10` |
 | ویزارد — مرحله ۱ (پاداش) | `POST /validate-step1` |
-| ویزارد — مرحله ۲ (مخاطب + تگ) | `GET /notebooks` + `POST /validate-step2` |
+| ویزارد — مرحله ۲ (مخاطب + تگ) | `GET /notebooks` + `GET /contacts` + `POST /validate-step2` |
 | ویزارد — مرحله ۳ (تاریخ + خلاصه) | `POST /settings/save` |
 | خواندن خلاصه (اختیاری) | `GET /summary?draftId=` |
 | ویزارد — تأیید نهایی | `POST /confirm` |
@@ -127,7 +127,40 @@ step3  settings/save    →  تاریخ فقط (خلاصه + contactsCount)
 
 ## مرحله ۲ — `POST /validate-step2` (مخاطب + تگ)
 
-**لیست دفترچه (اختیاری):** `GET /notebooks`
+**لیست دفترچه (برای SpecificNotebooks):** `GET /notebooks`
+
+**لیست مخاطبین (برای Individual / انتخاب دستی):** `GET /contacts?pageNumber=1&pageSize=20&searchTerm=&notebookId=`
+
+| Query | پیش‌فرض | توضیح |
+|-------|---------|--------|
+| `pageNumber` | 1 | صفحه |
+| `pageSize` | 20 | حداکثر ۱۰۰ |
+| `searchTerm` | — | نام یا شماره موبایل |
+| `notebookId` | — | فیلتر اختیاری روی یک دفترچه |
+
+نمونه پاسخ `GET /contacts`:
+
+```json
+{
+  "data": {
+    "contacts": [
+      {
+        "id": 12,
+        "fullName": "علی رضایی",
+        "mobileNumber": "09121234567",
+        "contactNotebookId": 1,
+        "contactNotebookName": "دفترچه مشتریان"
+      }
+    ],
+    "totalCount": 124,
+    "pageNumber": 1,
+    "pageSize": 20,
+    "totalPages": 7
+  }
+}
+```
+
+Body مرحله ۲:
 
 ```json
 {
@@ -143,8 +176,30 @@ step3  settings/save    →  تاریخ فقط (خلاصه + contactsCount)
 `targetAudience`: `"All"` | `"SpecificNotebooks"` | `"Individual"`
 
 - `SpecificNotebooks` → `targetNotebookIds` الزامی
-- `Individual` → `targetContactIds` الزامی
+- `Individual` → `targetContactIds` الزامی (حداقل ۱ — شناسه‌های تیک‌خورده از `GET /contacts`)
 - `sendToSpecificTags: true` → `targetTagIds` حداقل ۱ عدد
+
+### گزینه انتخاب دستی (Individual) — فلو UI
+
+```
+رادیو «انتخاب دستی مخاطبین»
+  → GET /api/ReferralProgram/contacts
+  → کاربر چند مخاطب را تیک می‌زند (حتی ۱ نفر)
+  → selectedContactIds را بین صفحات نگه دار
+  → POST /validate-step2 با targetAudience=Individual و targetContactIds=[...]
+```
+
+نمونه body انتخاب دستی:
+
+```json
+{
+  "draftId": "42_abc123",
+  "targetAudience": "Individual",
+  "targetContactIds": [12, 45, 78, 91, 102],
+  "sendToSpecificTags": false,
+  "targetTagIds": null
+}
+```
 
 **پاسخ:**
 ```json
@@ -156,11 +211,14 @@ step3  settings/save    →  تاریخ فقط (خلاصه + contactsCount)
 }
 ```
 
+برای Individual بدون تگ، توضیح شبیه `"انتخاب دستی (5 مخاطب)"` است.
+
 ### تعداد مخاطب — UI
 
 - **همیشه `totalContactsCount` را نشان بده**
 - تگ / مخاطب عوض شد → **دوباره `validate-step2`** (debounce 500ms)
 - **`settings/save` برای تگ نزن**
+- اگر `Individual` و `selectedContactIds` خالی → دکمه بعد را disable کن + پیام «حداقل یک مخاطب»
 
 ---
 

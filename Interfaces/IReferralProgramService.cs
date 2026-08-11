@@ -17,6 +17,16 @@ namespace Api_Vapp.Interfaces
 
         Task<ApiResponse<List<ReferralNotebookDto>>> GetNotebooksAsync(int userId);
 
+        /// <summary>
+        /// لیست مخاطبین کاربر برای انتخاب دستی (Individual) در مرحله ۲
+        /// </summary>
+        Task<ApiResponse<ReferralContactListDto>> GetContactsAsync(
+            int userId,
+            int pageNumber = 1,
+            int pageSize = 20,
+            string? searchTerm = null,
+            int? notebookId = null);
+
         Task<ApiResponse<ReferralStep1ValidationResponseDto>> ValidateStep1Async(int userId, ReferralStep1Dto step1Dto);
 
         Task<ApiResponse<ReferralStep2ValidationResponseDto>> ValidateStep2Async(int userId, ReferralStep2Dto step2Dto);

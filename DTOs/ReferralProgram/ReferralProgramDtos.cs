@@ -61,6 +61,27 @@ namespace Api_Vapp.DTOs.ReferralProgram
         public int MembersCount { get; set; }
     }
 
+    /// <summary>
+    /// مخاطب برای UI انتخاب دستی در مرحله ۲ ویزارد پاداش
+    /// </summary>
+    public class ReferralContactDto
+    {
+        public int Id { get; set; }
+        public string FullName { get; set; } = string.Empty;
+        public string MobileNumber { get; set; } = string.Empty;
+        public int ContactNotebookId { get; set; }
+        public string ContactNotebookName { get; set; } = string.Empty;
+    }
+
+    public class ReferralContactListDto
+    {
+        public List<ReferralContactDto> Contacts { get; set; } = new();
+        public int TotalCount { get; set; }
+        public int PageNumber { get; set; }
+        public int PageSize { get; set; }
+        public int TotalPages { get; set; }
+    }
+
     public class ReferralStep1ValidationResponseDto
     {
         public bool IsValid { get; set; }

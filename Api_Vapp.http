@@ -1133,3 +1133,64 @@ Content-Type: application/json
   "reason": "متن پیام نیاز به اصلاح دارد"
 }
 
+
+###
+
+# --- ReferralProgram — انتخاب دستی مخاطبین (Individual) ---
+
+### لیست مخاطبین برای انتخاب دستی
+GET {{Api_Vapp_HostAddress}}/api/ReferralProgram/contacts?pageNumber=1&pageSize=20&searchTerm=
+Authorization: Bearer {{token}}
+
+### لیست مخاطبین فیلتر دفترچه
+GET {{Api_Vapp_HostAddress}}/api/ReferralProgram/contacts?notebookId=2&pageNumber=1&pageSize=20
+Authorization: Bearer {{token}}
+
+### مرحله ۱
+POST {{Api_Vapp_HostAddress}}/api/ReferralProgram/validate-step1
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "title": "پاداش دستی تست",
+  "isActive": true,
+  "rewardType": "FixedAmount",
+  "referrerRewardValue": 50000,
+  "isCustomerRewardActive": true,
+  "customerRewardValue": 10000
+}
+
+### مرحله ۲ — انتخاب دستی (Individual)
+POST {{Api_Vapp_HostAddress}}/api/ReferralProgram/validate-step2
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "draftId": "REPLACE_DRAFT_ID",
+  "targetAudience": "Individual",
+  "targetContactIds": [1, 2, 3, 4, 5],
+  "sendToSpecificTags": false,
+  "targetTagIds": null
+}
+
+### مرحله ۳ — تاریخ
+POST {{Api_Vapp_HostAddress}}/api/ReferralProgram/settings/save
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "draftId": "REPLACE_DRAFT_ID",
+  "settings": {
+    "startDate": "2026-08-11T00:00:00Z",
+    "endDate": "2026-09-11T00:00:00Z"
+  }
+}
+
+### تأیید نهایی
+POST {{Api_Vapp_HostAddress}}/api/ReferralProgram/confirm
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "draftId": "REPLACE_DRAFT_ID"
+}

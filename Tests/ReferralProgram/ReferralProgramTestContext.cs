@@ -35,6 +35,10 @@ internal sealed class ReferralProgramTestContext : IDisposable
 
     public int ContactId { get; private set; }
 
+    public int ContactId2 { get; private set; }
+
+    public int ContactId3 { get; private set; }
+
     public static async Task<ReferralProgramTestContext> CreateAsync()
     {
         var connectionString =
@@ -211,9 +215,27 @@ internal sealed class ReferralProgramTestContext : IDisposable
             CreatedAt = DateTime.UtcNow
         };
 
-        _context.Contacts.Add(contact);
+        var contact2 = new Contact
+        {
+            ContactNotebookId = NotebookId,
+            MobileNumber = $"0918{suffix[..7]}",
+            FullName = "مخاطب دوم",
+            CreatedAt = DateTime.UtcNow
+        };
+
+        var contact3 = new Contact
+        {
+            ContactNotebookId = NotebookId,
+            MobileNumber = $"0919{suffix[..7]}",
+            FullName = "مخاطب سوم",
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _context.Contacts.AddRange(contact, contact2, contact3);
         await _context.SaveChangesAsync();
         ContactId = contact.Id;
+        ContactId2 = contact2.Id;
+        ContactId3 = contact3.Id;
     }
 
     private sealed class FakeUserSmsBillingService : IUserSmsBillingService

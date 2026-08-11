@@ -175,6 +175,81 @@ namespace Api_Vapp.Services
             return ApiResponse<List<ReferralNotebookDto>>.CreateSuccess(notebooks);
         }
 
+        public async Task<ApiResponse<ReferralContactListDto>> GetContactsAsync(
+            int userId,
+            int pageNumber = 1,
+            int pageSize = 20,
+            string? searchTerm = null,
+            int? notebookId = null)
+        {
+            _logger.LogInformation(
+                "شروع دریافت مخاطبین پاداش — UserId: {UserId}, Page: {Page}, NotebookId: {NotebookId}",
+                userId, pageNumber, notebookId);
+
+            if (pageNumber < 1) pageNumber = 1;
+            if (pageSize < 1 || pageSize > 100) pageSize = 20;
+
+            if (notebookId.HasValue && notebookId.Value > 0)
+            {
+                var ownsNotebook = await _context.ContactNotebooks
+                    .AnyAsync(cn => cn.Id == notebookId.Value && cn.UserId == userId && !cn.IsDeleted);
+                if (!ownsNotebook)
+                {
+                    return ApiResponse<ReferralContactListDto>.NotFound("دفترچه یافت نشد");
+                }
+            }
+
+            var query = _context.Contacts
+                .AsNoTracking()
+                .Where(c => !c.IsDeleted
+                    && c.ContactNotebook != null
+                    && c.ContactNotebook.UserId == userId
+                    && !c.ContactNotebook.IsDeleted);
+
+            if (notebookId.HasValue && notebookId.Value > 0)
+            {
+                query = query.Where(c => c.ContactNotebookId == notebookId.Value);
+            }
+
+            if (!string.IsNullOrWhiteSpace(searchTerm))
+            {
+                var term = searchTerm.Trim().ToLower();
+                query = query.Where(c =>
+                    c.MobileNumber.Contains(term) ||
+                    (c.FullName != null && c.FullName.ToLower().Contains(term)));
+            }
+
+            var totalCount = await query.CountAsync();
+            var totalPages = totalCount == 0 ? 0 : (int)Math.Ceiling(totalCount / (double)pageSize);
+
+            var contacts = await query
+                .OrderByDescending(c => c.CreatedAt)
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
+                .Select(c => new ReferralContactDto
+                {
+                    Id = c.Id,
+                    FullName = c.FullName ?? string.Empty,
+                    MobileNumber = c.MobileNumber,
+                    ContactNotebookId = c.ContactNotebookId,
+                    ContactNotebookName = c.ContactNotebook != null ? c.ContactNotebook.Name : string.Empty
+                })
+                .ToListAsync();
+
+            _logger.LogInformation(
+                "پایان دریافت مخاطبین پاداش — UserId: {UserId}, Count: {Count}",
+                userId, contacts.Count);
+
+            return ApiResponse<ReferralContactListDto>.CreateSuccess(new ReferralContactListDto
+            {
+                Contacts = contacts,
+                TotalCount = totalCount,
+                PageNumber = pageNumber,
+                PageSize = pageSize,
+                TotalPages = totalPages
+            });
+        }
+
         public async Task<ApiResponse<ReferralStep1ValidationResponseDto>> ValidateStep1Async(int userId, ReferralStep1Dto step1Dto)
         {
             var errors = ValidateStep1Fields(step1Dto);
@@ -1029,7 +1104,10 @@ namespace Api_Vapp.Services
             }
             else if (step2Dto.TargetAudience == ReferralTargetAudience.Individual)
             {
-                if (step2Dto.TargetContactIds == null || !step2Dto.TargetContactIds.Any())
+                var selectedIds = NormalizeContactIds(step2Dto.TargetContactIds);
+                step2Dto.TargetContactIds = selectedIds;
+
+                if (selectedIds.Count == 0)
                 {
                     errors.Add("حداقل یک مخاطب باید انتخاب شود");
                 }
@@ -1041,15 +1119,16 @@ namespace Api_Vapp.Services
                         .ToListAsync();
 
                     var validContacts = await _context.Contacts
-                        .Where(c => step2Dto.TargetContactIds.Contains(c.Id) &&
+                        .Where(c => selectedIds.Contains(c.Id) &&
                                     userNotebookIds.Contains(c.ContactNotebookId) &&
                                     !c.IsDeleted)
                         .Select(c => c.Id)
                         .ToListAsync();
 
-                    if (validContacts.Count != step2Dto.TargetContactIds.Count)
+                    var invalidIds = selectedIds.Where(id => !validContacts.Contains(id)).ToList();
+                    if (invalidIds.Count > 0)
                     {
-                        errors.Add("برخی مخاطبین انتخاب‌شده نامعتبر هستند");
+                        errors.Add($"برخی مخاطبین انتخاب‌شده نامعتبر هستند یا متعلق به شما نیستند: [{string.Join(", ", invalidIds)}]");
                     }
                     else
                     {
@@ -1100,11 +1179,15 @@ namespace Api_Vapp.Services
             {
                 query = query.Where(c => step2Dto.TargetNotebookIds.Contains(c.ContactNotebookId));
             }
-            else if (step2Dto.TargetAudience == ReferralTargetAudience.Individual &&
-                     step2Dto.TargetContactIds != null &&
-                     step2Dto.TargetContactIds.Any())
+            else if (step2Dto.TargetAudience == ReferralTargetAudience.Individual)
             {
-                query = query.Where(c => step2Dto.TargetContactIds.Contains(c.Id));
+                var selectedIds = NormalizeContactIds(step2Dto.TargetContactIds);
+                if (selectedIds.Count == 0)
+                {
+                    return new List<int>();
+                }
+
+                query = query.Where(c => selectedIds.Contains(c.Id));
             }
 
             if (sendToSpecificTags && targetTagIds != null && targetTagIds.Any())
@@ -1168,11 +1251,22 @@ namespace Api_Vapp.Services
                 ReferralTargetAudience.SpecificNotebooks => step2.TargetNotebookIds != null
                     ? $"دفترچه خاص ({step2.TargetNotebookIds.Count} دفترچه)"
                     : "دفترچه خاص",
-                ReferralTargetAudience.Individual => step2.TargetContactIds != null
-                    ? $"انتخاب دستی ({step2.TargetContactIds.Count} مخاطب)"
-                    : "انتخاب دستی",
+                ReferralTargetAudience.Individual =>
+                    NormalizeContactIds(step2.TargetContactIds) is { Count: > 0 } ids
+                        ? $"انتخاب دستی ({ids.Count} مخاطب)"
+                        : "انتخاب دستی",
                 _ => "همه مخاطبین"
             };
+        }
+
+        private static List<int> NormalizeContactIds(IEnumerable<int>? contactIds)
+        {
+            if (contactIds == null)
+            {
+                return new List<int>();
+            }
+
+            return contactIds.Where(id => id > 0).Distinct().ToList();
         }
 
         private async Task<(int SentCount, int FailedCount)> SendReferralSmsAsync(ReferralProgram program, List<int> contactIds)
