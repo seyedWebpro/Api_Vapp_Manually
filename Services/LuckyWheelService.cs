@@ -516,7 +516,7 @@ namespace Api_Vapp.Services
             }
         }
 
-        public async Task<ApiResponse<LuckyWheelListResponseDto>> GetWheelsAsync(int userId, int pageNumber = 1, int pageSize = 10)
+        public async Task<ApiResponse<LuckyWheelListResponseDto>> GetWheelsAsync(int userId, int pageNumber = 1, int pageSize = 10, bool? isActive = null)
         {
             try
             {
@@ -534,7 +534,7 @@ namespace Api_Vapp.Services
                         errorCode: ErrorCodes.InvalidInput);
                 }
 
-                var (items, totalCount) = await _luckyWheelRepository.GetByUserIdPagedAsync(userId, pageNumber, pageSize);
+                var (items, totalCount) = await _luckyWheelRepository.GetByUserIdPagedAsync(userId, pageNumber, pageSize, isActive);
 
                 var summaries = new List<LuckyWheelSummaryDto>();
                 foreach (var wheel in items)

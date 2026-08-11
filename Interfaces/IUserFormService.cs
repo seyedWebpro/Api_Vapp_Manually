@@ -15,7 +15,7 @@ namespace Api_Vapp.Interfaces
 
         Task<ApiResponse<UserFormResponseDto>> PublishAsync(int id, int userId, PublishUserFormDto? publishDto = null);
 
-        Task<ApiResponse<UserFormListResponseDto>> GetFormsAsync(int userId, int pageNumber = 1, int pageSize = 10);
+        Task<ApiResponse<UserFormListResponseDto>> GetFormsAsync(int userId, int pageNumber = 1, int pageSize = 10, bool? isActive = null);
 
         Task<ApiResponse<UserFormResponseDto>> GetByIdAsync(int id, int userId);
 

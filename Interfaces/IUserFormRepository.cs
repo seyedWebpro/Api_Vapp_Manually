@@ -25,7 +25,8 @@ namespace Api_Vapp.Interfaces
         Task<(IReadOnlyList<UserForm> Items, int TotalCount)> GetByUserIdPagedAsync(
             int userId,
             int pageNumber,
-            int pageSize);
+            int pageSize,
+            bool? isActive = null);
 
         Task<IReadOnlyList<UserFormField>> GetFieldsReadOnlyAsync(int userFormId);
 

@@ -1,4 +1,6 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
+using Api_Vapp.Utilities;
 
 namespace Api_Vapp.DTOs.Automation
 {
@@ -16,6 +18,7 @@ namespace Api_Vapp.DTOs.Automation
         public string? OccasionName { get; set; }
 
         [DataType(DataType.Date)]
+        [JsonConverter(typeof(FlexibleDateTimeConverter))]
         public DateTime? OccasionDate { get; set; }
 
         // برای حذف مناسبت

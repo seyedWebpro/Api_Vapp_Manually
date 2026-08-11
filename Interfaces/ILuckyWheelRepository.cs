@@ -18,7 +18,8 @@ namespace Api_Vapp.Interfaces
         Task<(IReadOnlyList<LuckyWheel> Items, int TotalCount)> GetByUserIdPagedAsync(
             int userId,
             int pageNumber,
-            int pageSize);
+            int pageSize,
+            bool? isActive = null);
 
         Task<LuckyWheel?> GetBySlugReadOnlyAsync(string slug);
 

@@ -21,6 +21,9 @@ namespace Api_Vapp.DTOs.Message
         public decimal ActualTotalCost { get; set; }
         public string WalletStatus { get; set; } = string.Empty;
         public string Status { get; set; } = string.Empty;
+        public string AdminApprovalStatus { get; set; } = string.Empty;
+        public string? AdminRejectionReason { get; set; }
+        public DateTime? AdminReviewedAt { get; set; }
         public DateTime? SentAt { get; set; }
         public int SentCount { get; set; }
         public int FailedCount { get; set; }

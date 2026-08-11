@@ -91,8 +91,9 @@ namespace Api_Vapp.DTOs.Automation
         [MaxLength(200, ErrorMessage = "نام مناسبت نمی‌تواند بیشتر از 200 کاراکتر باشد")]
         public string? OccasionName { get; set; }
 
-        [DataType(DataType.Date)]
-        public DateTime? OccasionDate { get; set; }
+        // تاریخ را به‌صورت string می‌گیریم تا خطای bind مدل رخ ندهد
+        // و اعتبارسنجی/تبدیل تاریخ را داخل سرویس با پیام کنترل‌شده انجام دهیم.
+        public string? OccasionDate { get; set; }
 
         // برای حذف مناسبت
         public int? OccasionId { get; set; }

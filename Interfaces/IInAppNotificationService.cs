@@ -35,5 +35,7 @@ namespace Api_Vapp.Interfaces
         Task<ApiResponse<bool>> MarkAllAsReadAsync(int userId);
 
         Task<ApiResponse<bool>> DeleteAsync(int userId, int notificationId);
+
+        Task<ApiResponse<int>> DeleteManyAsync(int userId, IReadOnlyCollection<int> notificationIds);
     }
 }

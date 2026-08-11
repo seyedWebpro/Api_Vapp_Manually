@@ -14,6 +14,9 @@ namespace Api_Vapp.DTOs.BookingSystem
         public string ActivityType { get; set; } = string.Empty;
         public string? ActivityTypeTitle { get; set; }
         public string Slug { get; set; } = string.Empty;
+        public int BookingWindowDays { get; set; }
+        public DateOnly BookingWindowStartDate { get; set; }
+        public DateOnly BookingWindowEndDate { get; set; }
         public List<BookingPublicServiceDto> Services { get; set; } = new();
     }
 

@@ -367,10 +367,21 @@ namespace Api_Vapp.Services
                 }
 
                 // بررسی وجود کاربر با شماره تلفن
-                var existsByPhone = await _userRepository.ExistsByPhoneNumberAsync(registerDto.PhoneNumber);
-
-                if (existsByPhone)
+                var existingUserByPhone = await _userRepository.GetByPhoneNumberAsync(registerDto.PhoneNumber);
+                if (existingUserByPhone != null && !existingUserByPhone.IsDeleted)
                 {
+                    // کاربر بن/غیرفعال نباید بتواند با همان شماره دوباره ثبت‌نام کند
+                    if (!existingUserByPhone.IsActive)
+                    {
+                        return new SendOtpResponseDto
+                        {
+                            StatusCode = 403, // Forbidden
+                            Success = false,
+                            Message = "این شماره تلفن امکان ثبت‌نام مجدد ندارد. لطفاً با پشتیبانی تماس بگیرید",
+                            ExpiresInSeconds = 0
+                        };
+                    }
+
                     return new SendOtpResponseDto
                     {
                         StatusCode = 409, // Conflict

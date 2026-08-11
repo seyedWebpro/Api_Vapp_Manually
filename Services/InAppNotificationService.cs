@@ -217,6 +217,45 @@ namespace Api_Vapp.Services
             }
         }
 
+        public async Task<ApiResponse<int>> DeleteManyAsync(int userId, IReadOnlyCollection<int> notificationIds)
+        {
+            try
+            {
+                if (notificationIds == null || notificationIds.Count == 0)
+                    return ApiResponse<int>.BadRequest("حداقل یک اعلان باید انتخاب شود");
+
+                var ids = notificationIds
+                    .Where(id => id > 0)
+                    .Distinct()
+                    .ToList();
+
+                if (ids.Count == 0)
+                    return ApiResponse<int>.BadRequest("شناسه اعلان‌ها نامعتبر است");
+
+                var notifications = await _context.InAppNotifications
+                    .Where(n => n.UserId == userId && !n.IsDeleted && ids.Contains(n.Id))
+                    .ToListAsync();
+
+                if (notifications.Count == 0)
+                    return ApiResponse<int>.CreateSuccess(0, "اعلانی برای حذف یافت نشد");
+
+                var now = DateTime.UtcNow;
+                foreach (var notification in notifications)
+                {
+                    notification.IsDeleted = true;
+                    notification.UpdatedAt = now;
+                }
+
+                await _context.SaveChangesAsync();
+                return ApiResponse<int>.CreateSuccess(notifications.Count, "اعلان‌های انتخاب‌شده حذف شدند");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting notifications in bulk — UserId={UserId}", userId);
+                return ApiResponse<int>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
         private static InAppNotificationDto Map(InAppNotification n) => new()
         {
             Id = n.Id,

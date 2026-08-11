@@ -377,7 +377,7 @@ public class BookingModuleEndpointTests : IAsyncLifetime
         await _ctx.Service.ToggleStatusAsync(systemId, _ctx.OwnerUserId);
 
         var result = await _ctx.AppointmentService.GetPublicSystemAsync(slug);
-        BookingApiAssertions.AssertFailure(result, 404);
+        BookingApiAssertions.AssertFailure(result, 403);
     }
 
     [Fact]
@@ -484,7 +484,7 @@ public class BookingModuleEndpointTests : IAsyncLifetime
         await BookOneAsync(systemId);
 
         var result = await _ctx.AppointmentService.GetAppointmentsAsync(
-            systemId, _ctx.OwnerUserId, 1, 10, BookingAppointmentStatuses.Confirmed, null, null, null);
+            systemId, _ctx.OwnerUserId, 1, 10, null, null, null, null);
         BookingApiAssertions.AssertSuccess(result);
         Assert.NotEmpty(result.Data!.Appointments);
     }

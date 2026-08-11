@@ -96,5 +96,22 @@ namespace Api_Vapp.Controller
             var result = await _notificationService.DeleteAsync(userId, id);
             return StatusCode(result.StatusCode, result);
         }
+
+        /// <summary>
+        /// حذف نرم چند اعلان انتخابی
+        /// </summary>
+        [HttpPost("delete-many")]
+        [ProducesResponseType(typeof(ApiResponse<int>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<int>), StatusCodes.Status400BadRequest)]
+        public async Task<ActionResult<ApiResponse<int>>> DeleteMany([FromBody] DeleteNotificationsDto dto)
+        {
+            var invalid = InvalidModelStateResponse<int>();
+            if (invalid != null)
+                return invalid;
+
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _notificationService.DeleteManyAsync(userId, dto.NotificationIds);
+            return StatusCode(result.StatusCode, result);
+        }
     }
 }

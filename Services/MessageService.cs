@@ -511,6 +511,7 @@ namespace Api_Vapp.Services
                 var user = await _userRepository.GetByIdAsync(userId);
                 var walletStatus = !pricing.IsBillingEffectivelyEnabled || (user?.WalletBalance >= totalCost) ? "Sufficient" : "Insufficient";
 
+                var latestApproval = await GetLatestDirectApprovalRequestAsync(userId, messageId, session?.Id);
                 var summary = new CampaignSummaryDto
                 {
                     SendType = sendType,
@@ -524,7 +525,11 @@ namespace Api_Vapp.Services
                     CostPerPart = pricing.CostPerPart,
                     EstimatedTotalCost = totalCost,
                     WalletStatus = walletStatus,
-                    WalletBalance = user?.WalletBalance ?? 0
+                    WalletBalance = user?.WalletBalance ?? 0,
+                    ApprovalRequestId = latestApproval?.Id,
+                    AdminApprovalStatus = latestApproval?.Status,
+                    AdminRejectionReason = latestApproval?.RejectionReason,
+                    AdminReviewedAt = latestApproval?.ReviewedAt
                 };
 
                 return ApiResponse<CampaignSummaryDto>.CreateSuccess(summary);
@@ -589,6 +594,7 @@ namespace Api_Vapp.Services
                 var user = await _userRepository.GetByIdAsync(userId);
                 var walletStatus = !pricing.IsBillingEffectivelyEnabled || (user?.WalletBalance >= totalCost) ? "Sufficient" : "Insufficient";
 
+                var latestApproval = await GetLatestDirectApprovalRequestAsync(userId, messageId, session?.Id);
                 var summary = new CampaignSummaryDto
                 {
                     SendType = campaignDto.SendType,
@@ -602,7 +608,11 @@ namespace Api_Vapp.Services
                     CostPerPart = pricing.CostPerPart,
                     EstimatedTotalCost = totalCost,
                     WalletStatus = walletStatus,
-                    WalletBalance = user?.WalletBalance ?? 0
+                    WalletBalance = user?.WalletBalance ?? 0,
+                    ApprovalRequestId = latestApproval?.Id,
+                    AdminApprovalStatus = latestApproval?.Status,
+                    AdminRejectionReason = latestApproval?.RejectionReason,
+                    AdminReviewedAt = latestApproval?.ReviewedAt
                 };
 
                 // ذخیره تنظیمات در Session برای استفاده در confirm-and-send
@@ -697,6 +707,10 @@ namespace Api_Vapp.Services
                         summary.AutoSent = false;
                         summary.SentCount = sendResult.Data?.SentCount ?? 0;
                         summary.FailedCount = sendResult.Data?.FailedCount ?? 0;
+                        summary.ApprovalRequestId = sendResult.Data?.ApprovalRequestId;
+                        summary.AdminApprovalStatus = sendResult.Data?.AdminApprovalStatus;
+                        summary.AdminRejectionReason = sendResult.Data?.AdminRejectionReason;
+                        summary.AdminReviewedAt = sendResult.Data?.AdminReviewedAt;
                         _logger.LogInformation(
                             "Send queued for admin approval - MessageId: {MessageId}, Message: {Message}",
                             messageId, sendResult.Message);
@@ -713,6 +727,10 @@ namespace Api_Vapp.Services
                         summary.SentCount = sendResult.Data.SentCount;
                         summary.FailedCount = sendResult.Data.FailedCount;
                         summary.ActualCost = sendResult.Data.TotalCost;
+                        summary.ApprovalRequestId = sendResult.Data.ApprovalRequestId;
+                        summary.AdminApprovalStatus = sendResult.Data.AdminApprovalStatus;
+                        summary.AdminRejectionReason = sendResult.Data.AdminRejectionReason;
+                        summary.AdminReviewedAt = sendResult.Data.AdminReviewedAt;
 
                         _logger.LogInformation("Send completed - MessageId: {MessageId}, Sent: {SentCount}, Failed: {FailedCount}",
                             messageId, sendResult.Data.SentCount, sendResult.Data.FailedCount);
@@ -1087,7 +1105,10 @@ namespace Api_Vapp.Services
                             messageId, session.Id, scheduledAtUtc, forceSendApplied, skipSmsApprovalForTemplate);
 
                         return ApiResponse<DirectSendResultDto>.CreateSuccess(
-                            new DirectSendResultDto(),
+                            new DirectSendResultDto
+                            {
+                                AdminApprovalStatus = AdminApprovalStatuses.Approved
+                            },
                             "پیام زمان‌بندی شد و در زمان مقرر ارسال می‌شود");
                     }
 
@@ -1102,14 +1123,20 @@ namespace Api_Vapp.Services
                         recipientsCount = 0;
                     }
 
-                    await UpsertDirectMessageApprovalRequestAsync(message, session, sendDto, recipientsCount);
+                    var approvalRequest = await UpsertDirectMessageApprovalRequestAsync(message, session, sendDto, recipientsCount);
 
                     _logger.LogInformation(
                         "Message scheduled successfully - MessageId: {MessageId}, SessionId: {SessionId}, ScheduledAt (UTC): {ScheduledAt}",
                         messageId, session.Id, scheduledAtUtc);
 
                     return ApiResponse<DirectSendResultDto>.CreateSuccess(
-                        new DirectSendResultDto(),
+                        new DirectSendResultDto
+                        {
+                            ApprovalRequestId = approvalRequest.Id,
+                            AdminApprovalStatus = approvalRequest.Status,
+                            AdminRejectionReason = approvalRequest.RejectionReason,
+                            AdminReviewedAt = approvalRequest.ReviewedAt
+                        },
                         "پیام زمان‌بندی شد و در صف تأیید ادمین قرار گرفت",
                         202);
                 }
@@ -4018,14 +4045,23 @@ namespace Api_Vapp.Services
                     if (existingPending)
                     {
                         return ApiResponse<DirectSendResultDto>.CreateSuccess(
-                            new DirectSendResultDto(),
+                            new DirectSendResultDto
+                            {
+                                AdminApprovalStatus = AdminApprovalStatuses.Pending
+                            },
                             "درخواست ارسال در صف تأیید ادمین قرار دارد",
                             202);
                     }
 
-                    await UpsertDirectMessageApprovalRequestAsync(message, session, sendDto, recipients.Count);
+                    var approvalRequest = await UpsertDirectMessageApprovalRequestAsync(message, session, sendDto, recipients.Count);
                     return ApiResponse<DirectSendResultDto>.CreateSuccess(
-                        new DirectSendResultDto(),
+                        new DirectSendResultDto
+                        {
+                            ApprovalRequestId = approvalRequest.Id,
+                            AdminApprovalStatus = approvalRequest.Status,
+                            AdminRejectionReason = approvalRequest.RejectionReason,
+                            AdminReviewedAt = approvalRequest.ReviewedAt
+                        },
                         "درخواست ارسال در صف تأیید ادمین قرار گرفت",
                         202);
                 }
@@ -4122,7 +4158,10 @@ namespace Api_Vapp.Services
                     if (sendDto.ScheduledAt.HasValue && sendDto.ScheduledAt.Value > DateTime.UtcNow.AddSeconds(30))
                     {
                         return ApiResponse<DirectSendResultDto>.CreateSuccess(
-                            new DirectSendResultDto(),
+                            new DirectSendResultDto
+                            {
+                                AdminApprovalStatus = AdminApprovalStatuses.Approved
+                            },
                             "پیام برای ارسال در زمان مقرر زمان‌بندی شده است",
                             202);
                     }
@@ -4321,7 +4360,8 @@ namespace Api_Vapp.Services
                     SentCount = sentCount,
                     FailedCount = failedCount,
                     TotalCost = actualCost,
-                    FailedNumbers = failedNumbers.Any() ? failedNumbers : null
+                    FailedNumbers = failedNumbers.Any() ? failedNumbers : null,
+                    AdminApprovalStatus = AdminApprovalStatuses.Approved
                 };
 
                 var messageText = $"پیام‌ها با موفقیت ارسال شد ({sentCount} ارسال موفق، {failedCount} ناموفق)";
@@ -4425,7 +4465,10 @@ namespace Api_Vapp.Services
                         : (c.Status == "Active" ? "Active" 
                         : (c.SendType == "Scheduled" ? "Scheduled" 
                         : "Draft")),
-                    IsActive = c.IsActive
+                    IsActive = c.IsActive,
+                    AdminApprovalStatus = c.AdminApprovalStatus,
+                    AdminRejectionReason = c.AdminRejectionReason,
+                    AdminReviewedAt = c.AdminApprovedAt
                 }).ToList();
 
                 return ApiResponse<List<LatestCampaignsDto>>.CreateSuccess(latestCampaigns);
@@ -4768,7 +4811,8 @@ namespace Api_Vapp.Services
                     amount,
                     WalletTransactionTypes.Refund,
                     "برگشت هزینه پیامک",
-                    description);
+                    description,
+                    sendPushNotification: false);
 
                 if (!refund.Success)
                 {
@@ -5449,7 +5493,7 @@ namespace Api_Vapp.Services
             return filteredRecipients;
         }
 
-        private Task<MessageResponseDto> MapToMessageResponseDtoAsync(Message message)
+        private async Task<MessageResponseDto> MapToMessageResponseDtoAsync(Message message)
         {
             List<string>? placeholders = null;
             if (!string.IsNullOrEmpty(message.Placeholders))
@@ -5457,7 +5501,15 @@ namespace Api_Vapp.Services
                 placeholders = JsonSerializer.Deserialize<List<string>>(message.Placeholders);
             }
 
-            return Task.FromResult(new MessageResponseDto
+            var latestApproval = await _context.SmsApprovalRequests
+                .AsNoTracking()
+                .Where(r => r.UserId == message.UserId
+                    && r.MessageId == message.Id
+                    && !r.IsDeleted)
+                .OrderByDescending(r => r.CreatedAt)
+                .FirstOrDefaultAsync();
+
+            return new MessageResponseDto
             {
                 Id = message.Id,
                 Content = message.Content,
@@ -5466,12 +5518,15 @@ namespace Api_Vapp.Services
                 IsPersonalized = message.IsPersonalized,
                 Placeholders = placeholders,
                 Status = message.Status,
+                AdminApprovalStatus = latestApproval?.Status,
+                AdminRejectionReason = latestApproval?.RejectionReason,
+                AdminReviewedAt = latestApproval?.ReviewedAt,
                 CreatedAt = message.CreatedAt,
                 UpdatedAt = message.UpdatedAt
-            });
+            };
         }
 
-        private Task<CampaignResponseDto> MapToCampaignResponseDtoAsync(MessageCampaign campaign)
+        private async Task<CampaignResponseDto> MapToCampaignResponseDtoAsync(MessageCampaign campaign)
         {
             List<int>? selectedTagIds = null;
             if (!string.IsNullOrEmpty(campaign.SelectedTags))
@@ -5479,7 +5534,13 @@ namespace Api_Vapp.Services
                 selectedTagIds = JsonSerializer.Deserialize<List<int>>(campaign.SelectedTags);
             }
 
-            return Task.FromResult(new CampaignResponseDto
+            var latestApproval = await _context.SmsApprovalRequests
+                .AsNoTracking()
+                .Where(r => r.MessageCampaignId == campaign.Id && !r.IsDeleted)
+                .OrderByDescending(r => r.CreatedAt)
+                .FirstOrDefaultAsync();
+
+            return new CampaignResponseDto
             {
                 Id = campaign.Id,
                 MessageId = campaign.MessageId,
@@ -5497,11 +5558,14 @@ namespace Api_Vapp.Services
                 ActualTotalCost = campaign.ActualTotalCost,
                 WalletStatus = campaign.WalletStatus,
                 Status = campaign.Status,
+                AdminApprovalStatus = campaign.AdminApprovalStatus,
+                AdminRejectionReason = campaign.AdminRejectionReason,
+                AdminReviewedAt = latestApproval?.ReviewedAt ?? campaign.AdminApprovedAt,
                 SentAt = campaign.SentAt,
                 SentCount = campaign.SentCount,
                 FailedCount = campaign.FailedCount,
                 CreatedAt = campaign.CreatedAt
-            });
+            };
         }
 
         private TemplateResponseDto MapToTemplateResponseDto(MessageTemplate template)
@@ -5595,23 +5659,25 @@ namespace Api_Vapp.Services
                 .FirstOrDefaultAsync();
         }
 
-        private async Task UpsertCampaignApprovalRequestAsync(MessageCampaign campaign, Message message)
+        private async Task<SmsApprovalRequest> UpsertCampaignApprovalRequestAsync(MessageCampaign campaign, Message message)
         {
             var existing = await _context.SmsApprovalRequests
                 .FirstOrDefaultAsync(r => r.MessageCampaignId == campaign.Id
                     && r.Status == AdminApprovalStatuses.Pending
                     && !r.IsDeleted);
 
+            SmsApprovalRequest request;
             if (existing != null)
             {
                 existing.ContentPreview = message.Content;
                 existing.TitlePreview = message.Title ?? campaign.Title;
                 existing.RecipientsCount = campaign.RecipientsCount;
                 existing.UpdatedAt = DateTime.UtcNow;
+                request = existing;
             }
             else
             {
-                _context.SmsApprovalRequests.Add(new SmsApprovalRequest
+                request = new SmsApprovalRequest
                 {
                     UserId = campaign.UserId,
                     RequestType = SmsApprovalRequestTypes.Campaign,
@@ -5622,13 +5688,15 @@ namespace Api_Vapp.Services
                     RecipientsCount = campaign.RecipientsCount,
                     Status = AdminApprovalStatuses.Pending,
                     CreatedAt = DateTime.UtcNow
-                });
+                };
+                _context.SmsApprovalRequests.Add(request);
             }
 
             await _context.SaveChangesAsync();
+            return request;
         }
 
-        private async Task UpsertDirectMessageApprovalRequestAsync(
+        private async Task<SmsApprovalRequest> UpsertDirectMessageApprovalRequestAsync(
             Message message,
             MessageSession session,
             SendDirectMessageDto sendDto,
@@ -5642,6 +5710,7 @@ namespace Api_Vapp.Services
 
             var payload = JsonSerializer.Serialize(sendDto);
 
+            SmsApprovalRequest request;
             if (existing != null)
             {
                 existing.ContentPreview = message.Content;
@@ -5649,10 +5718,11 @@ namespace Api_Vapp.Services
                 existing.RecipientsCount = recipientsCount;
                 existing.SendPayloadJson = payload;
                 existing.UpdatedAt = DateTime.UtcNow;
+                request = existing;
             }
             else
             {
-                _context.SmsApprovalRequests.Add(new SmsApprovalRequest
+                request = new SmsApprovalRequest
                 {
                     UserId = message.UserId,
                     RequestType = SmsApprovalRequestTypes.DirectMessage,
@@ -5664,10 +5734,29 @@ namespace Api_Vapp.Services
                     SendPayloadJson = payload,
                     Status = AdminApprovalStatuses.Pending,
                     CreatedAt = DateTime.UtcNow
-                });
+                };
+                _context.SmsApprovalRequests.Add(request);
             }
 
             await _context.SaveChangesAsync();
+            return request;
+        }
+
+        private Task<SmsApprovalRequest?> GetLatestDirectApprovalRequestAsync(int userId, int messageId, int? sessionId)
+        {
+            var query = _context.SmsApprovalRequests
+                .AsNoTracking()
+                .Where(r => r.UserId == userId
+                    && r.MessageId == messageId
+                    && r.RequestType == SmsApprovalRequestTypes.DirectMessage
+                    && !r.IsDeleted);
+
+            if (sessionId.HasValue)
+                query = query.Where(r => r.MessageSessionId == sessionId.Value);
+
+            return query
+                .OrderByDescending(r => r.CreatedAt)
+                .FirstOrDefaultAsync();
         }
 
         /// <summary>

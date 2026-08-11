@@ -153,17 +153,24 @@ namespace Api_Vapp.Services
             }
 
             var referrer = await _userRepository.GetByReferralCodeAsync(normalized);
-            if (referrer == null || !referrer.IsActive || referrer.IsDeleted)
+            if (referrer == null)
             {
                 return ApiResponse<WalletReferralPaymentMetaDto?>.BadRequest(
-                    "کد معرفی نامعتبر است",
+                    "کد معرفی پیدا نشد. لطفاً کد را بررسی کنید",
+                    errorCode: ErrorCodes.ReferralInvalid);
+            }
+
+            if (!referrer.IsActive || referrer.IsDeleted)
+            {
+                return ApiResponse<WalletReferralPaymentMetaDto?>.BadRequest(
+                    "حساب کاربریِ صاحب کد معرفی فعال نیست",
                     errorCode: ErrorCodes.ReferralInvalid);
             }
 
             if (referrer.Id == userId)
             {
                 return ApiResponse<WalletReferralPaymentMetaDto?>.BadRequest(
-                    "نمی‌توانید از کد معرفی خودتان استفاده کنید",
+                    "این کد معرفی متعلق به حساب خودتان است و قابل استفاده نیست",
                     errorCode: ErrorCodes.ReferralSelfUse);
             }
 

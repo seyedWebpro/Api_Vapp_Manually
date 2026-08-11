@@ -109,6 +109,13 @@ namespace Api_Vapp.Services
                         errorCode: ErrorCodes.InvalidInput);
                 }
 
+                if (!IsDateWithinPublicBookingWindow(date))
+                {
+                    return ApiResponse<BookingAvailableSlotsDto>.BadRequest(
+                        BuildPublicBookingWindowErrorMessage(),
+                        errorCode: ErrorCodes.InvalidInput);
+                }
+
                 var existing = await _appointmentRepository.GetAppointmentsForServiceOnDateAsync(serviceId, date);
                 var blocked = await _appointmentRepository.GetBlockedStartsForSystemOnDateAsync(
                     service.BookingSystemId, date);
@@ -1243,6 +1250,13 @@ namespace Api_Vapp.Services
             }
 
             var date = DateOnly.FromDateTime(startUtc);
+            if (requireFutureSlot && !IsDateWithinPublicBookingWindow(date))
+            {
+                return AppointmentCreateResult.Fail(
+                    BuildPublicBookingWindowErrorMessage(),
+                    errorCode: ErrorCodes.InvalidInput);
+            }
+
             var existing = await _appointmentRepository.GetAppointmentsForServiceOnDateAsync(service.Id, date);
             var blocked = await _appointmentRepository.GetBlockedStartsForSystemOnDateAsync(system.Id, date);
 
@@ -1382,7 +1396,7 @@ namespace Api_Vapp.Services
             return null;
         }
 
-        private static BookingPublicSystemDto MapToPublicDto(BookingSystem system) => new()
+        private BookingPublicSystemDto MapToPublicDto(BookingSystem system) => new()
         {
             Title = system.Title,
             Description = system.Description,
@@ -1390,6 +1404,9 @@ namespace Api_Vapp.Services
             ActivityType = system.ActivityType,
             ActivityTypeTitle = BookingActivityTypes.GetTitle(system.ActivityType),
             Slug = system.Slug,
+            BookingWindowDays = GetPublicBookingWindowDays(),
+            BookingWindowStartDate = GetPublicBookingWindowStartDate(),
+            BookingWindowEndDate = GetPublicBookingWindowEndDate(),
             Services = system.Services
                 .Where(s => !s.IsDeleted)
                 .OrderBy(s => s.SortOrder)
@@ -1431,6 +1448,35 @@ namespace Api_Vapp.Services
             CreatedAt = EnsureUtc(appointment.CreatedAt),
             HasPaymentReceipt = !string.IsNullOrWhiteSpace(appointment.PaymentReceiptPath)
         };
+
+        private int GetPublicBookingWindowDays()
+        {
+            return _options.PublicBookingWindowDays > 0
+                ? _options.PublicBookingWindowDays
+                : 7;
+        }
+
+        private DateOnly GetPublicBookingWindowStartDate()
+        {
+            return DateOnly.FromDateTime(DateTime.UtcNow);
+        }
+
+        private DateOnly GetPublicBookingWindowEndDate()
+        {
+            return GetPublicBookingWindowStartDate().AddDays(GetPublicBookingWindowDays());
+        }
+
+        private bool IsDateWithinPublicBookingWindow(DateOnly date)
+        {
+            var startDate = GetPublicBookingWindowStartDate();
+            var endDate = GetPublicBookingWindowEndDate();
+            return date >= startDate && date <= endDate;
+        }
+
+        private string BuildPublicBookingWindowErrorMessage()
+        {
+            return $"رزرو فقط تا {GetPublicBookingWindowDays()} روز آینده امکان‌پذیر است";
+        }
 
         private static PublicBookingStatusDto MapToPublicStatusDto(BookingAppointment appointment) => new()
         {

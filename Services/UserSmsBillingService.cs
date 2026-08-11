@@ -187,7 +187,8 @@ namespace Api_Vapp.Services
                     reserved,
                     WalletTransactionTypes.Refund,
                     "برگشت هزینه پیامک",
-                    $"برگشت رزرو پیامک — {sourceModule} — {reason}");
+                    $"برگشت رزرو پیامک — {sourceModule} — {reason}",
+                    sendPushNotification: false);
 
                 if (!refund.Success)
                 {

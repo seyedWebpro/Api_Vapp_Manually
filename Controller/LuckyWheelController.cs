@@ -61,10 +61,11 @@ namespace Api_Vapp.Controller
         [ProducesResponseType(typeof(ApiResponse<LuckyWheelListResponseDto>), StatusCodes.Status400BadRequest)]
         public async Task<ActionResult<ApiResponse<LuckyWheelListResponseDto>>> GetWheels(
             [FromQuery] int pageNumber = 1,
-            [FromQuery] int pageSize = 10)
+            [FromQuery] int pageSize = 10,
+            [FromQuery] bool? isActive = null)
         {
             var userId = await GetCurrentUserIdAsync();
-            var result = await _luckyWheelService.GetWheelsAsync(userId, pageNumber, pageSize);
+            var result = await _luckyWheelService.GetWheelsAsync(userId, pageNumber, pageSize, isActive);
             return StatusCode(result.StatusCode, result);
         }
 

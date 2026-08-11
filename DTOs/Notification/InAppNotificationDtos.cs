@@ -29,4 +29,11 @@ namespace Api_Vapp.DTOs.Notification
         [Range(1, int.MaxValue, ErrorMessage = "شناسه اعلان نامعتبر است")]
         public int NotificationId { get; set; }
     }
+
+    public class DeleteNotificationsDto
+    {
+        [Required(ErrorMessage = "لیست شناسه‌ها الزامی است")]
+        [MinLength(1, ErrorMessage = "حداقل یک اعلان باید انتخاب شود")]
+        public List<int> NotificationIds { get; set; } = new();
+    }
 }

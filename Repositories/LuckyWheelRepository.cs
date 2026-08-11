@@ -84,11 +84,17 @@ namespace Api_Vapp.Repositories
         public async Task<(IReadOnlyList<LuckyWheel> Items, int TotalCount)> GetByUserIdPagedAsync(
             int userId,
             int pageNumber,
-            int pageSize)
+            int pageSize,
+            bool? isActive = null)
         {
             var query = _dbSet
                 .AsNoTracking()
                 .Where(w => w.UserId == userId && !w.IsDeleted);
+
+            if (isActive.HasValue)
+            {
+                query = query.Where(w => w.IsActive == isActive.Value);
+            }
 
             var totalCount = await query.CountAsync();
 

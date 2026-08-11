@@ -291,7 +291,10 @@ internal sealed class BookingSystemTestContext : IDisposable
                 new PublicPhonebookService(context),
                 smsBilling,
                 new Api_Vapp.Tests.UserForm.FakeFileUploadService(),
-                Microsoft.Extensions.Options.Options.Create(new BookingSystemOptions()),
+                Microsoft.Extensions.Options.Options.Create(new BookingSystemOptions
+                {
+                    PublicBookingWindowDays = 30
+                }),
                 new Api_Vapp.Tests.Shared.NoOpAuditService(),
                 NullLogger<BookingAppointmentService>.Instance);
     }

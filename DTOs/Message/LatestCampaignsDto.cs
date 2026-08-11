@@ -11,6 +11,9 @@ namespace Api_Vapp.DTOs.Message
         public DateTime? ScheduledAt { get; set; }
         public string Status { get; set; } = string.Empty; // Sent, Scheduled
         public bool IsActive { get; set; } = true;
+        public string AdminApprovalStatus { get; set; } = string.Empty;
+        public string? AdminRejectionReason { get; set; }
+        public DateTime? AdminReviewedAt { get; set; }
     }
 }
 

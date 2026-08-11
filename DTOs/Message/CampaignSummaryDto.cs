@@ -26,6 +26,10 @@ namespace Api_Vapp.DTOs.Message
         public int? SentCount { get; set; }
         public int? FailedCount { get; set; }
         public decimal? ActualCost { get; set; }
+        public int? ApprovalRequestId { get; set; }
+        public string? AdminApprovalStatus { get; set; }
+        public string? AdminRejectionReason { get; set; }
+        public DateTime? AdminReviewedAt { get; set; }
     }
 }
 

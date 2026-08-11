@@ -1,4 +1,5 @@
 using Api_Vapp.DTOs.BookingSystem;
+using Api_Vapp.DTOs.Common;
 using Api_Vapp.Models;
 using Xunit;
 
@@ -47,6 +48,22 @@ public class BookingAppointmentServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task GetAvailableSlots_DateOutsidePublicWindow_Returns400()
+    {
+        var (systemId, _) = await _ctx.CreateConfirmedSystemAsync();
+        var system = await _ctx.SystemService.GetByIdAsync(systemId, _ctx.OwnerUserId);
+        var serviceId = system.Data!.Services.First().Id;
+        var slug = system.Data.Slug;
+        var date = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(31));
+
+        var result = await _ctx.AppointmentService.GetAvailableSlotsAsync(slug, serviceId, date);
+
+        BookingApiAssertions.AssertFailure(result, 400);
+        Assert.Equal(ErrorCodes.InvalidInput, result.ErrorCode);
+        Assert.Contains("30", result.Message);
+    }
+
+    [Fact]
     public async Task CreatePublicBooking_ValidSlot_Returns201()
     {
         var (systemId, _) = await _ctx.CreateConfirmedSystemAsync();
@@ -68,6 +85,28 @@ public class BookingAppointmentServiceTests : IAsyncLifetime
 
         BookingApiAssertions.AssertSuccess(result, 201);
         Assert.Equal(BookingAppointmentStatuses.Pending, result.Data!.Appointment.Status);
+    }
+
+    [Fact]
+    public async Task CreatePublicBooking_DateOutsidePublicWindow_Returns400()
+    {
+        var (systemId, _) = await _ctx.CreateConfirmedSystemAsync();
+        var system = await _ctx.SystemService.GetByIdAsync(systemId, _ctx.OwnerUserId);
+        var serviceId = system.Data!.Services.First().Id;
+        var slug = system.Data.Slug;
+        var outOfWindowStartUtc = DateTime.UtcNow.Date.AddDays(31).AddHours(8);
+
+        var result = await _ctx.AppointmentService.CreatePublicBookingAsync(slug, new CreatePublicBookingDto
+        {
+            ServiceId = serviceId,
+            StartUtc = outOfWindowStartUtc,
+            CustomerFullName = "علی تست",
+            CustomerMobile = "09123456789"
+        });
+
+        BookingApiAssertions.AssertFailure(result, 400);
+        Assert.Equal(ErrorCodes.InvalidInput, result.ErrorCode);
+        Assert.Contains("30", result.Message);
     }
 
     [Fact]
@@ -199,8 +238,17 @@ public class BookingAppointmentServiceTests : IAsyncLifetime
         var system = await _ctx.SystemService.GetByIdAsync(systemId, _ctx.OwnerUserId);
         var serviceId = system.Data!.Services.First().Id;
         var slug = system.Data.Slug;
-        var date = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(10));
-        var slots = (await _ctx.AppointmentService.GetAvailableSlotsAsync(slug, serviceId, date)).Data!.Slots;
+        List<BookingTimeSlotDto> slots = new();
+        for (var i = 1; i <= 14; i++)
+        {
+            var date = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(i));
+            slots = (await _ctx.AppointmentService.GetAvailableSlotsAsync(slug, serviceId, date)).Data!.Slots;
+            if (slots.Count >= 2)
+            {
+                break;
+            }
+        }
+
         Assert.True(slots.Count >= 2);
 
         var manual = await _ctx.AppointmentService.CreateManualBookingAsync(systemId, _ctx.OwnerUserId, new CreateManualBookingDto

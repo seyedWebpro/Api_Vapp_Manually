@@ -9,6 +9,10 @@ namespace Api_Vapp.DTOs.Message
         public int FailedCount { get; set; }
         public decimal TotalCost { get; set; }
         public List<string>? FailedNumbers { get; set; }
+        public int? ApprovalRequestId { get; set; }
+        public string? AdminApprovalStatus { get; set; }
+        public string? AdminRejectionReason { get; set; }
+        public DateTime? AdminReviewedAt { get; set; }
     }
 }
 

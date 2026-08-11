@@ -15,7 +15,7 @@ namespace Api_Vapp.Interfaces
 
         Task<ApiResponse<BusinessCardResponseDto>> PublishAsync(int id, int userId, PublishBusinessCardDto? publishDto = null);
 
-        Task<ApiResponse<BusinessCardListResponseDto>> GetCardsAsync(int userId, int pageNumber = 1, int pageSize = 10);
+        Task<ApiResponse<BusinessCardListResponseDto>> GetCardsAsync(int userId, int pageNumber = 1, int pageSize = 10, bool? isActive = null);
 
         Task<ApiResponse<BusinessCardResponseDto>> GetByIdAsync(int id, int userId);
 

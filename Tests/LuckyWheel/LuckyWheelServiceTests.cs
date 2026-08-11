@@ -102,7 +102,7 @@ public class LuckyWheelServiceTests : IAsyncLifetime
         Assert.Equal(3, result.Data!.Items.Count);
         Assert.Equal("درصد جدید", result.Data.Items.First(i => i.Id == firstItemId).Name);
         Assert.Equal(50m, result.Data.Items.First(i => i.Id == firstItemId).Probability);
-        Assert.Equal(100m, result.Data.Items.Sum(i => i.Probability));
+        Assert.Equal(120m, result.Data.Items.Sum(i => i.Probability));
         AssertNoServerError(result);
     }
 
@@ -188,7 +188,7 @@ public class LuckyWheelServiceTests : IAsyncLifetime
 
         Assert.False(result.Success);
         Assert.Equal(400, result.StatusCode);
-        Assert.Contains(result.Data!.PublishValidationErrors, e => e.Contains("مجموع درصد"));
+        Assert.Contains(result.Errors ?? new List<string>(), e => e.Contains("مجموع درصد"));
         AssertNoServerError(result);
     }
 

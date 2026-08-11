@@ -104,9 +104,15 @@ namespace Api_Vapp.Services
             _logger.LogDebug("📤 شروع آپلود فایل: {FileName}, EntityType: {EntityType}, EntityId: {EntityId}, SubFolder: {SubFolder}", 
                 file?.FileName, entityType, entityId, subFolder ?? "none");
 
+            if (file is null)
+            {
+                throw new ArgumentException("فایل انتخاب نشده است یا خالی است.");
+            }
+
             // Validation
             ValidateFile(file);
             ValidateEntityInfo(entityType, entityId);
+            var uploadedFileName = file.FileName;
 
             // تولید نام یکتا — پسوند از محتوای واقعی (نه فقط نام فایل اعلام‌شده)
             string fileName = GenerateUniqueFileName(file!);
@@ -140,7 +146,7 @@ namespace Api_Vapp.Services
             try
             {
                 // اگر اعتبارسنجی قبلی Position را جلو برده باشد، از ابتدا کپی می‌کنیم
-                await using (var source = file.OpenReadStream())
+                await using (var source = file.OpenReadStream() ?? throw new InvalidOperationException("امکان خواندن فایل وجود ندارد."))
                 {
                     if (source.CanSeek)
                         source.Position = 0;
@@ -163,7 +169,7 @@ namespace Api_Vapp.Services
             catch (OperationCanceledException)
             {
                 TryDeletePartialFile(filePath);
-                _logger.LogInformation("⏹ آپلود لغو شد: {FileName}", file.FileName);
+                _logger.LogInformation("⏹ آپلود لغو شد: {FileName}", uploadedFileName);
                 throw;
             }
             catch (UnauthorizedAccessException ex)
@@ -182,7 +188,7 @@ namespace Api_Vapp.Services
             catch (Exception ex)
             {
                 TryDeletePartialFile(filePath);
-                _logger.LogError(ex, "❌ خطا در آپلود فایل: {FileName}", file.FileName);
+                _logger.LogError(ex, "❌ خطا در آپلود فایل: {FileName}", uploadedFileName);
                 throw new InvalidOperationException(ControlledErrorHelper.FileUploadFailed, ex);
             }
         }

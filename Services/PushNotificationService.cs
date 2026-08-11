@@ -9,11 +9,15 @@ using Google.Apis.Auth.OAuth2;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using System.Collections.Concurrent;
 
 namespace Api_Vapp.Services
 {
     public class PushNotificationService : IPushNotificationService
     {
+        private static readonly TimeSpan DuplicateCooldown = TimeSpan.FromMinutes(10);
+        private static readonly ConcurrentDictionary<string, DateTime> LastPushByKey = new();
+
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly FirebaseOptions _options;
         private readonly IHostEnvironment _environment;
@@ -43,6 +47,9 @@ namespace Api_Vapp.Services
             NotificationCategory category,
             CancellationToken cancellationToken = default)
         {
+            title = title?.Trim() ?? string.Empty;
+            body = body?.Trim() ?? string.Empty;
+
             _logger.LogInformation(
                 "شروع ارسال Push — UserId={UserId}, Category={Category}",
                 userId, category);
@@ -51,6 +58,22 @@ namespace Api_Vapp.Services
             {
                 Category = category.ToString()
             };
+
+            if (!IsAllowedPush(category, title))
+            {
+                _logger.LogInformation(
+                    "Push blocked by global policy — UserId={UserId}, Category={Category}, Title={Title}",
+                    userId, category, title);
+                return result;
+            }
+
+            if (IsDuplicate(userId, category, title, body))
+            {
+                _logger.LogInformation(
+                    "Push suppressed as duplicate by global policy — UserId={UserId}, Category={Category}, Title={Title}",
+                    userId, category, title);
+                return result;
+            }
 
             // ۱) چک سریع تنظیمات پروفایل — قبل از Firebase و قبل از خواندن دستگاه‌ها
             bool preferenceAllowed;
@@ -357,6 +380,60 @@ namespace Api_Vapp.Services
             if (string.IsNullOrEmpty(token))
                 return "(empty)";
             return token.Length <= 12 ? token : token[..12];
+        }
+
+        private static bool IsAllowedPush(NotificationCategory category, string title)
+        {
+            if (string.IsNullOrWhiteSpace(title))
+                return false;
+
+            return category switch
+            {
+                NotificationCategory.Updates => string.Equals(title, "به‌روزرسانی وپ", StringComparison.Ordinal),
+                NotificationCategory.EducationAndTips => string.Equals(title, "آموزش جدید در وپ", StringComparison.Ordinal),
+                NotificationCategory.ImportantNotifications => IsAllowedImportantTitle(title),
+                _ => false
+            };
+        }
+
+        private static bool IsAllowedImportantTitle(string title)
+        {
+            return string.Equals(title, "اعلان مهم حساب", StringComparison.Ordinal)
+                || string.Equals(title, "فعال‌سازی حساب", StringComparison.Ordinal)
+                || string.Equals(title, "غیرفعال‌سازی حساب", StringComparison.Ordinal);
+        }
+
+        private static bool IsDuplicate(
+            int userId,
+            NotificationCategory category,
+            string title,
+            string body)
+        {
+            var now = DateTime.UtcNow;
+            var key = $"{userId}|{(int)category}|{title}|{body}";
+
+            if (LastPushByKey.TryGetValue(key, out var lastSentAt)
+                && now - lastSentAt < DuplicateCooldown)
+            {
+                return true;
+            }
+
+            LastPushByKey[key] = now;
+            TryCleanupOldEntries(now);
+            return false;
+        }
+
+        private static void TryCleanupOldEntries(DateTime now)
+        {
+            if (LastPushByKey.Count < 5000)
+                return;
+
+            var threshold = now - (DuplicateCooldown * 2);
+            foreach (var item in LastPushByKey)
+            {
+                if (item.Value < threshold)
+                    LastPushByKey.TryRemove(item.Key, out _);
+            }
         }
     }
 }

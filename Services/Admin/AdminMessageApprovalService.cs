@@ -333,8 +333,13 @@ namespace Api_Vapp.Services.Admin
                 if (request == null)
                     return ApiResponse<bool>.NotFound("درخواست تأیید یافت نشد");
 
-                if (request.Status != AdminApprovalStatuses.Pending && request.Status != AdminApprovalStatuses.Processing)
+                if (request.Status != AdminApprovalStatuses.Pending)
+                {
+                    if (request.Status == AdminApprovalStatuses.Processing)
+                        return ApiResponse<bool>.BadRequest("درخواست در حال پردازش و ارسال است و امکان رد کردن ندارد");
+
                     return ApiResponse<bool>.BadRequest("این درخواست قبلاً بررسی شده است");
+                }
 
                 var statusBeforeReject = request.Status;
 

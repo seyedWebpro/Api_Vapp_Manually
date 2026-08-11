@@ -237,7 +237,8 @@ namespace Api_Vapp.Services
             string? description = null, 
             int? paymentId = null, 
             int? cashbackId = null,
-            string? referenceNumber = null)
+            string? referenceNumber = null,
+            bool sendPushNotification = true)
         {
             try
             {
@@ -319,28 +320,31 @@ namespace Api_Vapp.Services
                         }
                     });
 
-                    var creditCopy = PushNotificationCopy.WalletCredited(amount, balanceAfter, title);
-                    // بعد از commit ارسال می‌شود؛ کمی تأخیر تا UI موبایل از درگاه برگردد و شانس نمایش سیستم‌ترِی بیشتر شود
-                    var pushUserId = userId;
-                    var pushTitle = creditCopy.Title;
-                    var pushBody = creditCopy.Body;
-                    _ = Task.Run(async () =>
+                    if (sendPushNotification)
                     {
-                        try
+                        var creditCopy = PushNotificationCopy.WalletCredited(amount, balanceAfter, title);
+                        // بعد از commit ارسال می‌شود؛ کمی تأخیر تا UI موبایل از درگاه برگردد و شانس نمایش سیستم‌ترِی بیشتر شود
+                        var pushUserId = userId;
+                        var pushTitle = creditCopy.Title;
+                        var pushBody = creditCopy.Body;
+                        _ = Task.Run(async () =>
                         {
-                            await Task.Delay(1200);
-                            await _pushNotifier.NotifyAsync(
-                                pushUserId,
-                                NotificationCategory.WalletTransaction,
-                                pushTitle,
-                                pushBody);
-                        }
-                        catch (Exception pushEx)
-                        {
-                            _logger.LogError(pushEx,
-                                "خطا در Push تأخیری شارژ کیف پول — UserId={UserId}", pushUserId);
-                        }
-                    });
+                            try
+                            {
+                                await Task.Delay(1200);
+                                await _pushNotifier.NotifyAsync(
+                                    pushUserId,
+                                    NotificationCategory.WalletTransaction,
+                                    pushTitle,
+                                    pushBody);
+                            }
+                            catch (Exception pushEx)
+                            {
+                                _logger.LogError(pushEx,
+                                    "خطا در Push تأخیری شارژ کیف پول — UserId={UserId}", pushUserId);
+                            }
+                        });
+                    }
 
                     return ApiResponse<WalletTransactionDto>.CreateSuccess(
                         MapToWalletTransactionDto(walletTransaction), 

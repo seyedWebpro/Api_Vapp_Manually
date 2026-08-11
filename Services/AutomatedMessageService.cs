@@ -357,7 +357,8 @@ namespace Api_Vapp.Services
                     {
                         await transaction.RollbackAsync();
                         return ApiResponse<RecipientListForAutomatedMessageResponseDto>.BadRequest(
-                            "باید یا 'اعمال برای همه مخاطبین' را انتخاب کنید یا یک دفترچه تلفن مشخص کنید");
+                            "برای انتخاب گیرندگان باید یکی از دو حالت را مشخص کنید: همه مخاطبین یا یک دفترچه تلفن",
+                            errorCode: ErrorCodes.InvalidInput);
                     }
 
                     // بررسی مالکیت دفترچه
@@ -2169,11 +2170,22 @@ namespace Api_Vapp.Services
                 return ApiResponse<object>.BadRequest("داده‌های تنظیمات مناسبت‌های خاص الزامی است");
             }
 
+            DateTime? occasionDate = null;
+            if (!string.IsNullOrWhiteSpace(data.OccasionDate))
+            {
+                occasionDate = FlexibleDateTimeConverter.Parse(data.OccasionDate);
+                if (!occasionDate.HasValue)
+                {
+                    return ApiResponse<object>.BadRequest(
+                        "فرمت تاریخ نامعتبر است. تاریخ شمسی (1405/05/19) یا میلادی (2026-08-10) ارسال کنید");
+                }
+            }
+
             var managementDto = new SpecialOccasionManagementDto
             {
                 Action = data.Action,
                 OccasionName = data.OccasionName,
-                OccasionDate = data.OccasionDate,
+                OccasionDate = occasionDate,
                 OccasionId = data.OccasionId
             };
 

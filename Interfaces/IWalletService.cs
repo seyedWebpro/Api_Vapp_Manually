@@ -31,7 +31,16 @@ namespace Api_Vapp.Interfaces
         /// <summary>
         /// اضافه کردن موجودی به کیف پول (استفاده داخلی)
         /// </summary>
-        Task<ApiResponse<WalletTransactionDto>> AddBalanceAsync(int userId, decimal amount, string transactionType, string title, string? description = null, int? paymentId = null, int? cashbackId = null, string? referenceNumber = null);
+        Task<ApiResponse<WalletTransactionDto>> AddBalanceAsync(
+            int userId,
+            decimal amount,
+            string transactionType,
+            string title,
+            string? description = null,
+            int? paymentId = null,
+            int? cashbackId = null,
+            string? referenceNumber = null,
+            bool sendPushNotification = true);
 
         /// <summary>
         /// کسر موجودی از کیف پول (استفاده داخلی)

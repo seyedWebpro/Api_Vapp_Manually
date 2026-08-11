@@ -309,6 +309,14 @@ namespace Api_Vapp.Services
                 // Soft Delete
                 user.IsDeleted = true;
                 user.IsActive = false;
+                // آزادسازی شماره/کدملی برای ثبت‌نام مجدد بعد از حذف نرم
+                // تا با unique index روی Users.PhoneNumber/NationalId تداخل ایجاد نشود.
+                var deletedMarker = $"deleted-{user.Id}-{DateTime.UtcNow:yyyyMMddHHmmss}";
+                user.PhoneNumber = deletedMarker;
+                if (!string.IsNullOrWhiteSpace(user.NationalId))
+                {
+                    user.NationalId = $"{user.NationalId}-deleted-{user.Id}";
+                }
                 user.UpdatedAt = DateTime.UtcNow;
                 await _userRepository.UpdateAsync(user);
                 await InvalidateUserSessionsAsync(id, "soft-delete");
@@ -814,13 +822,15 @@ namespace Api_Vapp.Services
                 }
 
                 // بررسی مجدد تکراری نبودن (ممکن است بین request و verify ثبت شده باشد)
-                var existingUser = await _userRepository.GetByPhoneNumberAsync(newPhone);
-                if (existingUser != null && existingUser.Id != userId && !existingUser.IsDeleted)
+                var existingUser = await _context.Users
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(u => u.PhoneNumber == newPhone && u.Id != userId);
+                if (existingUser != null)
                 {
                     _cache.Remove(otpCacheKey);
                     _cache.Remove(attemptKey);
                     return ApiResponse<UserProfileDto>.BadRequest(
-                        "کاربری با این شماره تلفن قبلاً ثبت شده است",
+                        "این شماره تلفن قابل استفاده نیست",
                         errorCode: ErrorCodes.InvalidInput);
                 }
 
@@ -895,11 +905,13 @@ namespace Api_Vapp.Services
                     errorCode: ErrorCodes.InvalidInput));
             }
 
-            var existingUser = await _userRepository.GetByPhoneNumberAsync(newPhone);
-            if (existingUser != null && existingUser.Id != userId && !existingUser.IsDeleted)
+            var existingUser = await _context.Users
+                .AsNoTracking()
+                .FirstOrDefaultAsync(u => u.PhoneNumber == newPhone && u.Id != userId);
+            if (existingUser != null)
             {
                 return (null, null, ApiResponse<ChangePhoneOtpResponseDto>.BadRequest(
-                    "کاربری با این شماره تلفن قبلاً ثبت شده است",
+                    "این شماره تلفن قابل استفاده نیست",
                     errorCode: ErrorCodes.InvalidInput));
             }
 

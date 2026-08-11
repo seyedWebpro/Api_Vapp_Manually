@@ -2,11 +2,15 @@ using Api_Vapp.Constants;
 using Api_Vapp.Data;
 using Api_Vapp.Interfaces;
 using Microsoft.EntityFrameworkCore;
+using System.Collections.Concurrent;
 
 namespace Api_Vapp.Services
 {
     public class UserPushNotifier : IUserPushNotifier
     {
+        private static readonly TimeSpan DuplicateCooldown = TimeSpan.FromMinutes(10);
+        private static readonly ConcurrentDictionary<string, DateTime> LastPushByKey = new();
+
         private readonly IPushNotificationService _push;
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILogger<UserPushNotifier> _logger;
@@ -33,7 +37,26 @@ namespace Api_Vapp.Services
                 if (userId <= 0 || string.IsNullOrWhiteSpace(title) || string.IsNullOrWhiteSpace(body))
                     return;
 
-                var result = await _push.SendToUserAsync(userId, title.Trim(), body.Trim(), category, cancellationToken);
+                var normalizedTitle = title.Trim();
+                var normalizedBody = body.Trim();
+
+                if (!IsAllowedPush(category, normalizedTitle))
+                {
+                    _logger.LogInformation(
+                        "Push blocked by policy — UserId={UserId}, Category={Category}, Title={Title}",
+                        userId, category, normalizedTitle);
+                    return;
+                }
+
+                if (IsDuplicate(userId, category, normalizedTitle, normalizedBody))
+                {
+                    _logger.LogInformation(
+                        "Push suppressed as duplicate — UserId={UserId}, Category={Category}, Title={Title}",
+                        userId, category, normalizedTitle);
+                    return;
+                }
+
+                var result = await _push.SendToUserAsync(userId, normalizedTitle, normalizedBody, category, cancellationToken);
 
                 _logger.LogInformation(
                     "Push notify — UserId={UserId}, Category={Category}, Skipped={Skipped}, Sent={Sent}, Devices={Devices}",
@@ -56,6 +79,20 @@ namespace Api_Vapp.Services
             var sentUsers = 0;
             try
             {
+                if (string.IsNullOrWhiteSpace(title) || string.IsNullOrWhiteSpace(body))
+                    return 0;
+
+                var normalizedTitle = title.Trim();
+                var normalizedBody = body.Trim();
+
+                if (!IsAllowedPush(category, normalizedTitle))
+                {
+                    _logger.LogInformation(
+                        "Push broadcast blocked by policy — Category={Category}, Title={Title}",
+                        category, normalizedTitle);
+                    return 0;
+                }
+
                 List<int> userIds;
                 using (var scope = _scopeFactory.CreateScope())
                 {
@@ -93,8 +130,16 @@ namespace Api_Vapp.Services
                 foreach (var userId in userIds)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    var before = sentUsers;
-                    var result = await _push.SendToUserAsync(userId, title, body, category, cancellationToken);
+
+                    if (IsDuplicate(userId, category, normalizedTitle, normalizedBody))
+                        continue;
+
+                    var result = await _push.SendToUserAsync(
+                        userId,
+                        normalizedTitle,
+                        normalizedBody,
+                        category,
+                        cancellationToken);
                     if (result.SentCount > 0)
                         sentUsers++;
                 }
@@ -113,6 +158,60 @@ namespace Api_Vapp.Services
             }
 
             return sentUsers;
+        }
+
+        private static bool IsAllowedPush(NotificationCategory category, string title)
+        {
+            if (string.IsNullOrWhiteSpace(title))
+                return false;
+
+            return category switch
+            {
+                NotificationCategory.Updates => string.Equals(title, "به‌روزرسانی وپ", StringComparison.Ordinal),
+                NotificationCategory.EducationAndTips => string.Equals(title, "آموزش جدید در وپ", StringComparison.Ordinal),
+                NotificationCategory.ImportantNotifications => IsAllowedImportantTitle(title),
+                _ => false
+            };
+        }
+
+        private static bool IsAllowedImportantTitle(string title)
+        {
+            return string.Equals(title, "اعلان مهم حساب", StringComparison.Ordinal)
+                || string.Equals(title, "فعال‌سازی حساب", StringComparison.Ordinal)
+                || string.Equals(title, "غیرفعال‌سازی حساب", StringComparison.Ordinal);
+        }
+
+        private static bool IsDuplicate(
+            int userId,
+            NotificationCategory category,
+            string title,
+            string body)
+        {
+            var now = DateTime.UtcNow;
+            var key = $"{userId}|{(int)category}|{title}|{body}";
+
+            if (LastPushByKey.TryGetValue(key, out var lastSentAt)
+                && now - lastSentAt < DuplicateCooldown)
+            {
+                return true;
+            }
+
+            LastPushByKey[key] = now;
+            TryCleanupOldEntries(now);
+            return false;
+        }
+
+        private static void TryCleanupOldEntries(DateTime now)
+        {
+            if (LastPushByKey.Count < 5000)
+                return;
+
+            var threshold = now - (DuplicateCooldown * 2);
+            foreach (var item in LastPushByKey)
+            {
+                if (item.Value < threshold)
+                    LastPushByKey.TryRemove(item.Key, out _);
+            }
         }
     }
 }

@@ -305,12 +305,22 @@ namespace Api_Vapp.Services
         private void SetRateLimit(string mobile, int minutes)
         {
             var key = $"PublicOtpRateLimit_{mobile}";
-            _cache.Set(key, DateTime.UtcNow.AddMinutes(minutes), TimeSpan.FromMinutes(minutes));
+            _cache.Set(
+                key,
+                DateTime.UtcNow.AddMinutes(minutes),
+                new MemoryCacheEntryOptions()
+                    .SetAbsoluteExpiration(TimeSpan.FromMinutes(minutes))
+                    .SetSize(1));
         }
 
         private void SetCacheData(string key, object value, int expirationMinutes)
         {
-            _cache.Set(key, value, TimeSpan.FromMinutes(expirationMinutes));
+            _cache.Set(
+                key,
+                value,
+                new MemoryCacheEntryOptions()
+                    .SetAbsoluteExpiration(TimeSpan.FromMinutes(expirationMinutes))
+                    .SetSize(1));
         }
 
         private static string OtpKey(PublicParticipantSession session) =>
