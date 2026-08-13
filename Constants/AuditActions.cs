@@ -40,6 +40,10 @@ namespace Api_Vapp.Constants
         public const string PaymentVerified = "Payment.Verified";
         public const string PaymentVerifyFailed = "Payment.VerifyFailed";
         public const string PaymentCallback = "Payment.Callback";
+        public const string PaymentCancelled = "Payment.Cancelled";
+        public const string PaymentCancelDenied = "Payment.CancelDenied";
+        public const string PaymentGatewayAuthorityIssued = "Payment.GatewayAuthorityIssued";
+        public const string PaymentGatewayAuthorityFailed = "Payment.GatewayAuthorityFailed";
 
         // —— Wallet / Cashback (فاز ۲ اولویت ۵)
         public const string WalletCredited = "Wallet.Credited";

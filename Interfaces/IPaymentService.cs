@@ -57,6 +57,21 @@ namespace Api_Vapp.Interfaces
         /// تأیید و تسویه پرداخت از درگاه به‌پرداخت
         /// </summary>
         Task<(bool Success, string? SaleReferenceId, string? ErrorMessage)> VerifyAndSettleBehpardakhtAsync(string refId, long saleReferenceId);
+
+        /// <summary>
+        /// درخواست Authority از زرین‌پال و آماده‌سازی URL درگاه
+        /// </summary>
+        Task<(bool Success, string? Authority, string? PaymentUrl, string? ErrorMessage)> RequestZarinPalPaymentAsync(
+            int paymentId,
+            decimal amountToman,
+            string description,
+            string? mobile = null,
+            string? orderId = null);
+
+        /// <summary>
+        /// Callback عمومی زرین‌پال (بدون JWT) — Verify + fulfill و ساخت آدرس بازگشت به اپ
+        /// </summary>
+        Task<(bool Success, string ReturnHtml, int? PaymentId)> HandleZarinPalCallbackAsync(string? authority, string? status);
     }
 }
 

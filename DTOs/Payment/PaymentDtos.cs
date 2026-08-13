@@ -232,6 +232,16 @@ namespace Api_Vapp.DTOs.Payment
         /// شماره پیگیری بانکی
         /// </summary>
         public string? SaleReferenceId { get; set; }
+
+        /// <summary>
+        /// کد Authority زرین‌پال
+        /// </summary>
+        public string? Authority { get; set; }
+
+        /// <summary>
+        /// وضعیت بازگشت از زرین‌پال (OK / NOK)
+        /// </summary>
+        public string? Status { get; set; }
     }
 
     /// <summary>
@@ -256,7 +266,7 @@ namespace Api_Vapp.DTOs.Payment
         /// درگاه پرداخت
         /// </summary>
         [Required(ErrorMessage = "درگاه پرداخت الزامی است")]
-        public string Gateway { get; set; } = "Behpardakht";
+        public string Gateway { get; set; } = "Zarinpal";
 
         /// <summary>
         /// توضیحات

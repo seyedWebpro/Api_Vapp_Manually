@@ -168,7 +168,7 @@ namespace Api_Vapp.DTOs.Wallet
         /// درگاه پرداخت
         /// </summary>
         [Required(ErrorMessage = "درگاه پرداخت الزامی است")]
-        public string Gateway { get; set; } = "Behpardakht";
+        public string Gateway { get; set; } = "Zarinpal";
 
         /// <summary>
         /// URL بازگشت بعد از پرداخت

@@ -46,6 +46,14 @@ internal sealed class FakePaymentService : IPaymentService
         {
             new()
             {
+                Code = PaymentGateways.Zarinpal,
+                Name = "زرین‌پال",
+                Description = "پرداخت امن از طریق درگاه زرین‌پال",
+                IsActive = true,
+                ComingSoon = false
+            },
+            new()
+            {
                 Code = PaymentGateways.Behpardakht,
                 Name = "به‌پرداخت",
                 Description = "پرداخت از طریق درگاه بانکی به‌پرداخت",
@@ -71,6 +79,20 @@ internal sealed class FakePaymentService : IPaymentService
         string orderId,
         string callbackUrl) =>
         Task.FromResult<(bool, string?, string?)>((true, $"SIMREF{paymentId}", null));
+
+    public Task<(bool Success, string? Authority, string? PaymentUrl, string? ErrorMessage)> RequestZarinPalPaymentAsync(
+        int paymentId,
+        decimal amountToman,
+        string description,
+        string? mobile = null,
+        string? orderId = null) =>
+        Task.FromResult<(bool, string?, string?, string?)>(
+            (true, $"STEST{paymentId}", $"https://sandbox.zarinpal.com/pg/StartPay/STEST{paymentId}", null));
+
+    public Task<(bool Success, string ReturnHtml, int? PaymentId)> HandleZarinPalCallbackAsync(
+        string? authority,
+        string? status) =>
+        Task.FromResult<(bool, string, int?)>((false, "<html></html>", null));
 
     public Task<ApiResponse<PaymentDto>> GetPaymentByIdAsync(int id, int userId) =>
         throw new NotSupportedException();

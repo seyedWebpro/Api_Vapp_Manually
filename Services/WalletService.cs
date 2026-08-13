@@ -143,12 +143,21 @@ namespace Api_Vapp.Services
                     return ApiResponse<ChargeWalletResponseDto>.NotFound("کاربر یافت نشد");
                 }
 
-                if (!string.Equals(request.Gateway, PaymentGateways.Behpardakht, StringComparison.OrdinalIgnoreCase))
+                var isZarinPal = string.Equals(request.Gateway, PaymentGateways.Zarinpal, StringComparison.OrdinalIgnoreCase);
+                var isBehpardakht = string.Equals(request.Gateway, PaymentGateways.Behpardakht, StringComparison.OrdinalIgnoreCase);
+                var useSimulation = _configuration.GetValue("Payment:UseSimulation", false);
+
+                if (!isZarinPal && !(isBehpardakht && useSimulation))
                 {
                     return ApiResponse<ChargeWalletResponseDto>.BadRequest("درگاه پرداخت پشتیبانی نمی‌شود");
                 }
 
                 var requestedAmount = request.Amount;
+                if (requestedAmount != decimal.Truncate(requestedAmount))
+                {
+                    return ApiResponse<ChargeWalletResponseDto>.BadRequest("مبلغ پرداخت باید عدد صحیح تومان باشد");
+                }
+
                 var referralResolve = await _walletReferralService.ResolveReferralForChargeAsync(
                     userId, requestedAmount, request.ReferralCode);
 
@@ -165,30 +174,57 @@ namespace Api_Vapp.Services
                 var discountAmount = referralMeta?.DiscountAmount ?? 0m;
                 var discountPercent = referralMeta?.DiscountPercent ?? 0m;
 
-                var useSimulation = _configuration.GetValue("Payment:UseSimulation", true);
+                if (payableAmount != decimal.Truncate(payableAmount) || payableAmount <= 0)
+                {
+                    return ApiResponse<ChargeWalletResponseDto>.BadRequest("مبلغ قابل پرداخت نامعتبر است");
+                }
+
+                var paymentRepository = _serviceProvider.GetRequiredService<IPaymentRepository>();
+                if (await paymentRepository.HasPendingPaymentAsync(userId))
+                {
+                    await _audit.WriteAsync(new AuditEntry
+                    {
+                        Category = AuditCategories.Payment,
+                        Action = AuditActions.PaymentRequestFailed,
+                        EntityType = AuditEntityTypes.Payment,
+                        ActorUserId = userId,
+                        TargetUserId = userId,
+                        Succeeded = false,
+                        ErrorMessage = "پرداخت در انتظار قبلی وجود دارد",
+                        Metadata = new
+                        {
+                            occurredAtUtc = DateTime.UtcNow,
+                            eventType = "WalletChargePendingLock",
+                            user = PaymentAuditDetails.UserSnapshot(user),
+                            requestedAmount,
+                            amountLabel = $"{requestedAmount:N0} تومان",
+                            gateway = request.Gateway
+                        }
+                    });
+                    return ApiResponse<ChargeWalletResponseDto>.BadRequest(
+                        "شما یک پرداخت در انتظار دارید. لطفاً ابتدا آن را تکمیل یا لغو کنید.");
+                }
+
                 var orderId = GenerateOrderId();
                 var callbackUrl = request.CallbackUrl
+                    ?? _configuration["ZarinPal:AppReturnUrl"]
                     ?? _configuration["Payment:Behpardakht:FrontendCallbackUrl"]
                     ?? "/payment/result";
-
-                // RefId شبیه‌سازی‌شده تا آماده‌شدن درگاه واقعی
-                var refId = useSimulation
-                    ? $"SIMREF{DateTime.UtcNow:yyyyMMddHHmmss}{Random.Shared.Next(1000, 9999)}"
-                    : null;
 
                 var description = referralMeta != null
                     ? $"شارژ کیف پول با کد معرفی {referralMeta.ReferralCode}"
                     : "شارژ کیف پول";
+
+                var gateway = isZarinPal ? PaymentGateways.Zarinpal : PaymentGateways.Behpardakht;
 
                 var payment = new Payment
                 {
                     UserId = userId,
                     Amount = payableAmount,
                     PaymentType = PaymentTypes.WalletCharge,
-                    Gateway = PaymentGateways.Behpardakht,
+                    Gateway = gateway,
                     OrderId = orderId,
-                    RefId = refId,
-                    Status = useSimulation ? PaymentStatuses.Processing : PaymentStatuses.Pending,
+                    Status = PaymentStatuses.Pending,
                     CallbackUrl = callbackUrl,
                     Description = description,
                     MetaData = WalletReferralService.SerializeChargeMeta(referralMeta),
@@ -197,6 +233,63 @@ namespace Api_Vapp.Services
 
                 await _context.Payments.AddAsync(payment);
                 await _context.SaveChangesAsync();
+
+                string? gatewayUrl;
+                string? refId = null;
+                var isSimulation = false;
+
+                if (isZarinPal)
+                {
+                    var paymentService = _serviceProvider.GetRequiredService<IPaymentService>();
+                    var zarinResult = await paymentService.RequestZarinPalPaymentAsync(
+                        payment.Id,
+                        payment.Amount,
+                        description,
+                        mobile: user.PhoneNumber,
+                        orderId: orderId);
+
+                    if (!zarinResult.Success || string.IsNullOrEmpty(zarinResult.Authority) || string.IsNullOrEmpty(zarinResult.PaymentUrl))
+                    {
+                        payment.Status = PaymentStatuses.Failed;
+                        payment.ErrorMessage = ControlledErrorHelper.PaymentFailed;
+                        await _context.SaveChangesAsync();
+
+                        await _audit.WriteAsync(new AuditEntry
+                        {
+                            Category = AuditCategories.Payment,
+                            Action = AuditActions.PaymentRequestFailed,
+                            EntityType = AuditEntityTypes.Payment,
+                            EntityId = payment.Id.ToString(),
+                            ActorUserId = userId,
+                            TargetUserId = userId,
+                            Succeeded = false,
+                            ErrorMessage = zarinResult.ErrorMessage ?? ControlledErrorHelper.PaymentFailed,
+                            After = PaymentAuditDetails.ChargeRequest(
+                                user, payment, requestedAmount, payableAmount, discountAmount,
+                                referralMeta != null, referralMeta?.ReferralCode, null, isSimulation: false)
+                        });
+
+                        return ApiResponse<ChargeWalletResponseDto>.BadRequest(
+                            ControlledErrorHelper.PaymentFailed,
+                            errorCode: ErrorCodes.PaymentFailed);
+                    }
+
+                    refId = zarinResult.Authority;
+                    gatewayUrl = zarinResult.PaymentUrl;
+                    payment.RefId = refId;
+                    payment.Status = PaymentStatuses.Processing;
+                    await _context.SaveChangesAsync();
+                }
+                else
+                {
+                    // مسیر شبیه‌سازی به‌پرداخت (فقط وقتی UseSimulation=true)
+                    isSimulation = true;
+                    refId = $"SIMREF{DateTime.UtcNow:yyyyMMddHHmmss}{Random.Shared.Next(1000, 9999)}";
+                    payment.RefId = refId;
+                    payment.Status = PaymentStatuses.Processing;
+                    await _context.SaveChangesAsync();
+                    gatewayUrl = BuildGatewayUrl(payment.Id);
+                }
 
                 var response = new ChargeWalletResponseDto
                 {
@@ -208,17 +301,37 @@ namespace Api_Vapp.Services
                     DiscountPercent = discountPercent,
                     ReferralApplied = referralMeta != null,
                     ReferralCode = referralMeta?.ReferralCode,
-                    GatewayUrl = BuildGatewayUrl(payment.Id),
+                    GatewayUrl = gatewayUrl,
                     Gateway = payment.Gateway,
                     PaymentType = PaymentTypes.WalletCharge,
                     PaymentTypeTitle = "شارژ کیف پول",
                     RefId = payment.RefId,
-                    IsSimulation = useSimulation
+                    IsSimulation = isSimulation
                 };
 
                 _logger.LogInformation(
-                    "درخواست شارژ کیف پول ایجاد شد. کاربر: {UserId}, مبلغ درخواستی: {RequestedAmount}, قابل پرداخت: {PayableAmount}, رفرال: {ReferralCode}, سفارش: {OrderId}, Simulation: {IsSimulation}",
-                    userId, requestedAmount, payableAmount, referralMeta?.ReferralCode, orderId, useSimulation);
+                    "درخواست شارژ کیف پول ایجاد شد. کاربر: {UserId} Phone={Phone} مبلغ درخواستی: {RequestedAmount}, قابل پرداخت: {PayableAmount}, رفرال: {ReferralCode}, سفارش: {OrderId}, Gateway: {Gateway}, Authority={Authority}, Simulation: {IsSimulation}",
+                    userId, user.PhoneNumber, requestedAmount, payableAmount, referralMeta?.ReferralCode, orderId, payment.Gateway, payment.RefId, isSimulation);
+
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Payment,
+                    Action = AuditActions.PaymentRequested,
+                    EntityType = AuditEntityTypes.Payment,
+                    EntityId = payment.Id.ToString(),
+                    ActorUserId = userId,
+                    TargetUserId = userId,
+                    After = PaymentAuditDetails.ChargeRequest(
+                        user,
+                        payment,
+                        requestedAmount,
+                        payableAmount,
+                        discountAmount,
+                        referralMeta != null,
+                        referralMeta?.ReferralCode,
+                        gatewayUrl,
+                        isSimulation)
+                });
 
                 return ApiResponse<ChargeWalletResponseDto>.CreateSuccess(response, "درخواست پرداخت با موفقیت ایجاد شد", 201);
             }
@@ -305,18 +418,27 @@ namespace Api_Vapp.Services
                         Action = AuditActions.WalletCredited,
                         EntityType = AuditEntityTypes.WalletTransaction,
                         EntityId = walletTransaction.Id.ToString(),
+                        ActorUserId = userId,
                         TargetUserId = userId,
                         After = new
                         {
+                            occurredAtUtc = DateTime.UtcNow,
+                            eventType = "WalletCredited",
+                            user = PaymentAuditDetails.UserSnapshot(user),
                             walletTransactionId = walletTransaction.Id,
                             userId,
+                            phoneNumber = user.PhoneNumber,
+                            fullName = user.FullName,
                             amount,
+                            amountLabel = $"{amount:N0} تومان",
                             balanceBefore,
                             balanceAfter,
                             transactionType,
                             title,
+                            description,
                             paymentId,
-                            cashbackId
+                            cashbackId,
+                            referenceNumber
                         }
                     });
 

@@ -719,6 +719,39 @@ Content-Type: application/json
   "referralCode": "@u2"
 }
 
+### درگاه‌های فعال (شامل زرین‌پال)
+GET {{Api_Vapp_HostAddress}}/api/Payment/gateways
+
+### شارژ کیف پول با زرین‌پال
+POST {{Api_Vapp_HostAddress}}/api/Wallet/charge
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "amount": 10000,
+  "gateway": "Zarinpal"
+}
+
+### خرید اشتراک با زرین‌پال
+POST {{Api_Vapp_HostAddress}}/api/UserSubscription/purchase
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "planId": 2,
+  "gateway": "Zarinpal"
+}
+
+### Callback زرین‌پال (عمومی — Authority/Status از Query)
+GET {{Api_Vapp_HostAddress}}/api/Payment/callback/zarinpal?Authority=REPLACE_AUTHORITY&Status=OK
+
+### Callback زرین‌پال — لغو/ناموفق
+GET {{Api_Vapp_HostAddress}}/api/Payment/callback/zarinpal?Authority=REPLACE_AUTHORITY&Status=NOK
+
+### وضعیت پرداخت بعد از بازگشت از درگاه
+GET {{Api_Vapp_HostAddress}}/api/Payment/1
+Authorization: Bearer {{token}}
+
 ### پروفایل (شامل referralCode)
 GET {{Api_Vapp_HostAddress}}/api/User/profile
 Authorization: Bearer {{token}}

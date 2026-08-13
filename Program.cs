@@ -415,6 +415,13 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.ISmsPricingService, Api_Vapp.Serv
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminScraperTokenService, Api_Vapp.Services.AdminScraperTokenService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IUserSmsBillingService, Api_Vapp.Services.UserSmsBillingService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IPaymentService, Api_Vapp.Services.PaymentService>();
+builder.Services.Configure<Api_Vapp.Services.ZarinPal.ZarinPalOptions>(
+    builder.Configuration.GetSection(Api_Vapp.Services.ZarinPal.ZarinPalOptions.SectionName));
+builder.Services.AddHttpClient<Api_Vapp.Interfaces.IZarinPalGatewayClient, Api_Vapp.Services.ZarinPal.ZarinPalGatewayClient>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(45);
+    client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+});
 builder.Services.AddScoped<Api_Vapp.Interfaces.ICashbackService, Api_Vapp.Services.CashbackService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IReferralProgramService, Api_Vapp.Services.ReferralProgramService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IBookingSystemService, Api_Vapp.Services.BookingSystemService>();

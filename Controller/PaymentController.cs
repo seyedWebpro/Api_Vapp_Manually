@@ -1,6 +1,7 @@
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.DTOs.Payment;
 using Api_Vapp.Interfaces;
+using Api_Vapp.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
@@ -297,6 +298,40 @@ namespace Api_Vapp.Controller
         }
 
         /// <summary>
+        /// Callback درگاه زرین‌پال — Authority و Status از QueryString
+        /// طبق مستندات: فقط وقتی Status=OK باید Verify فراخوانی شود.
+        /// </summary>
+        [HttpGet("callback/zarinpal")]
+        [AllowAnonymous]
+        [Produces("text/html")]
+        public async Task<ContentResult> ZarinPalCallbackGet(
+            [FromQuery] string? Authority,
+            [FromQuery] string? Status,
+            [FromQuery] string? authority,
+            [FromQuery] string? status)
+        {
+            var auth = Authority ?? authority;
+            var st = Status ?? status;
+            var (_, html, _) = await _paymentService.HandleZarinPalCallbackAsync(auth, st);
+            return Content(html, "text/html; charset=utf-8");
+        }
+
+        /// <summary>
+        /// Callback زرین‌پال (POST) — برخی مرورگرها/پروکسی‌ها POST می‌فرستند
+        /// </summary>
+        [HttpPost("callback/zarinpal")]
+        [AllowAnonymous]
+        [Produces("text/html")]
+        public async Task<ContentResult> ZarinPalCallbackPost(
+            [FromQuery] string? Authority,
+            [FromQuery] string? Status,
+            [FromForm] string? authority,
+            [FromForm] string? status)
+        {
+            return await ZarinPalCallbackGet(Authority, Status, authority, status);
+        }
+
+        /// <summary>
         /// لغو پرداخت در انتظار
         /// </summary>
         [HttpPost("{id}/cancel")]
@@ -343,11 +378,27 @@ namespace Api_Vapp.Controller
         [AllowAnonymous]
         public async Task<ActionResult> RedirectToGateway(int paymentId)
         {
-            var useSimulation = Configuration.GetValue("Payment:UseSimulation", true);
+            var payment = await _paymentRepository.GetByIdAsync(paymentId);
+            if (payment == null)
+            {
+                return NotFound("پرداخت یافت نشد");
+            }
+
+            // زرین‌پال: هدایت مستقیم به StartPay
+            if (string.Equals(payment.Gateway, PaymentGateways.Zarinpal, StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(payment.RefId))
+            {
+                var sandbox = Configuration.GetValue("ZarinPal:Sandbox", false);
+                var startPayBase = sandbox
+                    ? "https://sandbox.zarinpal.com/pg/StartPay/"
+                    : "https://payment.zarinpal.com/pg/StartPay/";
+                return Redirect(startPayBase + payment.RefId);
+            }
+
+            var useSimulation = Configuration.GetValue("Payment:UseSimulation", false);
             if (!useSimulation)
             {
-                var payment = await _paymentRepository.GetByIdAsync(paymentId);
-                if (payment == null || string.IsNullOrEmpty(payment.RefId))
+                if (string.IsNullOrEmpty(payment.RefId))
                 {
                     return NotFound("پرداخت یافت نشد");
                 }
@@ -357,7 +408,7 @@ namespace Api_Vapp.Controller
                 return Content(
                     $"<html><body onload=\"document.forms[0].submit()\">" +
                     $"<form method=\"post\" action=\"{paymentUrl}\">" +
-                    $"<input type=\"hidden\" name=\"RefId\" value=\"{payment.RefId}\" />" +
+                    $"<input type=\"hidden\" name=\"RefId\" value=\"{System.Net.WebUtility.HtmlEncode(payment.RefId)}\" />" +
                     $"</form>در حال انتقال به درگاه...</body></html>",
                     "text/html");
             }

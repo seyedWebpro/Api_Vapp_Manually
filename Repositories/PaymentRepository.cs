@@ -21,6 +21,15 @@ namespace Api_Vapp.Repositories
                 .FirstOrDefaultAsync(p => p.OrderId == orderId);
         }
 
+        public async Task<Payment?> GetByRefIdAsync(string refId)
+        {
+            if (string.IsNullOrWhiteSpace(refId))
+                return null;
+
+            return await _dbSet
+                .FirstOrDefaultAsync(p => p.RefId == refId);
+        }
+
         public async Task<IEnumerable<Payment>> GetByUserIdAsync(int userId, int pageNumber = 1, int pageSize = 10)
         {
             return await _dbSet

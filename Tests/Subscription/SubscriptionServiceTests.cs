@@ -60,7 +60,7 @@ public class SubscriptionServiceTests : IAsyncLifetime
         Assert.Equal(_ctx.PlusPlanId, result.Data!.PlanId);
         Assert.True(result.Data.RequiresPayment);
         Assert.True(result.Data.PayableAmount > 0);
-        Assert.Equal(2, result.Data.PaymentGateways.Count);
+        Assert.Equal(3, result.Data.PaymentGateways.Count);
     }
 
     [Fact]

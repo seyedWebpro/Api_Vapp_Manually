@@ -144,8 +144,10 @@ internal sealed class SubscriptionTestContext : IDisposable
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
+                ["Payment:UseSimulation"] = "true",
                 ["Payment:ApiBaseUrl"] = "http://localhost:5054",
-                ["Payment:Behpardakht:FrontendCallbackUrl"] = "/payment/result"
+                ["Payment:Behpardakht:FrontendCallbackUrl"] = "/payment/result",
+                ["ZarinPal:AppReturnUrl"] = "vapp://payment/result"
             })
             .Build();
 

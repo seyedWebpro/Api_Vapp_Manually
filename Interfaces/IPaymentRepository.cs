@@ -14,6 +14,11 @@ namespace Api_Vapp.Interfaces
         Task<Payment?> GetByOrderIdAsync(string orderId);
 
         /// <summary>
+        /// دریافت پرداخت بر اساس Authority / RefId درگاه
+        /// </summary>
+        Task<Payment?> GetByRefIdAsync(string refId);
+
+        /// <summary>
         /// دریافت پرداخت‌های کاربر با صفحه‌بندی
         /// </summary>
         Task<IEnumerable<Payment>> GetByUserIdAsync(int userId, int pageNumber = 1, int pageSize = 10);

@@ -105,13 +105,21 @@ namespace Api_Vapp.Services
                         EntityType = AuditEntityTypes.UserSubscription,
                         EntityId = subscription.Id.ToString(),
                         ActorUserId = userId,
+                        TargetUserId = userId,
                         After = new
                         {
+                            occurredAtUtc = DateTime.UtcNow,
+                            eventType = "SubscriptionZeroPayActivated",
+                            user = PaymentAuditDetails.UserSnapshot(
+                                await _context.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId)),
                             planId = plan.Id,
+                            planName = plan.Name,
+                            tierCode = plan.TierCode,
                             userSubscriptionId = subscription.Id,
                             originalAmount = pricing.OriginalAmount,
                             discountAmount = pricing.DiscountAmount,
                             payableAmount = pricing.PayableAmount,
+                            amountLabel = $"{pricing.PayableAmount:N0} تومان",
                             discountCode = pricing.DiscountCode,
                             zeroPayActivation = true
                         }
@@ -125,14 +133,24 @@ namespace Api_Vapp.Services
                     }, SubscriptionMessages.ActivationSuccess);
                 }
 
+                if (pricing.PayableAmount != decimal.Truncate(pricing.PayableAmount))
+                    return ApiResponse<SubscriptionPurchaseResultDto>.BadRequest("مبلغ قابل پرداخت نامعتبر است");
+
                 if (request.Gateway == PaymentGateways.Wallet)
                     return ApiResponse<SubscriptionPurchaseResultDto>.BadRequest(SubscriptionMessages.WalletGatewayComingSoon);
 
-                if (request.Gateway != PaymentGateways.Behpardakht)
+                var isZarinPal = string.Equals(request.Gateway, PaymentGateways.Zarinpal, StringComparison.OrdinalIgnoreCase);
+                var isBehpardakht = string.Equals(request.Gateway, PaymentGateways.Behpardakht, StringComparison.OrdinalIgnoreCase);
+                if (!isZarinPal && !isBehpardakht)
+                    return ApiResponse<SubscriptionPurchaseResultDto>.BadRequest(SubscriptionMessages.UnsupportedGateway);
+
+                var useSimulation = _configuration.GetValue("Payment:UseSimulation", false);
+                if (isBehpardakht && !useSimulation)
                     return ApiResponse<SubscriptionPurchaseResultDto>.BadRequest(SubscriptionMessages.UnsupportedGateway);
 
                 var metadata = BuildMetadata(plan, pricing);
                 var callbackUrl = request.CallbackUrl
+                    ?? _configuration["ZarinPal:AppReturnUrl"]
                     ?? _configuration["Payment:Behpardakht:FrontendCallbackUrl"]
                     ?? "/payment/result";
 
@@ -140,7 +158,7 @@ namespace Api_Vapp.Services
                 {
                     Amount = pricing.PayableAmount,
                     PaymentType = PaymentTypes.Subscription,
-                    Gateway = request.Gateway,
+                    Gateway = isZarinPal ? PaymentGateways.Zarinpal : PaymentGateways.Behpardakht,
                     Description = $"خرید اشتراک {plan.Name}",
                     CallbackUrl = callbackUrl
                 });
@@ -165,44 +183,101 @@ namespace Api_Vapp.Services
                 payment.MetaData = JsonSerializer.Serialize(metadata);
                 await _context.SaveChangesAsync();
 
-                var tokenResult = await _paymentService.RequestBehpardakhtTokenAsync(
-                    payment.Id,
-                    payment.Amount,
-                    payment.OrderId,
-                    callbackUrl);
+                string? gatewayUrl;
+                string? refId;
 
-                if (!tokenResult.Success || string.IsNullOrEmpty(tokenResult.RefId))
+                if (isZarinPal)
                 {
-                    payment.Status = PaymentStatuses.Failed;
-                    payment.ErrorMessage = ControlledErrorHelper.PaymentFailed;
-                    await _context.SaveChangesAsync();
-                    _logger.LogWarning("Gateway token failed for payment {PaymentId}", payment.Id);
+                    var user = await _context.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId);
+                    var zarinResult = await _paymentService.RequestZarinPalPaymentAsync(
+                        payment.Id,
+                        payment.Amount,
+                        payment.Description ?? $"خرید اشتراک {plan.Name}",
+                        mobile: user?.PhoneNumber,
+                        orderId: payment.OrderId);
 
-                    await _audit.WriteAsync(new AuditEntry
+                    if (!zarinResult.Success || string.IsNullOrEmpty(zarinResult.Authority) || string.IsNullOrEmpty(zarinResult.PaymentUrl))
                     {
-                        Category = AuditCategories.Payment,
-                        Action = AuditActions.PaymentRequestFailed,
-                        EntityType = AuditEntityTypes.Payment,
-                        EntityId = payment.Id.ToString(),
-                        ActorUserId = userId,
-                        Succeeded = false,
-                        ErrorMessage = tokenResult.ErrorMessage,
-                        Metadata = new
-                        {
-                            planId = plan.Id,
-                            amount = payment.Amount,
-                            gateway = request.Gateway
-                        }
-                    });
+                        payment.Status = PaymentStatuses.Failed;
+                        payment.ErrorMessage = ControlledErrorHelper.PaymentFailed;
+                        await _context.SaveChangesAsync();
+                        _logger.LogWarning("ZarinPal request failed for subscription payment {PaymentId}", payment.Id);
 
-                    return ApiResponse<SubscriptionPurchaseResultDto>.BadRequest(
-                        ControlledErrorHelper.PaymentFailed,
-                        errorCode: ErrorCodes.PaymentFailed);
+                        await _audit.WriteAsync(new AuditEntry
+                        {
+                            Category = AuditCategories.Payment,
+                            Action = AuditActions.PaymentRequestFailed,
+                            EntityType = AuditEntityTypes.Payment,
+                            EntityId = payment.Id.ToString(),
+                            ActorUserId = userId,
+                            TargetUserId = userId,
+                            Succeeded = false,
+                            ErrorMessage = zarinResult.ErrorMessage,
+                            After = PaymentAuditDetails.SubscriptionRequest(
+                                user, payment, plan.Id, plan.Name, plan.TierCode,
+                                pricing.OriginalAmount, pricing.DiscountAmount, pricing.PayableAmount,
+                                pricing.DiscountCode, null)
+                        });
+
+                        return ApiResponse<SubscriptionPurchaseResultDto>.BadRequest(
+                            ControlledErrorHelper.PaymentFailed,
+                            errorCode: ErrorCodes.PaymentFailed);
+                    }
+
+                    refId = zarinResult.Authority;
+                    gatewayUrl = zarinResult.PaymentUrl;
+                }
+                else
+                {
+                    var tokenResult = await _paymentService.RequestBehpardakhtTokenAsync(
+                        payment.Id,
+                        payment.Amount,
+                        payment.OrderId,
+                        callbackUrl);
+
+                    if (!tokenResult.Success || string.IsNullOrEmpty(tokenResult.RefId))
+                    {
+                        payment.Status = PaymentStatuses.Failed;
+                        payment.ErrorMessage = ControlledErrorHelper.PaymentFailed;
+                        await _context.SaveChangesAsync();
+                        _logger.LogWarning("Gateway token failed for payment {PaymentId}", payment.Id);
+
+                        await _audit.WriteAsync(new AuditEntry
+                        {
+                            Category = AuditCategories.Payment,
+                            Action = AuditActions.PaymentRequestFailed,
+                            EntityType = AuditEntityTypes.Payment,
+                            EntityId = payment.Id.ToString(),
+                            ActorUserId = userId,
+                            Succeeded = false,
+                            ErrorMessage = tokenResult.ErrorMessage,
+                            Metadata = new
+                            {
+                                planId = plan.Id,
+                                amount = payment.Amount,
+                                gateway = request.Gateway
+                            }
+                        });
+
+                        return ApiResponse<SubscriptionPurchaseResultDto>.BadRequest(
+                            ControlledErrorHelper.PaymentFailed,
+                            errorCode: ErrorCodes.PaymentFailed);
+                    }
+
+                    refId = tokenResult.RefId;
+                    var apiBaseUrl = _configuration["Payment:ApiBaseUrl"]?.TrimEnd('/') ?? string.Empty;
+                    var redirectPath = $"/api/Payment/redirect/{payment.Id}";
+                    gatewayUrl = string.IsNullOrEmpty(apiBaseUrl) ? redirectPath : $"{apiBaseUrl}{redirectPath}";
                 }
 
-                payment.RefId = tokenResult.RefId;
+                payment.RefId = refId;
                 payment.Status = PaymentStatuses.Processing;
                 await _context.SaveChangesAsync();
+
+                var purchaseUser = await _context.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId);
+                _logger.LogInformation(
+                    "درخواست خرید اشتراک. UserId={UserId} Phone={Phone} PlanId={PlanId} Plan={PlanName} Amount={Amount} PaymentId={PaymentId} Authority={Authority} Gateway={Gateway}",
+                    userId, purchaseUser?.PhoneNumber, plan.Id, plan.Name, pricing.PayableAmount, payment.Id, payment.RefId, payment.Gateway);
 
                 await _audit.WriteAsync(new AuditEntry
                 {
@@ -211,20 +286,19 @@ namespace Api_Vapp.Services
                     EntityType = AuditEntityTypes.Payment,
                     EntityId = payment.Id.ToString(),
                     ActorUserId = userId,
-                    After = new
-                    {
-                        planId = plan.Id,
-                        paymentId = payment.Id,
-                        originalAmount = pricing.OriginalAmount,
-                        discountAmount = pricing.DiscountAmount,
-                        payableAmount = pricing.PayableAmount,
-                        discountCode = pricing.DiscountCode
-                    }
+                    TargetUserId = userId,
+                    After = PaymentAuditDetails.SubscriptionRequest(
+                        purchaseUser,
+                        payment,
+                        plan.Id,
+                        plan.Name,
+                        plan.TierCode,
+                        pricing.OriginalAmount,
+                        pricing.DiscountAmount,
+                        pricing.PayableAmount,
+                        pricing.DiscountCode,
+                        gatewayUrl)
                 });
-
-                var apiBaseUrl = _configuration["Payment:ApiBaseUrl"]?.TrimEnd('/') ?? string.Empty;
-                var redirectPath = $"/api/Payment/redirect/{payment.Id}";
-                var redirectUrl = string.IsNullOrEmpty(apiBaseUrl) ? redirectPath : $"{apiBaseUrl}{redirectPath}";
 
                 return ApiResponse<SubscriptionPurchaseResultDto>.CreateSuccess(new SubscriptionPurchaseResultDto
                 {
@@ -232,8 +306,8 @@ namespace Api_Vapp.Services
                     PaymentId = payment.Id,
                     OrderId = payment.OrderId,
                     RefId = payment.RefId,
-                    RedirectUrl = redirectUrl,
-                    GatewayUrl = redirectUrl,
+                    RedirectUrl = gatewayUrl,
+                    GatewayUrl = gatewayUrl,
                     Checkout = checkout
                 }, SubscriptionMessages.RedirectToGateway);
             }

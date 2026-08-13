@@ -42,7 +42,7 @@ namespace Api_Vapp.DTOs.Subscription
         public string? DiscountCode { get; set; }
 
         [Required(ErrorMessage = "درگاه پرداخت الزامی است")]
-        public string Gateway { get; set; } = PaymentGateways.Behpardakht;
+        public string Gateway { get; set; } = PaymentGateways.Zarinpal;
 
         [MaxLength(500, ErrorMessage = "آدرس بازگشت نامعتبر است")]
         public string? CallbackUrl { get; set; }
