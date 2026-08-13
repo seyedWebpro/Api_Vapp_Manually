@@ -31,8 +31,8 @@ namespace Api_Vapp.Services
                     UserId = userId,
                     Name = createDto.Name,
                     Type = createDto.Type,
-                    // تبدیل تاریخ مناسبت به UTC
-                    OccasionDate = createDto.OccasionDate.EnsureUtc(),
+                    // تاریخ تقویمی مناسبت — نیمه‌شب UTC بدون شیفت timezone
+                    OccasionDate = createDto.OccasionDate.EnsureDateOnlyUtc(),
                     DefaultMessage = createDto.DefaultMessage,
                     IsActive = true,
                     IsDeleted = false,
@@ -124,8 +124,9 @@ namespace Api_Vapp.Services
 
                 if (updateDto.Name != null) occasion.Name = updateDto.Name;
                 if (updateDto.Type != null) occasion.Type = updateDto.Type;
-                // تبدیل تاریخ مناسبت به UTC
-                if (updateDto.OccasionDate.HasValue) occasion.OccasionDate = updateDto.OccasionDate.Value.EnsureUtc();
+                // تاریخ تقویمی مناسبت — نیمه‌شب UTC بدون شیفت timezone
+                if (updateDto.OccasionDate.HasValue)
+                    occasion.OccasionDate = updateDto.OccasionDate.Value.EnsureDateOnlyUtc();
                 if (updateDto.DefaultMessage != null) occasion.DefaultMessage = updateDto.DefaultMessage;
                 if (updateDto.IsActive.HasValue) occasion.IsActive = updateDto.IsActive.Value;
 

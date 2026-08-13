@@ -27,7 +27,7 @@ namespace Api_Vapp.Controller
     /// - SpecificNotebooks: دفترچه‌های خاص
     /// - Individual: انتخاب دستی مخاطبین
     ///
-    /// **نکته:** هر برنامه یک کد عمومی (PublicCode) دارد که برای همه مخاطبین یکسان است.
+    /// **نکته:** هر مخاطب یک کد معرف شخصی دارد. استعلام/مصرف با همان کد، معرف را مشخص می‌کند.
     ///
     /// تمام endpoint های این کنترلر نیاز به احراز هویت دارند.
     /// </remarks>
@@ -199,6 +199,23 @@ namespace Api_Vapp.Controller
 
             var userId = await GetCurrentUserIdAsync();
             var result = await _referralProgramService.UpdateProgramAsync(id, userId, updateDto);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        /// <summary>
+        /// دریافت لیست کدهای معرف شخصی مخاطبین یک برنامه
+        /// </summary>
+        [HttpGet("{id}/codes")]
+        [ProducesResponseType(typeof(ApiResponse<ReferralContactCodeListDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<ReferralContactCodeListDto>), StatusCodes.Status404NotFound)]
+        [ProducesResponseType(typeof(ApiResponse<ReferralContactCodeListDto>), StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<ApiResponse<ReferralContactCodeListDto>>> GetContactCodes(
+            int id,
+            [FromQuery] int pageNumber = 1,
+            [FromQuery] int pageSize = 20)
+        {
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _referralProgramService.GetContactCodesAsync(id, userId, pageNumber, pageSize);
             return StatusCode(result.StatusCode, result);
         }
 
@@ -428,8 +445,8 @@ namespace Api_Vapp.Controller
         /// <remarks>
         /// **تأیید نهایی:**
         /// - هر سه مرحله ویزارد باید تکمیل شده باشند
-        /// - یک کد عمومی (REFxxxxxx) برای برنامه صادر می‌شود
-        /// - پیامک حاوی کد به مخاطبین هدف ارسال می‌شود
+        /// - برای هر مخاطب یک کد معرف شخصی صادر می‌شود
+        /// - پیامک حاوی کد شخصی به مخاطبین هدف ارسال می‌شود
         /// - پیش‌نویس پس از تأیید حذف می‌شود
         /// </remarks>
         /// <response code="201">برنامه پاداش با موفقیت ثبت شد</response>
@@ -460,10 +477,10 @@ namespace Api_Vapp.Controller
         /// <returns>پاسخ شامل وضعیت اعتبار، مبلغ تخفیف و اطلاعات برنامه</returns>
         /// <remarks>
         /// **استعلام کد (Inquire):**
-        /// - فقط اعتبار کد را بررسی می‌کند؛ مصرف ثبت نمی‌شود
-        /// - برای پاداش درصدی، ارسال purchaseAmount برای محاسبه تخفیف توصیه می‌شود
+        /// - فقط اعتبار کد شخصی معرف را بررسی می‌کند؛ مصرف ثبت نمی‌شود
+        /// - معرف از روی کد مشخص می‌شود و در پاسخ برمی‌گردد
+        /// - برای پاداش درصدی، ارسال purchaseAmount برای محاسبه توصیه می‌شود
         /// - کد نامعتبر → IsValid=false (بدون خطای 404)
-        /// - وضعیت‌های IsExpired و IsNotStarted جداگانه برگردانده می‌شوند
         /// </remarks>
         /// <response code="200">نتیجه استعلام برگردانده شد</response>
         /// <response code="400">داده‌های ورودی نامعتبر</response>
@@ -494,9 +511,11 @@ namespace Api_Vapp.Controller
         /// <remarks>
         /// **ثبت مصرف (Redeem):**
         /// - مصرف کد در تاریخچه ثبت می‌شود
-        /// - برای پاداش درصدی، purchaseAmount الزامی است
-        /// - در صورت ارسال customerContactId/referrerContactId، پاداش به موجودی کش‌بک مخاطب واریز می‌شود
-        /// - کد نامعتبر یا منقضی → 400 یا 404
+        /// - معرف از روی کد شخصی مشخص می‌شود
+        /// - customerContactId و purchaseAmount الزامی هستند
+        /// - idempotencyKey اختیاری برای جلوگیری از ثبت تکراری رسید
+        /// - خودمعرفی (مشتری = معرف) مجاز نیست
+        /// - هر کد برای هر خریدار در هر روز فقط یک‌بار قابل ثبت است
         /// </remarks>
         /// <response code="201">مصرف کد با موفقیت ثبت شد</response>
         /// <response code="400">کد غیرقابل استفاده، مبلغ خرید نامعتبر یا مخاطب نامعتبر</response>

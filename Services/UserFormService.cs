@@ -301,6 +301,7 @@ namespace Api_Vapp.Services
                     return publishError;
                 }
 
+                QuickSendContentApprovalHelper.ResetToPending(form);
                 await _context.SaveChangesAsync();
 
                 await _audit.WriteAsync(new AuditEntry
@@ -360,7 +361,10 @@ namespace Api_Vapp.Services
                     IsActive = GetEffectiveIsActive(form),
                     PublicUrl = BuildPublicUrl(form.Slug),
                     CreatedAt = EnsureUtc(form.CreatedAt),
-                    PublishedAt = EnsureUtc(form.PublishedAt)
+                    PublishedAt = EnsureUtc(form.PublishedAt),
+                    ApprovalStatus = form.ApprovalStatus,
+                    RejectionReason = form.RejectionReason,
+                    ApprovedAt = EnsureUtc(form.ApprovedAt)
                 }).ToList();
 
                 return ApiResponse<UserFormListResponseDto>.CreateSuccess(new UserFormListResponseDto
@@ -566,7 +570,15 @@ namespace Api_Vapp.Services
                         errorCode: ErrorCodes.InvalidInput);
                 }
 
-                return await SendPublicUrlQuickAsync(userId, contact, publicUrl, "فرم", quickSendDto.ContactId, quickSendDto.UserFormId);
+                return await SendPublicUrlQuickAsync(
+                    userId,
+                    contact,
+                    publicUrl,
+                    form.ApprovalStatus,
+                    form.RejectionReason,
+                    "فرم",
+                    quickSendDto.ContactId,
+                    quickSendDto.UserFormId);
             }
             catch (Exception ex)
             {
@@ -583,10 +595,19 @@ namespace Api_Vapp.Services
             int userId,
             Contact contact,
             string publicUrl,
+            string? approvalStatus,
+            string? rejectionReason,
             string entityLabel,
             int contactId,
             int entityId)
         {
+            var blocked = QuickSendContentApprovalHelper.TryBlockIfNotApproved(
+                approvalStatus,
+                rejectionReason,
+                entityLabel);
+            if (blocked != null)
+                return blocked;
+
             var createMessageResult = await _messageService.CreateMessageAsync(userId, new CreateMessageDto
             {
                 Content = publicUrl
@@ -642,7 +663,8 @@ namespace Api_Vapp.Services
                     DuplicatePreventionHours = 24,
                     SendToSpecificTags = false
                 },
-                session);
+                session,
+                bypassAdminApproval: true);
 
             _logger.LogInformation(
                 "ارسال سریع {EntityLabel} انجام شد — MessageId: {MessageId}, ContactId: {ContactId}, EntityId: {EntityId}",
@@ -1047,6 +1069,7 @@ namespace Api_Vapp.Services
             }
 
             form.UpdatedAt = DateTime.UtcNow;
+            QuickSendContentApprovalHelper.ResetToPending(form);
             await _context.SaveChangesAsync();
 
             return ApiResponse<UserFormResponseDto>.CreateSuccess(
@@ -1175,7 +1198,10 @@ namespace Api_Vapp.Services
                     .ToList(),
                 CreatedAt = EnsureUtc(form.CreatedAt),
                 UpdatedAt = EnsureUtc(form.UpdatedAt),
-                PublishedAt = EnsureUtc(form.PublishedAt)
+                PublishedAt = EnsureUtc(form.PublishedAt),
+                ApprovalStatus = form.ApprovalStatus,
+                RejectionReason = form.RejectionReason,
+                ApprovedAt = EnsureUtc(form.ApprovedAt)
             };
         }
 

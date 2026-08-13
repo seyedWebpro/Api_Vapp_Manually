@@ -42,6 +42,11 @@ namespace Api_Vapp.Interfaces
         Task<ApiResponse<AutomatedMessageSummaryResponseDto>> GetAutomatedMessageSummaryAsync(int automatedMessageId, int userId);
         Task<ApiResponse<AutomatedMessageSummaryResponseDto>> CalculateAutomatedMessageSummaryAsync(int automatedMessageId, int userId, CalculateAutomatedMessageSummaryDto summaryDto);
         Task<ApiResponse<AutomatedMessageSummaryResponseDto>> SaveAutomatedMessageSettingsAsync(int automatedMessageId, int userId, SaveAutomatedMessageSettingsDto settingsDto);
+
+        /// <summary>
+        /// صف‌بندی پیام خوش‌آمد برای مخاطب تازه‌ایجادشده (در صورت وجود اتوماسیون Welcome فعال)
+        /// </summary>
+        Task QueueWelcomeMessagesForNewContactAsync(int userId, int contactId);
     }
 }
 

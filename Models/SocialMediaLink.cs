@@ -4,7 +4,7 @@ namespace Api_Vapp.Models
     /// مدل لینک شبکه‌های اجتماعی
     /// برای مدیریت لینک‌های سوشیال مدیا (اینستاگرام، تلگرام، روبیکا، سروش و ...)
     /// </summary>
-    public class SocialMediaLink
+    public class SocialMediaLink : IQuickSendApprovable
     {
         // شناسه یکتای لینک
         public int Id { get; set; }
@@ -34,6 +34,19 @@ namespace Api_Vapp.Models
 
         // تاریخ و زمان آخرین به‌روزرسانی
         public DateTime? UpdatedAt { get; set; }
+
+        #endregion
+
+        #region Quick-send approval
+
+        /// <summary>وضعیت تأیید ادمین برای ارسال سریع (Pending / Approved / Rejected)</summary>
+        public string ApprovalStatus { get; set; } = "Pending";
+
+        public DateTime? ApprovedAt { get; set; }
+
+        public int? ApprovedByUserId { get; set; }
+
+        public string? RejectionReason { get; set; }
 
         #endregion
 

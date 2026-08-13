@@ -1,5 +1,4 @@
 using Api_Vapp.Data;
-using Api_Vapp.DTOs.Common;
 using Api_Vapp.DTOs.ReferralProgram;
 using Api_Vapp.DTOs.Sms;
 using Api_Vapp.Interfaces;
@@ -24,6 +23,8 @@ internal sealed class ReferralProgramTestContext : IDisposable
     }
 
     public IReferralProgramService Service { get; private set; } = null!;
+
+    public FakeUserSmsBillingService FakeSms { get; } = new();
 
     public Api_Context Context => _context;
 
@@ -78,6 +79,7 @@ internal sealed class ReferralProgramTestContext : IDisposable
             Title = $"برنامه تست {suffix}",
             IsActive = true,
             RewardType = ReferralRewardTypes.FixedAmount,
+            IsReferrerRewardActive = true,
             ReferrerRewardValue = 50_000m,
             IsCustomerRewardActive = true,
             CustomerRewardValue = 10_000m
@@ -99,7 +101,7 @@ internal sealed class ReferralProgramTestContext : IDisposable
         return dto;
     }
 
-    public async Task<(int ProgramId, string PublicCode)> CreateConfirmedProgramAsync(
+    public async Task<(int ProgramId, string PersonalCode, int ReferrerContactId)> CreateConfirmedProgramAsync(
         Action<ReferralStep1Dto>? configureStep1 = null)
     {
         var step1 = BuildStep1Dto(configureStep1);
@@ -130,6 +132,7 @@ internal sealed class ReferralProgramTestContext : IDisposable
             throw new InvalidOperationException($"Step3 failed: {step3Result.StatusCode} {step3Result.Message}");
         }
 
+        FakeSms.Clear();
         var confirmResult = await Service.ConfirmAsync(OwnerUserId, new ConfirmReferralProgramDto
         {
             DraftId = draftId
@@ -139,7 +142,14 @@ internal sealed class ReferralProgramTestContext : IDisposable
             throw new InvalidOperationException($"Confirm failed: {confirmResult.StatusCode} {confirmResult.Message}");
         }
 
-        return (confirmResult.Data.Program.Id, confirmResult.Data.Program.PublicCode);
+        var programId = confirmResult.Data.Program.Id;
+        var personal = await Context.ReferralContactCodes
+            .AsNoTracking()
+            .Where(c => c.ReferralProgramId == programId && !c.IsDeleted)
+            .OrderBy(c => c.Id)
+            .FirstAsync();
+
+        return (programId, personal.Code, personal.ContactId);
     }
 
     public void Dispose()
@@ -153,16 +163,17 @@ internal sealed class ReferralProgramTestContext : IDisposable
         await SeedAsync();
     }
 
-    private static IReferralProgramService CreateService(Api_Context context)
+    private IReferralProgramService CreateService(Api_Context context)
     {
-            return new ReferralProgramService(
-                context,
-                new ReferralProgramRepository(context),
-                new ReferralProgramDraftRepository(context),
-                new ReferralUsageRepository(context),
-                new FakeUserSmsBillingService(),
-                new Api_Vapp.Tests.Shared.NoOpAuditService(),
-                NullLogger<ReferralProgramService>.Instance);
+        return new ReferralProgramService(
+            context,
+            new ReferralProgramRepository(context),
+            new ReferralProgramDraftRepository(context),
+            new ReferralUsageRepository(context),
+            new ReferralContactCodeRepository(context),
+            FakeSms,
+            new Api_Vapp.Tests.Shared.NoOpAuditService(),
+            NullLogger<ReferralProgramService>.Instance);
     }
 
     private async Task SeedAsync()
@@ -238,8 +249,12 @@ internal sealed class ReferralProgramTestContext : IDisposable
         ContactId3 = contact3.Id;
     }
 
-    private sealed class FakeUserSmsBillingService : IUserSmsBillingService
+    internal sealed class FakeUserSmsBillingService : IUserSmsBillingService
     {
+        public List<(string Mobile, string Message, string WalletTitle)> SentMessages { get; } = new();
+
+        public void Clear() => SentMessages.Clear();
+
         public Task<(decimal Cost, int PartsCount)> EstimateCostAsync(
             string message,
             CancellationToken cancellationToken = default) =>
@@ -254,8 +269,11 @@ internal sealed class ReferralProgramTestContext : IDisposable
             string? walletDescription = null,
             int? sourceEntityId = null,
             string? sourceEntityLabel = null,
-            CancellationToken cancellationToken = default) =>
-            Task.FromResult(UserSmsSendResult.Success(1, 160m, 1, 0));
+            CancellationToken cancellationToken = default)
+        {
+            SentMessages.Add((mobile, message, walletTitle));
+            return Task.FromResult(UserSmsSendResult.Success(1, 160m, 1, 0));
+        }
 
         public Task<UserSmsSendResult> TrySendOtpAsync(
             int userId,

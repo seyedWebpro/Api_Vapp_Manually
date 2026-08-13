@@ -61,6 +61,7 @@ namespace Api_Vapp.Data
         public DbSet<ReferralProgram> ReferralPrograms { get; set; }
         public DbSet<ReferralProgramDraft> ReferralProgramDrafts { get; set; }
         public DbSet<ReferralUsage> ReferralUsages { get; set; }
+        public DbSet<ReferralContactCode> ReferralContactCodes { get; set; }
         public DbSet<SmsDeliveryRecord> SmsDeliveryRecords { get; set; }
         public DbSet<LuckyWheel> LuckyWheels { get; set; }
         public DbSet<LuckyWheelItem> LuckyWheelItems { get; set; }
@@ -1357,6 +1358,9 @@ namespace Api_Vapp.Data
                 entity.Property(c => c.AdminRejectionReason).HasMaxLength(1000);
             });
 
+            // تأیید یک‌باره ارسال سریع روی موجودیت‌های ماژول
+            ConfigureQuickSendApproval(modelBuilder);
+
             // تنظیمات UserForm (فرم‌ساز)
             modelBuilder.Entity<UserForm>(entity =>
             {
@@ -1600,6 +1604,7 @@ namespace Api_Vapp.Data
 
                 entity.Property(r => r.ReferrerRewardValue).HasPrecision(18, 2);
                 entity.Property(r => r.CustomerRewardValue).HasPrecision(18, 2);
+                entity.Property(r => r.IsReferrerRewardActive).HasDefaultValue(true);
 
                 entity.HasOne(r => r.User)
                     .WithMany()
@@ -1612,6 +1617,40 @@ namespace Api_Vapp.Data
                 entity.HasIndex(r => r.IsDeleted);
                 entity.HasIndex(r => r.StartDate);
                 entity.HasIndex(r => r.EndDate);
+            });
+
+            modelBuilder.Entity<ReferralContactCode>(entity =>
+            {
+                entity.HasKey(c => c.Id);
+                entity.Property(c => c.Id).ValueGeneratedOnAdd();
+
+                entity.Property(c => c.ReferralProgramId).IsRequired();
+                entity.Property(c => c.UserId).IsRequired();
+                entity.Property(c => c.ContactId).IsRequired();
+                entity.Property(c => c.Code).IsRequired().HasMaxLength(20);
+                entity.Property(c => c.IsDeleted).HasDefaultValue(false);
+                entity.Property(c => c.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+                entity.HasOne(c => c.ReferralProgram)
+                    .WithMany()
+                    .HasForeignKey(c => c.ReferralProgramId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(c => c.User)
+                    .WithMany()
+                    .HasForeignKey(c => c.UserId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(c => c.Contact)
+                    .WithMany()
+                    .HasForeignKey(c => c.ContactId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasIndex(c => new { c.UserId, c.Code }).IsUnique();
+                entity.HasIndex(c => new { c.ReferralProgramId, c.ContactId }).IsUnique();
+                entity.HasIndex(c => c.ReferralProgramId);
+                entity.HasIndex(c => c.ContactId);
+                entity.HasIndex(c => c.IsDeleted);
             });
 
             modelBuilder.Entity<ReferralProgramDraft>(entity =>
@@ -1646,6 +1685,7 @@ namespace Api_Vapp.Data
                 entity.Property(u => u.PublicCode).IsRequired().HasMaxLength(20);
                 entity.Property(u => u.Status).IsRequired().HasMaxLength(50).HasDefaultValue("Completed");
                 entity.Property(u => u.Description).HasMaxLength(500);
+                entity.Property(u => u.IdempotencyKey).HasMaxLength(100);
                 entity.Property(u => u.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
 
                 entity.Property(u => u.PurchaseAmount).HasPrecision(18, 2);
@@ -1677,6 +1717,10 @@ namespace Api_Vapp.Data
                 entity.HasIndex(u => u.PublicCode);
                 entity.HasIndex(u => u.Status);
                 entity.HasIndex(u => u.CreatedAt);
+                entity.HasIndex(u => new { u.UserId, u.PublicCode, u.CustomerContactId, u.CreatedAt });
+                entity.HasIndex(u => new { u.UserId, u.IdempotencyKey })
+                    .IsUnique()
+                    .HasFilter("[IdempotencyKey] IS NOT NULL");
             });
 
             // تنظیمات BookingSystem (رزرو نوبت)
@@ -1693,6 +1737,7 @@ namespace Api_Vapp.Data
                 entity.Property(b => b.Status).IsRequired();
                 entity.Property(b => b.SaveToPhonebook).HasDefaultValue(false);
                 entity.Property(b => b.IsActive).HasDefaultValue(true);
+                entity.Property(b => b.BookingWindowDays);
                 entity.Property(b => b.IsDeleted).HasDefaultValue(false);
                 entity.Property(b => b.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
 
@@ -2129,6 +2174,27 @@ namespace Api_Vapp.Data
                 entity.HasIndex(e => e.ReferrerUserId);
                 entity.HasIndex(e => e.BeneficiaryUserId);
                 entity.HasIndex(e => e.CreatedAt);
+            });
+        }
+
+        private static void ConfigureQuickSendApproval(ModelBuilder modelBuilder)
+        {
+            ConfigureQuickSendApprovalFields<BusinessCard>(modelBuilder);
+            ConfigureQuickSendApprovalFields<BookingSystem>(modelBuilder);
+            ConfigureQuickSendApprovalFields<UserForm>(modelBuilder);
+            ConfigureQuickSendApprovalFields<LuckyWheel>(modelBuilder);
+            ConfigureQuickSendApprovalFields<SocialMediaLink>(modelBuilder);
+            ConfigureQuickSendApprovalFields<QuickAction>(modelBuilder);
+        }
+
+        private static void ConfigureQuickSendApprovalFields<TEntity>(ModelBuilder modelBuilder)
+            where TEntity : class, IQuickSendApprovable
+        {
+            modelBuilder.Entity<TEntity>(entity =>
+            {
+                entity.Property(e => e.ApprovalStatus).HasMaxLength(50).HasDefaultValue("Pending");
+                entity.Property(e => e.RejectionReason).HasMaxLength(1000);
+                entity.HasIndex(e => new { e.ApprovalStatus });
             });
         }
     }

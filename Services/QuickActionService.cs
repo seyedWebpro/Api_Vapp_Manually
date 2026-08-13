@@ -225,6 +225,10 @@ namespace Api_Vapp.Services
                     return ApiResponse<QuickActionResponseDto>.NotFound("لینک مورد نظر یافت نشد");
                 }
 
+                var originalName = action.Name;
+                var originalContent = action.Content;
+                var originalActionType = action.ActionType;
+
                 // اگر فایل آیکون ارسال شده باشد، آن را آپلود می‌کنیم
                 if (updateDto.IconFile != null && updateDto.IconFile.Length > 0)
                 {
@@ -290,6 +294,14 @@ namespace Api_Vapp.Services
                 if (updateDto.IsActive.HasValue) action.IsActive = updateDto.IsActive.Value;
 
                 action.UpdatedAt = DateTime.UtcNow;
+                var contentChanged =
+                    !string.Equals(originalName, action.Name, StringComparison.Ordinal) ||
+                    !string.Equals(originalContent, action.Content, StringComparison.Ordinal) ||
+                    !string.Equals(originalActionType, action.ActionType, StringComparison.Ordinal);
+                if (contentChanged)
+                {
+                    QuickSendContentApprovalHelper.ResetToPending(action);
+                }
 
                 await _quickActionRepository.UpdateAsync(action);
                 // SaveChangesAsync is called inside UpdateAsync
@@ -646,6 +658,16 @@ namespace Api_Vapp.Services
                     return ApiResponse<DirectSendResultDto>.BadRequest("لینک پیش‌فرض محتوایی ندارد");
                 }
 
+                var blocked = QuickSendContentApprovalHelper.TryBlockIfNotApproved(
+                    defaultAction.ApprovalStatus,
+                    defaultAction.RejectionReason,
+                    "لینک سریع");
+                if (blocked != null)
+                {
+                    await transaction.RollbackAsync();
+                    return blocked;
+                }
+
                 // استفاده از محتوای اکشن پیش‌فرض به عنوان محتوای پیام
                 messageContent = defaultAction.Content;
 
@@ -716,7 +738,12 @@ namespace Api_Vapp.Services
                     SendToSpecificTags = false
                 };
 
-                var sendResult = await _messageService.SendDirectMessageAsync(userId, message.Id, sendDto, session);
+                var sendResult = await _messageService.SendDirectMessageAsync(
+                    userId,
+                    message.Id,
+                    sendDto,
+                    session,
+                    bypassAdminApproval: true);
 
                 _logger.LogInformation("✅ Quick send action completed - MessageId: {MessageId}, ContactId: {ContactId}, UserId: {UserId}", 
                     message.Id, quickSendDto.ContactId, userId);
@@ -863,7 +890,10 @@ namespace Api_Vapp.Services
                 IsActive = action.IsActive,
                 IsDefault = action.IsDefault,
                 CreatedAt = action.CreatedAt,
-                LinkType = DetectLinkType(action.Content)
+                LinkType = DetectLinkType(action.Content),
+                ApprovalStatus = action.ApprovalStatus,
+                RejectionReason = action.RejectionReason,
+                ApprovedAt = action.ApprovedAt
             };
         }
     }

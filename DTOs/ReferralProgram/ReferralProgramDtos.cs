@@ -11,12 +11,17 @@ namespace Api_Vapp.DTOs.ReferralProgram
         public string Title { get; set; } = string.Empty;
         public bool IsActive { get; set; }
         public string RewardType { get; set; } = string.Empty;
+        public bool IsReferrerRewardActive { get; set; }
         public decimal ReferrerRewardValue { get; set; }
         public string FormattedReferrerReward { get; set; } = string.Empty;
         public bool IsCustomerRewardActive { get; set; }
         public decimal? CustomerRewardValue { get; set; }
         public string? FormattedCustomerReward { get; set; }
+        /// <summary>
+        /// شناسه مرجع برنامه — برای استعلام فروشگاه از کد شخصی مخاطب استفاده شود
+        /// </summary>
         public string PublicCode { get; set; } = string.Empty;
+        public int PersonalCodesCount { get; set; }
         public string TargetAudience { get; set; } = string.Empty;
         public string AudienceDescription { get; set; } = string.Empty;
         public List<int>? TargetNotebookIds { get; set; }
@@ -135,10 +140,34 @@ namespace Api_Vapp.DTOs.ReferralProgram
         public bool IsCustomerRewardActive { get; set; }
         public decimal? CustomerDiscountAmount { get; set; }
         public string? FormattedCustomerDiscount { get; set; }
-        public decimal? ReferrerRewardValue { get; set; }
+        public bool IsReferrerRewardActive { get; set; }
+        public decimal? ReferrerRewardAmount { get; set; }
         public string? FormattedReferrerReward { get; set; }
+        public int? ReferrerContactId { get; set; }
+        public string? ReferrerContactName { get; set; }
+        public string? ReferrerContactMobile { get; set; }
         public DateTime? StartDate { get; set; }
         public DateTime? EndDate { get; set; }
+    }
+
+    public class ReferralContactCodeDto
+    {
+        public int Id { get; set; }
+        public int ReferralProgramId { get; set; }
+        public int ContactId { get; set; }
+        public string ContactName { get; set; } = string.Empty;
+        public string ContactMobile { get; set; } = string.Empty;
+        public string Code { get; set; } = string.Empty;
+        public DateTime CreatedAt { get; set; }
+    }
+
+    public class ReferralContactCodeListDto
+    {
+        public List<ReferralContactCodeDto> Codes { get; set; } = new();
+        public int TotalCount { get; set; }
+        public int PageNumber { get; set; }
+        public int PageSize { get; set; }
+        public int TotalPages { get; set; }
     }
 
     public class ReferralUsageDto
@@ -188,8 +217,11 @@ namespace Api_Vapp.DTOs.ReferralProgram
         public string FormattedCustomerDiscount { get; set; } = string.Empty;
         public decimal ReferrerRewardAmount { get; set; }
         public string FormattedReferrerReward { get; set; } = string.Empty;
+        public int? ReferrerContactId { get; set; }
+        public string? ReferrerContactName { get; set; }
         public bool CustomerRewardCredited { get; set; }
         public bool ReferrerRewardCredited { get; set; }
+        public bool ReferrerRewardSmsSent { get; set; }
     }
 
     #endregion
@@ -207,7 +239,12 @@ namespace Api_Vapp.DTOs.ReferralProgram
         [Required(ErrorMessage = "نوع پاداش الزامی است")]
         public string RewardType { get; set; } = ReferralRewardTypes.Percentage;
 
-        [Range(0.01, 100000000, ErrorMessage = "مقدار پاداش معرف نامعتبر است")]
+        /// <summary>
+        /// پاداش معرف فعال باشد (پیش‌فرض true)
+        /// </summary>
+        public bool IsReferrerRewardActive { get; set; } = true;
+
+        [Range(0, 100000000, ErrorMessage = "مقدار پاداش معرف نامعتبر است")]
         public decimal ReferrerRewardValue { get; set; }
 
         public bool IsCustomerRewardActive { get; set; }
@@ -266,7 +303,7 @@ namespace Api_Vapp.DTOs.ReferralProgram
         [MaxLength(20)]
         public string Code { get; set; } = string.Empty;
 
-        [Range(0, 1000000000, ErrorMessage = "مبلغ خرید نامعتبر است")]
+        [Range(1, 100_000_000, ErrorMessage = "مبلغ خرید باید بین ۱ تا ۱۰۰٬۰۰۰٬۰۰۰ تومان باشد")]
         public decimal? PurchaseAmount { get; set; }
     }
 
@@ -276,12 +313,27 @@ namespace Api_Vapp.DTOs.ReferralProgram
         [MaxLength(20)]
         public string Code { get; set; } = string.Empty;
 
-        [Range(1, 1000000000, ErrorMessage = "مبلغ خرید نامعتبر است")]
+        [Required(ErrorMessage = "مبلغ خرید الزامی است")]
+        [Range(1, 100_000_000, ErrorMessage = "مبلغ خرید باید بین ۱ تا ۱۰۰٬۰۰۰٬۰۰۰ تومان باشد")]
         public decimal? PurchaseAmount { get; set; }
 
+        /// <summary>
+        /// مخاطب خریدار (الزامی) — برای جلوگیری از سوءاستفاده و ثبت صحیح مصرف
+        /// </summary>
+        [Required(ErrorMessage = "شناسه مخاطب خریدار الزامی است")]
+        [Range(1, int.MaxValue, ErrorMessage = "شناسه مخاطب خریدار نامعتبر است")]
         public int? CustomerContactId { get; set; }
 
+        /// <summary>
+        /// نادیده گرفته می‌شود؛ معرف فقط از روی کد شخصی مشخص می‌شود
+        /// </summary>
         public int? ReferrerContactId { get; set; }
+
+        /// <summary>
+        /// کلید یکتای رسید/تراکنش فروشگاه برای جلوگیری از ثبت تکراری
+        /// </summary>
+        [MaxLength(100, ErrorMessage = "کلید یکتایی حداکثر ۱۰۰ کاراکتر است")]
+        public string? IdempotencyKey { get; set; }
 
         [MaxLength(500)]
         public string? Description { get; set; }
@@ -293,6 +345,8 @@ namespace Api_Vapp.DTOs.ReferralProgram
         public string? Title { get; set; }
 
         public bool? IsActive { get; set; }
+
+        public bool? IsReferrerRewardActive { get; set; }
 
         public decimal? ReferrerRewardValue { get; set; }
 

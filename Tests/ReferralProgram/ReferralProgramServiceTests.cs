@@ -104,17 +104,19 @@ public class ReferralProgramServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Confirm_FullWizard_Returns201()
+    public async Task Confirm_FullWizard_Returns201_WithPersonalCodes()
     {
-        var (programId, publicCode) = await _ctx.CreateConfirmedProgramAsync();
+        var (programId, personalCode, _) = await _ctx.CreateConfirmedProgramAsync();
 
         Assert.True(programId > 0);
-        Assert.StartsWith("REF", publicCode);
+        Assert.StartsWith("REF", personalCode);
 
-        var getResult = await _ctx.Service.GetByIdAsync(programId, _ctx.OwnerUserId);
-        Assert.True(getResult.Success);
-        Assert.Equal(publicCode, getResult.Data!.PublicCode);
-        AssertNoServerError(getResult);
+        var codes = await _ctx.Service.GetContactCodesAsync(programId, _ctx.OwnerUserId);
+        Assert.True(codes.Success);
+        Assert.Equal(3, codes.Data!.TotalCount);
+        Assert.All(codes.Data.Codes, c => Assert.StartsWith("REF", c.Code));
+        Assert.Equal(3, codes.Data.Codes.Select(c => c.Code).Distinct().Count());
+        AssertNoServerError(codes);
     }
 
     [Fact]
@@ -311,7 +313,7 @@ public class ReferralProgramServiceTests : IAsyncLifetime
     [Fact]
     public async Task ToggleStatus_Returns200()
     {
-        var (programId, _) = await _ctx.CreateConfirmedProgramAsync();
+        var (programId, _, _) = await _ctx.CreateConfirmedProgramAsync();
 
         var result = await _ctx.Service.ToggleStatusAsync(programId, _ctx.OwnerUserId);
 
@@ -324,7 +326,7 @@ public class ReferralProgramServiceTests : IAsyncLifetime
     [Fact]
     public async Task Delete_Returns200()
     {
-        var (programId, _) = await _ctx.CreateConfirmedProgramAsync();
+        var (programId, _, _) = await _ctx.CreateConfirmedProgramAsync();
 
         var result = await _ctx.Service.DeleteAsync(programId, _ctx.OwnerUserId);
 
@@ -334,18 +336,24 @@ public class ReferralProgramServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Inquire_ValidCode_Returns200()
+    public async Task Inquire_ValidPersonalCode_ReturnsReferrerAndRewards()
     {
-        var (_, publicCode) = await _ctx.CreateConfirmedProgramAsync();
+        var (_, personalCode, referrerContactId) = await _ctx.CreateConfirmedProgramAsync();
 
         var result = await _ctx.Service.InquireCodeAsync(_ctx.OwnerUserId, new InquireReferralCodeDto
         {
-            Code = publicCode
+            Code = personalCode,
+            PurchaseAmount = 200_000m
         });
 
         Assert.True(result.Success);
         Assert.Equal(200, result.StatusCode);
         Assert.True(result.Data!.IsValid);
+        Assert.Equal(referrerContactId, result.Data.ReferrerContactId);
+        Assert.True(result.Data.IsCustomerRewardActive);
+        Assert.True(result.Data.IsReferrerRewardActive);
+        Assert.Equal(10_000m, result.Data.CustomerDiscountAmount);
+        Assert.Equal(50_000m, result.Data.ReferrerRewardAmount);
         AssertNoServerError(result);
     }
 
@@ -366,7 +374,7 @@ public class ReferralProgramServiceTests : IAsyncLifetime
     [Fact]
     public async Task Inquire_ExpiredProgram_Returns200WithInvalidFlag()
     {
-        var (programId, publicCode) = await _ctx.CreateConfirmedProgramAsync();
+        var (programId, personalCode, _) = await _ctx.CreateConfirmedProgramAsync();
 
         var program = await _ctx.Context.ReferralPrograms.FirstAsync(p => p.Id == programId);
         program.EndDate = DateTime.UtcNow.AddDays(-1);
@@ -375,30 +383,203 @@ public class ReferralProgramServiceTests : IAsyncLifetime
 
         var result = await _ctx.Service.InquireCodeAsync(_ctx.OwnerUserId, new InquireReferralCodeDto
         {
-            Code = publicCode
+            Code = personalCode,
+            PurchaseAmount = 100_000m
         });
 
         Assert.True(result.Success);
         Assert.False(result.Data!.IsValid);
         Assert.True(result.Data.IsExpired);
+        Assert.Null(result.Data.ReferrerContactId);
+        Assert.Null(result.Data.ReferrerContactMobile);
+        Assert.Null(result.Data.CustomerDiscountAmount);
         AssertNoServerError(result);
     }
 
     [Fact]
-    public async Task Redeem_ValidFixedAmountCode_Returns201()
+    public async Task Redeem_BothRewards_SendsReferrerSms()
     {
-        var (_, publicCode) = await _ctx.CreateConfirmedProgramAsync();
+        var (_, personalCode, referrerContactId) = await _ctx.CreateConfirmedProgramAsync();
+        _ctx.FakeSms.Clear();
 
         var result = await _ctx.Service.RedeemCodeAsync(_ctx.OwnerUserId, new RedeemReferralCodeDto
         {
-            Code = publicCode,
-            CustomerContactId = _ctx.ContactId,
-            ReferrerContactId = _ctx.ContactId
+            Code = personalCode,
+            CustomerContactId = _ctx.ContactId2,
+            PurchaseAmount = 100_000m
         });
 
         Assert.True(result.Success);
         Assert.Equal(201, result.StatusCode);
-        Assert.True(result.Data!.CustomerDiscountAmount > 0);
+        Assert.Equal(10_000m, result.Data!.CustomerDiscountAmount);
+        Assert.Equal(50_000m, result.Data.ReferrerRewardAmount);
+        Assert.Equal(referrerContactId, result.Data.ReferrerContactId);
+        Assert.True(result.Data.ReferrerRewardSmsSent);
+        Assert.Contains(_ctx.FakeSms.SentMessages, m => m.WalletTitle == "پاداش معرف" && m.Message.Contains("پاداش گرفتید"));
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task Redeem_CustomerOnly_NoReferrerSms()
+    {
+        var (_, personalCode, _) = await _ctx.CreateConfirmedProgramAsync(s =>
+        {
+            s.IsReferrerRewardActive = false;
+            s.ReferrerRewardValue = 0;
+            s.IsCustomerRewardActive = true;
+            s.CustomerRewardValue = 15_000m;
+        });
+        _ctx.FakeSms.Clear();
+
+        var result = await _ctx.Service.RedeemCodeAsync(_ctx.OwnerUserId, new RedeemReferralCodeDto
+        {
+            Code = personalCode,
+            CustomerContactId = _ctx.ContactId2,
+            PurchaseAmount = 100_000m
+        });
+
+        Assert.True(result.Success);
+        Assert.Equal(201, result.StatusCode);
+        Assert.Equal(15_000m, result.Data!.CustomerDiscountAmount);
+        Assert.Equal(0m, result.Data.ReferrerRewardAmount);
+        Assert.False(result.Data.ReferrerRewardSmsSent);
+        Assert.DoesNotContain(_ctx.FakeSms.SentMessages, m => m.WalletTitle == "پاداش معرف");
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task Redeem_ReferrerOnly_SendsSms_NoCustomerDiscount()
+    {
+        var (_, personalCode, referrerContactId) = await _ctx.CreateConfirmedProgramAsync(s =>
+        {
+            s.IsReferrerRewardActive = true;
+            s.ReferrerRewardValue = 20_000m;
+            s.IsCustomerRewardActive = false;
+            s.CustomerRewardValue = null;
+        });
+        _ctx.FakeSms.Clear();
+
+        var result = await _ctx.Service.RedeemCodeAsync(_ctx.OwnerUserId, new RedeemReferralCodeDto
+        {
+            Code = personalCode,
+            CustomerContactId = _ctx.ContactId2,
+            PurchaseAmount = 100_000m
+        });
+
+        Assert.True(result.Success);
+        Assert.Equal(201, result.StatusCode);
+        Assert.Equal(0m, result.Data!.CustomerDiscountAmount);
+        Assert.Equal(20_000m, result.Data.ReferrerRewardAmount);
+        Assert.Equal(referrerContactId, result.Data.ReferrerContactId);
+        Assert.True(result.Data.ReferrerRewardSmsSent);
+        Assert.Contains(_ctx.FakeSms.SentMessages, m => m.WalletTitle == "پاداش معرف");
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task Redeem_SelfReferral_Returns400()
+    {
+        var (_, personalCode, referrerContactId) = await _ctx.CreateConfirmedProgramAsync();
+
+        var result = await _ctx.Service.RedeemCodeAsync(_ctx.OwnerUserId, new RedeemReferralCodeDto
+        {
+            Code = personalCode,
+            CustomerContactId = referrerContactId,
+            PurchaseAmount = 100_000m
+        });
+
+        Assert.False(result.Success);
+        Assert.Equal(400, result.StatusCode);
+        Assert.Contains("خود خریدار", result.Message);
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task Redeem_SameCustomerSameDay_Returns400()
+    {
+        var (_, personalCode, _) = await _ctx.CreateConfirmedProgramAsync();
+
+        var first = await _ctx.Service.RedeemCodeAsync(_ctx.OwnerUserId, new RedeemReferralCodeDto
+        {
+            Code = personalCode,
+            CustomerContactId = _ctx.ContactId2,
+            PurchaseAmount = 100_000m,
+            IdempotencyKey = $"receipt-{Guid.NewGuid():N}"
+        });
+        Assert.True(first.Success);
+
+        var second = await _ctx.Service.RedeemCodeAsync(_ctx.OwnerUserId, new RedeemReferralCodeDto
+        {
+            Code = personalCode,
+            CustomerContactId = _ctx.ContactId2,
+            PurchaseAmount = 120_000m,
+            IdempotencyKey = $"receipt-{Guid.NewGuid():N}"
+        });
+
+        Assert.False(second.Success);
+        Assert.Equal(400, second.StatusCode);
+        Assert.Contains("امروز", second.Message);
+        AssertNoServerError(second);
+    }
+
+    [Fact]
+    public async Task Redeem_DuplicateIdempotencyKey_Returns400()
+    {
+        var (_, personalCode, _) = await _ctx.CreateConfirmedProgramAsync();
+        var key = $"idem-{Guid.NewGuid():N}";
+
+        var first = await _ctx.Service.RedeemCodeAsync(_ctx.OwnerUserId, new RedeemReferralCodeDto
+        {
+            Code = personalCode,
+            CustomerContactId = _ctx.ContactId2,
+            PurchaseAmount = 100_000m,
+            IdempotencyKey = key
+        });
+        Assert.True(first.Success);
+
+        var second = await _ctx.Service.RedeemCodeAsync(_ctx.OwnerUserId, new RedeemReferralCodeDto
+        {
+            Code = personalCode,
+            CustomerContactId = _ctx.ContactId3,
+            PurchaseAmount = 100_000m,
+            IdempotencyKey = key
+        });
+
+        Assert.False(second.Success);
+        Assert.Equal(400, second.StatusCode);
+        Assert.Contains("قبلاً ثبت", second.Message);
+        AssertNoServerError(second);
+    }
+
+    [Fact]
+    public async Task Redeem_MissingCustomer_Returns400()
+    {
+        var (_, personalCode, _) = await _ctx.CreateConfirmedProgramAsync();
+
+        var result = await _ctx.Service.RedeemCodeAsync(_ctx.OwnerUserId, new RedeemReferralCodeDto
+        {
+            Code = personalCode,
+            PurchaseAmount = 100_000m
+        });
+
+        Assert.False(result.Success);
+        Assert.Equal(400, result.StatusCode);
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task ValidateStep1_NeitherRewardActive_Returns400()
+    {
+        var result = await _ctx.Service.ValidateStep1Async(_ctx.OwnerUserId, _ctx.BuildStep1Dto(s =>
+        {
+            s.IsReferrerRewardActive = false;
+            s.ReferrerRewardValue = 0;
+            s.IsCustomerRewardActive = false;
+            s.CustomerRewardValue = null;
+        }));
+
+        Assert.False(result.Success);
+        Assert.Equal(400, result.StatusCode);
         AssertNoServerError(result);
     }
 
@@ -407,7 +588,9 @@ public class ReferralProgramServiceTests : IAsyncLifetime
     {
         var result = await _ctx.Service.RedeemCodeAsync(_ctx.OwnerUserId, new RedeemReferralCodeDto
         {
-            Code = "REF000000"
+            Code = "REF000000",
+            CustomerContactId = _ctx.ContactId2,
+            PurchaseAmount = 100_000m
         });
 
         Assert.False(result.Success);
@@ -418,7 +601,7 @@ public class ReferralProgramServiceTests : IAsyncLifetime
     [Fact]
     public async Task Redeem_PercentageWithoutPurchase_Returns400()
     {
-        var (_, publicCode) = await _ctx.CreateConfirmedProgramAsync(s =>
+        var (_, personalCode, _) = await _ctx.CreateConfirmedProgramAsync(s =>
         {
             s.RewardType = ReferralRewardTypes.Percentage;
             s.ReferrerRewardValue = 10m;
@@ -427,8 +610,26 @@ public class ReferralProgramServiceTests : IAsyncLifetime
 
         var result = await _ctx.Service.RedeemCodeAsync(_ctx.OwnerUserId, new RedeemReferralCodeDto
         {
-            Code = publicCode
+            Code = personalCode,
+            CustomerContactId = _ctx.ContactId2
         });
+
+        Assert.False(result.Success);
+        Assert.Equal(400, result.StatusCode);
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task ValidateStep1_CombinedPercentageOver100_Returns400()
+    {
+        var result = await _ctx.Service.ValidateStep1Async(_ctx.OwnerUserId, _ctx.BuildStep1Dto(s =>
+        {
+            s.RewardType = ReferralRewardTypes.Percentage;
+            s.IsReferrerRewardActive = true;
+            s.ReferrerRewardValue = 60m;
+            s.IsCustomerRewardActive = true;
+            s.CustomerRewardValue = 50m;
+        }));
 
         Assert.False(result.Success);
         Assert.Equal(400, result.StatusCode);
@@ -438,11 +639,13 @@ public class ReferralProgramServiceTests : IAsyncLifetime
     [Fact]
     public async Task GetHistory_AfterRedeem_Returns200()
     {
-        var (programId, publicCode) = await _ctx.CreateConfirmedProgramAsync();
+        var (programId, personalCode, _) = await _ctx.CreateConfirmedProgramAsync();
 
         await _ctx.Service.RedeemCodeAsync(_ctx.OwnerUserId, new RedeemReferralCodeDto
         {
-            Code = publicCode
+            Code = personalCode,
+            CustomerContactId = _ctx.ContactId2,
+            PurchaseAmount = 100_000m
         });
 
         var result = await _ctx.Service.GetHistoryAsync(programId, _ctx.OwnerUserId, 1, 10);
@@ -450,13 +653,14 @@ public class ReferralProgramServiceTests : IAsyncLifetime
         Assert.True(result.Success);
         Assert.Equal(200, result.StatusCode);
         Assert.NotEmpty(result.Data!.Usages);
+        Assert.All(result.Data.Usages, u => Assert.NotNull(u.ReferrerContactId));
         AssertNoServerError(result);
     }
 
     [Fact]
     public async Task Update_OnlyTitle_Returns200()
     {
-        var (programId, _) = await _ctx.CreateConfirmedProgramAsync();
+        var (programId, _, _) = await _ctx.CreateConfirmedProgramAsync();
 
         var result = await _ctx.Service.UpdateProgramAsync(programId, _ctx.OwnerUserId, new UpdateReferralProgramDto
         {
@@ -471,7 +675,7 @@ public class ReferralProgramServiceTests : IAsyncLifetime
     [Fact]
     public async Task Update_EmptyPayload_Returns400()
     {
-        var (programId, _) = await _ctx.CreateConfirmedProgramAsync();
+        var (programId, _, _) = await _ctx.CreateConfirmedProgramAsync();
 
         var result = await _ctx.Service.UpdateProgramAsync(programId, _ctx.OwnerUserId, new UpdateReferralProgramDto());
 
@@ -491,6 +695,19 @@ public class ReferralProgramServiceTests : IAsyncLifetime
         Assert.False(result.Success);
         Assert.Equal(404, result.StatusCode);
         AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task PersonalCodes_AreUniquePerContact()
+    {
+        var (programId, _, _) = await _ctx.CreateConfirmedProgramAsync();
+        var codes = await _ctx.Context.ReferralContactCodes
+            .Where(c => c.ReferralProgramId == programId && !c.IsDeleted)
+            .ToListAsync();
+
+        Assert.Equal(3, codes.Count);
+        Assert.Equal(3, codes.Select(c => c.ContactId).Distinct().Count());
+        Assert.Equal(3, codes.Select(c => c.Code).Distinct().Count());
     }
 
     private static void AssertNoServerError<T>(ApiResponse<T> response)

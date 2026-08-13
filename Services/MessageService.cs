@@ -1297,7 +1297,7 @@ namespace Api_Vapp.Services
                     return ApiResponse<bool>.Forbidden("شما مجاز به ارسال این کمپین نیستید");
                 }
 
-                if (campaign.Status != "Draft" && campaign.Status != "Pending" && campaign.Status != "PendingApproval")
+                if (campaign.Status != "Draft" && campaign.Status != "Pending" && campaign.Status != "PendingApproval" && campaign.Status != "Failed")
                 {
                     return ApiResponse<bool>.BadRequest("این کمپین قابل ارسال نیست");
                 }
@@ -1600,6 +1600,13 @@ namespace Api_Vapp.Services
                     NotificationCategory.Suggestions,
                     campaignPush.Title,
                     campaignPush.Body);
+
+                // ارسال کاملاً ناموفق → Success=false تا Approve وضعیت Failed را حفظ کند
+                if (sentCount == 0)
+                {
+                    return ApiResponse<bool>.BadRequest(
+                        string.IsNullOrWhiteSpace(campaign.ErrorMessage) ? successMessage : campaign.ErrorMessage);
+                }
 
                 return ApiResponse<bool>.CreateSuccess(true, successMessage);
             }

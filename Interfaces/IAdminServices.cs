@@ -103,6 +103,25 @@ namespace Api_Vapp.Interfaces
         Task<ApiResponse<bool>> RejectAsync(int id, int adminUserId, RejectApprovalDto dto);
     }
 
+    public interface IAdminQuickSendApprovalService
+    {
+        Task<ApiResponse<PagedResponse<QuickSendApprovalResponseDto>>> GetPendingAsync(
+            string? itemType = null,
+            int page = 1,
+            int pageSize = 20);
+
+        Task<ApiResponse<PagedResponse<QuickSendApprovalResponseDto>>> GetAllAsync(
+            string? status = null,
+            string? itemType = null,
+            int page = 1,
+            int pageSize = 20);
+
+        Task<ApiResponse<QuickSendApprovalResponseDto>> GetByIdAsync(string itemType, int id);
+        Task<ApiResponse<bool>> ApproveAsync(string itemType, int id, int adminUserId);
+        Task<ApiResponse<bool>> RejectAsync(string itemType, int id, int adminUserId, RejectApprovalDto dto);
+        Task<int> CountPendingAsync();
+    }
+
     public interface IAdminDashboardService
     {
         Task<ApiResponse<AdminDashboardStatsDto>> GetStatsAsync();

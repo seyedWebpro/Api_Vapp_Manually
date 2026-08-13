@@ -4,7 +4,7 @@ namespace Api_Vapp.Models
     /// مدل اقدام سریع
     /// برای گزینه‌های فوری پس از وارد کردن شماره
     /// </summary>
-    public class QuickAction
+    public class QuickAction : IQuickSendApprovable
     {
         // شناسه یکتای اقدام سریع
         public int Id { get; set; }
@@ -44,6 +44,19 @@ namespace Api_Vapp.Models
 
         // تاریخ و زمان آخرین به‌روزرسانی
         public DateTime? UpdatedAt { get; set; }
+
+        #endregion
+
+        #region Quick-send approval
+
+        /// <summary>وضعیت تأیید ادمین برای ارسال سریع (Pending / Approved / Rejected)</summary>
+        public string ApprovalStatus { get; set; } = "Pending";
+
+        public DateTime? ApprovedAt { get; set; }
+
+        public int? ApprovedByUserId { get; set; }
+
+        public string? RejectionReason { get; set; }
 
         #endregion
 

@@ -14,6 +14,13 @@ namespace Api_Vapp.DTOs.QuickAction
         public bool IsActive { get; set; }
         public bool IsDefault { get; set; }
         public DateTime CreatedAt { get; set; }
+
+        /// <summary>Pending / Approved / Rejected — تأیید یک‌باره ارسال سریع</summary>
+        public string ApprovalStatus { get; set; } = "Pending";
+
+        public string? RejectionReason { get; set; }
+
+        public DateTime? ApprovedAt { get; set; }
         
         /// <summary>
         /// نوع لینک تشخیص داده شده بر اساس ساختار URL

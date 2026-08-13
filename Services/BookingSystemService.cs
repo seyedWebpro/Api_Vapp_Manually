@@ -172,6 +172,13 @@ namespace Api_Vapp.Services
                         errorCode: ErrorCodes.InvalidInput);
                 }
 
+                var blocked = QuickSendContentApprovalHelper.TryBlockIfNotApproved(
+                    system.ApprovalStatus,
+                    system.RejectionReason,
+                    "سیستم رزرو");
+                if (blocked != null)
+                    return blocked;
+
                 if (string.IsNullOrWhiteSpace(system.Slug))
                 {
                     return ApiResponse<DirectSendResultDto>.BadRequest(
@@ -236,7 +243,8 @@ namespace Api_Vapp.Services
                         DuplicatePreventionHours = 24,
                         SendToSpecificTags = false
                     },
-                    session);
+                    session,
+                    bypassAdminApproval: true);
 
                 _logger.LogInformation(
                     "ارسال سریع رزرو نوبت انجام شد — MessageId: {MessageId}, ContactId: {ContactId}, BookingSystemId: {BookingSystemId}",
@@ -274,6 +282,12 @@ namespace Api_Vapp.Services
             {
                 return ApiResponse<BookingSystemDto>.NotFound("سیستم رزرو یافت نشد");
             }
+
+            var originalTitle = system.Title;
+            var originalDescription = system.Description;
+            var originalLocation = system.Location;
+            var originalActivityType = system.ActivityType;
+            var originalSlug = system.Slug;
 
             if (updateDto.Title != null)
             {
@@ -356,7 +370,32 @@ namespace Api_Vapp.Services
                 return ApiResponse<BookingSystemDto>.BadRequest("حداقل یک دفترچه باید انتخاب شود");
             }
 
+            if (updateDto.UseDefaultBookingWindow == true)
+            {
+                system.BookingWindowDays = null;
+            }
+            else if (updateDto.BookingWindowDays.HasValue)
+            {
+                var windowError = BookingWindowHelper.ValidateConfiguredDays(updateDto.BookingWindowDays);
+                if (windowError != null)
+                {
+                    return ApiResponse<BookingSystemDto>.BadRequest(windowError, errorCode: ErrorCodes.ValidationFailed);
+                }
+
+                system.BookingWindowDays = updateDto.BookingWindowDays.Value;
+            }
+
             system.UpdatedAt = DateTime.UtcNow;
+            var contentChanged =
+                !string.Equals(originalTitle, system.Title, StringComparison.Ordinal) ||
+                !string.Equals(originalDescription, system.Description, StringComparison.Ordinal) ||
+                !string.Equals(originalLocation, system.Location, StringComparison.Ordinal) ||
+                !string.Equals(originalActivityType, system.ActivityType, StringComparison.Ordinal) ||
+                !string.Equals(originalSlug, system.Slug, StringComparison.Ordinal);
+            if (contentChanged)
+            {
+                QuickSendContentApprovalHelper.ResetToPending(system);
+            }
             await _context.SaveChangesAsync();
 
             var refreshed = await _systemRepository.GetByIdWithDetailsAsync(id, userId);
@@ -592,9 +631,11 @@ namespace Api_Vapp.Services
                     Status = BookingSystemStatus.Published,
                     SaveToPhonebook = step1.SaveToPhonebook,
                     IsActive = true,
+                    BookingWindowDays = step1.BookingWindowDays,
                     PublishedAt = now,
                     CreatedAt = now
                 };
+                QuickSendContentApprovalHelper.ResetToPending(system);
 
                 if (step1.SaveToPhonebook)
                 {
@@ -965,7 +1006,9 @@ namespace Api_Vapp.Services
             dto.SaveToPhonebook.HasValue ||
             dto.NotebookIds != null ||
             dto.IsActive.HasValue ||
-            dto.Slug != null;
+            dto.Slug != null ||
+            dto.BookingWindowDays.HasValue ||
+            dto.UseDefaultBookingWindow == true;
 
         private static bool HasAnyServiceUpdateFields(UpdateBookingServiceDto dto) =>
             dto.Title != null ||
@@ -1004,23 +1047,33 @@ namespace Api_Vapp.Services
             return Task.FromResult(ApiResponse<BookingReminderInfoDto>.CreateSuccess(dto));
         }
 
-        private BookingSystemDto MapToListDto(BookingSystem system) => new()
+        private BookingSystemDto MapToListDto(BookingSystem system)
         {
-            Id = system.Id,
-            Title = system.Title,
-            ActivityType = system.ActivityType,
-            ActivityTypeTitle = BookingActivityTypes.GetTitle(system.ActivityType),
-            Description = system.Description,
-            Location = system.Location,
-            Slug = system.Slug,
-            PublicUrl = BuildPublicUrl(system.Slug),
-            Status = system.Status.ToString(),
-            SaveToPhonebook = system.SaveToPhonebook,
-            IsActive = system.IsActive,
-            CreatedAt = EnsureUtc(system.CreatedAt),
-            UpdatedAt = system.UpdatedAt.HasValue ? EnsureUtc(system.UpdatedAt.Value) : null,
-            PublishedAt = system.PublishedAt.HasValue ? EnsureUtc(system.PublishedAt.Value) : null
-        };
+            var effectiveWindowDays = BookingWindowHelper.ResolveEffectiveDays(system, _options);
+
+            return new BookingSystemDto
+            {
+                Id = system.Id,
+                Title = system.Title,
+                ActivityType = system.ActivityType,
+                ActivityTypeTitle = BookingActivityTypes.GetTitle(system.ActivityType),
+                Description = system.Description,
+                Location = system.Location,
+                Slug = system.Slug,
+                PublicUrl = BuildPublicUrl(system.Slug),
+                Status = system.Status.ToString(),
+                SaveToPhonebook = system.SaveToPhonebook,
+                IsActive = system.IsActive,
+                BookingWindowDays = system.BookingWindowDays,
+                EffectiveBookingWindowDays = effectiveWindowDays,
+                CreatedAt = EnsureUtc(system.CreatedAt),
+                UpdatedAt = system.UpdatedAt.HasValue ? EnsureUtc(system.UpdatedAt.Value) : null,
+                PublishedAt = system.PublishedAt.HasValue ? EnsureUtc(system.PublishedAt.Value) : null,
+                ApprovalStatus = system.ApprovalStatus,
+                RejectionReason = system.RejectionReason,
+                ApprovedAt = system.ApprovedAt.HasValue ? EnsureUtc(system.ApprovedAt.Value) : null
+            };
+        }
 
         private BookingSystemDto MapToDetailDto(BookingSystem system)
         {
@@ -1189,6 +1242,12 @@ namespace Api_Vapp.Services
             if (step1.SaveToPhonebook && (step1.NotebookIds == null || step1.NotebookIds.Count == 0))
             {
                 errors.Add("برای ذخیره در دفترچه، حداقل یک دفترچه باید انتخاب شود");
+            }
+
+            var windowError = BookingWindowHelper.ValidateConfiguredDays(step1.BookingWindowDays);
+            if (windowError != null)
+            {
+                errors.Add(windowError);
             }
 
             return errors;

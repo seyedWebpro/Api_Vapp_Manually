@@ -24,6 +24,8 @@ namespace Api_Vapp.Constants
         public const string SmsApprovalRejected = "SmsApproval.Rejected";
         public const string TemplateApprovalApproved = "TemplateApproval.Approved";
         public const string TemplateApprovalRejected = "TemplateApproval.Rejected";
+        public const string QuickSendApprovalApproved = "QuickSendApproval.Approved";
+        public const string QuickSendApprovalRejected = "QuickSendApproval.Rejected";
 
         // —— User / Role (فاز ۲ اولویت ۳)
         public const string UserActivated = "User.Activated";

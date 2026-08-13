@@ -202,4 +202,53 @@ public class BookingSystemServiceTests : IAsyncLifetime
         Assert.Equal(500_000m, service.Price);
         Assert.Null(service.DepositAmount);
     }
+
+    [Fact]
+    public async Task ValidateStep1_InvalidBookingWindowDays_Returns400()
+    {
+        var result = await _ctx.Service.ValidateStep1Async(
+            _ctx.OwnerUserId,
+            _ctx.BuildStep1Dto(s => s.BookingWindowDays = 400));
+
+        BookingApiAssertions.AssertFailure(result, 400);
+    }
+
+    [Fact]
+    public async Task Confirm_WithBookingWindowDays_PersistsConfiguredValue()
+    {
+        var (systemId, _) = await _ctx.CreateConfirmedSystemAsync(s => s.BookingWindowDays = 30);
+        var system = await _ctx.Service.GetByIdAsync(systemId, _ctx.OwnerUserId);
+
+        BookingApiAssertions.AssertSuccess(system);
+        Assert.Equal(30, system.Data!.BookingWindowDays);
+        Assert.Equal(30, system.Data.EffectiveBookingWindowDays);
+    }
+
+    [Fact]
+    public async Task Update_BookingWindowDays_PersistsValue()
+    {
+        var (systemId, _) = await _ctx.CreateConfirmedSystemAsync();
+        var update = await _ctx.Service.UpdateAsync(systemId, _ctx.OwnerUserId, new UpdateBookingSystemDto
+        {
+            BookingWindowDays = 60
+        });
+
+        BookingApiAssertions.AssertSuccess(update);
+        Assert.Equal(60, update.Data!.BookingWindowDays);
+        Assert.Equal(60, update.Data.EffectiveBookingWindowDays);
+    }
+
+    [Fact]
+    public async Task Update_UseDefaultBookingWindow_ClearsConfiguredValue()
+    {
+        var (systemId, _) = await _ctx.CreateConfirmedSystemAsync(s => s.BookingWindowDays = 14);
+        var update = await _ctx.Service.UpdateAsync(systemId, _ctx.OwnerUserId, new UpdateBookingSystemDto
+        {
+            UseDefaultBookingWindow = true
+        });
+
+        BookingApiAssertions.AssertSuccess(update);
+        Assert.Null(update.Data!.BookingWindowDays);
+        Assert.Equal(7, update.Data.EffectiveBookingWindowDays);
+    }
 }

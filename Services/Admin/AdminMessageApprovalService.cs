@@ -130,6 +130,16 @@ namespace Api_Vapp.Services.Admin
 
                     if (!sendReallySucceeded)
                     {
+                        // اگر SMS واقعاً fail شده، وضعیت Failed را نگه دار (نه revert کور به Pending)
+                        if (campaign != null && campaign.Status == "Failed" && campaign.SentCount == 0)
+                        {
+                            await MarkApprovalSendFailedAsync(request, campaign, adminUserId);
+                            return ApiResponse<bool>.BadRequest(
+                                ControlledErrorHelper.SanitizeArgumentMessage(
+                                    sendResult.Success ? "هیچ پیامکی ارسال نشد" : sendResult.Message,
+                                    ControlledErrorHelper.SendFailed));
+                        }
+
                         await RevertToPendingAsync(request);
                         return ApiResponse<bool>.BadRequest(
                             ControlledErrorHelper.SanitizeArgumentMessage(
@@ -522,8 +532,7 @@ namespace Api_Vapp.Services.Admin
                     campaign.AdminApprovedAt = null;
                     campaign.AdminApprovedByUserId = null;
                     campaign.Status = "PendingApproval";
-                    campaign.ErrorMessage = null;
-                    campaign.FailedCount = 0;
+                    // ErrorMessage / FailedCount را پاک نکن — برای تشخیص علت fail قبلی لازم‌اند
                     campaign.UpdatedAt = DateTime.UtcNow;
 
                     // گیرندگان Failed را برای تلاش مجدد آماده کن (فقط وقتی هیچ ارسالی موفق نبوده)
@@ -533,9 +542,9 @@ namespace Api_Vapp.Services.Admin
                     foreach (var recipient in failedRecipients)
                     {
                         recipient.Status = "Pending";
-                        recipient.ErrorMessage = null;
                         recipient.SmsServiceId = null;
                         recipient.SentAt = null;
+                        // ErrorMessage قبلی برای دیباگ نگه داشته می‌شود تا ارسال بعدی پاکش کند
                     }
                 }
             }
@@ -543,6 +552,47 @@ namespace Api_Vapp.Services.Admin
             request.Status = AdminApprovalStatuses.Pending;
             request.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
+        }
+
+        /// <summary>
+        /// پس از fail کامل ارسال: کمپین Failed می‌ماند (قابل مشاهده)، درخواست تأیید Pending برای retry.
+        /// </summary>
+        private async Task MarkApprovalSendFailedAsync(
+            SmsApprovalRequest request,
+            MessageCampaign campaign,
+            int adminUserId)
+        {
+            campaign.Status = "Failed";
+            campaign.AdminApprovalStatus = AdminApprovalStatuses.Pending;
+            campaign.AdminApprovedAt = null;
+            campaign.AdminApprovedByUserId = null;
+            campaign.UpdatedAt = DateTime.UtcNow;
+
+            var failedRecipients = await _context.MessageRecipients
+                .Where(r => r.CampaignId == campaign.Id && r.Status == "Failed")
+                .ToListAsync();
+            foreach (var recipient in failedRecipients)
+            {
+                recipient.Status = "Pending";
+                recipient.SmsServiceId = null;
+                recipient.SentAt = null;
+            }
+
+            if (campaign.AutomatedMessageId.HasValue)
+            {
+                await SyncAutomationExecutionsAfterSendAsync(
+                    campaign.AutomatedMessageId.Value,
+                    campaign.Id);
+            }
+
+            request.Status = AdminApprovalStatuses.Pending;
+            request.UpdatedAt = DateTime.UtcNow;
+            request.ReviewedByUserId = adminUserId;
+            await _context.SaveChangesAsync();
+
+            _logger.LogWarning(
+                "Campaign {CampaignId} send failed after approval — kept Failed status, approval reset to Pending for retry",
+                campaign.Id);
         }
 
         /// <summary>
@@ -559,6 +609,18 @@ namespace Api_Vapp.Services.Admin
             // نهایی‌شده‌ها را دست نزن
             if (request.Status is AdminApprovalStatuses.Approved or AdminApprovalStatuses.Rejected)
                 return;
+
+            // اگر کمپین Failed است، وضعیت Failed را حفظ کن
+            if (request.MessageCampaignId.HasValue)
+            {
+                var campaign = await _context.MessageCampaigns
+                    .FirstOrDefaultAsync(c => c.Id == request.MessageCampaignId.Value && !c.IsDeleted);
+                if (campaign != null && campaign.Status == "Failed" && campaign.SentCount == 0)
+                {
+                    await MarkApprovalSendFailedAsync(request, campaign, request.ReviewedByUserId ?? 0);
+                    return;
+                }
+            }
 
             await RevertToPendingAsync(request);
         }
@@ -650,15 +712,18 @@ namespace Api_Vapp.Services.Admin
     {
         private readonly Api_Context _context;
         private readonly ISmsPricingService _smsPricing;
+        private readonly IAdminQuickSendApprovalService _quickSendApproval;
         private readonly ILogger<AdminDashboardService> _logger;
 
         public AdminDashboardService(
             Api_Context context,
             ISmsPricingService smsPricing,
+            IAdminQuickSendApprovalService quickSendApproval,
             ILogger<AdminDashboardService> logger)
         {
             _context = context;
             _smsPricing = smsPricing;
+            _quickSendApproval = quickSendApproval;
             _logger = logger;
         }
 
@@ -695,6 +760,7 @@ namespace Api_Vapp.Services.Admin
                 {
                     PendingSmsApprovals = await _context.SmsApprovalRequests.CountAsync(r => r.Status == AdminApprovalStatuses.Pending && !r.IsDeleted),
                     PendingTemplateApprovals = await _context.MessageTemplates.CountAsync(t => t.ApprovalStatus == AdminApprovalStatuses.Pending && !t.IsDeleted),
+                    PendingQuickSendApprovals = await _quickSendApproval.CountPendingAsync(),
                     OpenTickets = await _context.SupportTickets.CountAsync(t => (t.Status == TicketStatuses.Open || t.Status == TicketStatuses.InProgress) && !t.IsDeleted),
                     TotalUsers = await _context.Users.CountAsync(u => !u.IsDeleted),
                     ActiveSubscriptions = await _context.UserSubscriptions.CountAsync(us => us.Status == "Active" && us.ExpiresAt > DateTime.UtcNow && !us.IsDeleted),

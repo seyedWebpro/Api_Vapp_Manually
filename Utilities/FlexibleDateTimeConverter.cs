@@ -1,16 +1,21 @@
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 
 namespace Api_Vapp.Utilities
 {
     /// <summary>
     /// JsonConverter برای پذیرش تاریخ شمسی (مثل 1405/05/19) در کنار تاریخ میلادی/ISO.
-    /// تاریخ شمسی به میلادی UTC تبدیل می‌شود و خروجی همیشه میلادی است.
+    /// رشته‌های فقط-تاریخ (بدون زمان) به‌صورت نیمه‌شب UTC همان روز تقویمی تفسیر می‌شوند
+    /// تا شیفت timezone محلی (مثلاً ایران) یک روز عقب نیندازد.
     /// </summary>
     public class FlexibleDateTimeConverter : JsonConverter<DateTime?>
     {
         private static readonly PersianCalendar PersianCalendar = new();
+        private static readonly Regex DateOnlyRegex = new(
+            @"^(?<y>\d{4})[-/](?<m>\d{1,2})[-/](?<d>\d{1,2})$",
+            RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
         public override DateTime? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
         {
@@ -29,7 +34,7 @@ namespace Api_Vapp.Utilities
             }
 
             if (reader.TokenType == JsonTokenType.Number)
-                return DateTimeOffset.FromUnixTimeSeconds(reader.GetInt64()).UtcDateTime;
+                return DateTimeOffset.FromUnixTimeSeconds(reader.GetInt64()).UtcDateTime.EnsureDateOnlyUtc();
 
             throw new JsonException("فرمت تاریخ نامعتبر است");
         }
@@ -43,7 +48,8 @@ namespace Api_Vapp.Utilities
         }
 
         /// <summary>
-        /// تبدیل رشته تاریخ (شمسی یا میلادی) به DateTime با Kind=Utc. در صورت ناموفق بودن null برمی‌گرداند.
+        /// تبدیل رشته تاریخ (شمسی یا میلادی) به DateTime با Kind=Utc.
+        /// برای فیلدهای تقویمی، خروجی تاریخ‌محور (نیمه‌شب UTC) است.
         /// </summary>
         public static DateTime? Parse(string? value)
         {
@@ -53,22 +59,53 @@ namespace Api_Vapp.Utilities
             var normalized = NormalizeDigits(value.Trim());
 
             if (TryParsePersian(normalized, out var persianDate))
-                return persianDate;
+                return persianDate.EnsureDateOnlyUtc();
 
-            if (DateTimeOffset.TryParse(normalized, CultureInfo.InvariantCulture, DateTimeStyles.None, out var dto))
-                return dto.UtcDateTime;
+            // YYYY-MM-DD بدون زمان → نیمه‌شب UTC همان روز (جلوگیری از شیفت timezone محلی)
+            if (TryParseGregorianDateOnly(normalized, out var dateOnly))
+                return dateOnly;
 
-            if (DateTime.TryParse(normalized, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var dt))
-                return dt.EnsureUtc();
+            if (DateTimeOffset.TryParse(normalized, CultureInfo.InvariantCulture,
+                    DateTimeStyles.RoundtripKind, out var dto))
+                return dto.UtcDateTime.EnsureDateOnlyUtc();
+
+            if (DateTime.TryParse(normalized, CultureInfo.InvariantCulture,
+                    DateTimeStyles.RoundtripKind, out var dt))
+                return dt.EnsureDateOnlyUtc();
 
             return null;
+        }
+
+        /// <summary>
+        /// فقط وقتی رشته دقیقاً تاریخ است (بدون جزء زمان) — مثل 2026-08-13
+        /// </summary>
+        private static bool TryParseGregorianDateOnly(string value, out DateTime result)
+        {
+            result = default;
+            var match = DateOnlyRegex.Match(value);
+            if (!match.Success)
+                return false;
+
+            if (!int.TryParse(match.Groups["y"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var year)
+                || !int.TryParse(match.Groups["m"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var month)
+                || !int.TryParse(match.Groups["d"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var day))
+                return false;
+
+            if (year < 1800 || year > 2200 || month < 1 || month > 12)
+                return false;
+
+            var daysInMonth = DateTime.DaysInMonth(year, month);
+            if (day < 1 || day > daysInMonth)
+                return false;
+
+            result = DateTime.SpecifyKind(new DateTime(year, month, day), DateTimeKind.Utc);
+            return true;
         }
 
         private static bool TryParsePersian(string value, out DateTime result)
         {
             result = default;
 
-            // فقط بخش تاریخ را در نظر می‌گیریم (اگر زمان هم آمده باشد)
             var datePart = value.Split(' ', 'T')[0];
             var parts = datePart.Split('/', '-');
             if (parts.Length != 3)
@@ -79,7 +116,6 @@ namespace Api_Vapp.Utilities
                 !int.TryParse(parts[2], NumberStyles.None, CultureInfo.InvariantCulture, out var day))
                 return false;
 
-            // بازه معتبر سال شمسی — سال میلادی (>= 1800) وارد این مسیر نمی‌شود
             if (year < 1200 || year > 1500)
                 return false;
 
@@ -92,9 +128,6 @@ namespace Api_Vapp.Utilities
             return true;
         }
 
-        /// <summary>
-        /// تبدیل ارقام فارسی/عربی به ارقام لاتین
-        /// </summary>
         private static string NormalizeDigits(string value)
         {
             Span<char> buffer = stackalloc char[value.Length];
@@ -103,8 +136,8 @@ namespace Api_Vapp.Utilities
                 var c = value[i];
                 buffer[i] = c switch
                 {
-                    >= '۰' and <= '۹' => (char)(c - '۰' + '0'), // ارقام فارسی
-                    >= '٠' and <= '٩' => (char)(c - '٠' + '0'), // ارقام عربی
+                    >= '۰' and <= '۹' => (char)(c - '۰' + '0'),
+                    >= '٠' and <= '٩' => (char)(c - '٠' + '0'),
                     _ => c
                 };
             }
@@ -128,7 +161,7 @@ namespace Api_Vapp.Utilities
             }
             else if (reader.TokenType == JsonTokenType.Number)
             {
-                return DateTimeOffset.FromUnixTimeSeconds(reader.GetInt64()).UtcDateTime;
+                return DateTimeOffset.FromUnixTimeSeconds(reader.GetInt64()).UtcDateTime.EnsureDateOnlyUtc();
             }
 
             throw new JsonException(

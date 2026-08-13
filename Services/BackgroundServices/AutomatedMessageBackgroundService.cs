@@ -77,7 +77,8 @@ namespace Api_Vapp.Services.BackgroundServices
                     am.SpecialOccasionId,
                     am.MessageId,
                     am.MessageContent,
-                    am.LastExecutedAt
+                    am.LastExecutedAt,
+                    am.ActivationConditions
                 })
                 .ToListAsync(cancellationToken);
 
@@ -151,39 +152,24 @@ namespace Api_Vapp.Services.BackgroundServices
         {
             var now = DateTime.UtcNow;
 
-            // چک کردن زمان‌بندی ارسال (ScheduledTime)
-            if (automatedMessage.ScheduledTime.HasValue)
+            // زمان‌بندی: قبل از ScheduledTime اجرا نشود؛ بعد از آن catch-up تا پایان روز (با dedupe)
+            if (!automatedMessage.ScheduledTime.HasReachedScheduledTime(today, now))
             {
-                // ScheduledTime به صورت TimeSpan ذخیره می‌شود (ساعت و دقیقه در روز)
-                var scheduledTimeSpan = automatedMessage.ScheduledTime.Value;
-
-                // ایجاد زمان برنامه‌ریزی شده برای امروز به UTC
-                // today قبلاً UTC است، پس فقط TimeSpan را اضافه می‌کنیم
-                var scheduledTimeUtc = today.CombineWithTime(scheduledTimeSpan);
-
-                // بررسی اینکه آیا زمان فعلی در بازه زمانی مناسب برای ارسال است
-                // استفاده از toleranceMinutes: 2 برای جلوگیری از ارسال تکراری
-                if (!scheduledTimeUtc.IsWithinScheduleWindow(now, toleranceMinutes: 2))
-                {
-                    _logger.LogInformation("Birthday automation {Id} scheduled for {ScheduledTime} UTC, current time {CurrentTime} UTC, skipping (not within 2 minute window)",
-                        automatedMessage.Id, scheduledTimeUtc.ToString("yyyy-MM-dd HH:mm:ss"), now.ToString("yyyy-MM-dd HH:mm:ss"));
-                    return;
-                }
-
-                _logger.LogInformation("Birthday automation {Id} is within scheduled time window (scheduled: {ScheduledTime} UTC, current: {CurrentTime} UTC)",
+                var scheduledTimeUtc = today.CombineWithTime(automatedMessage.ScheduledTime!.Value);
+                _logger.LogInformation(
+                    "Birthday automation {Id} scheduled for {ScheduledTime} UTC, current time {CurrentTime} UTC — too early, skipping",
                     automatedMessage.Id, scheduledTimeUtc.ToString("yyyy-MM-dd HH:mm:ss"), now.ToString("yyyy-MM-dd HH:mm:ss"));
-            }
-            else
-            {
-                _logger.LogInformation("Birthday automation {Id} has no scheduled time, processing immediately at {CurrentTime} UTC",
-                    automatedMessage.Id, now.ToString("yyyy-MM-dd HH:mm:ss"));
+                return;
             }
 
-            _logger.LogInformation("Birthday automation {Id} - processing birthday messages for {Date} (UTC)",
-                automatedMessage.Id, today.ToString("yyyy-MM-dd"));
+            // RepeatYearly=false → فقط یک‌بار در کل عمر (نه هر سال)
+            var repeatYearly = ReadRepeatYearly(automatedMessage.ActivationConditions, defaultValue: true);
 
-            // دریافت تمام مخاطبینی که امروز تولد دارند (با چک دقیق تاریخ تولد به UTC)
-            // استفاده از AsNoTracking برای Query فقط خواندنی
+            _logger.LogInformation("Birthday automation {Id} - processing birthday messages for {Date} (UTC), RepeatYearly={RepeatYearly}",
+                automatedMessage.Id, today.ToString("yyyy-MM-dd"), repeatYearly);
+
+            var selectedScope = await ResolveSelectedContactScopeAsync(context, automatedMessage, cancellationToken);
+
             var contactsWithBirthdayToday = await context.Contacts
                 .AsNoTracking()
                 .Include(c => c.ContactNotebook)
@@ -194,20 +180,19 @@ namespace Api_Vapp.Services.BackgroundServices
                     && c.AdditionalInfo.DateOfBirth.HasValue)
                 .ToListAsync(cancellationToken);
 
-            // فیلتر کردن مخاطبینی که دقیقاً امروز تولد دارند (بر اساس UTC)
-            // از متد IsBirthdayToday استفاده می‌کنیم که فقط ماه و روز را مقایسه می‌کند
-            // توجه: در Where قبلی چک شده که DateOfBirth.HasValue است، پس null نیست
             var eligibleContacts = contactsWithBirthdayToday
                 .Where(c => c.AdditionalInfo!.DateOfBirth!.EnsureUtc().IsBirthdayToday(today))
+                .Where(c => IsContactInSelectedScope(c, selectedScope))
                 .ToList();
 
-            _logger.LogInformation("Found {TotalCount} contacts with birth dates, {EligibleCount} have birthday today ({Month}/{Day}) for automation {Id}",
-                contactsWithBirthdayToday.Count, eligibleContacts.Count, today.Month, today.Day, automatedMessage.Id);
+            _logger.LogInformation(
+                "Found {TotalCount} contacts with birth dates, {EligibleCount} have birthday today and match selection for automation {Id}",
+                contactsWithBirthdayToday.Count, eligibleContacts.Count, automatedMessage.Id);
 
-            // لاگ کردن جزئیات مخاطبین واجد شرایط
             foreach (var contact in eligibleContacts)
             {
-                _logger.LogInformation("Contact {ContactId} ({Name}) - {MobileNumber} has birthday today (BirthDate: {BirthDate}) for automation {Id}",
+                _logger.LogInformation(
+                    "Contact {ContactId} ({Name}) - {MobileNumber} has birthday today (BirthDate: {BirthDate}) for automation {Id}",
                     contact.Id, contact.FullName, contact.MobileNumber,
                     contact.AdditionalInfo?.DateOfBirth?.ToString("yyyy-MM-dd"), automatedMessage.Id);
             }
@@ -219,8 +204,8 @@ namespace Api_Vapp.Services.BackgroundServices
             var todayStart = today.Date;
             var todayEnd = todayStart.AddDays(1);
 
-            // یک کوئری به‌جای N+1 برای چک تکراری امروز
-            var handledContactIds = await context.AutomationExecutions
+            // تکراری امروز
+            var handledTodayIds = await context.AutomationExecutions
                 .AsNoTracking()
                 .Where(ae => ae.AutomatedMessageId == automatedMessage.Id
                     && ae.ContactId.HasValue
@@ -229,8 +214,22 @@ namespace Api_Vapp.Services.BackgroundServices
                 .Select(ae => ae.ContactId!.Value)
                 .ToHashSetAsync(cancellationToken);
 
+            // اگر RepeatYearly=false: هر مخاطبی که قبلاً (هر زمان) اجرا شده را حذف کن
+            HashSet<int> everHandledIds = new();
+            if (!repeatYearly)
+            {
+                everHandledIds = await context.AutomationExecutions
+                    .AsNoTracking()
+                    .Where(ae => ae.AutomatedMessageId == automatedMessage.Id
+                        && ae.ContactId.HasValue
+                        && (ae.Status == "Success" || ae.Status == "PendingApproval" || ae.Status == "Sent"))
+                    .Select(ae => ae.ContactId!.Value)
+                    .ToHashSetAsync(cancellationToken);
+            }
+
             var contactsToQueue = eligibleContacts
-                .Where(c => !handledContactIds.Contains(c.Id))
+                .Where(c => !handledTodayIds.Contains(c.Id))
+                .Where(c => repeatYearly || !everHandledIds.Contains(c.Id))
                 .ToList();
 
             skippedCount = eligibleContacts.Count - contactsToQueue.Count;
@@ -252,7 +251,8 @@ namespace Api_Vapp.Services.BackgroundServices
                 }
             }
 
-            _logger.LogInformation("Birthday automation {Id} completed: {QueuedCount} queued for approval, {FailedCount} failed, {SkippedCount} skipped (already handled today), {TotalEligible} eligible contacts processed for {Date} (UTC)",
+            _logger.LogInformation(
+                "Birthday automation {Id} completed: {QueuedCount} queued, {FailedCount} failed, {SkippedCount} skipped, {TotalEligible} eligible for {Date} (UTC)",
                 automatedMessage.Id, queuedCount, failedCount, skippedCount, eligibleContacts.Count, today.ToString("yyyy-MM-dd"));
         }
 
@@ -269,8 +269,7 @@ namespace Api_Vapp.Services.BackgroundServices
             var expiryDate = today.AddDays(automatedMessage.DaysBeforeEvent.Value);
 
             // TODO: نیاز به جدول Cashback یا WalletTransaction برای بررسی انقضا
-            // فعلاً فقط ساختار کلی را می‌گذاریم
-            _logger.LogInformation("Processing CashbackExpiry automation {Id} for date {ExpiryDate}", 
+            _logger.LogInformation("Processing CashbackExpiry automation {Id} for date {ExpiryDate}",
                 automatedMessage.Id, expiryDate);
             return Task.CompletedTask;
         }
@@ -288,8 +287,7 @@ namespace Api_Vapp.Services.BackgroundServices
             var reminderDate = today.AddDays(-automatedMessage.DaysBeforeEvent.Value);
 
             // TODO: نیاز به جدول Purchase/Order برای بررسی آخرین خرید
-            // فعلاً فقط ساختار کلی را می‌گذاریم
-            _logger.LogInformation("Processing PurchaseReminder automation {Id} for date {ReminderDate}", 
+            _logger.LogInformation("Processing PurchaseReminder automation {Id} for date {ReminderDate}",
                 automatedMessage.Id, reminderDate);
             return Task.CompletedTask;
         }
@@ -307,47 +305,50 @@ namespace Api_Vapp.Services.BackgroundServices
 
             var now = DateTime.UtcNow;
 
-            // چک کردن زمان‌بندی ارسال (ScheduledTime)
-            if (automatedMessage.ScheduledTime.HasValue)
+            if (!automatedMessage.ScheduledTime.HasReachedScheduledTime(today, now))
             {
-                var scheduledTimeSpan = automatedMessage.ScheduledTime.Value;
-                var scheduledTimeUtc = today.CombineWithTime(scheduledTimeSpan);
-
-                if (!scheduledTimeUtc.IsWithinScheduleWindow(now, toleranceMinutes: 2))
-                {
-                    _logger.LogInformation("SpecialOccasion automation {Id} scheduled for {ScheduledTime} UTC, current time {CurrentTime} UTC, skipping",
-                        automatedMessage.Id, scheduledTimeUtc.ToString("yyyy-MM-dd HH:mm:ss"), now.ToString("yyyy-MM-dd HH:mm:ss"));
-                    return;
-                }
+                var scheduledTimeUtc = today.CombineWithTime(automatedMessage.ScheduledTime!.Value);
+                _logger.LogInformation(
+                    "SpecialOccasion automation {Id} scheduled for {ScheduledTime} UTC, current {CurrentTime} UTC — too early, skipping",
+                    automatedMessage.Id, scheduledTimeUtc.ToString("yyyy-MM-dd HH:mm:ss"), now.ToString("yyyy-MM-dd HH:mm:ss"));
+                return;
             }
 
             var specialOccasion = await context.SpecialOccasions
                 .AsNoTracking()
-                .FirstOrDefaultAsync(so => so.Id == automatedMessage.SpecialOccasionId.Value, cancellationToken);
+                .FirstOrDefaultAsync(so => so.Id == automatedMessage.SpecialOccasionId.Value
+                    && !so.IsDeleted
+                    && so.IsActive, cancellationToken);
 
             if (specialOccasion == null)
                 return;
 
-            // مقایسه تاریخ مناسبت با تاریخ امروز (UTC)
-            var occasionDateUtc = specialOccasion.OccasionDate.EnsureUtc();
-
-            if (occasionDateUtc.Date != today)
+            // مقایسه ماه/روز (مناسبت سالانه) — تاریخ با EnsureDateOnlyUtc ذخیره می‌شود
+            var occasionDateUtc = specialOccasion.OccasionDate.EnsureDateOnlyUtc();
+            if (!occasionDateUtc.IsSameMonthDay(today))
+            {
+                _logger.LogInformation(
+                    "SpecialOccasion automation {Id} occasion date {OccasionDate} is not today {Today} (month/day) — skipping",
+                    automatedMessage.Id, occasionDateUtc.ToString("yyyy-MM-dd"), today.ToString("yyyy-MM-dd"));
                 return;
+            }
 
-            // دریافت تمام مخاطبین کاربر (فقط خواندنی - بدون Tracking)
+            var selectedScope = await ResolveSelectedContactScopeAsync(context, automatedMessage, cancellationToken);
+
             var contacts = await context.Contacts
                 .AsNoTracking()
                 .Include(c => c.ContactNotebook)
                 .Where(c => !c.IsDeleted && c.ContactNotebook.UserId == automatedMessage.UserId)
                 .ToListAsync(cancellationToken);
 
-            _logger.LogInformation("Processing SpecialOccasion automation {Id} for {Count} contacts", 
+            contacts = contacts.Where(c => IsContactInSelectedScope(c, selectedScope)).ToList();
+
+            _logger.LogInformation("Processing SpecialOccasion automation {Id} for {Count} contacts (scoped)",
                 automatedMessage.Id, contacts.Count);
 
             var todayStart = today.Date;
             var todayEnd = todayStart.AddDays(1);
 
-            // یک کوئری به‌جای N+1
             var handledContactIds = await context.AutomationExecutions
                 .AsNoTracking()
                 .Where(ae => ae.AutomatedMessageId == automatedMessage.Id
@@ -370,7 +371,8 @@ namespace Api_Vapp.Services.BackgroundServices
                     context, automatedMessage, contactsToQueue, auditService, cancellationToken);
             }
 
-            _logger.LogInformation("SpecialOccasion automation {Id} completed: {QueuedCount} queued for approval, {SkippedCount} skipped", 
+            _logger.LogInformation(
+                "SpecialOccasion automation {Id} completed: {QueuedCount} queued for approval, {SkippedCount} skipped",
                 automatedMessage.Id, queuedCount, skippedCount);
         }
 
@@ -384,6 +386,149 @@ namespace Api_Vapp.Services.BackgroundServices
             // TODO: پردازش شرایط سفارشی از ActivationConditions (JSON)
             _logger.LogInformation("Processing Custom automation {Id}", automatedMessage.Id);
             return Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// محدوده گیرندگان انتخاب‌شده از MessageSession (SelectionCriteria / RecipientsJson)
+        /// </summary>
+        private sealed class SelectedContactScope
+        {
+            public bool HasSelection { get; set; }
+            public bool ApplyToAllContacts { get; set; } = true;
+            public int? ContactNotebookId { get; set; }
+            public HashSet<int> ExcludedContactIds { get; set; } = new();
+            public HashSet<int> ExplicitContactIds { get; set; } = new();
+        }
+
+        private static bool ReadRepeatYearly(string? activationConditionsJson, bool defaultValue)
+        {
+            if (string.IsNullOrWhiteSpace(activationConditionsJson))
+                return defaultValue;
+
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(activationConditionsJson);
+                if (doc.RootElement.TryGetProperty("repeatYearly", out var prop))
+                {
+                    if (prop.ValueKind == System.Text.Json.JsonValueKind.True) return true;
+                    if (prop.ValueKind == System.Text.Json.JsonValueKind.False) return false;
+                    if (prop.ValueKind == System.Text.Json.JsonValueKind.String
+                        && bool.TryParse(prop.GetString(), out var b))
+                        return b;
+                }
+            }
+            catch
+            {
+                // ignore malformed JSON — use default
+            }
+
+            return defaultValue;
+        }
+
+        private async Task<SelectedContactScope> ResolveSelectedContactScopeAsync(
+            Api_Context context,
+            AutomatedMessage automatedMessage,
+            CancellationToken cancellationToken)
+        {
+            if (!automatedMessage.MessageId.HasValue)
+            {
+                return new SelectedContactScope { HasSelection = false, ApplyToAllContacts = true };
+            }
+
+            var session = await context.MessageSessions
+                .AsNoTracking()
+                .Where(s => s.MessageId == automatedMessage.MessageId.Value
+                    && s.UserId == automatedMessage.UserId
+                    && !s.IsDeleted)
+                .OrderByDescending(s => s.CreatedAt)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (session == null)
+            {
+                return new SelectedContactScope { HasSelection = false, ApplyToAllContacts = true };
+            }
+
+            var scope = new SelectedContactScope { HasSelection = true, ApplyToAllContacts = true };
+
+            if (!string.IsNullOrWhiteSpace(session.SelectionCriteria))
+            {
+                try
+                {
+                    using var doc = System.Text.Json.JsonDocument.Parse(session.SelectionCriteria);
+                    var root = doc.RootElement;
+
+                    if (root.TryGetProperty("ApplyToAllContacts", out var allProp)
+                        || root.TryGetProperty("applyToAllContacts", out allProp))
+                    {
+                        scope.ApplyToAllContacts = allProp.ValueKind == System.Text.Json.JsonValueKind.True
+                            || (allProp.ValueKind == System.Text.Json.JsonValueKind.String
+                                && bool.TryParse(allProp.GetString(), out var b) && b);
+                    }
+
+                    if ((root.TryGetProperty("ContactNotebookId", out var nbProp)
+                         || root.TryGetProperty("contactNotebookId", out nbProp))
+                        && nbProp.ValueKind != System.Text.Json.JsonValueKind.Null
+                        && nbProp.TryGetInt32(out var nb))
+                    {
+                        scope.ContactNotebookId = nb;
+                    }
+
+                    if (root.TryGetProperty("ExcludedContactIds", out var exProp)
+                        || root.TryGetProperty("excludedContactIds", out exProp))
+                    {
+                        if (exProp.ValueKind == System.Text.Json.JsonValueKind.Array)
+                        {
+                            foreach (var item in exProp.EnumerateArray())
+                            {
+                                if (item.TryGetInt32(out var id))
+                                    scope.ExcludedContactIds.Add(id);
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to parse SelectionCriteria for automation {Id}", automatedMessage.Id);
+                }
+            }
+
+            // اگر دفترچه مشخص نیست ولی RecipientsJson داریم — از ContactId های eligible استفاده کن
+            if (!scope.ApplyToAllContacts && !scope.ContactNotebookId.HasValue
+                && !string.IsNullOrWhiteSpace(session.RecipientsJson))
+            {
+                try
+                {
+                    var recipients = System.Text.Json.JsonSerializer.Deserialize<List<DTOs.Automation.RecipientItemForAutomatedMessageDto>>(
+                        session.RecipientsJson);
+                    scope.ExplicitContactIds = recipients?
+                        .Where(r => r.ContactId.HasValue && r.IsEligible)
+                        .Select(r => r.ContactId!.Value)
+                        .ToHashSet() ?? new HashSet<int>();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to parse RecipientsJson for automation {Id}", automatedMessage.Id);
+                }
+            }
+
+            return scope;
+        }
+
+        private static bool IsContactInSelectedScope(Contact contact, SelectedContactScope scope)
+        {
+            if (!scope.HasSelection || scope.ApplyToAllContacts)
+            {
+                return !scope.ExcludedContactIds.Contains(contact.Id);
+            }
+
+            if (scope.ExplicitContactIds.Count > 0)
+                return scope.ExplicitContactIds.Contains(contact.Id);
+
+            if (scope.ContactNotebookId.HasValue
+                && contact.ContactNotebookId != scope.ContactNotebookId.Value)
+                return false;
+
+            return !scope.ExcludedContactIds.Contains(contact.Id);
         }
 
         /// <summary>

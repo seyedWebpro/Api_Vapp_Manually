@@ -109,10 +109,10 @@ namespace Api_Vapp.Services
                         errorCode: ErrorCodes.InvalidInput);
                 }
 
-                if (!IsDateWithinPublicBookingWindow(date))
+                if (!IsDateWithinPublicBookingWindow(date, service.BookingSystem))
                 {
                     return ApiResponse<BookingAvailableSlotsDto>.BadRequest(
-                        BuildPublicBookingWindowErrorMessage(),
+                        BuildPublicBookingWindowErrorMessage(service.BookingSystem),
                         errorCode: ErrorCodes.InvalidInput);
                 }
 
@@ -1250,10 +1250,10 @@ namespace Api_Vapp.Services
             }
 
             var date = DateOnly.FromDateTime(startUtc);
-            if (requireFutureSlot && !IsDateWithinPublicBookingWindow(date))
+            if (requireFutureSlot && !IsDateWithinPublicBookingWindow(date, system))
             {
                 return AppointmentCreateResult.Fail(
-                    BuildPublicBookingWindowErrorMessage(),
+                    BuildPublicBookingWindowErrorMessage(system),
                     errorCode: ErrorCodes.InvalidInput);
             }
 
@@ -1396,34 +1396,39 @@ namespace Api_Vapp.Services
             return null;
         }
 
-        private BookingPublicSystemDto MapToPublicDto(BookingSystem system) => new()
+        private BookingPublicSystemDto MapToPublicDto(BookingSystem system)
         {
-            Title = system.Title,
-            Description = system.Description,
-            Location = system.Location,
-            ActivityType = system.ActivityType,
-            ActivityTypeTitle = BookingActivityTypes.GetTitle(system.ActivityType),
-            Slug = system.Slug,
-            BookingWindowDays = GetPublicBookingWindowDays(),
-            BookingWindowStartDate = GetPublicBookingWindowStartDate(),
-            BookingWindowEndDate = GetPublicBookingWindowEndDate(),
-            Services = system.Services
-                .Where(s => !s.IsDeleted)
-                .OrderBy(s => s.SortOrder)
-                .Select(s => new BookingPublicServiceDto
-                {
-                    Id = s.Id,
-                    Title = s.Title,
-                    DurationMinutes = s.DurationMinutes,
-                    HasCost = s.HasCost,
-                    Price = s.Price,
-                    DepositAmount = s.DepositAmount,
-                    ReminderOffsetsMinutes = BookingReminderOffsetsHelper.FromJson(
-                        s.ReminderOffsetsJson,
-                        s.ReminderOffsetMinutes)
-                })
-                .ToList()
-        };
+            var effectiveWindowDays = BookingWindowHelper.ResolveEffectiveDays(system, _options);
+
+            return new BookingPublicSystemDto
+            {
+                Title = system.Title,
+                Description = system.Description,
+                Location = system.Location,
+                ActivityType = system.ActivityType,
+                ActivityTypeTitle = BookingActivityTypes.GetTitle(system.ActivityType),
+                Slug = system.Slug,
+                BookingWindowDays = effectiveWindowDays,
+                BookingWindowStartDate = BookingWindowHelper.GetStartDateUtc(),
+                BookingWindowEndDate = BookingWindowHelper.GetEndDateUtc(effectiveWindowDays),
+                Services = system.Services
+                    .Where(s => !s.IsDeleted)
+                    .OrderBy(s => s.SortOrder)
+                    .Select(s => new BookingPublicServiceDto
+                    {
+                        Id = s.Id,
+                        Title = s.Title,
+                        DurationMinutes = s.DurationMinutes,
+                        HasCost = s.HasCost,
+                        Price = s.Price,
+                        DepositAmount = s.DepositAmount,
+                        ReminderOffsetsMinutes = BookingReminderOffsetsHelper.FromJson(
+                            s.ReminderOffsetsJson,
+                            s.ReminderOffsetMinutes)
+                    })
+                    .ToList()
+            };
+        }
 
         private static BookingAppointmentDto MapToDto(BookingAppointment appointment) => new()
         {
@@ -1449,34 +1454,20 @@ namespace Api_Vapp.Services
             HasPaymentReceipt = !string.IsNullOrWhiteSpace(appointment.PaymentReceiptPath)
         };
 
-        private int GetPublicBookingWindowDays()
+        private static bool IsDateWithinPublicBookingWindow(DateOnly date, BookingSystem system, BookingSystemOptions options)
         {
-            return _options.PublicBookingWindowDays > 0
-                ? _options.PublicBookingWindowDays
-                : 7;
+            var effectiveWindowDays = BookingWindowHelper.ResolveEffectiveDays(system, options);
+            return BookingWindowHelper.IsWithinWindow(date, effectiveWindowDays);
         }
 
-        private DateOnly GetPublicBookingWindowStartDate()
-        {
-            return DateOnly.FromDateTime(DateTime.UtcNow);
-        }
+        private bool IsDateWithinPublicBookingWindow(DateOnly date, BookingSystem system) =>
+            IsDateWithinPublicBookingWindow(date, system, _options);
 
-        private DateOnly GetPublicBookingWindowEndDate()
-        {
-            return GetPublicBookingWindowStartDate().AddDays(GetPublicBookingWindowDays());
-        }
+        private static string BuildPublicBookingWindowErrorMessage(BookingSystem system, BookingSystemOptions options) =>
+            BookingWindowHelper.BuildErrorMessage(BookingWindowHelper.ResolveEffectiveDays(system, options));
 
-        private bool IsDateWithinPublicBookingWindow(DateOnly date)
-        {
-            var startDate = GetPublicBookingWindowStartDate();
-            var endDate = GetPublicBookingWindowEndDate();
-            return date >= startDate && date <= endDate;
-        }
-
-        private string BuildPublicBookingWindowErrorMessage()
-        {
-            return $"رزرو فقط تا {GetPublicBookingWindowDays()} روز آینده امکان‌پذیر است";
-        }
+        private string BuildPublicBookingWindowErrorMessage(BookingSystem system) =>
+            BuildPublicBookingWindowErrorMessage(system, _options);
 
         private static PublicBookingStatusDto MapToPublicStatusDto(BookingAppointment appointment) => new()
         {

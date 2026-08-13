@@ -9,5 +9,7 @@ namespace Api_Vapp.Constants
         public const string TemplateRejected = "TemplateRejected";
         public const string MessageApproved = "MessageApproved";
         public const string MessageRejected = "MessageRejected";
+        public const string QuickSendApproved = "QuickSendApproved";
+        public const string QuickSendRejected = "QuickSendRejected";
     }
 }

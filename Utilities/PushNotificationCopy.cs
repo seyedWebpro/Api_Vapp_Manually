@@ -165,6 +165,29 @@ namespace Api_Vapp.Utilities
                 $"{name} رد شد. دلیل: {detail}");
         }
 
+        public static (string Title, string Body) QuickSendApproved(string itemTypePersian, string? title)
+        {
+            var name = string.IsNullOrWhiteSpace(title)
+                ? itemTypePersian
+                : $"«{title.Trim()}»";
+            return (
+                "ارسال سریع تأیید شد",
+                $"{name} ({itemTypePersian}) تأیید شد. از این به بعد می‌توانید بدون تأیید مجدد ارسال کنید.");
+        }
+
+        public static (string Title, string Body) QuickSendRejected(string itemTypePersian, string? title, string? reason)
+        {
+            var name = string.IsNullOrWhiteSpace(title)
+                ? itemTypePersian
+                : $"«{title.Trim()}»";
+            var detail = string.IsNullOrWhiteSpace(reason)
+                ? "لطفاً محتوا را بازبینی و دوباره ارسال کنید."
+                : reason.Trim();
+            return (
+                "ارسال سریع تأیید نشد",
+                $"{name} ({itemTypePersian}) رد شد. دلیل: {detail}");
+        }
+
         public static (string Title, string Body) FinancialDailyReport(
             decimal balance,
             decimal credited,

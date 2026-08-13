@@ -19,6 +19,7 @@ namespace Api_Vapp.Services
         private readonly IReferralProgramRepository _programRepository;
         private readonly IReferralProgramDraftRepository _draftRepository;
         private readonly IReferralUsageRepository _usageRepository;
+        private readonly IReferralContactCodeRepository _contactCodeRepository;
         private readonly IUserSmsBillingService _userSmsBilling;
         private readonly IAuditService _audit;
         private readonly ILogger<ReferralProgramService> _logger;
@@ -27,12 +28,15 @@ namespace Api_Vapp.Services
         private const decimal MinFixedAmount = 1000m;
         private const decimal MaxFixedAmount = 10_000_000m;
         private const decimal MaxPercentage = 100m;
+        private const decimal MaxPurchaseAmount = 100_000_000m;
+        private const int MaxRedeemsPerCodePerDay = 30;
 
         public ReferralProgramService(
             Api_Context context,
             IReferralProgramRepository programRepository,
             IReferralProgramDraftRepository draftRepository,
             IReferralUsageRepository usageRepository,
+            IReferralContactCodeRepository contactCodeRepository,
             IUserSmsBillingService userSmsBilling,
             IAuditService audit,
             ILogger<ReferralProgramService> logger)
@@ -41,6 +45,7 @@ namespace Api_Vapp.Services
             _programRepository = programRepository;
             _draftRepository = draftRepository;
             _usageRepository = usageRepository;
+            _contactCodeRepository = contactCodeRepository;
             _userSmsBilling = userSmsBilling;
             _audit = audit;
             _logger = logger;
@@ -106,7 +111,8 @@ namespace Api_Vapp.Services
                 return ApiResponse<ReferralProgramDto>.NotFound("برنامه پاداش یافت نشد");
             }
 
-            return ApiResponse<ReferralProgramDto>.CreateSuccess(MapToDto(program));
+            var codesCount = await _contactCodeRepository.GetCountByProgramIdAsync(id, userId);
+            return ApiResponse<ReferralProgramDto>.CreateSuccess(MapToDto(program, codesCount));
         }
 
         public async Task<ApiResponse<ReferralProgramDto>> ToggleStatusAsync(int id, int userId)
@@ -146,6 +152,7 @@ namespace Api_Vapp.Services
             program.IsDeleted = true;
             program.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
+            await _contactCodeRepository.SoftDeleteByProgramIdAsync(id, userId);
 
             await _audit.WriteAsync(new AuditEntry
             {
@@ -488,13 +495,15 @@ namespace Api_Vapp.Services
                 }
             }
 
+            var isReferrerRewardActive = step1.IsReferrerRewardActive && step1.ReferrerRewardValue > 0;
             var program = new ReferralProgram
             {
                 UserId = userId,
                 Title = step1.Title.Trim(),
                 IsActive = step1.IsActive,
                 RewardType = step1.RewardType,
-                ReferrerRewardValue = step1.ReferrerRewardValue,
+                IsReferrerRewardActive = isReferrerRewardActive,
+                ReferrerRewardValue = isReferrerRewardActive ? step1.ReferrerRewardValue : 0,
                 IsCustomerRewardActive = step1.IsCustomerRewardActive,
                 CustomerRewardValue = step1.IsCustomerRewardActive ? step1.CustomerRewardValue : null,
                 PublicCode = publicCode,
@@ -513,7 +522,8 @@ namespace Api_Vapp.Services
             await _context.ReferralPrograms.AddAsync(program);
             await _context.SaveChangesAsync();
 
-            var smsResult = await SendReferralSmsAsync(program, contactIds);
+            var personalCodes = await CreatePersonalCodesAsync(program, contactIds);
+            var smsResult = await SendReferralInviteSmsAsync(program, personalCodes);
             program.NotifiedContactsCount = smsResult.SentCount;
             program.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
@@ -527,16 +537,23 @@ namespace Api_Vapp.Services
                 EntityType = AuditEntityTypes.ReferralProgram,
                 EntityId = program.Id.ToString(),
                 ActorUserId = userId,
-                After = new { title = program.Title, publicCode = program.PublicCode, isActive = program.IsActive }
+                After = new
+                {
+                    title = program.Title,
+                    publicCode = program.PublicCode,
+                    personalCodesCount = personalCodes.Count,
+                    isActive = program.IsActive
+                }
             });
 
-            _logger.LogInformation("برنامه پاداش {ProgramId} با کد {PublicCode} برای کاربر {UserId} ایجاد شد",
-                program.Id, program.PublicCode, userId);
+            _logger.LogInformation(
+                "برنامه پاداش {ProgramId} با {CodesCount} کد شخصی برای کاربر {UserId} ایجاد شد",
+                program.Id, personalCodes.Count, userId);
 
             return ApiResponse<ConfirmReferralProgramResponseDto>.CreateSuccess(
                 new ConfirmReferralProgramResponseDto
                 {
-                    Program = MapToDto(program),
+                    Program = MapToDto(program, personalCodes.Count),
                     SmsSentCount = smsResult.SentCount,
                     SmsFailedCount = smsResult.FailedCount
                 },
@@ -546,8 +563,8 @@ namespace Api_Vapp.Services
 
         public async Task<ApiResponse<InquireReferralCodeResponseDto>> InquireCodeAsync(int userId, InquireReferralCodeDto request)
         {
-            var program = await FindProgramByCodeAsync(userId, request.Code);
-            if (program == null)
+            var resolved = await ResolvePersonalCodeAsync(userId, request.Code);
+            if (resolved == null)
             {
                 return ApiResponse<InquireReferralCodeResponseDto>.CreateSuccess(new InquireReferralCodeResponseDto
                 {
@@ -556,29 +573,57 @@ namespace Api_Vapp.Services
                 }, "کد نامعتبر است");
             }
 
+            var program = resolved.Program;
             var state = EvaluateProgramState(program);
-            var discount = BuildCustomerDiscountInfo(program, request.PurchaseAmount);
+
+            if (!state.IsValid)
+            {
+                return ApiResponse<InquireReferralCodeResponseDto>.CreateSuccess(new InquireReferralCodeResponseDto
+                {
+                    IsValid = false,
+                    IsExpired = state.IsExpired,
+                    IsNotStarted = state.IsNotStarted,
+                    IsActive = program.IsActive,
+                    InvalidReason = state.InvalidReason
+                }, state.InvalidReason ?? "کد نامعتبر است");
+            }
+
+            if (request.PurchaseAmount.HasValue &&
+                (request.PurchaseAmount.Value <= 0 || request.PurchaseAmount.Value > MaxPurchaseAmount))
+            {
+                return ApiResponse<InquireReferralCodeResponseDto>.BadRequest(
+                    $"مبلغ خرید باید بین ۱ تا {MaxPurchaseAmount:N0} تومان باشد",
+                    errorCode: ErrorCodes.ValidationFailed);
+            }
+
+            var customerDiscount = BuildCustomerDiscountInfo(program, request.PurchaseAmount);
+            var referrerReward = BuildReferrerRewardInfo(program, request.PurchaseAmount);
 
             var response = new InquireReferralCodeResponseDto
             {
-                IsValid = state.IsValid,
-                IsExpired = state.IsExpired,
-                IsNotStarted = state.IsNotStarted,
+                IsValid = true,
+                IsExpired = false,
+                IsNotStarted = false,
                 IsActive = program.IsActive,
-                InvalidReason = state.InvalidReason,
                 ProgramId = program.Id,
                 ProgramName = program.Title,
-                PublicCode = program.PublicCode,
+                PublicCode = resolved.UsedCode,
                 RewardType = program.RewardType,
                 IsCustomerRewardActive = program.IsCustomerRewardActive,
-                CustomerDiscountAmount = discount.Amount,
-                FormattedCustomerDiscount = discount.Formatted,
+                CustomerDiscountAmount = customerDiscount.Amount,
+                FormattedCustomerDiscount = customerDiscount.Formatted,
+                IsReferrerRewardActive = program.IsReferrerRewardActive,
+                ReferrerRewardAmount = referrerReward.Amount,
+                FormattedReferrerReward = referrerReward.Formatted,
+                ReferrerContactId = resolved.ReferrerContactId,
+                ReferrerContactName = resolved.ReferrerContactName,
+                // موبایل معرف عمداً در استعلام برگردانده نمی‌شود (کاهش افشای اطلاعات)
+                ReferrerContactMobile = null,
                 StartDate = EnsureUtc(program.StartDate),
                 EndDate = EnsureUtc(program.EndDate)
             };
 
-            var message = state.IsValid ? "کد معتبر است" : state.InvalidReason ?? "کد نامعتبر است";
-            return ApiResponse<InquireReferralCodeResponseDto>.CreateSuccess(response, message);
+            return ApiResponse<InquireReferralCodeResponseDto>.CreateSuccess(response, "کد معتبر است");
         }
 
         public async Task<ApiResponse<RedeemReferralCodeResponseDto>> RedeemCodeAsync(int userId, RedeemReferralCodeDto request)
@@ -603,49 +648,113 @@ namespace Api_Vapp.Services
 
         private async Task<ApiResponse<RedeemReferralCodeResponseDto>> RedeemCodeCoreAsync(int userId, RedeemReferralCodeDto request)
         {
-            var program = await FindProgramByCodeAsync(userId, request.Code);
-            if (program == null)
+            var resolved = await ResolvePersonalCodeAsync(userId, request.Code);
+            if (resolved == null)
             {
                 return ApiResponse<RedeemReferralCodeResponseDto>.NotFound("کد یافت نشد");
             }
 
+            var program = resolved.Program;
             var state = EvaluateProgramState(program);
             if (!state.IsValid)
             {
                 return ApiResponse<RedeemReferralCodeResponseDto>.BadRequest(state.InvalidReason ?? "کد قابل استفاده نیست");
             }
 
-            if (program.RewardType == ReferralRewardTypes.Percentage &&
-                (!request.PurchaseAmount.HasValue || request.PurchaseAmount <= 0))
+            if (!request.PurchaseAmount.HasValue ||
+                request.PurchaseAmount.Value <= 0 ||
+                request.PurchaseAmount.Value > MaxPurchaseAmount)
             {
-                return ApiResponse<RedeemReferralCodeResponseDto>.BadRequest("مبلغ خرید برای محاسبه تخفیف درصدی الزامی است");
+                return ApiResponse<RedeemReferralCodeResponseDto>.BadRequest(
+                    $"مبلغ خرید باید بین ۱ تا {MaxPurchaseAmount:N0} تومان باشد",
+                    errorCode: ErrorCodes.ValidationFailed);
             }
 
-            if (request.CustomerContactId.HasValue)
+            if (!request.CustomerContactId.HasValue || request.CustomerContactId.Value <= 0)
             {
-                var customerError = await ValidateContactOwnershipAsync(userId, request.CustomerContactId.Value);
-                if (customerError != null)
+                return ApiResponse<RedeemReferralCodeResponseDto>.BadRequest(
+                    "شناسه مخاطب خریدار الزامی است",
+                    errorCode: ErrorCodes.ValidationFailed);
+            }
+
+            var customerContactId = request.CustomerContactId.Value;
+            var customerError = await ValidateContactOwnershipAsync(userId, customerContactId);
+            if (customerError != null)
+            {
+                return ApiResponse<RedeemReferralCodeResponseDto>.BadRequest(customerError);
+            }
+
+            var referrerContactId = resolved.ReferrerContactId;
+            if (!referrerContactId.HasValue)
+            {
+                return ApiResponse<RedeemReferralCodeResponseDto>.BadRequest(
+                    "کد معرف شخصی معتبر نیست");
+            }
+
+            var referrerStillValid = await ValidateContactOwnershipAsync(userId, referrerContactId.Value);
+            if (referrerStillValid != null)
+            {
+                return ApiResponse<RedeemReferralCodeResponseDto>.BadRequest("مخاطب معرف معتبر نیست یا حذف شده است");
+            }
+
+            if (customerContactId == referrerContactId.Value)
+            {
+                return ApiResponse<RedeemReferralCodeResponseDto>.BadRequest(
+                    "استفاده از کد معرف خود خریدار مجاز نیست",
+                    errorCode: ErrorCodes.InvalidInput);
+            }
+
+            var sameMobileAbuse = await AreContactsSameMobileAsync(customerContactId, referrerContactId.Value);
+            if (sameMobileAbuse)
+            {
+                return ApiResponse<RedeemReferralCodeResponseDto>.BadRequest(
+                    "کد معرف و خریدار متعلق به یک شماره موبایل هستند و قابل استفاده نیست",
+                    errorCode: ErrorCodes.InvalidInput);
+            }
+
+            var idempotencyKey = string.IsNullOrWhiteSpace(request.IdempotencyKey)
+                ? null
+                : request.IdempotencyKey.Trim();
+
+            if (!string.IsNullOrEmpty(idempotencyKey))
+            {
+                var existingByKey = await _context.ReferralUsages
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(u =>
+                        u.UserId == userId &&
+                        u.IdempotencyKey == idempotencyKey &&
+                        u.Status == ReferralUsageStatuses.Completed);
+
+                if (existingByKey != null)
                 {
-                    return ApiResponse<RedeemReferralCodeResponseDto>.BadRequest(customerError);
+                    return ApiResponse<RedeemReferralCodeResponseDto>.BadRequest(
+                        "این تراکنش قبلاً ثبت شده است",
+                        errorCode: ErrorCodes.InvalidInput);
                 }
             }
 
-            if (request.ReferrerContactId.HasValue)
+            var abuseError = await ValidateRedeemAbuseGuardsAsync(
+                userId,
+                resolved.UsedCode,
+                customerContactId,
+                program.Id);
+            if (abuseError != null)
             {
-                var referrerError = await ValidateContactOwnershipAsync(userId, request.ReferrerContactId.Value);
-                if (referrerError != null)
-                {
-                    return ApiResponse<RedeemReferralCodeResponseDto>.BadRequest(referrerError);
-                }
+                return ApiResponse<RedeemReferralCodeResponseDto>.BadRequest(
+                    abuseError,
+                    errorCode: ErrorCodes.InvalidInput);
             }
 
             var customerDiscount = program.IsCustomerRewardActive && program.CustomerRewardValue.HasValue
                 ? CalculateRewardAmount(program.RewardType, program.CustomerRewardValue.Value, request.PurchaseAmount) ?? 0
                 : 0;
 
-            var referrerReward = program.ReferrerRewardValue > 0
+            var referrerReward = program.IsReferrerRewardActive && program.ReferrerRewardValue > 0
                 ? CalculateRewardAmount(program.RewardType, program.ReferrerRewardValue, request.PurchaseAmount) ?? 0
                 : 0;
+
+            customerDiscount = CapRewardAmount(customerDiscount);
+            referrerReward = CapRewardAmount(referrerReward);
 
             var validityDays = GetRewardValidityDays(program);
             var now = DateTime.UtcNow;
@@ -653,16 +762,37 @@ namespace Api_Vapp.Services
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
+                // قفل نرم ضد race برای همان کد + مشتری در همان روز
+                var dayStart = now.Date;
+                var dayEnd = dayStart.AddDays(1);
+                var duplicateInTx = await _context.ReferralUsages
+                    .AnyAsync(u =>
+                        u.UserId == userId &&
+                        u.PublicCode == resolved.UsedCode &&
+                        u.CustomerContactId == customerContactId &&
+                        u.Status == ReferralUsageStatuses.Completed &&
+                        u.CreatedAt >= dayStart &&
+                        u.CreatedAt < dayEnd);
+
+                if (duplicateInTx)
+                {
+                    await transaction.RollbackAsync();
+                    return ApiResponse<RedeemReferralCodeResponseDto>.BadRequest(
+                        "این کد امروز برای این خریدار قبلاً ثبت شده است",
+                        errorCode: ErrorCodes.InvalidInput);
+                }
+
                 var usage = new ReferralUsage
                 {
                     ReferralProgramId = program.Id,
                     UserId = userId,
-                    PublicCode = program.PublicCode,
+                    PublicCode = resolved.UsedCode,
                     PurchaseAmount = request.PurchaseAmount,
                     CustomerDiscountAmount = customerDiscount,
                     ReferrerRewardAmount = referrerReward,
-                    CustomerContactId = request.CustomerContactId,
-                    ReferrerContactId = request.ReferrerContactId,
+                    CustomerContactId = customerContactId,
+                    ReferrerContactId = referrerContactId,
+                    IdempotencyKey = idempotencyKey,
                     Status = ReferralUsageStatuses.Completed,
                     Description = request.Description,
                     CreatedAt = now
@@ -674,21 +804,21 @@ namespace Api_Vapp.Services
                 var customerCredited = false;
                 var referrerCredited = false;
 
-                if (request.CustomerContactId.HasValue && customerDiscount > 0)
+                if (customerDiscount > 0)
                 {
                     customerCredited = await CreditContactCashbackAsync(
                         userId,
-                        request.CustomerContactId.Value,
+                        customerContactId,
                         customerDiscount,
                         $"تخفیف برنامه پاداش «{program.Title}»",
                         validityDays);
                 }
 
-                if (request.ReferrerContactId.HasValue && referrerReward > 0)
+                if (referrerReward > 0)
                 {
                     referrerCredited = await CreditContactCashbackAsync(
                         userId,
-                        request.ReferrerContactId.Value,
+                        referrerContactId.Value,
                         referrerReward,
                         $"پاداش معرف برنامه «{program.Title}»",
                         validityDays);
@@ -696,17 +826,28 @@ namespace Api_Vapp.Services
 
                 await transaction.CommitAsync();
 
+                var referrerSmsSent = false;
+                if (referrerReward > 0)
+                {
+                    referrerSmsSent = await SendReferrerRewardSmsAsync(
+                        program,
+                        referrerContactId.Value,
+                        resolved.ReferrerContactMobile,
+                        referrerReward);
+                }
+
                 _logger.LogInformation(
-                    "مصرف کد {PublicCode} برای برنامه {ProgramId} توسط کاربر {UserId} ثبت شد - UsageId: {UsageId}",
-                    program.PublicCode, program.Id, userId, usage.Id);
+                    "مصرف کد {Code} برای برنامه {ProgramId} توسط کاربر {UserId} ثبت شد - UsageId: {UsageId}, ReferrerSms: {SmsSent}",
+                    resolved.UsedCode, program.Id, userId, usage.Id, referrerSmsSent);
 
                 var successMessage = BuildRedeemSuccessMessage(
                     customerCredited,
                     referrerCredited,
-                    request.CustomerContactId,
-                    request.ReferrerContactId,
+                    customerContactId,
+                    referrerContactId,
                     customerDiscount,
-                    referrerReward);
+                    referrerReward,
+                    referrerSmsSent);
 
                 return ApiResponse<RedeemReferralCodeResponseDto>.CreateSuccess(
                     new RedeemReferralCodeResponseDto
@@ -714,23 +855,172 @@ namespace Api_Vapp.Services
                         UsageId = usage.Id,
                         ProgramId = program.Id,
                         ProgramName = program.Title,
-                        PublicCode = program.PublicCode,
+                        PublicCode = resolved.UsedCode,
                         PurchaseAmount = request.PurchaseAmount,
                         CustomerDiscountAmount = customerDiscount,
                         FormattedCustomerDiscount = $"{customerDiscount:N0} تومان",
                         ReferrerRewardAmount = referrerReward,
                         FormattedReferrerReward = $"{referrerReward:N0} تومان",
+                        ReferrerContactId = referrerContactId,
+                        ReferrerContactName = resolved.ReferrerContactName,
                         CustomerRewardCredited = customerCredited,
-                        ReferrerRewardCredited = referrerCredited
+                        ReferrerRewardCredited = referrerCredited,
+                        ReferrerRewardSmsSent = referrerSmsSent
                     },
                     successMessage,
                     201);
+            }
+            catch (DbUpdateException dbEx) when (IsUniqueConstraintViolation(dbEx))
+            {
+                await transaction.RollbackAsync();
+                _logger.LogWarning(dbEx, "ثبت تکراری مصرف کد {Code} برای کاربر {UserId}", request.Code, userId);
+                return ApiResponse<RedeemReferralCodeResponseDto>.BadRequest(
+                    "این تراکنش قبلاً ثبت شده است",
+                    errorCode: ErrorCodes.InvalidInput);
             }
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "خطا در تراکنش مصرف کد {Code} برای کاربر {UserId}", request.Code, userId);
                 throw;
+            }
+        }
+
+        private async Task<string?> ValidateRedeemAbuseGuardsAsync(
+            int userId,
+            string personalCode,
+            int customerContactId,
+            int programId)
+        {
+            var now = DateTime.UtcNow;
+            var dayStart = now.Date;
+            var dayEnd = dayStart.AddDays(1);
+
+            var sameCustomerToday = await _context.ReferralUsages.AnyAsync(u =>
+                u.UserId == userId &&
+                u.PublicCode == personalCode &&
+                u.CustomerContactId == customerContactId &&
+                u.Status == ReferralUsageStatuses.Completed &&
+                u.CreatedAt >= dayStart &&
+                u.CreatedAt < dayEnd);
+
+            if (sameCustomerToday)
+            {
+                return "این کد امروز برای این خریدار قبلاً ثبت شده است";
+            }
+
+            var redeemsToday = await _context.ReferralUsages.CountAsync(u =>
+                u.UserId == userId &&
+                u.PublicCode == personalCode &&
+                u.Status == ReferralUsageStatuses.Completed &&
+                u.CreatedAt >= dayStart &&
+                u.CreatedAt < dayEnd);
+
+            if (redeemsToday >= MaxRedeemsPerCodePerDay)
+            {
+                return "سقف مجاز مصرف این کد در امروز تکمیل شده است";
+            }
+
+            // جلوگیری از مصرف کد برنامه حذف‌شده/غیرفعال از مسیرهای موازی
+            var programStillOk = await _context.ReferralPrograms.AnyAsync(p =>
+                p.Id == programId &&
+                p.UserId == userId &&
+                !p.IsDeleted &&
+                p.IsActive);
+
+            if (!programStillOk)
+            {
+                return "برنامه پاداش قابل استفاده نیست";
+            }
+
+            return null;
+        }
+
+        private async Task<bool> AreContactsSameMobileAsync(int contactIdA, int contactIdB)
+        {
+            var mobiles = await _context.Contacts
+                .AsNoTracking()
+                .Where(c => (c.Id == contactIdA || c.Id == contactIdB) && !c.IsDeleted)
+                .Select(c => c.MobileNumber)
+                .ToListAsync();
+
+            if (mobiles.Count < 2)
+            {
+                return false;
+            }
+
+            var normalized = mobiles
+                .Where(m => !string.IsNullOrWhiteSpace(m))
+                .Select(m => m.Trim())
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+
+            return normalized.Count == 1;
+        }
+
+        private static decimal CapRewardAmount(decimal amount)
+        {
+            if (amount <= 0)
+            {
+                return 0;
+            }
+
+            return amount > MaxFixedAmount ? MaxFixedAmount : amount;
+        }
+
+        private static bool IsUniqueConstraintViolation(DbUpdateException ex)
+        {
+            var message = ex.InnerException?.Message ?? ex.Message;
+            return message.Contains("unique", StringComparison.OrdinalIgnoreCase)
+                   || message.Contains("duplicate", StringComparison.OrdinalIgnoreCase)
+                   || message.Contains("IX_ReferralUsages_UserId_IdempotencyKey", StringComparison.OrdinalIgnoreCase);
+        }
+
+        public async Task<ApiResponse<ReferralContactCodeListDto>> GetContactCodesAsync(
+            int programId,
+            int userId,
+            int pageNumber = 1,
+            int pageSize = 20)
+        {
+            try
+            {
+                var program = await _programRepository.GetByIdAndUserIdAsync(programId, userId);
+                if (program == null)
+                {
+                    return ApiResponse<ReferralContactCodeListDto>.NotFound("برنامه پاداش یافت نشد");
+                }
+
+                if (pageNumber < 1) pageNumber = 1;
+                if (pageSize < 1 || pageSize > 100) pageSize = 20;
+
+                var codes = await _contactCodeRepository.GetByProgramIdAsync(programId, userId, pageNumber, pageSize);
+                var totalCount = await _contactCodeRepository.GetCountByProgramIdAsync(programId, userId);
+                var totalPages = totalCount == 0 ? 0 : (int)Math.Ceiling(totalCount / (double)pageSize);
+
+                var dtos = codes.Select(c => new ReferralContactCodeDto
+                {
+                    Id = c.Id,
+                    ReferralProgramId = c.ReferralProgramId,
+                    ContactId = c.ContactId,
+                    ContactName = c.Contact?.FullName ?? string.Empty,
+                    ContactMobile = c.Contact?.MobileNumber ?? string.Empty,
+                    Code = c.Code,
+                    CreatedAt = EnsureUtc(c.CreatedAt)
+                }).ToList();
+
+                return ApiResponse<ReferralContactCodeListDto>.CreateSuccess(new ReferralContactCodeListDto
+                {
+                    Codes = dtos,
+                    TotalCount = totalCount,
+                    PageNumber = pageNumber,
+                    PageSize = pageSize,
+                    TotalPages = totalPages
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "خطا در دریافت کدهای شخصی برنامه {ProgramId} برای کاربر {UserId}", programId, userId);
+                return ApiResponse<ReferralContactCodeListDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 
@@ -831,8 +1121,22 @@ namespace Api_Vapp.Services
                     program.IsActive = updateDto.IsActive.Value;
                 }
 
+                if (updateDto.IsReferrerRewardActive.HasValue)
+                {
+                    program.IsReferrerRewardActive = updateDto.IsReferrerRewardActive.Value;
+                    if (!program.IsReferrerRewardActive)
+                    {
+                        program.ReferrerRewardValue = 0;
+                    }
+                }
+
                 if (updateDto.ReferrerRewardValue.HasValue)
                 {
+                    if (!program.IsReferrerRewardActive)
+                    {
+                        return ApiResponse<ReferralProgramDto>.BadRequest("پاداش معرف غیرفعال است");
+                    }
+
                     var referrerErrors = ValidateRewardValue(program.RewardType, updateDto.ReferrerRewardValue.Value, "پاداش معرف");
                     if (referrerErrors.Any())
                     {
@@ -867,6 +1171,13 @@ namespace Api_Vapp.Services
                     program.CustomerRewardValue = updateDto.CustomerRewardValue.Value;
                 }
 
+                if (!program.IsReferrerRewardActive && !program.IsCustomerRewardActive)
+                {
+                    return ApiResponse<ReferralProgramDto>.BadRequest(
+                        "حداقل یکی از پاداش معرف یا مشتری باید فعال باشد",
+                        errorCode: ErrorCodes.ValidationFailed);
+                }
+
                 if (updateDto.EndDate.HasValue)
                 {
                     var endDate = NormalizeIncomingUtc(updateDto.EndDate.Value);
@@ -892,7 +1203,8 @@ namespace Api_Vapp.Services
                     After = new { title = program.Title, isActive = program.IsActive }
                 });
 
-                return ApiResponse<ReferralProgramDto>.CreateSuccess(MapToDto(program), "برنامه پاداش با موفقیت به‌روزرسانی شد");
+                var codesCount = await _contactCodeRepository.GetCountByProgramIdAsync(id, userId);
+                return ApiResponse<ReferralProgramDto>.CreateSuccess(MapToDto(program, codesCount), "برنامه پاداش با موفقیت به‌روزرسانی شد");
             }
             catch (DbUpdateException dbEx)
             {
@@ -914,6 +1226,7 @@ namespace Api_Vapp.Services
         {
             return !string.IsNullOrWhiteSpace(updateDto.Title)
                 || updateDto.IsActive.HasValue
+                || updateDto.IsReferrerRewardActive.HasValue
                 || updateDto.ReferrerRewardValue.HasValue
                 || updateDto.IsCustomerRewardActive.HasValue
                 || updateDto.CustomerRewardValue.HasValue
@@ -926,7 +1239,8 @@ namespace Api_Vapp.Services
             int? customerContactId,
             int? referrerContactId,
             decimal customerDiscount,
-            decimal referrerReward)
+            decimal referrerReward,
+            bool referrerSmsSent)
         {
             var message = "مصرف کد با موفقیت ثبت شد";
 
@@ -938,6 +1252,11 @@ namespace Api_Vapp.Services
             if (referrerContactId.HasValue && referrerReward > 0 && !referrerCredited)
             {
                 message += "؛ واریز پاداش به معرف انجام نشد";
+            }
+
+            if (referrerReward > 0 && !referrerSmsSent)
+            {
+                message += "؛ ارسال پیامک پاداش به معرف انجام نشد";
             }
 
             return message;
@@ -979,16 +1298,25 @@ namespace Api_Vapp.Services
                 return errors;
             }
 
-            if (step1Dto.RewardType == ReferralRewardTypes.Percentage)
+            if (!step1Dto.IsReferrerRewardActive && !step1Dto.IsCustomerRewardActive)
             {
-                if (step1Dto.ReferrerRewardValue <= 0 || step1Dto.ReferrerRewardValue > MaxPercentage)
-                {
-                    errors.Add("درصد پاداش معرف باید بین 1 تا 100 باشد");
-                }
+                errors.Add("حداقل یکی از پاداش معرف یا مشتری باید فعال باشد");
+                return errors;
             }
-            else if (step1Dto.ReferrerRewardValue < MinFixedAmount || step1Dto.ReferrerRewardValue > MaxFixedAmount)
+
+            if (step1Dto.IsReferrerRewardActive)
             {
-                errors.Add("مبلغ پاداش معرف باید بین 1,000 تا 10,000,000 تومان باشد");
+                if (step1Dto.RewardType == ReferralRewardTypes.Percentage)
+                {
+                    if (step1Dto.ReferrerRewardValue <= 0 || step1Dto.ReferrerRewardValue > MaxPercentage)
+                    {
+                        errors.Add("درصد پاداش معرف باید بین 1 تا 100 باشد");
+                    }
+                }
+                else if (step1Dto.ReferrerRewardValue < MinFixedAmount || step1Dto.ReferrerRewardValue > MaxFixedAmount)
+                {
+                    errors.Add("مبلغ پاداش معرف باید بین 1,000 تا 10,000,000 تومان باشد");
+                }
             }
 
             if (step1Dto.IsCustomerRewardActive)
@@ -1007,6 +1335,18 @@ namespace Api_Vapp.Services
                 else if (step1Dto.CustomerRewardValue < MinFixedAmount || step1Dto.CustomerRewardValue > MaxFixedAmount)
                 {
                     errors.Add("مبلغ پاداش مشتری باید بین 1,000 تا 10,000,000 تومان باشد");
+                }
+            }
+
+            if (step1Dto.RewardType == ReferralRewardTypes.Percentage &&
+                step1Dto.IsReferrerRewardActive &&
+                step1Dto.IsCustomerRewardActive &&
+                step1Dto.CustomerRewardValue.HasValue)
+            {
+                var totalPercent = step1Dto.ReferrerRewardValue + step1Dto.CustomerRewardValue.Value;
+                if (totalPercent > MaxPercentage)
+                {
+                    errors.Add("جمع درصد پاداش معرف و مشتری نمی‌تواند بیشتر از ۱۰۰ باشد");
                 }
             }
 
@@ -1217,7 +1557,9 @@ namespace Api_Vapp.Services
                 step2.SendToSpecificTags);
 
             var rewardTypeLabel = step1.RewardType == ReferralRewardTypes.Percentage ? "درصدی" : "مبلغ ثابت";
-            var referrerReward = FormatRewardValue(step1.RewardType, step1.ReferrerRewardValue);
+            var referrerReward = step1.IsReferrerRewardActive && step1.ReferrerRewardValue > 0
+                ? FormatRewardValue(step1.RewardType, step1.ReferrerRewardValue)
+                : "غیرفعال";
             var customerReward = step1.IsCustomerRewardActive && step1.CustomerRewardValue.HasValue
                 ? FormatRewardValue(step1.RewardType, step1.CustomerRewardValue.Value)
                 : "غیرفعال";
@@ -1269,28 +1611,59 @@ namespace Api_Vapp.Services
             return contactIds.Where(id => id > 0).Distinct().ToList();
         }
 
-        private async Task<(int SentCount, int FailedCount)> SendReferralSmsAsync(ReferralProgram program, List<int> contactIds)
+        private async Task<List<ReferralContactCode>> CreatePersonalCodesAsync(
+            ReferralProgram program,
+            List<int> contactIds)
         {
-            if (!contactIds.Any())
+            var codes = new List<ReferralContactCode>();
+            var now = DateTime.UtcNow;
+
+            foreach (var contactId in contactIds.Distinct())
+            {
+                var code = await GenerateUniquePersonalCodeAsync(program.UserId);
+                var entity = new ReferralContactCode
+                {
+                    ReferralProgramId = program.Id,
+                    UserId = program.UserId,
+                    ContactId = contactId,
+                    Code = code,
+                    CreatedAt = now
+                };
+                codes.Add(entity);
+            }
+
+            await _context.ReferralContactCodes.AddRangeAsync(codes);
+            await _context.SaveChangesAsync();
+            return codes;
+        }
+
+        private async Task<(int SentCount, int FailedCount)> SendReferralInviteSmsAsync(
+            ReferralProgram program,
+            List<ReferralContactCode> personalCodes)
+        {
+            if (!personalCodes.Any())
             {
                 return (0, 0);
             }
 
+            var contactIds = personalCodes.Select(c => c.ContactId).Distinct().ToList();
             var contacts = await _context.Contacts
                 .Where(c => contactIds.Contains(c.Id) && !c.IsDeleted)
-                .ToListAsync();
+                .ToDictionaryAsync(c => c.Id);
 
             var sent = 0;
             var failed = 0;
-            var message = BuildReferralSmsMessage(program);
 
-            foreach (var contact in contacts)
+            foreach (var personalCode in personalCodes)
             {
-                if (string.IsNullOrWhiteSpace(contact.MobileNumber))
+                if (!contacts.TryGetValue(personalCode.ContactId, out var contact) ||
+                    string.IsNullOrWhiteSpace(contact.MobileNumber))
                 {
                     failed++;
                     continue;
                 }
+
+                var message = BuildReferralInviteSmsMessage(program, personalCode.Code);
 
                 try
                 {
@@ -1313,7 +1686,7 @@ namespace Api_Vapp.Services
                         if (sendResult.SkippedInsufficientBalance)
                         {
                             _logger.LogInformation(
-                                "Referral SMS skipped (insufficient wallet) for contact {ContactId}, program {ProgramId}",
+                                "Referral invite SMS skipped (insufficient wallet) for contact {ContactId}, program {ProgramId}",
                                 contact.Id, program.Id);
                         }
 
@@ -1322,7 +1695,7 @@ namespace Api_Vapp.Services
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "خطا در ارسال پیامک پاداش به مخاطب {ContactId}", contact.Id);
+                    _logger.LogWarning(ex, "خطا در ارسال پیامک دعوت پاداش به مخاطب {ContactId}", contact.Id);
                     failed++;
                 }
             }
@@ -1330,27 +1703,114 @@ namespace Api_Vapp.Services
             return (sent, failed);
         }
 
-        private static string BuildReferralSmsMessage(ReferralProgram program)
+        private async Task<bool> SendReferrerRewardSmsAsync(
+            ReferralProgram program,
+            int referrerContactId,
+            string? mobile,
+            decimal rewardAmount)
         {
-            var discountText = program.IsCustomerRewardActive && program.CustomerRewardValue.HasValue
-                ? FormatRewardValue(program.RewardType, program.CustomerRewardValue.Value)
-                : "ویژه";
+            var phone = mobile;
+            if (string.IsNullOrWhiteSpace(phone))
+            {
+                phone = await _context.Contacts
+                    .AsNoTracking()
+                    .Where(c => c.Id == referrerContactId && !c.IsDeleted)
+                    .Select(c => c.MobileNumber)
+                    .FirstOrDefaultAsync();
+            }
 
-            return $"برنامه پاداش «{program.Title}»\nکد تخفیف: {program.PublicCode}\nمقدار تخفیف: {discountText}";
+            if (string.IsNullOrWhiteSpace(phone))
+            {
+                _logger.LogWarning(
+                    "شماره موبایل معرف {ContactId} برای ارسال پیامک پاداش یافت نشد — ProgramId: {ProgramId}",
+                    referrerContactId, program.Id);
+                return false;
+            }
+
+            var message =
+                $"شما {rewardAmount:N0} تومان پاداش گرفتید چون کسی با کد معرف شما خرید کرده است.\n" +
+                $"برنامه: «{program.Title}»\n" +
+                "برای دریافت پاداش به فروشگاه مراجعه کنید.";
+
+            try
+            {
+                var sendResult = await _userSmsBilling.TrySendAsync(
+                    program.UserId,
+                    phone,
+                    message,
+                    SmsSourceModules.ReferralProgram,
+                    "پاداش معرف",
+                    $"هزینه پیامک پاداش معرف «{program.Title}»",
+                    program.Id,
+                    program.Title ?? $"برنامه پاداش #{program.Id}");
+
+                if (!sendResult.Sent)
+                {
+                    _logger.LogInformation(
+                        "Referrer reward SMS not sent for contact {ContactId}, program {ProgramId}, skippedBalance={Skipped}",
+                        referrerContactId, program.Id, sendResult.SkippedInsufficientBalance);
+                }
+
+                return sendResult.Sent;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "خطا در ارسال پیامک پاداش معرف به مخاطب {ContactId}", referrerContactId);
+                return false;
+            }
         }
 
-        private async Task<string> GenerateUniquePublicCodeAsync(int userId)
+        private static string BuildReferralInviteSmsMessage(ReferralProgram program, string personalCode)
         {
-            for (var attempt = 0; attempt < 20; attempt++)
+            var parts = new List<string>
+            {
+                $"برنامه پاداش «{program.Title}»",
+                $"کد معرف شما: {personalCode}"
+            };
+
+            if (program.IsCustomerRewardActive && program.CustomerRewardValue.HasValue)
+            {
+                parts.Add($"تخفیف مشتری: {FormatRewardValue(program.RewardType, program.CustomerRewardValue.Value)}");
+            }
+
+            if (program.IsReferrerRewardActive && program.ReferrerRewardValue > 0)
+            {
+                parts.Add($"پاداش معرف: {FormatRewardValue(program.RewardType, program.ReferrerRewardValue)}");
+            }
+
+            parts.Add("کد را به دوستانتان بدهید تا با خرید از فروشگاه، پاداش فعال شود.");
+            return string.Join("\n", parts);
+        }
+
+        private async Task<string> GenerateUniquePersonalCodeAsync(int userId)
+        {
+            for (var attempt = 0; attempt < 30; attempt++)
             {
                 var code = $"REF{Random.Shared.Next(100000, 999999)}";
-                if (!await _programRepository.ExistsByPublicCodeAsync(userId, code))
+                var existsInPrograms = await _programRepository.ExistsByPublicCodeAsync(userId, code);
+                var existsInPersonal = await _contactCodeRepository.ExistsByCodeAsync(userId, code);
+                if (!existsInPrograms && !existsInPersonal)
                 {
                     return code;
                 }
             }
 
             return $"REF{Guid.NewGuid().ToString("N")[..8].ToUpperInvariant()}";
+        }
+
+        private async Task<string> GenerateUniquePublicCodeAsync(int userId)
+        {
+            for (var attempt = 0; attempt < 20; attempt++)
+            {
+                var code = $"PRG{Random.Shared.Next(100000, 999999)}";
+                if (!await _programRepository.ExistsByPublicCodeAsync(userId, code) &&
+                    !await _contactCodeRepository.ExistsByCodeAsync(userId, code))
+                {
+                    return code;
+                }
+            }
+
+            return $"PRG{Guid.NewGuid().ToString("N")[..8].ToUpperInvariant()}";
         }
 
         private static decimal? CalculateRewardAmount(string rewardType, decimal rewardValue, decimal? purchaseAmount)
@@ -1368,10 +1828,47 @@ namespace Api_Vapp.Services
             return rewardValue;
         }
 
-        private async Task<ReferralProgram?> FindProgramByCodeAsync(int userId, string code)
+        private sealed class ResolvedReferralCode
+        {
+            public ReferralProgram Program { get; init; } = null!;
+            public string UsedCode { get; init; } = string.Empty;
+            public int? ReferrerContactId { get; init; }
+            public string? ReferrerContactName { get; init; }
+            public string? ReferrerContactMobile { get; init; }
+        }
+
+        private async Task<ResolvedReferralCode?> ResolvePersonalCodeAsync(int userId, string code)
         {
             var normalizedCode = code.Trim().ToUpperInvariant();
-            return await _programRepository.GetByPublicCodeAsync(userId, normalizedCode);
+            if (string.IsNullOrWhiteSpace(normalizedCode))
+            {
+                return null;
+            }
+
+            var personal = await _contactCodeRepository.GetByCodeAsync(userId, normalizedCode);
+            if (personal == null)
+            {
+                return null;
+            }
+
+            if (personal.ReferralProgram == null || personal.ReferralProgram.IsDeleted)
+            {
+                return null;
+            }
+
+            if (personal.Contact == null || personal.Contact.IsDeleted)
+            {
+                return null;
+            }
+
+            return new ResolvedReferralCode
+            {
+                Program = personal.ReferralProgram,
+                UsedCode = personal.Code,
+                ReferrerContactId = personal.ContactId,
+                ReferrerContactName = personal.Contact.FullName,
+                ReferrerContactMobile = personal.Contact.MobileNumber
+            };
         }
 
         private static (bool IsValid, bool IsExpired, bool IsNotStarted, string? InvalidReason) EvaluateProgramState(ReferralProgram program)
@@ -1412,6 +1909,25 @@ namespace Api_Vapp.Services
             }
 
             var amount = CalculateRewardAmount(program.RewardType, program.CustomerRewardValue.Value, purchaseAmount) ?? 0;
+            return (amount, $"{amount:N0} تومان");
+        }
+
+        private static (decimal? Amount, string Formatted) BuildReferrerRewardInfo(
+            ReferralProgram program,
+            decimal? purchaseAmount)
+        {
+            if (!program.IsReferrerRewardActive || program.ReferrerRewardValue <= 0)
+            {
+                return (null, "پاداش معرف فعال نیست");
+            }
+
+            if (program.RewardType == ReferralRewardTypes.Percentage &&
+                (!purchaseAmount.HasValue || purchaseAmount <= 0))
+            {
+                return (null, $"{program.ReferrerRewardValue:N0}% (مبلغ خرید برای محاسبه لازم است)");
+            }
+
+            var amount = CalculateRewardAmount(program.RewardType, program.ReferrerRewardValue, purchaseAmount) ?? 0;
             return (amount, $"{amount:N0} تومان");
         }
 
@@ -1518,7 +2034,8 @@ namespace Api_Vapp.Services
             });
 
             balance.TotalBalance = balanceBefore + amount;
-            balance.UsableBalance = balance.TotalBalance;
+            var usableBefore = balance.UsableBalance;
+            balance.UsableBalance = usableBefore + amount;
             balance.UpdatedAt = now;
 
             if (!balance.ExpiryDate.HasValue || expiryDate < balance.ExpiryDate)
@@ -1578,7 +2095,7 @@ namespace Api_Vapp.Services
             return $"{pc.GetYear(utcDate):0000}/{pc.GetMonth(utcDate):00}/{pc.GetDayOfMonth(utcDate):00}";
         }
 
-        private ReferralProgramDto MapToDto(ReferralProgram program)
+        private ReferralProgramDto MapToDto(ReferralProgram program, int personalCodesCount = 0)
         {
             var now = DateTime.UtcNow;
             List<int>? notebookIds = null;
@@ -1613,14 +2130,18 @@ namespace Api_Vapp.Services
                 Title = program.Title,
                 IsActive = program.IsActive,
                 RewardType = program.RewardType,
+                IsReferrerRewardActive = program.IsReferrerRewardActive,
                 ReferrerRewardValue = program.ReferrerRewardValue,
-                FormattedReferrerReward = FormatRewardValue(program.RewardType, program.ReferrerRewardValue),
+                FormattedReferrerReward = program.IsReferrerRewardActive && program.ReferrerRewardValue > 0
+                    ? FormatRewardValue(program.RewardType, program.ReferrerRewardValue)
+                    : "غیرفعال",
                 IsCustomerRewardActive = program.IsCustomerRewardActive,
                 CustomerRewardValue = program.CustomerRewardValue,
                 FormattedCustomerReward = program.IsCustomerRewardActive && program.CustomerRewardValue.HasValue
                     ? FormatRewardValue(program.RewardType, program.CustomerRewardValue.Value)
                     : null,
                 PublicCode = program.PublicCode,
+                PersonalCodesCount = personalCodesCount,
                 TargetAudience = program.TargetAudience,
                 AudienceDescription = GetAudienceDescription(step2),
                 TargetNotebookIds = notebookIds,

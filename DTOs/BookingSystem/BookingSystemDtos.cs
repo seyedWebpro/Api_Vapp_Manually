@@ -28,11 +28,25 @@ namespace Api_Vapp.DTOs.BookingSystem
         public string Status { get; set; } = string.Empty;
         public bool SaveToPhonebook { get; set; }
         public bool IsActive { get; set; }
+
+        /// <summary>مقدار تنظیم‌شده توسط مالک — null یعنی پیش‌فرض سرور.</summary>
+        public int? BookingWindowDays { get; set; }
+
+        /// <summary>بازه مؤثر رزرو عمومی (روز) — برای نمایش در اپ مالک.</summary>
+        public int EffectiveBookingWindowDays { get; set; }
+
         public List<int> NotebookIds { get; set; } = new();
         public List<BookingServiceItemDto> Services { get; set; } = new();
         public DateTime CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
         public DateTime? PublishedAt { get; set; }
+
+        /// <summary>Pending / Approved / Rejected — تأیید یک‌باره ارسال سریع</summary>
+        public string ApprovalStatus { get; set; } = "Pending";
+
+        public string? RejectionReason { get; set; }
+
+        public DateTime? ApprovedAt { get; set; }
     }
 
     public class BookingServiceItemDto
@@ -96,6 +110,12 @@ namespace Api_Vapp.DTOs.BookingSystem
         public bool SaveToPhonebook { get; set; }
 
         public List<int> NotebookIds { get; set; } = new();
+
+        /// <summary>
+        /// بازه مجاز رزرو عمومی به روز — اختیاری؛ null یعنی پیش‌فرض سرور.
+        /// </summary>
+        [Range(1, 365, ErrorMessage = "بازه رزرو باید بین ۱ تا ۳۶۵ روز باشد")]
+        public int? BookingWindowDays { get; set; }
     }
 
     public class BookingStep1ValidationResponseDto
@@ -301,6 +321,13 @@ namespace Api_Vapp.DTOs.BookingSystem
         public List<int>? NotebookIds { get; set; }
         public bool? IsActive { get; set; }
         public string? Slug { get; set; }
+
+        /// <summary>بازه رزرو عمومی به روز — اختیاری.</summary>
+        [Range(1, 365, ErrorMessage = "بازه رزرو باید بین ۱ تا ۳۶۵ روز باشد")]
+        public int? BookingWindowDays { get; set; }
+
+        /// <summary>بازگشت به پیش‌فرض سرور (حذف تنظیم اختصاصی).</summary>
+        public bool? UseDefaultBookingWindow { get; set; }
     }
 
     public class AddBookingServiceDto

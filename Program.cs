@@ -359,6 +359,7 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.ICashbackDraftRepository, Api_Vap
 builder.Services.AddScoped<Api_Vapp.Interfaces.IReferralProgramRepository, Api_Vapp.Repositories.ReferralProgramRepository>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IReferralProgramDraftRepository, Api_Vapp.Repositories.ReferralProgramDraftRepository>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IReferralUsageRepository, Api_Vapp.Repositories.ReferralUsageRepository>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IReferralContactCodeRepository, Api_Vapp.Repositories.ReferralContactCodeRepository>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IBookingSystemRepository, Api_Vapp.Repositories.BookingSystemRepository>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IBookingSystemDraftRepository, Api_Vapp.Repositories.BookingSystemDraftRepository>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IBookingAppointmentRepository, Api_Vapp.Repositories.BookingAppointmentRepository>();
@@ -452,6 +453,7 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminAutomationTypeService, Api_
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminAppBannerService, Api_Vapp.Services.Admin.AdminAppBannerService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminMessageApprovalService, Api_Vapp.Services.Admin.AdminMessageApprovalService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminTemplateApprovalService, Api_Vapp.Services.Admin.AdminTemplateApprovalService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminQuickSendApprovalService, Api_Vapp.Services.Admin.AdminQuickSendApprovalService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminDashboardService, Api_Vapp.Services.Admin.AdminDashboardService>();
 
 // ثبت Background Services برای پیام‌های خودکار و زمان‌دار

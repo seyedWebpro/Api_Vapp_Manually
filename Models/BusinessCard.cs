@@ -3,7 +3,7 @@ namespace Api_Vapp.Models
     /// <summary>
     /// کارت ویزیت دیجیتال ساخته‌شده توسط کاربر
     /// </summary>
-    public class BusinessCard
+    public class BusinessCard : IQuickSendApprovable
     {
         public int Id { get; set; }
 
@@ -48,6 +48,15 @@ namespace Api_Vapp.Models
         public DateTime? UpdatedAt { get; set; }
 
         public DateTime? PublishedAt { get; set; }
+
+        /// <summary>وضعیت تأیید ادمین برای ارسال سریع (Pending / Approved / Rejected)</summary>
+        public string ApprovalStatus { get; set; } = "Pending";
+
+        public DateTime? ApprovedAt { get; set; }
+
+        public int? ApprovedByUserId { get; set; }
+
+        public string? RejectionReason { get; set; }
 
         public bool SliderEnabled { get; set; }
 

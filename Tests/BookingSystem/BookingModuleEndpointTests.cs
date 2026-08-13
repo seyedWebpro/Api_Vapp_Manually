@@ -228,6 +228,32 @@ public class BookingModuleEndpointTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Endpoint_Update_BookingWindowDays_Returns200()
+    {
+        var (systemId, _) = await _ctx.CreateConfirmedSystemAsync();
+        var result = await _ctx.Service.UpdateAsync(systemId, _ctx.OwnerUserId, new UpdateBookingSystemDto
+        {
+            BookingWindowDays = 30
+        });
+
+        BookingApiAssertions.AssertSuccess(result);
+        Assert.Equal(30, result.Data!.BookingWindowDays);
+        Assert.Equal(30, result.Data.EffectiveBookingWindowDays);
+    }
+
+    [Fact]
+    public async Task Endpoint_Update_InvalidBookingWindowDays_Returns400()
+    {
+        var (systemId, _) = await _ctx.CreateConfirmedSystemAsync();
+        var result = await _ctx.Service.UpdateAsync(systemId, _ctx.OwnerUserId, new UpdateBookingSystemDto
+        {
+            BookingWindowDays = 0
+        });
+
+        BookingApiAssertions.AssertFailure(result, 400);
+    }
+
+    [Fact]
     public async Task Endpoint_Update_NotFound_Returns404()
     {
         var result = await _ctx.Service.UpdateAsync(99999999, _ctx.OwnerUserId, new UpdateBookingSystemDto

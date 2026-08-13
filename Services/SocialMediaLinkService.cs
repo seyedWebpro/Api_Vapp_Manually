@@ -202,6 +202,9 @@ namespace Api_Vapp.Services
                 if (link == null)
                     return ApiResponse<SocialMediaLinkResponseDto>.NotFound("لینک مورد نظر یافت نشد");
 
+                var originalPlatform = link.Platform;
+                var originalLinkUrl = link.LinkUrl;
+
                 if (updateDto.Platform != null)
                 {
                     var platform = NormalizePlatform(updateDto.Platform);
@@ -232,6 +235,13 @@ namespace Api_Vapp.Services
                 }
 
                 link.UpdatedAt = DateTime.UtcNow;
+                var contentChanged =
+                    !string.Equals(originalPlatform, link.Platform, StringComparison.Ordinal) ||
+                    !string.Equals(originalLinkUrl, link.LinkUrl, StringComparison.Ordinal);
+                if (contentChanged)
+                {
+                    QuickSendContentApprovalHelper.ResetToPending(link);
+                }
                 await _context.SaveChangesAsync();
                 InvalidateUserCache(userId);
 
@@ -410,6 +420,13 @@ namespace Api_Vapp.Services
                         "لینک محتوایی ندارد",
                         errorCode: ErrorCodes.InvalidInput);
 
+                var blocked = QuickSendContentApprovalHelper.TryBlockIfNotApproved(
+                    link.ApprovalStatus,
+                    link.RejectionReason,
+                    "لینک شبکه اجتماعی");
+                if (blocked != null)
+                    return blocked;
+
                 var createMessageResult = await _messageService.CreateMessageAsync(userId, new CreateMessageDto
                 {
                     Content = link.LinkUrl.Trim()
@@ -459,7 +476,8 @@ namespace Api_Vapp.Services
                         DuplicatePreventionHours = 24,
                         SendToSpecificTags = false
                     },
-                    session);
+                    session,
+                    bypassAdminApproval: true);
 
                 _logger.LogInformation(
                     "ارسال سریع لینک سوشیال انجام شد — MessageId: {MessageId}, ContactId: {ContactId}",
@@ -621,7 +639,10 @@ namespace Api_Vapp.Services
                 IsActive = link.IsActive,
                 IsDefault = link.IsDefault,
                 CreatedAt = link.CreatedAt,
-                LinkType = detected ?? (string.IsNullOrWhiteSpace(link.Platform) ? "Unknown" : link.Platform)
+                LinkType = detected ?? (string.IsNullOrWhiteSpace(link.Platform) ? "Unknown" : link.Platform),
+                ApprovalStatus = link.ApprovalStatus,
+                RejectionReason = link.RejectionReason,
+                ApprovedAt = link.ApprovedAt
             };
         }
     }

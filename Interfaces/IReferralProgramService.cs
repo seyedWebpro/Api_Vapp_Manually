@@ -41,6 +41,12 @@ namespace Api_Vapp.Interfaces
 
         Task<ApiResponse<RedeemReferralCodeResponseDto>> RedeemCodeAsync(int userId, RedeemReferralCodeDto request);
 
+        Task<ApiResponse<ReferralContactCodeListDto>> GetContactCodesAsync(
+            int programId,
+            int userId,
+            int pageNumber = 1,
+            int pageSize = 20);
+
         Task<ApiResponse<ReferralUsageHistoryListDto>> GetHistoryAsync(
             int programId,
             int userId,

@@ -1,7 +1,7 @@
 namespace Api_Vapp.Models
 {
     /// <summary>
-    /// برنامه پاداش و معرف — یک کد عمومی برای هر برنامه
+    /// برنامه پاداش و معرف — هر مخاطب کد معرف شخصی خودش را دارد
     /// </summary>
     public class ReferralProgram
     {
@@ -18,6 +18,11 @@ namespace Api_Vapp.Models
         /// </summary>
         public string RewardType { get; set; } = ReferralRewardTypes.Percentage;
 
+        /// <summary>
+        /// آیا پاداش معرف فعال است
+        /// </summary>
+        public bool IsReferrerRewardActive { get; set; } = true;
+
         public decimal ReferrerRewardValue { get; set; }
 
         public bool IsCustomerRewardActive { get; set; }
@@ -25,7 +30,7 @@ namespace Api_Vapp.Models
         public decimal? CustomerRewardValue { get; set; }
 
         /// <summary>
-        /// کد عمومی تخفیف — یکتا برای هر کاربر (صاحب کسب‌وکار)
+        /// شناسه مرجع برنامه (برای نمایش/سازگاری) — استعلام فروشگاه با کد شخصی مخاطب است
         /// </summary>
         public string PublicCode { get; set; } = string.Empty;
 

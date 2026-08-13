@@ -45,10 +45,34 @@ namespace Api_Vapp.DTOs.Admin
         public bool SkipsMessageApprovalQueue { get; set; }
     }
 
+    public class QuickSendApprovalResponseDto
+    {
+        public string ItemType { get; set; } = string.Empty;
+        public string ItemTypeTitle { get; set; } = string.Empty;
+        public int Id { get; set; }
+        public int UserId { get; set; }
+        public string? UserPhoneNumber { get; set; }
+        public string? UserFullName { get; set; }
+        public string Title { get; set; } = string.Empty;
+        public string? ContentPreview { get; set; }
+        public string? PublicUrl { get; set; }
+        public bool IsActive { get; set; }
+        public string ApprovalStatus { get; set; } = string.Empty;
+        public string? RejectionReason { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public DateTime? ApprovedAt { get; set; }
+        public DateTime? UpdatedAt { get; set; }
+
+        /// <summary>
+        /// پس از تأیید، ارسال سریع تا ویرایش بعدی بدون صف تأیید پیام انجام می‌شود.
+        /// </summary>
+        public bool SkipsMessageApprovalQueue { get; set; }
+    }
+
     public class RejectApprovalDto
     {
-        [Required]
-        [MaxLength(1000)]
+        [Required(ErrorMessage = "دلیل رد الزامی است")]
+        [MaxLength(1000, ErrorMessage = "دلیل رد نمی‌تواند بیشتر از ۱۰۰۰ کاراکتر باشد")]
         public string Reason { get; set; } = string.Empty;
     }
 
@@ -56,6 +80,7 @@ namespace Api_Vapp.DTOs.Admin
     {
         public int PendingSmsApprovals { get; set; }
         public int PendingTemplateApprovals { get; set; }
+        public int PendingQuickSendApprovals { get; set; }
         public int OpenTickets { get; set; }
         public int TotalUsers { get; set; }
         public int ActiveSubscriptions { get; set; }

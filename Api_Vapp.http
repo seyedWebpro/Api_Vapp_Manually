@@ -1136,6 +1136,39 @@ Content-Type: application/json
 
 ###
 
+# --- تأیید یک‌باره ارسال سریع (کارت / رزرو / فرم / گردونه / لینک / اقدام) ---
+
+### لیست در انتظار تأیید
+GET {{Api_Vapp_HostAddress}}/api/Admin/QuickSendApproval/pending?page=1&pageSize=20
+Authorization: Bearer {{adminToken}}
+
+### فیلتر نوع آیتم
+GET {{Api_Vapp_HostAddress}}/api/Admin/QuickSendApproval/pending?itemType=BusinessCard
+Authorization: Bearer {{adminToken}}
+
+### همه وضعیت‌ها
+GET {{Api_Vapp_HostAddress}}/api/Admin/QuickSendApproval?status=Approved&itemType=SocialMediaLink&page=1&pageSize=20
+Authorization: Bearer {{adminToken}}
+
+### جزئیات
+GET {{Api_Vapp_HostAddress}}/api/Admin/QuickSendApproval/BusinessCard/1
+Authorization: Bearer {{adminToken}}
+
+### تأیید → بعد از این quick-send بدون صف پیام
+POST {{Api_Vapp_HostAddress}}/api/Admin/QuickSendApproval/BusinessCard/1/approve
+Authorization: Bearer {{adminToken}}
+
+### رد با دلیل
+POST {{Api_Vapp_HostAddress}}/api/Admin/QuickSendApproval/BusinessCard/1/reject
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "reason": "محتوای لینک عمومی قابل تأیید نیست"
+}
+
+###
+
 # --- ReferralProgram — انتخاب دستی مخاطبین (Individual) ---
 
 ### لیست مخاطبین برای انتخاب دستی
@@ -1155,6 +1188,7 @@ Content-Type: application/json
   "title": "پاداش دستی تست",
   "isActive": true,
   "rewardType": "FixedAmount",
+  "isReferrerRewardActive": true,
   "referrerRewardValue": 50000,
   "isCustomerRewardActive": true,
   "customerRewardValue": 10000
@@ -1193,4 +1227,30 @@ Content-Type: application/json
 
 {
   "draftId": "REPLACE_DRAFT_ID"
+}
+
+### لیست کدهای شخصی مخاطبین
+GET {{Api_Vapp_HostAddress}}/api/ReferralProgram/REPLACE_PROGRAM_ID/codes?pageNumber=1&pageSize=20
+Authorization: Bearer {{token}}
+
+### استعلام کد معرف شخصی
+POST {{Api_Vapp_HostAddress}}/api/ReferralProgram/inquire
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "code": "REF956696",
+  "purchaseAmount": 200000
+}
+
+### ثبت مصرف کد معرف
+POST {{Api_Vapp_HostAddress}}/api/ReferralProgram/redeem
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "code": "REF956696",
+  "purchaseAmount": 200000,
+  "customerContactId": 6,
+  "idempotencyKey": "receipt-2026-001"
 }

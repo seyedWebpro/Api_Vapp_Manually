@@ -25,5 +25,12 @@ namespace Api_Vapp.DTOs.UserForm
         public DateTime CreatedAt { get; set; }
 
         public DateTime? PublishedAt { get; set; }
+
+        /// <summary>Pending / Approved / Rejected — تأیید یک‌باره ارسال سریع</summary>
+        public string ApprovalStatus { get; set; } = "Pending";
+
+        public string? RejectionReason { get; set; }
+
+        public DateTime? ApprovedAt { get; set; }
     }
 }

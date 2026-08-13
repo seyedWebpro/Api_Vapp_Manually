@@ -673,10 +673,30 @@ namespace Api_Vapp.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("ApprovalStatus")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasDefaultValue("Pending");
+
+                    b.Property<DateTime?>("ApprovedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("ApprovedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("RejectionReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
                     b.Property<string>("ActivityType")
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
+
+                    b.Property<int?>("BookingWindowDays")
+                        .HasColumnType("int");
 
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
@@ -739,6 +759,8 @@ namespace Api_Vapp.Migrations
                     b.HasIndex("UserId");
 
                     b.HasIndex("UserId", "IsDeleted", "CreatedAt");
+
+                                        b.HasIndex("ApprovalStatus");
 
                     b.ToTable("BookingSystems");
                 });
@@ -830,14 +852,31 @@ namespace Api_Vapp.Migrations
                         .HasMaxLength(16)
                         .HasColumnType("nvarchar(16)");
 
+                    b.Property<string>("BankShebaNumber")
+                        .HasMaxLength(26)
+                        .HasColumnType("nvarchar(26)");
+
                     b.Property<bool>("BankingEnabled")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
                         .HasDefaultValue(false);
 
-                    b.Property<string>("BankShebaNumber")
-                        .HasMaxLength(26)
-                        .HasColumnType("nvarchar(26)");
+                    b.Property<string>("ApprovalStatus")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasDefaultValue("Pending");
+
+                    b.Property<DateTime?>("ApprovedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("ApprovedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("RejectionReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
 
                     b.Property<string>("ContactEmail")
                         .HasMaxLength(200)
@@ -955,6 +994,8 @@ namespace Api_Vapp.Migrations
 
                     b.HasIndex("UserId", "IsDeleted", "CreatedAt");
 
+                                        b.HasIndex("ApprovalStatus");
+
                     b.ToTable("BusinessCards");
                 });
 
@@ -989,6 +1030,32 @@ namespace Api_Vapp.Migrations
                     b.HasIndex("BusinessCardId");
 
                     b.ToTable("BusinessCardServiceItems");
+                });
+
+            modelBuilder.Entity("Api_Vapp.Models.BusinessCardSliderImage", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("BusinessCardId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ImageUrl")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BusinessCardId");
+
+                    b.ToTable("BusinessCardSliderImages");
                 });
 
             modelBuilder.Entity("Api_Vapp.Models.BusinessCardSocialLink", b =>
@@ -1026,32 +1093,6 @@ namespace Api_Vapp.Migrations
                     b.HasIndex("BusinessCardId", "DisplayOrder");
 
                     b.ToTable("BusinessCardSocialLinks");
-                });
-
-            modelBuilder.Entity("Api_Vapp.Models.BusinessCardSliderImage", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("BusinessCardId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("DisplayOrder")
-                        .HasColumnType("int");
-
-                    b.Property<string>("ImageUrl")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("BusinessCardId");
-
-                    b.ToTable("BusinessCardSliderImages");
                 });
 
             modelBuilder.Entity("Api_Vapp.Models.Cashback", b =>
@@ -1709,6 +1750,23 @@ namespace Api_Vapp.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("ApprovalStatus")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasDefaultValue("Pending");
+
+                    b.Property<DateTime?>("ApprovedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("ApprovedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("RejectionReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetime2")
@@ -1767,6 +1825,8 @@ namespace Api_Vapp.Migrations
                     b.HasIndex("UserId");
 
                     b.HasIndex("UserId", "IsDeleted", "CreatedAt");
+
+                                        b.HasIndex("ApprovalStatus");
 
                     b.ToTable("LuckyWheels");
                 });
@@ -2672,6 +2732,23 @@ namespace Api_Vapp.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("ApprovalStatus")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasDefaultValue("Pending");
+
+                    b.Property<DateTime?>("ApprovedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("ApprovedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("RejectionReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
                     b.Property<string>("ActionType")
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
@@ -2726,7 +2803,61 @@ namespace Api_Vapp.Migrations
 
                     b.HasIndex("UserId");
 
+                                        b.HasIndex("ApprovalStatus");
+
                     b.ToTable("QuickActions");
+                });
+
+            modelBuilder.Entity("Api_Vapp.Models.ReferralContactCode", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<int>("ContactId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<int>("ReferralProgramId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ContactId");
+
+                    b.HasIndex("IsDeleted");
+
+                    b.HasIndex("ReferralProgramId");
+
+                    b.HasIndex("ReferralProgramId", "ContactId")
+                        .IsUnique();
+
+                    b.HasIndex("UserId", "Code")
+                        .IsUnique();
+
+                    b.ToTable("ReferralContactCodes");
                 });
 
             modelBuilder.Entity("Api_Vapp.Models.ReferralProgram", b =>
@@ -2761,6 +2892,11 @@ namespace Api_Vapp.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
                         .HasDefaultValue(false);
+
+                    b.Property<bool>("IsReferrerRewardActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
 
                     b.Property<int>("NotifiedContactsCount")
                         .HasColumnType("int");
@@ -2915,6 +3051,10 @@ namespace Api_Vapp.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
+                    b.Property<string>("IdempotencyKey")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
                     b.Property<string>("PublicCode")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -2959,6 +3099,12 @@ namespace Api_Vapp.Migrations
                     b.HasIndex("Status");
 
                     b.HasIndex("UserId");
+
+                    b.HasIndex("UserId", "IdempotencyKey")
+                        .IsUnique()
+                        .HasFilter("[IdempotencyKey] IS NOT NULL");
+
+                    b.HasIndex("UserId", "PublicCode", "CustomerContactId", "CreatedAt");
 
                     b.ToTable("ReferralUsages");
                 });
@@ -3340,6 +3486,23 @@ namespace Api_Vapp.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("ApprovalStatus")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasDefaultValue("Pending");
+
+                    b.Property<DateTime?>("ApprovedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("ApprovedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("RejectionReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetime2")
@@ -3387,6 +3550,8 @@ namespace Api_Vapp.Migrations
                     b.HasIndex("Platform");
 
                     b.HasIndex("UserId");
+
+                                        b.HasIndex("ApprovalStatus");
 
                     b.ToTable("SocialMediaLinks");
                 });
@@ -4036,6 +4201,23 @@ namespace Api_Vapp.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("ApprovalStatus")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasDefaultValue("Pending");
+
+                    b.Property<DateTime?>("ApprovedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("ApprovedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("RejectionReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetime2")
@@ -4101,6 +4283,8 @@ namespace Api_Vapp.Migrations
                     b.HasIndex("UserId");
 
                     b.HasIndex("UserId", "IsDeleted", "CreatedAt");
+
+                                        b.HasIndex("ApprovalStatus");
 
                     b.ToTable("UserForms");
                 });
@@ -4817,10 +5001,10 @@ namespace Api_Vapp.Migrations
                     b.Navigation("BusinessCard");
                 });
 
-            modelBuilder.Entity("Api_Vapp.Models.BusinessCardSocialLink", b =>
+            modelBuilder.Entity("Api_Vapp.Models.BusinessCardSliderImage", b =>
                 {
                     b.HasOne("Api_Vapp.Models.BusinessCard", "BusinessCard")
-                        .WithMany("SocialLinks")
+                        .WithMany("SliderImages")
                         .HasForeignKey("BusinessCardId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -4828,10 +5012,10 @@ namespace Api_Vapp.Migrations
                     b.Navigation("BusinessCard");
                 });
 
-            modelBuilder.Entity("Api_Vapp.Models.BusinessCardSliderImage", b =>
+            modelBuilder.Entity("Api_Vapp.Models.BusinessCardSocialLink", b =>
                 {
                     b.HasOne("Api_Vapp.Models.BusinessCard", "BusinessCard")
-                        .WithMany("SliderImages")
+                        .WithMany("SocialLinks")
                         .HasForeignKey("BusinessCardId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -5198,6 +5382,33 @@ namespace Api_Vapp.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Api_Vapp.Models.ReferralContactCode", b =>
+                {
+                    b.HasOne("Api_Vapp.Models.Contact", "Contact")
+                        .WithMany()
+                        .HasForeignKey("ContactId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Api_Vapp.Models.ReferralProgram", "ReferralProgram")
+                        .WithMany()
+                        .HasForeignKey("ReferralProgramId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Api_Vapp.Models.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.Navigation("Contact");
+
+                    b.Navigation("ReferralProgram");
 
                     b.Navigation("User");
                 });

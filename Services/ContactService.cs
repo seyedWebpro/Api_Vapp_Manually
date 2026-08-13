@@ -26,6 +26,7 @@ namespace Api_Vapp.Services
         private readonly ILogger<ContactService> _logger;
         private readonly IFileUploadService _fileUploadService;
         private readonly IUserPushNotifier _pushNotifier;
+        private readonly IAutomatedMessageService _automatedMessageService;
 
         public ContactService(
             IContactRepository contactRepository,
@@ -34,7 +35,8 @@ namespace Api_Vapp.Services
             IAuditService audit,
             ILogger<ContactService> logger,
             IFileUploadService fileUploadService,
-            IUserPushNotifier pushNotifier)
+            IUserPushNotifier pushNotifier,
+            IAutomatedMessageService automatedMessageService)
         {
             _contactRepository = contactRepository;
             _notebookRepository = notebookRepository;
@@ -43,6 +45,7 @@ namespace Api_Vapp.Services
             _logger = logger;
             _fileUploadService = fileUploadService;
             _pushNotifier = pushNotifier;
+            _automatedMessageService = automatedMessageService;
         }
 
         public async Task<ApiResponse<ContactResponseDto>> CreateContactAsync(int userId, CreateContactDto createDto)
@@ -126,7 +129,7 @@ namespace Api_Vapp.Services
                             ContactId = contact.Id,
                             Title = o.Title,
                             // تبدیل تاریخ مناسبت به UTC
-                            Date = o.Date.EnsureUtc(),
+                            Date = o.Date.EnsureDateOnlyUtc(),
                             HasTime = o.HasTime
                         }).ToList();
 
@@ -302,6 +305,18 @@ namespace Api_Vapp.Services
                         NotificationCategory.NewCustomerRegistration,
                         contactPush.Title,
                         contactPush.Body);
+
+                    // پیام خوش‌آمد خودکار — فقط برای مخاطب واقعاً جدید
+                    try
+                    {
+                        await _automatedMessageService.QueueWelcomeMessagesForNewContactAsync(userId, contact.Id);
+                    }
+                    catch (Exception welcomeEx)
+                    {
+                        _logger.LogError(welcomeEx,
+                            "Welcome automation queue failed for contact {ContactId} (contact create succeeded)",
+                            contact.Id);
+                    }
 
                     return ApiResponse<ContactResponseDto>.CreateSuccess(
                         await MapToContactResponseDtoAsync(contactWithInfo!),
@@ -773,7 +788,7 @@ namespace Api_Vapp.Services
                             ContactId = id,
                             Title = o.Title,
                             // تبدیل تاریخ مناسبت به UTC
-                            Date = o.Date.EnsureUtc(),
+                            Date = o.Date.EnsureDateOnlyUtc(),
                             HasTime = o.HasTime
                         }).ToList();
                         

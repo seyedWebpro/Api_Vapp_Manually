@@ -3,7 +3,7 @@ namespace Api_Vapp.Models
     /// <summary>
     /// فرم ساخته‌شده توسط کاربر (فرم‌ساز)
     /// </summary>
-    public class UserForm
+    public class UserForm : IQuickSendApprovable
     {
         public int Id { get; set; }
 
@@ -44,6 +44,15 @@ namespace Api_Vapp.Models
         public DateTime? UpdatedAt { get; set; }
 
         public DateTime? PublishedAt { get; set; }
+
+        /// <summary>وضعیت تأیید ادمین برای ارسال سریع (Pending / Approved / Rejected)</summary>
+        public string ApprovalStatus { get; set; } = "Pending";
+
+        public DateTime? ApprovedAt { get; set; }
+
+        public int? ApprovedByUserId { get; set; }
+
+        public string? RejectionReason { get; set; }
 
         public virtual User User { get; set; } = null!;
 

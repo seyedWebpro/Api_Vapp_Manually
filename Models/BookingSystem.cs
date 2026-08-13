@@ -3,7 +3,7 @@ namespace Api_Vapp.Models
     /// <summary>
     /// سیستم رزرو نوبت — اطلاعات کسب‌وکار و لینک عمومی
     /// </summary>
-    public class BookingSystem
+    public class BookingSystem : IQuickSendApprovable
     {
         public int Id { get; set; }
 
@@ -31,6 +31,11 @@ namespace Api_Vapp.Models
 
         public bool IsActive { get; set; } = true;
 
+        /// <summary>
+        /// بازه مجاز رزرو عمومی به روز — null یعنی استفاده از پیش‌فرض سرور.
+        /// </summary>
+        public int? BookingWindowDays { get; set; }
+
         public bool IsDeleted { get; set; }
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
@@ -38,6 +43,15 @@ namespace Api_Vapp.Models
         public DateTime? UpdatedAt { get; set; }
 
         public DateTime? PublishedAt { get; set; }
+
+        /// <summary>وضعیت تأیید ادمین برای ارسال سریع (Pending / Approved / Rejected)</summary>
+        public string ApprovalStatus { get; set; } = "Pending";
+
+        public DateTime? ApprovedAt { get; set; }
+
+        public int? ApprovedByUserId { get; set; }
+
+        public string? RejectionReason { get; set; }
 
         public virtual User User { get; set; } = null!;
 

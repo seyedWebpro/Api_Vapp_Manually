@@ -245,6 +245,7 @@ namespace Api_Vapp.Services
                 }
 
                 card.UpdatedAt = DateTime.UtcNow;
+                QuickSendContentApprovalHelper.ResetToPending(card);
                 await _context.SaveChangesAsync();
 
                 BusinessCardPublicService.InvalidatePublicCache(_cache, card.Slug);
@@ -391,6 +392,7 @@ namespace Api_Vapp.Services
                 }
 
                 card.UpdatedAt = DateTime.UtcNow;
+                QuickSendContentApprovalHelper.ResetToPending(card);
                 await _context.SaveChangesAsync();
 
                 BusinessCardPublicService.InvalidatePublicCache(_cache, card.Slug);
@@ -462,6 +464,7 @@ namespace Api_Vapp.Services
                     return publishError;
                 }
 
+                QuickSendContentApprovalHelper.ResetToPending(card);
                 await _context.SaveChangesAsync();
 
                 BusinessCardPublicService.InvalidatePublicCache(_cache, card.Slug);
@@ -526,7 +529,10 @@ namespace Api_Vapp.Services
                     IsActive = GetEffectiveIsActive(card),
                     PublicUrl = BuildPublicUrl(card.Slug),
                     CreatedAt = EnsureUtc(card.CreatedAt),
-                    PublishedAt = EnsureUtc(card.PublishedAt)
+                    PublishedAt = EnsureUtc(card.PublishedAt),
+                    ApprovalStatus = card.ApprovalStatus,
+                    RejectionReason = card.RejectionReason,
+                    ApprovedAt = EnsureUtc(card.ApprovedAt)
                 }).ToList();
 
                 return ApiResponse<BusinessCardListResponseDto>.CreateSuccess(new BusinessCardListResponseDto
@@ -807,6 +813,13 @@ namespace Api_Vapp.Services
                         errorCode: ErrorCodes.InvalidInput);
                 }
 
+                var blocked = QuickSendContentApprovalHelper.TryBlockIfNotApproved(
+                    card.ApprovalStatus,
+                    card.RejectionReason,
+                    "کارت ویزیت");
+                if (blocked != null)
+                    return blocked;
+
                 var publicUrl = BuildPublicUrl(card.Slug);
                 if (string.IsNullOrWhiteSpace(publicUrl))
                 {
@@ -870,7 +883,8 @@ namespace Api_Vapp.Services
                         DuplicatePreventionHours = 24,
                         SendToSpecificTags = false
                     },
-                    session);
+                    session,
+                    bypassAdminApproval: true);
 
                 _logger.LogInformation(
                     "ارسال سریع کارت ویزیت انجام شد — MessageId: {MessageId}, ContactId: {ContactId}, BusinessCardId: {BusinessCardId}",
@@ -1465,7 +1479,10 @@ namespace Api_Vapp.Services
                 SocialLinks = MapSocialLinks(card),
                 CreatedAt = EnsureUtc(card.CreatedAt),
                 UpdatedAt = EnsureUtc(card.UpdatedAt),
-                PublishedAt = EnsureUtc(card.PublishedAt)
+                PublishedAt = EnsureUtc(card.PublishedAt),
+                ApprovalStatus = card.ApprovalStatus,
+                RejectionReason = card.RejectionReason,
+                ApprovedAt = EnsureUtc(card.ApprovedAt)
             };
         }
 

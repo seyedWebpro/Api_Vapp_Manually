@@ -43,12 +43,23 @@ Content:   application/json
 
 ## منطق کسب‌وکار (خلاصه)
 
-- هر **برنامه** = **یک کد عمومی** (`PublicCode` مثل `REF482931`) برای همه
-- **کی کد آورده مهم نیست** — inquire/redeem مخاطب را چک نمی‌کند
+- هر **مخاطب** در برنامه = **یک کد معرف شخصی** (`ReferralContactCode` مثل `REF482931`)
+- استعلام/مصرف با کد شخصی → **معرف از روی کد مشخص می‌شود**
+- **inquire** = فقط بررسی (تخفیف مشتری؟ پاداش معرف؟ کی معرف است؟) — چیزی ثبت نمی‌شود
+- **redeem** = ثبت مصرف + در صورت فعال بودن پاداش معرف، **پیامک پاداش به معرف**
+- حالت‌ها:
+  - هر دو پاداش فعال → مشتری تخفیف + معرف پیامک/پاداش
+  - فقط مشتری → فقط تخفیف مشتری، بدون پیامک معرف
+  - فقط معرف → بدون تخفیف مشتری، با هر خرید پیامک پاداش به معرف
+- **امنیت redeem:**
+  - `customerContactId` و `purchaseAmount` الزامی
+  - `idempotencyKey` اختیاری (ضد ثبت تکراری رسید)
+  - خودمعرفی مجاز نیست (مشتری نمی‌تواند کد خودش باشد)
+  - هر کد برای هر خریدار در هر روز فقط یک‌بار
+  - سقف مصرف روزانه هر کد: ۳۰ بار
+  - جمع درصد معرف+مشتری حداکثر ۱۰۰٪
 - **مرحله ۲** = مخاطب + **فیلتر تگ** + تعداد نهایی SMS
 - **مرحله ۳** = فقط تاریخ شروع/پایان + نمایش خلاصه
-- **inquire** = فقط بررسی (منقضی؟ مبلغ تخفیف؟) — چیزی ثبت نمی‌شود
-- **redeem** = ثبت مصرف در تاریخچه
 
 ---
 
@@ -59,6 +70,7 @@ Content:   application/json
 | داشبورد KPI | `GET /dashboard/stats` |
 | لیست برنامه‌ها | `GET /?pageNumber=1&pageSize=10&isActive=` |
 | جزئیات برنامه | `GET /{id}` |
+| کدهای شخصی مخاطبین | `GET /{id}/codes?pageNumber=1&pageSize=20` |
 | فعال/غیرفعال | `POST /{id}/toggle-status` |
 | حذف | `POST /{id}/delete` |
 | ویرایش | `POST /{id}/update` |
@@ -79,7 +91,7 @@ Content:   application/json
 step1  validate-step1   →  draftId
 step2  validate-step2   →  مخاطب + تگ + totalContactsCount
 step3  settings/save    →  تاریخ فقط (خلاصه + contactsCount)
-       confirm           →  ساخت برنامه + PublicCode + SMS
+       confirm           →  ساخت برنامه + کد شخصی برای هر مخاطب + SMS دعوت
 ```
 
 `draftId` را در state نگه دار. اعتبار draft: **۲۴ ساعت**.
@@ -105,6 +117,7 @@ step3  settings/save    →  تاریخ فقط (خلاصه + contactsCount)
   "title": "پاداش نوروز",
   "isActive": true,
   "rewardType": "FixedAmount",
+  "isReferrerRewardActive": true,
   "referrerRewardValue": 50000,
   "isCustomerRewardActive": true,
   "customerRewardValue": 10000
@@ -112,6 +125,8 @@ step3  settings/save    →  تاریخ فقط (خلاصه + contactsCount)
 ```
 
 `rewardType`: `"Percentage"` | `"FixedAmount"`
+
+حداقل یکی از `isReferrerRewardActive` یا `isCustomerRewardActive` باید true باشد.
 
 **پاسخ:**
 ```json

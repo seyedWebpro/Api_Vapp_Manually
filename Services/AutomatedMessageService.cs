@@ -784,16 +784,19 @@ namespace Api_Vapp.Services
 
                 foreach (var automation in birthdayAutomations)
                 {
-                    // دریافت مخاطبینی که امروز تولد دارند
-                    var contactsWithBirthdayToday = await context.Contacts
+                    // دریافت مخاطبینی که امروز تولد دارند (فقط ماه/روز — مثل Background)
+                    var contactsWithBirthday = await context.Contacts
                         .Include(c => c.ContactNotebook)
                         .Include(c => c.AdditionalInfo)
                         .Where(c => !c.IsDeleted
                             && c.ContactNotebook.UserId == userId
                             && c.AdditionalInfo != null
-                            && c.AdditionalInfo.DateOfBirth.HasValue
-                            && c.AdditionalInfo.DateOfBirth.Value.Date == today)
+                            && c.AdditionalInfo.DateOfBirth.HasValue)
                         .ToListAsync();
+
+                    var contactsWithBirthdayToday = contactsWithBirthday
+                        .Where(c => c.AdditionalInfo!.DateOfBirth!.EnsureUtc().IsBirthdayToday(today))
+                        .ToList();
 
                     foreach (var contact in contactsWithBirthdayToday)
                     {
@@ -1578,12 +1581,12 @@ namespace Api_Vapp.Services
         /// </summary>
         private int? CalculateDaysRemaining(DateTime occasionDate, DateTime today)
         {
-            // فقط روز و ماه را در نظر می‌گیریم (سال مهم نیست)
-            var thisYearOccasion = new DateTime(today.Year, occasionDate.Month, occasionDate.Day);
-            var nextYearOccasion = new DateTime(today.Year + 1, occasionDate.Month, occasionDate.Day);
+            // فقط روز و ماه — با پشتیبانی امن از ۲۹ فوریه در سال غیرکبیسه
+            var thisYearOccasion = DateTimeExtensions.SafeDateInYear(today.Year, occasionDate.Month, occasionDate.Day);
+            var nextYearOccasion = DateTimeExtensions.SafeDateInYear(today.Year + 1, occasionDate.Month, occasionDate.Day);
 
             DateTime targetOccasion;
-            if (thisYearOccasion >= today)
+            if (thisYearOccasion.Date >= today.Date)
             {
                 targetOccasion = thisYearOccasion;
             }
@@ -1862,8 +1865,8 @@ namespace Api_Vapp.Services
                     {
                         UserId = userId,
                         Name = managementDto.OccasionName.Trim(),
-                        // تبدیل تاریخ مناسبت به UTC
-                        OccasionDate = managementDto.OccasionDate.Value.EnsureUtc(),
+                        // تاریخ تقویمی مناسبت — نیمه‌شب UTC (بدون شیفت timezone محلی)
+                        OccasionDate = managementDto.OccasionDate.Value.EnsureDateOnlyUtc(),
                         Type = "Custom",
                         IsSystem = false,
                         IsActive = true,
@@ -3004,6 +3007,248 @@ namespace Api_Vapp.Services
 
                 default:
                     return "نامشخص";
+            }
+        }
+
+        /// <summary>
+        /// صف‌بندی پیام خوش‌آمد برای مخاطب جدید — فقط روی create واقعی (نه duplicate).
+        /// </summary>
+        public async Task QueueWelcomeMessagesForNewContactAsync(int userId, int contactId)
+        {
+            try
+            {
+                var contact = await _context.Contacts
+                    .Include(c => c.ContactNotebook)
+                    .FirstOrDefaultAsync(c => c.Id == contactId && !c.IsDeleted);
+
+                if (contact == null || contact.ContactNotebook == null || contact.ContactNotebook.UserId != userId)
+                    return;
+
+                if (string.IsNullOrWhiteSpace(contact.MobileNumber))
+                    return;
+
+                var welcomeAutomations = await _context.AutomatedMessages
+                    .Where(am => am.UserId == userId
+                        && am.AutomationType == AutomationTypeCodes.Welcome
+                        && am.IsActive
+                        && !am.IsDeleted)
+                    .ToListAsync();
+
+                if (welcomeAutomations.Count == 0)
+                    return;
+
+                foreach (var automation in welcomeAutomations)
+                {
+                    // جلوگیری از ارسال تکراری به همین مخاطب
+                    var alreadyQueued = await _context.AutomationExecutions
+                        .AnyAsync(ae => ae.AutomatedMessageId == automation.Id
+                            && ae.ContactId == contact.Id
+                            && (ae.Status == "PendingApproval" || ae.Status == "Success" || ae.Status == "Sent"));
+
+                    if (alreadyQueued)
+                        continue;
+
+                    if (!await IsContactInWelcomeSelectionAsync(automation, contact))
+                        continue;
+
+                    await EnqueueWelcomeContactAsync(automation, contact);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Failed to queue Welcome automation for contact {ContactId}, user {UserId}",
+                    contactId, userId);
+            }
+        }
+
+        private async Task<bool> IsContactInWelcomeSelectionAsync(AutomatedMessage automation, Contact contact)
+        {
+            if (!automation.MessageId.HasValue)
+                return true; // بدون session → همه
+
+            var session = await _context.MessageSessions
+                .AsNoTracking()
+                .Where(s => s.MessageId == automation.MessageId.Value
+                    && s.UserId == automation.UserId
+                    && !s.IsDeleted)
+                .OrderByDescending(s => s.CreatedAt)
+                .FirstOrDefaultAsync();
+
+            if (session == null || string.IsNullOrWhiteSpace(session.SelectionCriteria))
+                return true;
+
+            try
+            {
+                using var doc = JsonDocument.Parse(session.SelectionCriteria);
+                var root = doc.RootElement;
+
+                var applyAll = true;
+                if (root.TryGetProperty("ApplyToAllContacts", out var allProp)
+                    || root.TryGetProperty("applyToAllContacts", out allProp))
+                {
+                    applyAll = allProp.ValueKind == JsonValueKind.True
+                        || (allProp.ValueKind == JsonValueKind.String
+                            && bool.TryParse(allProp.GetString(), out var b) && b);
+                }
+
+                if (applyAll)
+                    return true;
+
+                if ((root.TryGetProperty("ContactNotebookId", out var nbProp)
+                     || root.TryGetProperty("contactNotebookId", out nbProp))
+                    && nbProp.ValueKind != JsonValueKind.Null
+                    && nbProp.TryGetInt32(out var notebookId)
+                    && notebookId > 0
+                    && contact.ContactNotebookId != notebookId)
+                {
+                    return false;
+                }
+
+                if (root.TryGetProperty("ExcludedContactIds", out var exProp)
+                    || root.TryGetProperty("excludedContactIds", out exProp))
+                {
+                    if (exProp.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var item in exProp.EnumerateArray())
+                        {
+                            if (item.TryGetInt32(out var id) && id == contact.Id)
+                                return false;
+                        }
+                    }
+                }
+
+                return true;
+            }
+            catch
+            {
+                return true;
+            }
+        }
+
+        private async Task EnqueueWelcomeContactAsync(AutomatedMessage automation, Contact contact)
+        {
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                string messageContent = automation.MessageContent ?? string.Empty;
+                Message? message = null;
+
+                if (automation.MessageId.HasValue)
+                {
+                    message = await _context.Messages
+                        .FirstOrDefaultAsync(m => m.Id == automation.MessageId.Value && !m.IsDeleted);
+                    if (message != null)
+                        messageContent = message.Content;
+                }
+
+                if (string.IsNullOrWhiteSpace(messageContent))
+                {
+                    _logger.LogWarning("Welcome automation {Id} has empty content — skip", automation.Id);
+                    await transaction.RollbackAsync();
+                    return;
+                }
+
+                if (message == null)
+                {
+                    var pricing = await _smsPricing.GetRuntimeAsync();
+                    int partsCount;
+                    try
+                    {
+                        partsCount = SmsPartsCalculator.CalculateParts(messageContent, pricing.Rules);
+                    }
+                    catch (ArgumentException)
+                    {
+                        await transaction.RollbackAsync();
+                        return;
+                    }
+
+                    message = new Message
+                    {
+                        UserId = automation.UserId,
+                        Title = automation.Title ?? $"خوش‌آمد #{automation.Id}",
+                        Content = messageContent,
+                        CharacterCount = SmsPartsCalculator.CountMessageCharacters(messageContent, pricing.Rules),
+                        PartsCount = partsCount,
+                        IsPersonalized = true,
+                        Status = "Ready",
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    await _context.Messages.AddAsync(message);
+                    await _context.SaveChangesAsync();
+                    automation.MessageId = message.Id;
+                }
+                else if (!message.IsPersonalized)
+                {
+                    message.IsPersonalized = true;
+                    message.UpdatedAt = DateTime.UtcNow;
+                }
+
+                var now = DateTime.UtcNow;
+                var preview = messageContent.Length > 4000 ? messageContent[..4000] : messageContent;
+
+                var campaign = new MessageCampaign
+                {
+                    MessageId = message.Id,
+                    UserId = automation.UserId,
+                    Title = automation.Title ?? $"خودکار — Welcome #{automation.Id}",
+                    SendType = "Automated",
+                    AutomatedMessageId = automation.Id,
+                    RecipientsCount = 1,
+                    PartsCount = message.PartsCount,
+                    Status = "PendingApproval",
+                    AdminApprovalStatus = AdminApprovalStatuses.Pending,
+                    IsActive = true,
+                    CreatedAt = now
+                };
+                await _context.MessageCampaigns.AddAsync(campaign);
+                await _context.SaveChangesAsync();
+
+                await _context.MessageRecipients.AddAsync(new MessageRecipient
+                {
+                    CampaignId = campaign.Id,
+                    ContactId = contact.Id,
+                    MobileNumber = contact.MobileNumber,
+                    FullName = contact.FullName,
+                    Status = "Pending",
+                    CreatedAt = now
+                });
+
+                await _context.AutomationExecutions.AddAsync(new AutomationExecution
+                {
+                    AutomatedMessageId = automation.Id,
+                    ContactId = contact.Id,
+                    ExecutedAt = now,
+                    Status = "PendingApproval",
+                    MessageContent = preview,
+                    SentCount = 0
+                });
+
+                await _context.SmsApprovalRequests.AddAsync(new SmsApprovalRequest
+                {
+                    UserId = automation.UserId,
+                    RequestType = SmsApprovalRequestTypes.Campaign,
+                    MessageCampaignId = campaign.Id,
+                    MessageId = message.Id,
+                    ContentPreview = preview,
+                    TitlePreview = campaign.Title,
+                    RecipientsCount = 1,
+                    Status = AdminApprovalStatuses.Pending,
+                    CreatedAt = now
+                });
+
+                automation.LastExecutedAt = now;
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                _logger.LogInformation(
+                    "Queued Welcome automation {AutomationId} as campaign {CampaignId} for contact {ContactId}",
+                    automation.Id, campaign.Id, contact.Id);
+            }
+            catch
+            {
+                await transaction.RollbackAsync();
+                throw;
             }
         }
 

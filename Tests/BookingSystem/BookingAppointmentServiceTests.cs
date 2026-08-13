@@ -375,4 +375,33 @@ public class BookingAppointmentServiceTests : IAsyncLifetime
 
         return book.Data!.Appointment.Id;
     }
+
+    [Fact]
+    public async Task GetAvailableSlots_PerSystemWindow_UsesConfiguredDays()
+    {
+        var (systemId, _) = await _ctx.CreateConfirmedSystemAsync(s => s.BookingWindowDays = 7);
+        var system = await _ctx.SystemService.GetByIdAsync(systemId, _ctx.OwnerUserId);
+        var serviceId = system.Data!.Services.First().Id;
+        var slug = system.Data.Slug;
+        var date = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(10));
+
+        var result = await _ctx.AppointmentService.GetAvailableSlotsAsync(slug, serviceId, date);
+
+        BookingApiAssertions.AssertFailure(result, 400);
+        Assert.Equal(ErrorCodes.InvalidInput, result.ErrorCode);
+        Assert.Contains("7", result.Message);
+    }
+
+    [Fact]
+    public async Task GetPublicSystem_ReturnsEffectiveBookingWindowFromSystem()
+    {
+        var (systemId, _) = await _ctx.CreateConfirmedSystemAsync(s => s.BookingWindowDays = 14);
+        var slug = (await _ctx.SystemService.GetByIdAsync(systemId, _ctx.OwnerUserId)).Data!.Slug;
+
+        var result = await _ctx.AppointmentService.GetPublicSystemAsync(slug);
+
+        BookingApiAssertions.AssertSuccess(result);
+        Assert.Equal(14, result.Data!.BookingWindowDays);
+        Assert.Equal(DateOnly.FromDateTime(DateTime.UtcNow).AddDays(14), result.Data.BookingWindowEndDate);
+    }
 }

@@ -23,6 +23,11 @@ namespace Api_Vapp.Models
 
         public int? ReferrerContactId { get; set; }
 
+        /// <summary>
+        /// کلید یکتای رسید فروشگاه (ضد ثبت تکراری)
+        /// </summary>
+        public string? IdempotencyKey { get; set; }
+
         public string Status { get; set; } = ReferralUsageStatuses.Completed;
 
         public string? Description { get; set; }

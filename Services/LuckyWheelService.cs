@@ -212,6 +212,7 @@ namespace Api_Vapp.Services
                 }
 
                 wheel.UpdatedAt = DateTime.UtcNow;
+                QuickSendContentApprovalHelper.ResetToPending(wheel);
                 await _context.SaveChangesAsync();
 
                 await _audit.WriteAsync(new AuditEntry
@@ -287,6 +288,7 @@ namespace Api_Vapp.Services
                 }
 
                 wheel.UpdatedAt = DateTime.UtcNow;
+                QuickSendContentApprovalHelper.ResetToPending(wheel);
                 await _context.SaveChangesAsync();
 
                 var message = addDto.Items.Count == 1
@@ -382,6 +384,7 @@ namespace Api_Vapp.Services
                 }
 
                 wheel.UpdatedAt = DateTime.UtcNow;
+                QuickSendContentApprovalHelper.ResetToPending(wheel);
                 await _context.SaveChangesAsync();
 
                 return ApiResponse<LuckyWheelResponseDto>.CreateSuccess(
@@ -483,6 +486,7 @@ namespace Api_Vapp.Services
                 wheel.IsActive = true;
                 wheel.PublishedAt = DateTime.UtcNow;
                 wheel.UpdatedAt = DateTime.UtcNow;
+                QuickSendContentApprovalHelper.ResetToPending(wheel);
 
                 await _context.SaveChangesAsync();
 
@@ -549,7 +553,10 @@ namespace Api_Vapp.Services
                         PublicUrl = BuildPublicUrl(wheel.Slug),
                         ParticipantCount = await _luckyWheelRepository.GetParticipantCountAsync(wheel.Id),
                         CreatedAt = EnsureUtc(wheel.CreatedAt),
-                        PublishedAt = EnsureUtc(wheel.PublishedAt)
+                        PublishedAt = EnsureUtc(wheel.PublishedAt),
+                        ApprovalStatus = wheel.ApprovalStatus,
+                        RejectionReason = wheel.RejectionReason,
+                        ApprovedAt = EnsureUtc(wheel.ApprovedAt)
                     });
                 }
 
@@ -888,6 +895,13 @@ namespace Api_Vapp.Services
                         errorCode: ErrorCodes.InvalidInput);
                 }
 
+                var blocked = QuickSendContentApprovalHelper.TryBlockIfNotApproved(
+                    wheel.ApprovalStatus,
+                    wheel.RejectionReason,
+                    "گردونه");
+                if (blocked != null)
+                    return blocked;
+
                 var publicUrl = BuildPublicUrl(wheel.Slug);
                 if (string.IsNullOrWhiteSpace(publicUrl))
                 {
@@ -951,7 +965,8 @@ namespace Api_Vapp.Services
                         DuplicatePreventionHours = 24,
                         SendToSpecificTags = false
                     },
-                    session);
+                    session,
+                    bypassAdminApproval: true);
 
                 _logger.LogInformation(
                     "ارسال سریع گردونه انجام شد — MessageId: {MessageId}, ContactId: {ContactId}, LuckyWheelId: {LuckyWheelId}",
@@ -1076,7 +1091,10 @@ namespace Api_Vapp.Services
                     .ToList(),
                 CreatedAt = EnsureUtc(wheel.CreatedAt),
                 UpdatedAt = EnsureUtc(wheel.UpdatedAt),
-                PublishedAt = EnsureUtc(wheel.PublishedAt)
+                PublishedAt = EnsureUtc(wheel.PublishedAt),
+                ApprovalStatus = wheel.ApprovalStatus,
+                RejectionReason = wheel.RejectionReason,
+                ApprovedAt = EnsureUtc(wheel.ApprovedAt)
             };
         }
 
