@@ -368,6 +368,74 @@ public class ReferralProgramServiceTests : IAsyncLifetime
         Assert.True(result.Success);
         Assert.Equal(200, result.StatusCode);
         Assert.False(result.Data!.IsValid);
+        Assert.Contains("یافت نشد", result.Data.InvalidReason);
+        Assert.Contains("REF123456", result.Data.StatusMessage);
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task Inquire_NotStartedProgram_ReturnsStartDateAndDetailedMessage()
+    {
+        var (programId, personalCode, _) = await _ctx.CreateConfirmedProgramAsync();
+
+        var program = await _ctx.Context.ReferralPrograms.FirstAsync(p => p.Id == programId);
+        program.StartDate = DateTime.UtcNow.AddDays(5);
+        program.EndDate = DateTime.UtcNow.AddDays(20);
+        await _ctx.Context.SaveChangesAsync();
+
+        var result = await _ctx.Service.InquireCodeAsync(_ctx.OwnerUserId, new InquireReferralCodeDto
+        {
+            Code = personalCode,
+            PurchaseAmount = 100_000m
+        });
+
+        Assert.True(result.Success);
+        Assert.False(result.Data!.IsValid);
+        Assert.True(result.Data.IsNotStarted);
+        Assert.Contains("هنوز شروع نشده", result.Data.InvalidReason);
+        Assert.NotNull(result.Data.StartDate);
+        Assert.Equal(program.Title, result.Data.ProgramName);
+        Assert.Null(result.Data.ReferrerContactId);
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task Inquire_InactiveProgram_ReturnsInactiveMessage()
+    {
+        var (programId, personalCode, _) = await _ctx.CreateConfirmedProgramAsync();
+
+        var program = await _ctx.Context.ReferralPrograms.FirstAsync(p => p.Id == programId);
+        program.IsActive = false;
+        await _ctx.Context.SaveChangesAsync();
+
+        var result = await _ctx.Service.InquireCodeAsync(_ctx.OwnerUserId, new InquireReferralCodeDto
+        {
+            Code = personalCode
+        });
+
+        Assert.True(result.Success);
+        Assert.False(result.Data!.IsValid);
+        Assert.False(result.Data.IsActive);
+        Assert.Contains("غیرفعال", result.Data.InvalidReason);
+        Assert.Equal(program.Title, result.Data.ProgramName);
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task Inquire_PublicProgramCode_ExplainsPersonalCodeIsRequired()
+    {
+        var (programId, _, _) = await _ctx.CreateConfirmedProgramAsync();
+        var program = await _ctx.Context.ReferralPrograms.AsNoTracking().FirstAsync(p => p.Id == programId);
+
+        var result = await _ctx.Service.InquireCodeAsync(_ctx.OwnerUserId, new InquireReferralCodeDto
+        {
+            Code = program.PublicCode
+        });
+
+        Assert.True(result.Success);
+        Assert.False(result.Data!.IsValid);
+        Assert.Contains("شناسه برنامه", result.Data.InvalidReason);
+        Assert.Contains("کد شخصی", result.Data.InvalidReason);
         AssertNoServerError(result);
     }
 
@@ -390,6 +458,9 @@ public class ReferralProgramServiceTests : IAsyncLifetime
         Assert.True(result.Success);
         Assert.False(result.Data!.IsValid);
         Assert.True(result.Data.IsExpired);
+        Assert.Contains("به پایان رسیده", result.Data.InvalidReason);
+        Assert.NotNull(result.Data.StartDate);
+        Assert.NotNull(result.Data.EndDate);
         Assert.Null(result.Data.ReferrerContactId);
         Assert.Null(result.Data.ReferrerContactMobile);
         Assert.Null(result.Data.CustomerDiscountAmount);

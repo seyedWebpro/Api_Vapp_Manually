@@ -34,6 +34,9 @@ namespace Api_Vapp.DTOs.User
 
         public bool IsActive { get; set; }
         public bool IsPhoneVerified { get; set; }
+
+        /// <summary>اگر true باشد، اپ می‌تواند شماره‌های کامل شماره‌جو را نشان دهد</summary>
+        public bool CanViewNumberSeekerPhones { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
         public DateTime? LastLoginAt { get; set; }

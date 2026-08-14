@@ -30,6 +30,7 @@ namespace Api_Vapp.Services
         private readonly ILogger<CashbackService> _logger;
         private readonly ISmsPricingService _smsPricing;
         private readonly IUserPushNotifier _pushNotifier;
+        private readonly INumberSeekerPhoneAccessService _phoneAccess;
         private const int DraftExpirationHours = 24; // draft به مدت 24 ساعت معتبر است
 
         public CashbackService(
@@ -44,7 +45,8 @@ namespace Api_Vapp.Services
             IAuditService audit,
             ILogger<CashbackService> logger,
             ISmsPricingService smsPricing,
-            IUserPushNotifier pushNotifier)
+            IUserPushNotifier pushNotifier,
+            INumberSeekerPhoneAccessService phoneAccess)
         {
             _context = context;
             _cashbackRepository = cashbackRepository;
@@ -58,6 +60,7 @@ namespace Api_Vapp.Services
             _logger = logger;
             _smsPricing = smsPricing;
             _pushNotifier = pushNotifier;
+            _phoneAccess = phoneAccess;
         }
 
         public async Task<ApiResponse<CashbackListDto>> GetCashbacksAsync(int userId, int pageNumber = 1, int pageSize = 10, bool? isActive = null)
@@ -2330,11 +2333,17 @@ namespace Api_Vapp.Services
                     }
                 }
 
+                var canViewPhones = await _phoneAccess.CanViewPhonesAsync(userId);
+                var displayMobile = PhoneNumberMasker.ForClient(
+                    contact.MobileNumber,
+                    contact.HideMobileNumber,
+                    canViewPhones);
+
                 var summary = new ContactCashbackSummaryDto
                 {
                     ContactId = contactId,
-                    ContactName = contact.FullName ?? contact.MobileNumber,
-                    MobileNumber = contact.MobileNumber,
+                    ContactName = contact.FullName ?? displayMobile,
+                    MobileNumber = displayMobile,
                     TotalCashback = totalFromTransactions,
                     FormattedTotalCashback = $"{totalFromTransactions:N0} تومان",
                     UsableCashback = totalFromTransactions, // در این ورژن، همه موجودی قابل استفاده است

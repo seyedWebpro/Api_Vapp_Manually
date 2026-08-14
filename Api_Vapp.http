@@ -243,6 +243,26 @@ Content-Type: application/json
 ### لیست مخاطبین کاربر (برای UI چک‌باکس)
 GET {{Api_Vapp_HostAddress}}/api/Contact/mine?pageNumber=1&pageSize=20&searchTerm=
 
+### انتخاب گیرندگان — چند دفترچه تلفن (Notebook)
+POST {{Api_Vapp_HostAddress}}/api/Message/recipients/select
+Content-Type: application/json
+
+{
+  "messageId": 1,
+  "selectionType": "Notebook",
+  "contactNotebookIds": [1, 2]
+}
+
+### انتخاب گیرندگان — یک دفترچه (سازگاری)
+POST {{Api_Vapp_HostAddress}}/api/Message/recipients/select
+Content-Type: application/json
+
+{
+  "messageId": 1,
+  "selectionType": "Notebook",
+  "contactNotebookId": 1
+}
+
 ### انتخاب گیرندگان — ContactIds (انتخاب دستی)
 POST {{Api_Vapp_HostAddress}}/api/Message/recipients/select
 Content-Type: application/json
@@ -359,6 +379,15 @@ Authorization: Bearer {{token}}
   "contactNotebookId": 1,
   "contactNamePrefix": "رستوران",
   "force": false
+}
+
+### ادمین — مجوز مشاهده شماره کامل شماره‌جو برای یک کاربر
+POST {{Api_Vapp_HostAddress}}/api/User/1/update
+Content-Type: application/json
+Authorization: Bearer {{adminToken}}
+
+{
+  "canViewNumberSeekerPhones": true
 }
 
 ### سلامت

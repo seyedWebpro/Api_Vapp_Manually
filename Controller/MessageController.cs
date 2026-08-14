@@ -736,6 +736,11 @@ namespace Api_Vapp.Controller
         /// - ContactIds: انتخاب دستی مخاطبین از لیست (شناسه‌های تیک‌خورده در UI)
         /// - Individual: وارد کردن مستقیم شماره موبایل
         /// 
+        /// **نمونه انتخاب چند دفترچه (Notebook):**
+        /// ```json
+        /// { "messageId": 1, "selectionType": "Notebook", "contactNotebookIds": [3, 7, 12] }
+        /// ```
+        /// 
         /// **نمونه انتخاب دستی (ContactIds):**
         /// ```json
         /// { "messageId": 1, "selectionType": "ContactIds", "contactIds": [12, 45, 78] }
@@ -759,7 +764,8 @@ namespace Api_Vapp.Controller
             if (!ModelState.IsValid)
             {
                 var errors = ExtractModelStateErrors();
-                return StatusCode(400, ApiResponse<RecipientListResponseDto>.BadRequest("داده‌های ورودی نامعتبر است", errors));
+                return StatusCode(400, ApiResponse<RecipientListResponseDto>.BadRequest(
+                    "داده‌های ورودی نامعتبر است", errors, ErrorCodes.ValidationFailed));
             }
 
             var userId = await GetCurrentUserIdAsync();

@@ -431,6 +431,7 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.IBookingAppointmentService, Api_V
 builder.Services.Configure<NumberSeekerOptions>(builder.Configuration.GetSection(NumberSeekerOptions.SectionName));
 builder.Services.AddScoped<Api_Vapp.Interfaces.INumberSeekerTaskRepository, Api_Vapp.Repositories.NumberSeekerTaskRepository>();
 builder.Services.AddSingleton<Api_Vapp.Interfaces.INumberSeekerRateLimiter, Api_Vapp.Services.NumberSeekerRateLimiter>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.INumberSeekerPhoneAccessService, Api_Vapp.Services.NumberSeekerPhoneAccessService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.INumberSeekerService, Api_Vapp.Services.NumberSeekerService>();
 
 // ثبت سرویس تنظیمات اعلان‌ها و FCM

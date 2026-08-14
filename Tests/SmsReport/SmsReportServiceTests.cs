@@ -89,6 +89,77 @@ public class SmsReportServiceTests
     }
 
     [Fact]
+    public async Task GetSendBatches_GroupsDirectMessagePhonebookRecipients_IntoOneRow()
+    {
+        var repo = new FakeSmsDeliveryRecordRepository();
+        repo.SeedRecord(7, 5001, "09121111111", "متن دفترچه", SmsDeliveryCategories.PendingSync, "تخفیف تابستان", SmsSourceModules.MessageDirect, campaignId: 44);
+        repo.SeedRecord(7, 5002, "09122222222", "متن دفترچه", SmsDeliveryCategories.PendingSync, "تخفیف تابستان", SmsSourceModules.MessageDirect, campaignId: 44);
+        repo.SeedRecord(7, 5003, "09123333333", "متن دفترچه", SmsDeliveryCategories.DeliveredToPhone, "تخفیف تابستان", SmsSourceModules.MessageDirect, campaignId: 44);
+        repo.SeedRecord(7, 6001, "09124444444", "پاداش", SmsDeliveryCategories.DeliveredToPhone, "پاداش ها", SmsSourceModules.ReferralProgram, campaignId: null);
+        var service = CreateService(repo);
+
+        var result = await service.GetSendBatchesAsync(7, new SmsSendListFilterDto
+        {
+            DateRangePreset = SmsReportDateRangePresets.Custom,
+            FromDate = DateTime.UtcNow.AddDays(-1),
+            ToDate = DateTime.UtcNow.AddDays(1),
+            PageNumber = 1,
+            PageSize = 20
+        });
+
+        Assert.True(result.Success);
+        Assert.Equal(2, result.Data!.TotalCount);
+        var phonebookSend = Assert.Single(result.Data.Items, x => x.SourceModule == SmsSourceModules.MessageDirect);
+        Assert.Equal(44, phonebookSend.SendId);
+        Assert.Equal(44, phonebookSend.SourceEntityId);
+        Assert.Equal(3, phonebookSend.SendCount);
+        Assert.Equal(5001, phonebookSend.Sid);
+        Assert.False(phonebookSend.IsCampaignBatch);
+        Assert.Equal("تخفیف تابستان", phonebookSend.Title);
+
+        var reward = Assert.Single(result.Data.Items, x => x.SourceModule == SmsSourceModules.ReferralProgram);
+        Assert.Equal(6001, reward.Sid);
+        Assert.Equal(1, reward.SendCount);
+    }
+
+    [Fact]
+    public async Task GetSendBatchDetail_ExpandsDirectMessageWhenAnyRecipientSidProvided()
+    {
+        var repo = new FakeSmsDeliveryRecordRepository();
+        repo.SeedRecord(7, 5001, "09121111111", "متن دفترچه", SmsDeliveryCategories.PendingSync, "پیام #44", SmsSourceModules.MessageDirect, campaignId: 44);
+        repo.SeedRecord(7, 5002, "09122222222", "متن دفترچه", SmsDeliveryCategories.DeliveredToPhone, "پیام #44", SmsSourceModules.MessageDirect, campaignId: 44);
+        var service = CreateService(repo);
+
+        var result = await service.GetSendBatchDetailAsync(7, 5002);
+
+        Assert.True(result.Success);
+        Assert.False(result.Data!.IsCampaignBatch);
+        Assert.Equal(44, result.Data.SendId);
+        Assert.Equal(2, result.Data.SendCount);
+        Assert.Equal(2, result.Data.Summary.Total);
+    }
+
+    [Fact]
+    public async Task GetRecipientsBySid_ReturnsAllDirectMessagePhonebookRecipients()
+    {
+        var repo = new FakeSmsDeliveryRecordRepository();
+        repo.SeedRecord(7, 5001, "09121111111", "متن", SmsDeliveryCategories.PendingSync, "پیام #44", SmsSourceModules.MessageDirect, campaignId: 44);
+        repo.SeedRecord(7, 5002, "09122222222", "متن", SmsDeliveryCategories.PendingSync, "پیام #44", SmsSourceModules.MessageDirect, campaignId: 44);
+        var service = CreateService(repo);
+
+        var result = await service.GetRecipientsAsync(7, 5002, new SmsSendRecipientFilterDto
+        {
+            PageNumber = 1,
+            PageSize = 20
+        });
+
+        Assert.True(result.Success);
+        Assert.Equal(44, result.Data!.SendId);
+        Assert.Equal(2, result.Data.TotalCount);
+        Assert.Equal(2, result.Data.Items.Count);
+    }
+
+    [Fact]
     public async Task GetSendBatchDetail_ExpandsCampaignWhenAnyRecipientSidProvided()
     {
         var repo = new FakeSmsDeliveryRecordRepository();
@@ -273,7 +344,17 @@ public class SmsReportServiceTests
             new FakeTrackingService(),
             new FakeSmsPricingService(),
             config,
-            NullLogger<SmsReportService>.Instance);
+            NullLogger<SmsReportService>.Instance,
+            new FakeNumberSeekerPhoneAccess());
+    }
+
+    private sealed class FakeNumberSeekerPhoneAccess : INumberSeekerPhoneAccessService
+    {
+        public Task<bool> CanViewPhonesAsync(int userId, CancellationToken cancellationToken = default)
+            => Task.FromResult(true);
+
+        public Task<HashSet<string>> GetHiddenMobileNumbersAsync(int userId, CancellationToken cancellationToken = default)
+            => Task.FromResult(new HashSet<string>(StringComparer.Ordinal));
     }
 
     private sealed class FakeSmsPricingService : ISmsPricingService
@@ -374,26 +455,31 @@ public class SmsReportServiceTests
 
         public Task<(List<SmsSendBatchProjection> Items, int TotalCount)> GetSendBatchesAsync(int userId, SmsSendListFilterDto filter)
         {
-            var campaignModule = SmsSourceModules.MessageCampaign;
+            var groupedModules = new[]
+            {
+                SmsSourceModules.MessageCampaign,
+                SmsSourceModules.MessageDirect,
+                SmsSourceModules.AutomatedMessage
+            };
             var userRecords = _records.Where(r => r.UserId == userId && !r.IsDeleted).ToList();
 
-            var campaignItems = userRecords
-                .Where(r => r.SourceModule == campaignModule && r.SourceEntityId != null)
-                .GroupBy(r => r.SourceEntityId!.Value)
+            var entityItems = userRecords
+                .Where(r => r.SourceEntityId != null && groupedModules.Contains(r.SourceModule))
+                .GroupBy(r => new { r.SourceModule, EntityId = r.SourceEntityId!.Value })
                 .Select(g => new SmsSendBatchProjection
                 {
                     Sid = g.Min(x => x.Sid),
-                    SendId = g.Key,
-                    IsCampaignBatch = true,
+                    SendId = g.Key.EntityId,
+                    IsCampaignBatch = g.Key.SourceModule == SmsSourceModules.MessageCampaign,
                     Title = g.Max(x => x.SourceEntityLabel),
-                    SourceModule = campaignModule,
-                    SourceEntityId = g.Key,
+                    SourceModule = g.Key.SourceModule,
+                    SourceEntityId = g.Key.EntityId,
                     SendCount = g.Count(),
                     SentAt = g.Min(x => x.SentAt)
                 });
 
             var sidItems = userRecords
-                .Where(r => !(r.SourceModule == campaignModule && r.SourceEntityId != null))
+                .Where(r => r.SourceEntityId == null || !groupedModules.Contains(r.SourceModule))
                 .GroupBy(r => r.Sid)
                 .Select(g => new SmsSendBatchProjection
                 {
@@ -407,15 +493,15 @@ public class SmsReportServiceTests
                     SentAt = g.Min(x => x.SentAt)
                 });
 
-            var items = campaignItems.Concat(sidItems).OrderByDescending(x => x.SentAt).ToList();
+            var items = entityItems.Concat(sidItems).OrderByDescending(x => x.SentAt).ToList();
             return Task.FromResult((items, items.Count));
         }
 
         public Task<SmsSendBatchProjection?> GetSendBatchBySidAsync(int userId, long sid)
         {
-            var campaignId = TryResolveCampaignIdBySidAsync(userId, sid).Result;
-            if (campaignId.HasValue)
-                return GetSendBatchByCampaignAsync(userId, campaignId.Value);
+            var grouped = TryResolveGroupedBatchBySidAsync(userId, sid).Result;
+            if (grouped.HasValue)
+                return GetSendBatchByModuleEntityAsync(userId, grouped.Value.SourceModule, grouped.Value.EntityId);
 
             var items = _records.Where(r => r.UserId == userId && r.Sid == sid && !r.IsDeleted).ToList();
             if (items.Count == 0)
@@ -434,24 +520,27 @@ public class SmsReportServiceTests
             });
         }
 
-        public Task<SmsSendBatchProjection?> GetSendBatchByCampaignAsync(int userId, int campaignId)
+        public Task<SmsSendBatchProjection?> GetSendBatchByCampaignAsync(int userId, int campaignId) =>
+            GetSendBatchByModuleEntityAsync(userId, SmsSourceModules.MessageCampaign, campaignId);
+
+        private Task<SmsSendBatchProjection?> GetSendBatchByModuleEntityAsync(int userId, string sourceModule, int entityId)
         {
             var items = _records.Where(r =>
                 r.UserId == userId
                 && !r.IsDeleted
-                && r.SourceModule == SmsSourceModules.MessageCampaign
-                && r.SourceEntityId == campaignId).ToList();
+                && r.SourceModule == sourceModule
+                && r.SourceEntityId == entityId).ToList();
             if (items.Count == 0)
                 return Task.FromResult<SmsSendBatchProjection?>(null);
 
             return Task.FromResult<SmsSendBatchProjection?>(new SmsSendBatchProjection
             {
                 Sid = items.Min(x => x.Sid),
-                SendId = campaignId,
-                IsCampaignBatch = true,
+                SendId = entityId,
+                IsCampaignBatch = sourceModule == SmsSourceModules.MessageCampaign,
                 Title = items.Max(x => x.SourceEntityLabel),
-                SourceModule = SmsSourceModules.MessageCampaign,
-                SourceEntityId = campaignId,
+                SourceModule = sourceModule,
+                SourceEntityId = entityId,
                 SendCount = items.Count,
                 SentAt = items.Min(x => x.SentAt)
             });
@@ -460,44 +549,54 @@ public class SmsReportServiceTests
         public async Task<(List<SmsDeliveryRecord> Items, int TotalCount)> GetRecipientsBySidAsync(
             int userId, long sid, SmsSendRecipientFilterDto filter)
         {
-            var campaignId = await TryResolveCampaignIdBySidAsync(userId, sid);
-            if (campaignId.HasValue)
-                return await GetRecipientsByCampaignAsync(userId, campaignId.Value, filter);
+            var grouped = await TryResolveGroupedBatchBySidAsync(userId, sid);
+            if (grouped.HasValue)
+                return await GetRecipientsByModuleEntityAsync(
+                    userId, grouped.Value.SourceModule, grouped.Value.EntityId);
 
             var items = _records.Where(r => r.UserId == userId && r.Sid == sid && !r.IsDeleted).ToList();
             return (items, items.Count);
         }
 
         public Task<(List<SmsDeliveryRecord> Items, int TotalCount)> GetRecipientsByCampaignAsync(
-            int userId, int campaignId, SmsSendRecipientFilterDto filter)
+            int userId, int campaignId, SmsSendRecipientFilterDto filter) =>
+            GetRecipientsByModuleEntityAsync(userId, SmsSourceModules.MessageCampaign, campaignId);
+
+        private Task<(List<SmsDeliveryRecord> Items, int TotalCount)> GetRecipientsByModuleEntityAsync(
+            int userId, string sourceModule, int entityId)
         {
             var items = _records.Where(r =>
                 r.UserId == userId
                 && !r.IsDeleted
-                && r.SourceModule == SmsSourceModules.MessageCampaign
-                && r.SourceEntityId == campaignId).ToList();
+                && r.SourceModule == sourceModule
+                && r.SourceEntityId == entityId).ToList();
             return Task.FromResult((items, items.Count));
         }
 
         public async Task<List<SmsDeliveryRecord>> GetAllRecipientsBySidForExportAsync(
             int userId, long sid, SmsSendRecipientFilterDto filter, int maxRows)
         {
-            var campaignId = await TryResolveCampaignIdBySidAsync(userId, sid);
-            if (campaignId.HasValue)
-                return await GetAllRecipientsByCampaignForExportAsync(userId, campaignId.Value, filter, maxRows);
+            var grouped = await TryResolveGroupedBatchBySidAsync(userId, sid);
+            if (grouped.HasValue)
+                return await GetAllRecipientsByModuleEntityForExportAsync(
+                    userId, grouped.Value.SourceModule, grouped.Value.EntityId, maxRows);
 
             var items = _records.Where(r => r.UserId == userId && r.Sid == sid && !r.IsDeleted).Take(maxRows).ToList();
             return items;
         }
 
         public Task<List<SmsDeliveryRecord>> GetAllRecipientsByCampaignForExportAsync(
-            int userId, int campaignId, SmsSendRecipientFilterDto filter, int maxRows)
+            int userId, int campaignId, SmsSendRecipientFilterDto filter, int maxRows) =>
+            GetAllRecipientsByModuleEntityForExportAsync(userId, SmsSourceModules.MessageCampaign, campaignId, maxRows);
+
+        private Task<List<SmsDeliveryRecord>> GetAllRecipientsByModuleEntityForExportAsync(
+            int userId, string sourceModule, int entityId, int maxRows)
         {
             var items = _records.Where(r =>
                     r.UserId == userId
                     && !r.IsDeleted
-                    && r.SourceModule == SmsSourceModules.MessageCampaign
-                    && r.SourceEntityId == campaignId)
+                    && r.SourceModule == sourceModule
+                    && r.SourceEntityId == entityId)
                 .Take(maxRows)
                 .ToList();
             return Task.FromResult(items);
@@ -505,9 +604,9 @@ public class SmsReportServiceTests
 
         public async Task<SmsDeliverySummaryDto> GetSummaryBySidAsync(int userId, long sid, SmsSendRecipientFilterDto? filter = null)
         {
-            var campaignId = await TryResolveCampaignIdBySidAsync(userId, sid);
-            if (campaignId.HasValue)
-                return await GetSummaryByCampaignAsync(userId, campaignId.Value, filter);
+            var grouped = await TryResolveGroupedBatchBySidAsync(userId, sid);
+            if (grouped.HasValue)
+                return await GetSummaryByModuleEntityAsync(userId, grouped.Value.SourceModule, grouped.Value.EntityId);
 
             var items = _records.Where(r => r.UserId == userId && r.Sid == sid && !r.IsDeleted).ToList();
             return new SmsDeliverySummaryDto
@@ -518,13 +617,16 @@ public class SmsReportServiceTests
             };
         }
 
-        public Task<SmsDeliverySummaryDto> GetSummaryByCampaignAsync(int userId, int campaignId, SmsSendRecipientFilterDto? filter = null)
+        public Task<SmsDeliverySummaryDto> GetSummaryByCampaignAsync(int userId, int campaignId, SmsSendRecipientFilterDto? filter = null) =>
+            GetSummaryByModuleEntityAsync(userId, SmsSourceModules.MessageCampaign, campaignId);
+
+        private Task<SmsDeliverySummaryDto> GetSummaryByModuleEntityAsync(int userId, string sourceModule, int entityId)
         {
             var items = _records.Where(r =>
                 r.UserId == userId
                 && !r.IsDeleted
-                && r.SourceModule == SmsSourceModules.MessageCampaign
-                && r.SourceEntityId == campaignId).ToList();
+                && r.SourceModule == sourceModule
+                && r.SourceEntityId == entityId).ToList();
             return Task.FromResult(new SmsDeliverySummaryDto
             {
                 Total = items.Count,
@@ -543,20 +645,31 @@ public class SmsReportServiceTests
                 && r.SourceModule == SmsSourceModules.MessageCampaign
                 && r.SourceEntityId == campaignId));
 
-        public Task<int?> TryResolveCampaignIdBySidAsync(int userId, long sid)
+        public async Task<int?> TryResolveCampaignIdBySidAsync(int userId, long sid)
+        {
+            var grouped = await TryResolveGroupedBatchBySidAsync(userId, sid);
+            if (grouped.HasValue && grouped.Value.SourceModule == SmsSourceModules.MessageCampaign)
+                return grouped.Value.EntityId;
+            return null;
+        }
+
+        public Task<(string SourceModule, int EntityId)?> TryResolveGroupedBatchBySidAsync(int userId, long sid)
         {
             var hit = _records.FirstOrDefault(r => r.UserId == userId && r.Sid == sid && !r.IsDeleted);
-            if (hit?.SourceModule == SmsSourceModules.MessageCampaign && hit.SourceEntityId.HasValue)
-                return Task.FromResult<int?>(hit.SourceEntityId.Value);
-            return Task.FromResult<int?>(null);
+            if (hit?.SourceEntityId != null && SmsSourceModules.IsGroupedReportModule(hit.SourceModule))
+                return Task.FromResult<(string, int)?>((hit.SourceModule, hit.SourceEntityId.Value));
+            return Task.FromResult<(string, int)?>(null);
         }
 
         public Task<List<long>> GetDistinctSidsByCampaignAsync(int userId, int campaignId) =>
+            GetDistinctSidsByModuleEntityAsync(userId, SmsSourceModules.MessageCampaign, campaignId);
+
+        public Task<List<long>> GetDistinctSidsByModuleEntityAsync(int userId, string sourceModule, int entityId) =>
             Task.FromResult(_records
                 .Where(r => r.UserId == userId
                     && !r.IsDeleted
-                    && r.SourceModule == SmsSourceModules.MessageCampaign
-                    && r.SourceEntityId == campaignId
+                    && r.SourceModule == sourceModule
+                    && r.SourceEntityId == entityId
                     && r.Sid > 0)
                 .Select(r => r.Sid)
                 .Distinct()

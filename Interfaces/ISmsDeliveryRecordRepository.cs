@@ -32,7 +32,12 @@ namespace Api_Vapp.Interfaces
         /// اگر Sid متعلق به کمپین پیامکی باشد، شناسه کمپین را برمی‌گرداند تا کل دسته expand شود.
         /// </summary>
         Task<int?> TryResolveCampaignIdBySidAsync(int userId, long sid);
+        /// <summary>
+        /// اگر Sid متعلق به ارسال گروهی (کمپین / پیام مستقیم / پیام خودکار) باشد، ماژول و شناسه موجودیت را برمی‌گرداند.
+        /// </summary>
+        Task<(string SourceModule, int EntityId)?> TryResolveGroupedBatchBySidAsync(int userId, long sid);
         Task<List<long>> GetDistinctSidsByCampaignAsync(int userId, int campaignId);
+        Task<List<long>> GetDistinctSidsByModuleEntityAsync(int userId, string sourceModule, int entityId);
         Task<List<SmsDeliveryRecord>> GetSentRecordsBySidForUserAsync(int userId, long sid);
         Task<string?> GetSampleMessageTextBySidAsync(int userId, long sid);
         Task<string?> GetSampleMessageTextByCampaignAsync(int userId, int campaignId);

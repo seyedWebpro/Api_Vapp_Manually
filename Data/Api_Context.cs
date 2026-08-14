@@ -111,6 +111,9 @@ namespace Api_Vapp.Data
                 entity.Property(u => u.IsPhoneVerified)
                     .HasDefaultValue(false);
 
+                entity.Property(u => u.CanViewNumberSeekerPhones)
+                    .HasDefaultValue(false);
+
                 entity.Property(u => u.IsDeleted)
                     .HasDefaultValue(false);
 
@@ -302,6 +305,9 @@ namespace Api_Vapp.Data
                     .IsRequired()
                     .HasMaxLength(20);
 
+                entity.Property(c => c.HideMobileNumber)
+                    .HasDefaultValue(false);
+
                 entity.Property(c => c.FullName)
                     .HasMaxLength(200);
 
@@ -326,6 +332,7 @@ namespace Api_Vapp.Data
                 // ایندکس‌ها
                 entity.HasIndex(c => c.ContactNotebookId);
                 entity.HasIndex(c => c.MobileNumber);
+                entity.HasIndex(c => c.HideMobileNumber);
                 entity.HasIndex(c => c.IsDeleted);
                 entity.HasIndex(c => new { c.ContactNotebookId, c.MobileNumber })
                     .IsUnique()

@@ -26,6 +26,9 @@ namespace Api_Vapp.DTOs.User
         public bool IsActive { get; set; } = true;
 
         public bool IsPhoneVerified { get; set; } = false;
+
+        /// <summary>مجوز مشاهده شماره‌های کامل بخش شماره‌جو</summary>
+        public bool CanViewNumberSeekerPhones { get; set; } = false;
     }
 }
 

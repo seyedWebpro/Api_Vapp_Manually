@@ -14,6 +14,7 @@ namespace Api_Vapp.DTOs.User
         public string? ProfileImageUrl { get; set; }
         public bool IsActive { get; set; }
         public bool IsPhoneVerified { get; set; }
+        public bool CanViewNumberSeekerPhones { get; set; }
         public bool IsDeleted { get; set; }
 
         // Timestamps

@@ -71,13 +71,19 @@ namespace Api_Vapp.DTOs.NumberSeeker
         /// <summary>مثلاً «۳۸ از ۵۰ شماره»</summary>
         public string ProgressLabel { get; set; } = string.Empty;
 
-        /// <summary>لیست کامل — در حالت running معمولاً خالی/محدود؛ در completed پر</summary>
+        /// <summary>لیست کامل — در حالت running معمولاً خالی/محدود؛ در completed پر. برای کاربر عادی ماسک می‌شود.</summary>
         public List<string> Phones { get; set; } = new();
 
-        /// <summary>پیش‌نمایش حداکثر ۲۰ شماره — برای صفحه در حال جستجو</summary>
+        /// <summary>پیش‌نمایش حداکثر ۲۰ شماره — برای صفحه در حال جستجو. برای کاربر عادی ماسک می‌شود.</summary>
         public List<string> PhonesPreview { get; set; } = new();
 
         public int PhonesPreviewLimit { get; set; } = 20;
+
+        /// <summary>کاربر جاری مجاز به دیدن شماره کامل است</summary>
+        public bool CanViewPhones { get; set; }
+
+        /// <summary>true یعنی Phones / PhonesPreview ماسک شده‌اند</summary>
+        public bool IsPhonesMasked { get; set; }
 
         public string? Message { get; set; }
         public string? ResultCode { get; set; }
@@ -241,6 +247,9 @@ namespace Api_Vapp.DTOs.NumberSeeker
         public int MinPhones { get; set; } = 1;
         public int MaxPhones { get; set; } = 1000;
         public int DefaultPhones { get; set; } = 50;
+
+        /// <summary>کاربر جاری مجاز به دیدن شماره کامل شماره‌جو است</summary>
+        public bool CanViewPhones { get; set; }
     }
 
     public class NumberSeekerCancelResultDto
@@ -261,6 +270,7 @@ namespace Api_Vapp.DTOs.NumberSeeker
     public class ImportNumberSeekerPhonesDto
     {
         [Required(ErrorMessage = "شناسه دفترچه الزامی است")]
+        [Range(1, int.MaxValue, ErrorMessage = "شناسه دفترچه الزامی است")]
         public int ContactNotebookId { get; set; }
 
         [StringLength(100)]
@@ -313,5 +323,8 @@ namespace Api_Vapp.DTOs.NumberSeeker
         public string Format { get; set; } = "json";
         /// <summary>متن آماده کپی — هر شماره یک خط</summary>
         public string TextContent { get; set; } = string.Empty;
+
+        public bool CanViewPhones { get; set; }
+        public bool IsPhonesMasked { get; set; }
     }
 }

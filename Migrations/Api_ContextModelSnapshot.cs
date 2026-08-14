@@ -1357,6 +1357,11 @@ namespace Api_Vapp.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<bool>("HideMobileNumber")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
                     b.Property<bool>("IsDeleted")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
@@ -1380,6 +1385,8 @@ namespace Api_Vapp.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("ContactNotebookId");
+
+                    b.HasIndex("HideMobileNumber");
 
                     b.HasIndex("IsDeleted");
 
@@ -4062,6 +4069,11 @@ namespace Api_Vapp.Migrations
                         .HasColumnType("int");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("CanViewNumberSeekerPhones")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
 
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()

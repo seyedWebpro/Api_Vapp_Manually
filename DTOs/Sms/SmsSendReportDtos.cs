@@ -63,7 +63,8 @@ namespace Api_Vapp.DTOs.Sms
         public long SendId { get; set; }
 
         /// <summary>
-        /// true وقتی ردیف یک کمپین چندگیرنده است (جزئیات/اکسل باید کل کمپین را نشان دهد)
+        /// true وقتی ردیف یک کمپین است و فرانت می‌تواند از مسیر /sends/campaign/{sendId} استفاده کند.
+        /// ارسال مستقیم به دفترچه هم گروهی است ولی این فلگ false می‌ماند تا جزئیات از /sends/{sid} expand شود.
         /// </summary>
         public bool IsCampaignBatch { get; set; }
 

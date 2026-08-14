@@ -39,6 +39,7 @@ namespace Api_Vapp.Services
         private readonly ISmsPricingService _smsPricing;
         private readonly IWalletService _walletService;
         private readonly IUserPushNotifier _pushNotifier;
+        private readonly INumberSeekerPhoneAccessService _phoneAccess;
 
         public MessageService(
             IMessageRepository messageRepository,
@@ -58,6 +59,7 @@ namespace Api_Vapp.Services
             ISmsPricingService smsPricing,
             IWalletService walletService,
             IUserPushNotifier pushNotifier,
+            INumberSeekerPhoneAccessService phoneAccess,
             IFileUploadService? fileUploadService = null)
         {
             _messageRepository = messageRepository;
@@ -77,6 +79,7 @@ namespace Api_Vapp.Services
             _hostEnvironment = hostEnvironment;
             _audit = audit;
             _pushNotifier = pushNotifier;
+            _phoneAccess = phoneAccess;
             _fileUploadService = fileUploadService;
         }
 
@@ -3446,35 +3449,59 @@ namespace Api_Vapp.Services
             {
                 recipients = new List<RecipientItemDto>();
 
-                if (selectDto.SelectionType == "Notebook" && selectDto.ContactNotebookIds != null && selectDto.ContactNotebookIds.Any())
+                _logger.LogInformation(
+                    "شروع انتخاب گیرندگان — UserId: {UserId}, MessageId: {MessageId}, SelectionType: {SelectionType}",
+                    userId, selectDto.MessageId, selectDto.SelectionType);
+
+                if (string.Equals(selectDto.SelectionType, MessageSelectionTypes.Notebook, StringComparison.OrdinalIgnoreCase))
                 {
-                    foreach (var notebookId in selectDto.ContactNotebookIds)
+                    var notebookIds = NotebookIdSelectionHelper.Normalize(
+                        selectDto.ContactNotebookIds,
+                        selectDto.ContactNotebookId);
+
+                    if (notebookIds.Count == 0)
                     {
-                        var notebook = await _notebookRepository.GetByIdAsync(notebookId);
-                        if (notebook == null || notebook.UserId != userId) continue;
-
-                        // دریافت همه مخاطبین دفترچه
-                        var allContacts = await _contactRepository.GetByNotebookIdAsync(notebookId);
-                        var validContacts = allContacts.Where(c => !c.IsDeleted).ToList();
-
-                        // اگر ContactIds ارسال شده باشد، آن مخاطبین را از لیست حذف می‌کنیم (یعنی به آن‌ها پیام نمی‌رود)
-                        // اگر ContactIds null باشد، همه مخاطبین انتخاب می‌شوند
-                        if (selectDto.ContactIds != null && selectDto.ContactIds.Any())
-                        {
-                            // حذف مخاطبینی که در ContactIds هستند (یعنی به آن‌ها پیام نمی‌رود)
-                            var excludedContactIds = selectDto.ContactIds.ToHashSet();
-                            validContacts = validContacts
-                                .Where(c => !excludedContactIds.Contains(c.Id))
-                                .ToList();
-                        }
-
-                        recipients.AddRange(validContacts.Select(c => new RecipientItemDto
-                        {
-                            ContactId = c.Id,
-                            MobileNumber = c.MobileNumber,
-                            FullName = c.FullName
-                        }));
+                        await transaction.RollbackAsync();
+                        return ApiResponse<RecipientListResponseDto>.BadRequest(
+                            "حداقل یک دفترچه تلفن باید انتخاب شود",
+                            errorCode: ErrorCodes.ValidationFailed);
                     }
+
+                    var validNotebookIds = await _context.ContactNotebooks
+                        .AsNoTracking()
+                        .Where(n => notebookIds.Contains(n.Id) && n.UserId == userId && !n.IsDeleted)
+                        .Select(n => n.Id)
+                        .ToListAsync();
+
+                    var invalidNotebookIds = notebookIds.Except(validNotebookIds).ToList();
+                    if (invalidNotebookIds.Count > 0)
+                    {
+                        await transaction.RollbackAsync();
+                        return ApiResponse<RecipientListResponseDto>.BadRequest(
+                            $"دفترچه‌های تلفن با شناسه‌های [{string.Join(", ", invalidNotebookIds)}] یافت نشد یا به شما تعلق ندارند",
+                            errorCode: ErrorCodes.InvalidInput);
+                    }
+
+                    var validContacts = await _contactRepository.GetByNotebookIdsForUserAsync(userId, validNotebookIds);
+
+                    if (selectDto.ContactIds != null && selectDto.ContactIds.Any(id => id > 0))
+                    {
+                        var excludedContactIds = selectDto.ContactIds.Where(id => id > 0).ToHashSet();
+                        validContacts = validContacts
+                            .Where(c => !excludedContactIds.Contains(c.Id))
+                            .ToList();
+                    }
+
+                    recipients.AddRange(validContacts.Select(c => new RecipientItemDto
+                    {
+                        ContactId = c.Id,
+                        MobileNumber = c.MobileNumber,
+                        FullName = c.FullName
+                    }));
+
+                    _logger.LogInformation(
+                        "گیرندگان از {NotebookCount} دفترچه جمع‌آوری شد — UserId: {UserId}, RecipientCount: {Count}",
+                        validNotebookIds.Count, userId, recipients.Count);
                 }
                 else if (selectDto.SelectionType == "Tag" && selectDto.TagIds != null && selectDto.TagIds.Any())
                 {
@@ -3823,6 +3850,7 @@ namespace Api_Vapp.Services
                     _logger.LogInformation("Session saved successfully - SessionId: {SessionId}, MessageId: {MessageId}, UserId: {UserId}", 
                         session.Id, selectDto.MessageId, userId);
 
+                response.Recipients = await MaskRecipientMobilesForClientAsync(userId, recipients);
                 return ApiResponse<RecipientListResponseDto>.CreateSuccess(response);
             }
             catch (DbUpdateConcurrencyException ex)
@@ -3869,7 +3897,7 @@ namespace Api_Vapp.Services
                             
                             var retryResponse = new RecipientListResponseDto
                             {
-                                Recipients = recipients,
+                                Recipients = await MaskRecipientMobilesForClientAsync(userId, recipients),
                                 TotalCount = recipients.Count,
                                 SessionId = retrySession.Id
                             };
@@ -6256,6 +6284,27 @@ namespace Api_Vapp.Services
                 _logger.LogError(ex, "❌ Error creating default templates for user {UserId}", userId);
                 throw;
             }
+        }
+
+        private async Task<List<RecipientItemDto>> MaskRecipientMobilesForClientAsync(
+            int userId,
+            List<RecipientItemDto> recipients)
+        {
+            if (recipients.Count == 0)
+                return recipients;
+
+            var hiddenMobiles = await _phoneAccess.GetHiddenMobileNumbersAsync(userId);
+            if (hiddenMobiles.Count == 0)
+                return recipients;
+
+            return recipients.Select(r => new RecipientItemDto
+            {
+                ContactId = r.ContactId,
+                FullName = r.FullName,
+                MobileNumber = hiddenMobiles.Contains(r.MobileNumber)
+                    ? PhoneNumberMasker.Mask(r.MobileNumber)
+                    : r.MobileNumber
+            }).ToList();
         }
 
         #endregion

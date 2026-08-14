@@ -12,8 +12,14 @@ namespace Api_Vapp.Models
         // شناسه دفترچه
         public int ContactNotebookId { get; set; }
 
-        // شماره موبایل (الزامی)
+        // شماره موبایل (الزامی) — مقدار واقعی برای ارسال پیامک در دیتابیس نگه داشته می‌شود
         public string MobileNumber { get; set; } = string.Empty;
+
+        /// <summary>
+        /// اگر true باشد، شماره در API/اکسل برای کاربر عادی ماسک می‌شود (منبع: شماره‌جو).
+        /// ارسال پیامک همچنان با شماره واقعی انجام می‌شود.
+        /// </summary>
+        public bool HideMobileNumber { get; set; } = false;
 
         // نام کامل
         public string? FullName { get; set; }

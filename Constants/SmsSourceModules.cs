@@ -32,5 +32,12 @@ namespace Api_Vapp.Constants
 
         public static string GetPersianLabel(string module) =>
             PersianLabels.TryGetValue(module, out var label) ? label : module;
+
+        /// <summary>
+        /// ارسال‌های چندگیرنده (قالب/متن به دفترچه، کمپین، پیام خودکار) باید در گزارش یک ردیف شوند.
+        /// ایران‌نوین برای هر شماره Sid جدا می‌دهد؛ گروه‌بندی با SourceEntityId است.
+        /// </summary>
+        public static bool IsGroupedReportModule(string? module) =>
+            module is MessageCampaign or MessageDirect or AutomatedMessage;
     }
 }

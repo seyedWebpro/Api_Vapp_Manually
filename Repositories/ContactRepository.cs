@@ -155,6 +155,25 @@ namespace Api_Vapp.Repositories
                     && !c.ContactNotebook.IsDeleted)
                 .ToListAsync();
         }
+
+        public async Task<List<Contact>> GetByNotebookIdsForUserAsync(int userId, IEnumerable<int> notebookIds)
+        {
+            var idList = notebookIds.Where(id => id > 0).Distinct().ToList();
+            if (!idList.Any())
+            {
+                return new List<Contact>();
+            }
+
+            return await _dbSet
+                .AsNoTracking()
+                .Where(c => idList.Contains(c.ContactNotebookId)
+                    && !c.IsDeleted
+                    && c.ContactNotebook != null
+                    && c.ContactNotebook.UserId == userId
+                    && !c.ContactNotebook.IsDeleted)
+                .OrderByDescending(c => c.CreatedAt)
+                .ToListAsync();
+        }
     }
 }
 

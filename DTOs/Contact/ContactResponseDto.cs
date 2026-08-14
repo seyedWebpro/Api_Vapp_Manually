@@ -11,6 +11,13 @@ namespace Api_Vapp.DTOs.Contact
         public int ContactNotebookId { get; set; }
         public string ContactNotebookName { get; set; } = string.Empty;
         public string MobileNumber { get; set; } = string.Empty;
+
+        /// <summary>مخاطب از شماره‌جو آمده و شماره باید برای کاربر عادی مخفی بماند</summary>
+        public bool HideMobileNumber { get; set; }
+
+        /// <summary>true یعنی MobileNumber در این پاسخ ماسک شده است</summary>
+        public bool IsMobileMasked { get; set; }
+
         public string? FullName { get; set; }
         public string? Brand { get; set; }
         public List<MessageTagResponseDto> ContactTags { get; set; } = new(); // تگ‌های واقعی

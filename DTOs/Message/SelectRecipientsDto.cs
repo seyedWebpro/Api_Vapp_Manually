@@ -9,14 +9,22 @@ namespace Api_Vapp.DTOs.Message
     {
         // شناسه پیام (الزامی - باید قبل از انتخاب گیرندگان ایجاد شده باشد)
         [Required(ErrorMessage = "شناسه پیام الزامی است")]
+        [Range(1, int.MaxValue, ErrorMessage = "شناسه پیام الزامی است")]
         public int MessageId { get; set; }
 
         // نوع انتخاب: MessageSelectionTypes (Notebook, Tag, ContactIds, Individual)
         [Required(ErrorMessage = "نوع انتخاب گیرندگان الزامی است")]
         public string SelectionType { get; set; } = string.Empty;
 
-        // برای انتخاب از دفترچه (فقط در حالت Notebook)
+        /// <summary>
+        /// شناسه دفترچه‌های انتخاب‌شده (حالت Notebook — می‌توان چند دفترچه را همزمان انتخاب کرد)
+        /// </summary>
         public List<int>? ContactNotebookIds { get; set; }
+
+        /// <summary>
+        /// شناسه تک دفترچه (سازگاری با کلاینت قدیمی). با ContactNotebookIds ادغام می‌شود.
+        /// </summary>
+        public int? ContactNotebookId { get; set; }
 
         // برای انتخاب بر اساس تگ (فقط در حالت Tag)
         public List<int>? TagIds { get; set; }

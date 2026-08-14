@@ -35,6 +35,8 @@ namespace Api_Vapp.Interfaces
 
         ApiResponse<NumberSeekerFormMetaDto> GetFormMeta();
 
+        Task<ApiResponse<NumberSeekerFormMetaDto>> GetFormMetaAsync(int userId);
+
         Task<ApiResponse<NumberSeekerExportDto>> ExportPhonesAsync(
             int userId,
             string taskId);

@@ -51,6 +51,11 @@ namespace Api_Vapp.Interfaces
         /// دریافت مخاطبین بر اساس شناسه — فقط اگر متعلق به دفترچه‌های کاربر باشند
         /// </summary>
         Task<List<Contact>> GetByIdsForUserAsync(int userId, IEnumerable<int> contactIds);
+
+        /// <summary>
+        /// دریافت مخاطبین چند دفترچه — فقط دفترچه‌های متعلق به کاربر
+        /// </summary>
+        Task<List<Contact>> GetByNotebookIdsForUserAsync(int userId, IEnumerable<int> notebookIds);
     }
 }
 

@@ -155,7 +155,8 @@ namespace Api_Vapp.Controller
             if (!ModelState.IsValid)
             {
                 var errors = ExtractModelStateErrors();
-                return StatusCode(400, ApiResponse<RecipientListForAutomatedMessageResponseDto>.BadRequest("داده‌های ورودی نامعتبر است", errors));
+                return StatusCode(400, ApiResponse<RecipientListForAutomatedMessageResponseDto>.BadRequest(
+                    "داده‌های ورودی نامعتبر است", errors, ErrorCodes.ValidationFailed));
             }
 
             var userId = await GetCurrentUserIdAsync();

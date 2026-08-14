@@ -395,7 +395,7 @@ namespace Api_Vapp.Services.BackgroundServices
         {
             public bool HasSelection { get; set; }
             public bool ApplyToAllContacts { get; set; } = true;
-            public int? ContactNotebookId { get; set; }
+            public HashSet<int> ContactNotebookIds { get; set; } = new();
             public HashSet<int> ExcludedContactIds { get; set; } = new();
             public HashSet<int> ExplicitContactIds { get; set; } = new();
         }
@@ -465,13 +465,7 @@ namespace Api_Vapp.Services.BackgroundServices
                                 && bool.TryParse(allProp.GetString(), out var b) && b);
                     }
 
-                    if ((root.TryGetProperty("ContactNotebookId", out var nbProp)
-                         || root.TryGetProperty("contactNotebookId", out nbProp))
-                        && nbProp.ValueKind != System.Text.Json.JsonValueKind.Null
-                        && nbProp.TryGetInt32(out var nb))
-                    {
-                        scope.ContactNotebookId = nb;
-                    }
+                    scope.ContactNotebookIds = NotebookIdSelectionHelper.ReadFromJsonElement(root);
 
                     if (root.TryGetProperty("ExcludedContactIds", out var exProp)
                         || root.TryGetProperty("excludedContactIds", out exProp))
@@ -493,7 +487,7 @@ namespace Api_Vapp.Services.BackgroundServices
             }
 
             // اگر دفترچه مشخص نیست ولی RecipientsJson داریم — از ContactId های eligible استفاده کن
-            if (!scope.ApplyToAllContacts && !scope.ContactNotebookId.HasValue
+            if (!scope.ApplyToAllContacts && scope.ContactNotebookIds.Count == 0
                 && !string.IsNullOrWhiteSpace(session.RecipientsJson))
             {
                 try
@@ -524,8 +518,8 @@ namespace Api_Vapp.Services.BackgroundServices
             if (scope.ExplicitContactIds.Count > 0)
                 return scope.ExplicitContactIds.Contains(contact.Id);
 
-            if (scope.ContactNotebookId.HasValue
-                && contact.ContactNotebookId != scope.ContactNotebookId.Value)
+            if (scope.ContactNotebookIds.Count > 0
+                && !scope.ContactNotebookIds.Contains(contact.ContactNotebookId))
                 return false;
 
             return !scope.ExcludedContactIds.Contains(contact.Id);

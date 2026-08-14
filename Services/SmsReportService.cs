@@ -19,6 +19,7 @@ namespace Api_Vapp.Services
         private readonly ISmsDeliveryTrackingService _deliveryTracking;
         private readonly ISmsPricingService _smsPricing;
         private readonly ILogger<SmsReportService> _logger;
+        private readonly INumberSeekerPhoneAccessService _phoneAccess;
         private readonly string _senderNumber;
 
         public SmsReportService(
@@ -26,12 +27,14 @@ namespace Api_Vapp.Services
             ISmsDeliveryTrackingService deliveryTracking,
             ISmsPricingService smsPricing,
             IConfiguration configuration,
-            ILogger<SmsReportService> logger)
+            ILogger<SmsReportService> logger,
+            INumberSeekerPhoneAccessService phoneAccess)
         {
             _repository = repository;
             _deliveryTracking = deliveryTracking;
             _smsPricing = smsPricing;
             _logger = logger;
+            _phoneAccess = phoneAccess;
             _senderNumber = configuration["Sms:SenderNumber"] ?? string.Empty;
         }
 
@@ -217,7 +220,7 @@ namespace Api_Vapp.Services
 
                 var batch = await _repository.GetSendBatchBySidAsync(userId, sid);
                 var (items, totalCount) = await _repository.GetRecipientsBySidAsync(userId, sid, filter);
-                return BuildRecipientListResponse(batch, sid, items, totalCount, filter);
+                return await BuildRecipientListResponseAsync(userId, batch, sid, items, totalCount, filter);
             }
             catch (Exception ex)
             {
@@ -241,7 +244,7 @@ namespace Api_Vapp.Services
 
                 var batch = await _repository.GetSendBatchByCampaignAsync(userId, campaignId);
                 var (items, totalCount) = await _repository.GetRecipientsByCampaignAsync(userId, campaignId, filter);
-                return BuildRecipientListResponse(batch, batch?.Sid ?? 0, items, totalCount, filter);
+                return await BuildRecipientListResponseAsync(userId, batch, batch?.Sid ?? 0, items, totalCount, filter);
             }
             catch (Exception ex)
             {
@@ -250,15 +253,19 @@ namespace Api_Vapp.Services
             }
         }
 
-        private ApiResponse<SmsSendRecipientListDto> BuildRecipientListResponse(
+        private async Task<ApiResponse<SmsSendRecipientListDto>> BuildRecipientListResponseAsync(
+            int userId,
             SmsSendBatchProjection? batch,
             long sid,
             List<SmsDeliveryRecord> items,
             int totalCount,
             SmsSendRecipientFilterDto filter)
         {
+            var hiddenMobiles = await _phoneAccess.GetHiddenMobileNumbersAsync(userId);
             var rowOffset = (filter.PageNumber - 1) * filter.PageSize;
-            var dtoItems = items.Select((record, index) => MapRecipient(record, rowOffset + index + 1)).ToList();
+            var dtoItems = items
+                .Select((record, index) => MapRecipient(record, rowOffset + index + 1, hiddenMobiles))
+                .ToList();
             var totalPages = totalCount == 0 ? 0 : (int)Math.Ceiling(totalCount / (double)filter.PageSize);
 
             return ApiResponse<SmsSendRecipientListDto>.CreateSuccess(new SmsSendRecipientListDto
@@ -287,11 +294,12 @@ namespace Api_Vapp.Services
                     messageText = await ResolveRecordMessageTextAsync(record);
 
                 var categoryLabel = ResolveCategoryLabel(record);
+                var hiddenMobiles = await _phoneAccess.GetHiddenMobileNumbersAsync(userId);
                 var dto = new SmsMessageDetailDto
                 {
                     Id = record.Id,
                     Sid = record.Sid,
-                    Mobile = record.Mobile,
+                    Mobile = MaskIfHidden(record.Mobile, hiddenMobiles),
                     SenderNumber = _senderNumber,
                     Title = record.SourceEntityLabel ?? $"ارسال #{record.Sid}",
                     SourceModule = record.SourceModule,
@@ -319,9 +327,19 @@ namespace Api_Vapp.Services
                 if (sid <= 0)
                     return ApiResponse<SmsDeliverySummaryDto>.BadRequest("کد ارسال نامعتبر است");
 
-                var campaignId = await _repository.TryResolveCampaignIdBySidAsync(userId, sid);
-                if (campaignId.HasValue)
-                    return await RefreshSendBatchByCampaignAsync(userId, campaignId.Value);
+                var grouped = await _repository.TryResolveGroupedBatchBySidAsync(userId, sid);
+                if (grouped.HasValue)
+                {
+                    var sids = await _repository.GetDistinctSidsByModuleEntityAsync(
+                        userId, grouped.Value.SourceModule, grouped.Value.EntityId);
+                    foreach (var batchSid in sids)
+                    {
+                        await _deliveryTracking.RefreshBySidAsync(userId, batchSid);
+                    }
+
+                    var summary = await _repository.GetSummaryBySidAsync(userId, sid);
+                    return ApiResponse<SmsDeliverySummaryDto>.CreateSuccess(summary, "وضعیت دلیوری بروزرسانی شد");
+                }
 
                 return await _deliveryTracking.RefreshBySidAsync(userId, sid);
             }
@@ -443,6 +461,7 @@ namespace Api_Vapp.Services
                 ? await ResolveBatchMessageTextAsync(userId, batch)
                 : null;
             var (_, sendTypeLabel) = MapSendType(batch?.SourceModule ?? records.FirstOrDefault()?.SourceModule ?? string.Empty);
+            var hiddenMobiles = await _phoneAccess.GetHiddenMobileNumbersAsync(userId);
 
             using var workbook = new XLWorkbook();
             var worksheet = workbook.Worksheets.Add("گیرندگان");
@@ -480,7 +499,7 @@ namespace Api_Vapp.Services
                     : sendTypeLabel;
 
                 worksheet.Cell(row, 1).Value = i + 1;
-                worksheet.Cell(row, 2).Value = record.Mobile ?? string.Empty;
+                worksheet.Cell(row, 2).Value = MaskIfHidden(record.Mobile, hiddenMobiles);
                 worksheet.Cell(row, 3).Value = string.IsNullOrWhiteSpace(_senderNumber) ? "-" : _senderNumber;
                 worksheet.Cell(row, 4).Value = categoryLabel;
                 worksheet.Cell(row, 5).Value = record.ProviderStatusCode?.ToString() ?? "-";
@@ -596,12 +615,15 @@ namespace Api_Vapp.Services
             return null;
         }
 
-        private SmsSendRecipientDto MapRecipient(SmsDeliveryRecord record, int rowNumber) =>
+        private SmsSendRecipientDto MapRecipient(
+            SmsDeliveryRecord record,
+            int rowNumber,
+            IReadOnlySet<string> hiddenMobiles) =>
             new()
             {
                 Id = record.Id,
                 RowNumber = rowNumber,
-                Mobile = record.Mobile,
+                Mobile = MaskIfHidden(record.Mobile, hiddenMobiles),
                 SenderNumber = _senderNumber,
                 DeliveryCategory = record.DeliveryCategory,
                 DeliveryCategoryLabel = ResolveCategoryLabel(record),
@@ -611,6 +633,13 @@ namespace Api_Vapp.Services
                 SentAt = record.SentAt,
                 LastCheckedAt = record.LastCheckedAt
             };
+
+        private static string MaskIfHidden(string? mobile, IReadOnlySet<string> hiddenMobiles)
+        {
+            if (string.IsNullOrWhiteSpace(mobile))
+                return mobile ?? string.Empty;
+            return hiddenMobiles.Contains(mobile) ? PhoneNumberMasker.Mask(mobile) : mobile;
+        }
 
         private static string ResolveCategoryLabel(SmsDeliveryRecord record) =>
             SmsDeliveryCategories.GetPersianLabel(record.DeliveryCategory);

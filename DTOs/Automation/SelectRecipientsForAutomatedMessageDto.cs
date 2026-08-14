@@ -13,7 +13,12 @@ namespace Api_Vapp.DTOs.Automation
         public bool ApplyToAllContacts { get; set; } = false;
 
         /// <summary>
-        /// شناسه دفترچه تلفن (فقط در صورت ApplyToAllContacts = false)
+        /// شناسه دفترچه‌های تلفن (در صورت ApplyToAllContacts = false — می‌توان چند دفترچه را همزمان انتخاب کرد)
+        /// </summary>
+        public List<int>? ContactNotebookIds { get; set; }
+
+        /// <summary>
+        /// شناسه تک دفترچه (سازگاری با کلاینت قدیمی). با ContactNotebookIds ادغام می‌شود.
         /// </summary>
         public int? ContactNotebookId { get; set; }
 

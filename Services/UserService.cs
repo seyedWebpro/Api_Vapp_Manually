@@ -72,7 +72,8 @@ namespace Api_Vapp.Services
             nationalId = user.NationalId,
             email = user.Email,
             isActive = user.IsActive,
-            isPhoneVerified = user.IsPhoneVerified
+            isPhoneVerified = user.IsPhoneVerified,
+            canViewNumberSeekerPhones = user.CanViewNumberSeekerPhones
         };
 
         private async Task InvalidateUserSessionsAsync(int userId, string reason)
@@ -106,6 +107,7 @@ namespace Api_Vapp.Services
                     Email = createUserDto.Email,
                     IsActive = createUserDto.IsActive,
                     IsPhoneVerified = createUserDto.IsPhoneVerified,
+                    CanViewNumberSeekerPhones = createUserDto.CanViewNumberSeekerPhones,
                     CreatedAt = DateTime.UtcNow
                 };
 
@@ -257,6 +259,11 @@ namespace Api_Vapp.Services
                 if (updateUserDto.IsPhoneVerified.HasValue)
                 {
                     user.IsPhoneVerified = updateUserDto.IsPhoneVerified.Value;
+                }
+
+                if (updateUserDto.CanViewNumberSeekerPhones.HasValue)
+                {
+                    user.CanViewNumberSeekerPhones = updateUserDto.CanViewNumberSeekerPhones.Value;
                 }
 
                 // به‌روزرسانی زمان آخرین تغییر
@@ -564,6 +571,7 @@ namespace Api_Vapp.Services
                     ReferralDescription = referralInfo.Data?.Description,
                     IsActive = user.IsActive,
                     IsPhoneVerified = user.IsPhoneVerified,
+                    CanViewNumberSeekerPhones = user.CanViewNumberSeekerPhones,
                     CreatedAt = user.CreatedAt,
                     UpdatedAt = user.UpdatedAt,
                     LastLoginAt = user.LastLoginAt
@@ -1238,6 +1246,7 @@ namespace Api_Vapp.Services
                     : null,
                 IsActive = user.IsActive,
                 IsPhoneVerified = user.IsPhoneVerified,
+                CanViewNumberSeekerPhones = user.CanViewNumberSeekerPhones,
                 IsDeleted = user.IsDeleted,
                 CreatedAt = user.CreatedAt,
                 UpdatedAt = user.UpdatedAt,

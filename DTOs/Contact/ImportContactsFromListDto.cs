@@ -18,6 +18,9 @@ namespace Api_Vapp.DTOs.Contact
 
         [Required(ErrorMessage = "نام مخاطب الزامی است")]
         public string Name { get; set; } = string.Empty;
+
+        /// <summary>اگر true باشد، شماره در دفترچه برای کاربر عادی ماسک می‌شود</summary>
+        public bool HideMobileNumber { get; set; }
     }
 }
 

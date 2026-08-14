@@ -133,6 +133,10 @@ namespace Api_Vapp.DTOs.ReferralProgram
         public bool IsNotStarted { get; set; }
         public bool IsActive { get; set; }
         public string? InvalidReason { get; set; }
+        /// <summary>
+        /// متن کامل وضعیت برای نمایش در اپ (همیشه پر می‌شود).
+        /// </summary>
+        public string? StatusMessage { get; set; }
         public int? ProgramId { get; set; }
         public string? ProgramName { get; set; }
         public string? PublicCode { get; set; }

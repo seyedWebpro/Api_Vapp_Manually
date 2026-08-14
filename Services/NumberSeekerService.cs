@@ -54,6 +54,7 @@ namespace Api_Vapp.Services
         private readonly INumberSeekerTaskRepository _taskRepository;
         private readonly IContactService _contactService;
         private readonly INumberSeekerRateLimiter _rateLimiter;
+        private readonly INumberSeekerPhoneAccessService _phoneAccess;
         private readonly NumberSeekerOptions _options;
         private readonly IAuditService _audit;
         private readonly ILogger<NumberSeekerService> _logger;
@@ -63,6 +64,7 @@ namespace Api_Vapp.Services
             INumberSeekerTaskRepository taskRepository,
             IContactService contactService,
             INumberSeekerRateLimiter rateLimiter,
+            INumberSeekerPhoneAccessService phoneAccess,
             IOptions<NumberSeekerOptions> options,
             IAuditService audit,
             ILogger<NumberSeekerService> logger)
@@ -71,6 +73,7 @@ namespace Api_Vapp.Services
             _taskRepository = taskRepository;
             _contactService = contactService;
             _rateLimiter = rateLimiter;
+            _phoneAccess = phoneAccess;
             _options = options.Value;
             _audit = audit;
             _logger = logger;
@@ -222,6 +225,7 @@ namespace Api_Vapp.Services
             {
                 var cachedStatus = BuildStatusFromOwnedTask(ownedTask, cachedPhones);
                 EnrichStatusForUi(cachedStatus, ownedTask.CreatedAt);
+                await ApplyPhoneVisibilityAsync(userId, cachedStatus);
                 return ApiResponse<NumberSeekerTaskStatusDto>.CreateSuccess(cachedStatus);
             }
 
@@ -230,6 +234,7 @@ namespace Api_Vapp.Services
                 var status = await _scraperClient.GetTaskStatusAsync(taskId.Trim());
                 await SyncOwnedTaskAsync(ownedTask, status);
                 EnrichStatusForUi(status, ownedTask.CreatedAt);
+                await ApplyPhoneVisibilityAsync(userId, status);
                 return ApiResponse<NumberSeekerTaskStatusDto>.CreateSuccess(status);
             }
             catch (KeyNotFoundException)
@@ -238,6 +243,7 @@ namespace Api_Vapp.Services
                 {
                     var cachedStatus = BuildStatusFromOwnedTask(ownedTask, cachedPhones);
                     EnrichStatusForUi(cachedStatus, ownedTask.CreatedAt);
+                    await ApplyPhoneVisibilityAsync(userId, cachedStatus);
                     return ApiResponse<NumberSeekerTaskStatusDto>.CreateSuccess(cachedStatus);
                 }
 
@@ -251,6 +257,7 @@ namespace Api_Vapp.Services
                 {
                     var cachedStatus = BuildStatusFromOwnedTask(ownedTask, cachedPhones);
                     EnrichStatusForUi(cachedStatus, ownedTask.CreatedAt);
+                    await ApplyPhoneVisibilityAsync(userId, cachedStatus);
                     return ApiResponse<NumberSeekerTaskStatusDto>.CreateSuccess(cachedStatus);
                 }
 
@@ -439,7 +446,8 @@ namespace Api_Vapp.Services
                     .Select((phone, index) => new ImportContactItemDto
                     {
                         MobileNumber = phone,
-                        Name = $"{namePrefix} {index + 1}"
+                        Name = $"{namePrefix} {index + 1}",
+                        HideMobileNumber = true
                     })
                     .ToList()
             };
@@ -475,6 +483,7 @@ namespace Api_Vapp.Services
                 After = new { importedCount = ownedTask.ImportedCount, notebookId = request.ContactNotebookId }
             });
 
+            var canViewPhones = await _phoneAccess.CanViewPhonesAsync(userId);
             var data = importResult.Data!;
             var result = new NumberSeekerImportResultDto
             {
@@ -488,7 +497,7 @@ namespace Api_Vapp.Services
                 Errors = data.Errors.Select(e => new ImportRowErrorDto
                 {
                     RowNumber = e.RowNumber,
-                    MobileNumber = e.MobileNumber,
+                    MobileNumber = PhoneNumberMasker.ForClient(e.MobileNumber, hideMobileNumber: true, canViewPhones),
                     ErrorMessage = e.ErrorMessage
                 }).ToList(),
                 ImportedAt = ownedTask.ImportedAt.Value
@@ -669,6 +678,14 @@ namespace Api_Vapp.Services
             });
         }
 
+        public async Task<ApiResponse<NumberSeekerFormMetaDto>> GetFormMetaAsync(int userId)
+        {
+            var result = GetFormMeta();
+            if (result.Data != null)
+                result.Data.CanViewPhones = await _phoneAccess.CanViewPhonesAsync(userId);
+            return result;
+        }
+
         public async Task<ApiResponse<NumberSeekerExportDto>> ExportPhonesAsync(int userId, string taskId)
         {
             var resolved = await ResolvePhonesForExportAsync(userId, taskId);
@@ -681,6 +698,8 @@ namespace Api_Vapp.Services
             }
 
             var (ownedTask, phones) = resolved.Data!;
+            var canViewPhones = await _phoneAccess.CanViewPhonesAsync(userId);
+            var visiblePhones = PhoneNumberMasker.ForClient(phones, canViewPhones);
             return ApiResponse<NumberSeekerExportDto>.CreateSuccess(new NumberSeekerExportDto
             {
                 TaskId = ownedTask.ScraperTaskId,
@@ -689,10 +708,12 @@ namespace Api_Vapp.Services
                 City = ownedTask.City,
                 Category = ownedTask.Category,
                 Status = ownedTask.Status,
-                Count = phones.Count,
-                Phones = phones,
+                Count = visiblePhones.Count,
+                Phones = visiblePhones,
                 Format = "json",
-                TextContent = string.Join("\n", phones)
+                TextContent = string.Join("\n", visiblePhones),
+                CanViewPhones = canViewPhones,
+                IsPhonesMasked = !canViewPhones
             });
         }
 
@@ -710,8 +731,11 @@ namespace Api_Vapp.Services
                 }
 
                 var (ownedTask, phones) = resolved.Data!;
-                var bytes = BuildPhonesExcel(
+                var visiblePhones = PhoneNumberMasker.ForClient(
                     phones,
+                    await _phoneAccess.CanViewPhonesAsync(userId));
+                var bytes = BuildPhonesExcel(
+                    visiblePhones,
                     NumberSeekerUiMapper.GetSourceDisplayName(ownedTask.Source),
                     ownedTask.City,
                     ownedTask.Category,
@@ -1008,6 +1032,18 @@ namespace Api_Vapp.Services
                 status.QueuePosition);
             status.EstimatedSecondsRemaining = etaSeconds;
             status.EstimatedRemainingText = etaText;
+        }
+
+        private async Task ApplyPhoneVisibilityAsync(int userId, NumberSeekerTaskStatusDto status)
+        {
+            var canView = await _phoneAccess.CanViewPhonesAsync(userId);
+            status.CanViewPhones = canView;
+            status.IsPhonesMasked = !canView;
+            if (canView)
+                return;
+
+            status.Phones = PhoneNumberMasker.ForClient(status.Phones, canViewPhones: false);
+            status.PhonesPreview = PhoneNumberMasker.ForClient(status.PhonesPreview, canViewPhones: false);
         }
 
         private static NumberSeekerTaskStatusDto BuildStatusFromOwnedTask(

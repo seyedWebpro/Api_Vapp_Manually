@@ -176,7 +176,7 @@ public class NumberSeekerServiceTests
             PhonesPersistedAt = DateTime.UtcNow
         });
 
-        var service = BuildService(client, repo);
+        var service = BuildService(client, repo, canViewPhones: true);
         var result = await service.ExportPhonesToExcelAsync(10, "task-xlsx");
 
         Assert.True(result.Success);
@@ -190,6 +190,159 @@ public class NumberSeekerServiceTests
         var sheet = workbook.Worksheet(1);
         Assert.Equal("شماره موبایل", sheet.Cell(1, 2).GetString());
         Assert.Equal("09121111111", sheet.Cell(2, 2).GetString());
+    }
+
+    [Fact]
+    public async Task ExportPhonesToExcel_MasksNumbersForRegularUser()
+    {
+        var client = new FakeScraperClient();
+        var repo = new InMemoryTaskRepository();
+        repo.Tasks.Add(new NumberSeekerTask
+        {
+            UserId = 10,
+            ScraperTaskId = "task-xlsx-mask",
+            Source = "divar",
+            City = "تهران",
+            Category = "رستوران",
+            TargetCount = 1,
+            Status = "completed",
+            PhonesJson = "[\"09121234567\"]",
+            PhonesPersistedAt = DateTime.UtcNow
+        });
+
+        var service = BuildService(client, repo, canViewPhones: false);
+        var result = await service.ExportPhonesToExcelAsync(10, "task-xlsx-mask");
+
+        Assert.True(result.Success);
+        using var stream = new MemoryStream(result.Data!.FileContent);
+        using var workbook = new ClosedXML.Excel.XLWorkbook(stream);
+        var sheet = workbook.Worksheet(1);
+        Assert.Equal("0912****567", sheet.Cell(2, 2).GetString());
+        Assert.DoesNotContain("09121234567", sheet.Cell(2, 2).GetString());
+    }
+
+    [Fact]
+    public async Task GetTaskStatus_MasksPhonesForRegularUser()
+    {
+        var repo = new InMemoryTaskRepository();
+        repo.Tasks.Add(new NumberSeekerTask
+        {
+            UserId = 10,
+            ScraperTaskId = "task-mask",
+            Source = "divar",
+            City = "تهران",
+            Category = "x",
+            TargetCount = 1,
+            Status = "completed",
+            PhonesJson = "[\"09121234567\"]",
+            PhonesPersistedAt = DateTime.UtcNow
+        });
+
+        var service = BuildService(new FakeScraperClient { ThrowOnGetStatus = true }, repo, canViewPhones: false);
+        var result = await service.GetTaskStatusAsync(10, "task-mask");
+
+        Assert.True(result.Success);
+        Assert.True(result.Data!.IsPhonesMasked);
+        Assert.False(result.Data.CanViewPhones);
+        Assert.Equal("0912****567", Assert.Single(result.Data.Phones));
+        Assert.Equal("0912****567", Assert.Single(result.Data.PhonesPreview));
+    }
+
+    [Fact]
+    public async Task GetTaskStatus_RevealsPhonesForPrivilegedUser()
+    {
+        var repo = new InMemoryTaskRepository();
+        repo.Tasks.Add(new NumberSeekerTask
+        {
+            UserId = 10,
+            ScraperTaskId = "task-reveal",
+            Source = "divar",
+            City = "تهران",
+            Category = "x",
+            TargetCount = 1,
+            Status = "completed",
+            PhonesJson = "[\"09121234567\"]",
+            PhonesPersistedAt = DateTime.UtcNow
+        });
+
+        var service = BuildService(new FakeScraperClient { ThrowOnGetStatus = true }, repo, canViewPhones: true);
+        var result = await service.GetTaskStatusAsync(10, "task-reveal");
+
+        Assert.True(result.Success);
+        Assert.False(result.Data!.IsPhonesMasked);
+        Assert.True(result.Data.CanViewPhones);
+        Assert.Equal("09121234567", Assert.Single(result.Data.Phones));
+    }
+
+    [Fact]
+    public async Task ExportPhones_MasksJsonForRegularUser()
+    {
+        var repo = new InMemoryTaskRepository();
+        repo.Tasks.Add(new NumberSeekerTask
+        {
+            UserId = 10,
+            ScraperTaskId = "task-export-mask",
+            Source = "divar",
+            City = "تهران",
+            Category = "x",
+            TargetCount = 1,
+            Status = "completed",
+            PhonesJson = "[\"09121234567\"]",
+            PhonesPersistedAt = DateTime.UtcNow
+        });
+
+        var service = BuildService(new FakeScraperClient(), repo, canViewPhones: false);
+        var result = await service.ExportPhonesAsync(10, "task-export-mask");
+
+        Assert.True(result.Success);
+        Assert.True(result.Data!.IsPhonesMasked);
+        Assert.Equal("0912****567", Assert.Single(result.Data.Phones));
+        Assert.Contains("0912****567", result.Data.TextContent);
+        Assert.DoesNotContain("09121234567", result.Data.TextContent);
+    }
+
+    [Fact]
+    public async Task ImportPhones_MarksContactsAsHidden()
+    {
+        var contactService = new FakeContactService();
+        var cache = new MemoryCache(new MemoryCacheOptions());
+        var rateLimiter = new NumberSeekerRateLimiter(
+            cache,
+            Options.Create(new NumberSeekerOptions { MaxScrapesPerHour = 100, MaxImportsPerHour = 100 }));
+        var repo = new InMemoryTaskRepository();
+        repo.Tasks.Add(new NumberSeekerTask
+        {
+            UserId = 10,
+            ScraperTaskId = "task-import-hide",
+            Source = "divar",
+            City = "تهران",
+            Category = "رستوران",
+            TargetCount = 1,
+            Status = "completed",
+            PhonesJson = "[\"09121234567\"]",
+            PhonesPersistedAt = DateTime.UtcNow
+        });
+
+        var service = new NumberSeekerService(
+            new FakeScraperClient { ThrowOnGetStatus = true },
+            repo,
+            contactService,
+            rateLimiter,
+            new FakePhoneAccess(),
+            Options.Create(new NumberSeekerOptions()),
+            new Api_Vapp.Tests.Shared.NoOpAuditService(),
+            NullLogger<NumberSeekerService>.Instance);
+
+        var result = await service.ImportPhonesAsync(10, "task-import-hide", new ImportNumberSeekerPhonesDto
+        {
+            ContactNotebookId = 1,
+            ContactNamePrefix = "رستوران"
+        });
+
+        Assert.True(result.Success);
+        Assert.NotNull(contactService.LastImport);
+        Assert.All(contactService.LastImport!.Contacts, item => Assert.True(item.HideMobileNumber));
+        Assert.Equal("09121234567", contactService.LastImport.Contacts[0].MobileNumber);
     }
 
     [Fact]
@@ -378,6 +531,28 @@ public class NumberSeekerServiceTests
             repo,
             new FakeContactService(),
             rateLimiter,
+            new FakePhoneAccess(),
+            Options.Create(new NumberSeekerOptions()),
+            new Api_Vapp.Tests.Shared.NoOpAuditService(),
+            NullLogger<NumberSeekerService>.Instance);
+    }
+
+    private static NumberSeekerService BuildService(
+        INumberScraperClient client,
+        INumberSeekerTaskRepository repo,
+        bool canViewPhones)
+    {
+        var cache = new MemoryCache(new MemoryCacheOptions());
+        var rateLimiter = new NumberSeekerRateLimiter(
+            cache,
+            Options.Create(new NumberSeekerOptions { MaxScrapesPerHour = 100, MaxImportsPerHour = 100 }));
+
+        return new NumberSeekerService(
+            client,
+            repo,
+            new FakeContactService(),
+            rateLimiter,
+            new FakePhoneAccess { CanView = canViewPhones },
             Options.Create(new NumberSeekerOptions()),
             new Api_Vapp.Tests.Shared.NoOpAuditService(),
             NullLogger<NumberSeekerService>.Instance);
@@ -490,12 +665,26 @@ public class NumberSeekerServiceTests
             => Task.FromResult(Tasks.Where(t => t.UserId == userId).Take(limit).ToList());
     }
 
+    private sealed class FakePhoneAccess : INumberSeekerPhoneAccessService
+    {
+        public bool CanView { get; set; }
+
+        public Task<bool> CanViewPhonesAsync(int userId, CancellationToken cancellationToken = default)
+            => Task.FromResult(CanView);
+
+        public Task<HashSet<string>> GetHiddenMobileNumbersAsync(int userId, CancellationToken cancellationToken = default)
+            => Task.FromResult(new HashSet<string>(StringComparer.Ordinal));
+    }
+
     private sealed class FakeContactService : IContactService
     {
+        public ImportContactsFromListDto? LastImport { get; private set; }
+
         public Task<ApiResponse<ImportExcelResultDto>> ImportFromListAsync(
             int userId,
             ImportContactsFromListDto importDto)
         {
+            LastImport = importDto;
             return Task.FromResult(ApiResponse<ImportExcelResultDto>.CreateSuccess(
                 new ImportExcelResultDto
                 {

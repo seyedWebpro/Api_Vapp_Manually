@@ -45,8 +45,8 @@ namespace Api_Vapp.Controller
         [ProducesResponseType(typeof(ApiResponse<NumberSeekerFormMetaDto>), StatusCodes.Status200OK)]
         public async Task<ActionResult<ApiResponse<NumberSeekerFormMetaDto>>> GetFormMeta()
         {
-            await GetCurrentUserIdAsync();
-            var result = _numberSeekerService.GetFormMeta();
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _numberSeekerService.GetFormMetaAsync(userId);
             return StatusCode(result.StatusCode, result);
         }
 

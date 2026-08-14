@@ -352,31 +352,38 @@ namespace Api_Vapp.Services
                 }
                 else
                 {
-                    // اگر ApplyToAllContacts = false، باید ContactNotebookId مشخص شود
-                    if (!selectDto.ContactNotebookId.HasValue || selectDto.ContactNotebookId.Value <= 0)
+                    var selectedNotebookIds = NotebookIdSelectionHelper.Normalize(
+                        selectDto.ContactNotebookIds,
+                        selectDto.ContactNotebookId);
+
+                    if (selectedNotebookIds.Count == 0)
                     {
                         await transaction.RollbackAsync();
                         return ApiResponse<RecipientListForAutomatedMessageResponseDto>.BadRequest(
-                            "برای انتخاب گیرندگان باید یکی از دو حالت را مشخص کنید: همه مخاطبین یا یک دفترچه تلفن",
+                            "برای انتخاب گیرندگان باید همه مخاطبین یا حداقل یک دفترچه تلفن را مشخص کنید",
                             errorCode: ErrorCodes.InvalidInput);
                     }
 
-                    // بررسی مالکیت دفترچه
-                    var notebook = await _notebookRepository.GetByIdAsync(selectDto.ContactNotebookId.Value);
-                    if (notebook == null || notebook.UserId != userId || notebook.IsDeleted)
+                    var validNotebookIds = await _context.ContactNotebooks
+                        .AsNoTracking()
+                        .Where(n => selectedNotebookIds.Contains(n.Id) && n.UserId == userId && !n.IsDeleted)
+                        .Select(n => n.Id)
+                        .ToListAsync();
+
+                    var invalidNotebookIds = selectedNotebookIds.Except(validNotebookIds).ToList();
+                    if (invalidNotebookIds.Count > 0)
                     {
                         await transaction.RollbackAsync();
                         return ApiResponse<RecipientListForAutomatedMessageResponseDto>.BadRequest(
-                            "دفترچه تلفن یافت نشد یا شما مجاز به دسترسی به این دفترچه نیستید");
+                            $"دفترچه‌های تلفن با شناسه‌های [{string.Join(", ", invalidNotebookIds)}] یافت نشد یا به شما تعلق ندارند",
+                            errorCode: ErrorCodes.InvalidInput);
                     }
 
-                    // دریافت همه مخاطبین دفترچه
-                    var allContacts = await _contactRepository.GetByNotebookIdAsync(selectDto.ContactNotebookId.Value);
-                    var validContacts = allContacts
-                        .Where(c => !c.IsDeleted)
-                        .ToList();
+                    var validContacts = await _context.Contacts
+                        .Include(c => c.AdditionalInfo)
+                        .Where(c => validNotebookIds.Contains(c.ContactNotebookId) && !c.IsDeleted)
+                        .ToListAsync();
 
-                    // حذف مخاطبینی که در ExcludedContactIds هستند
                     if (selectDto.ExcludedContactIds != null && selectDto.ExcludedContactIds.Any())
                     {
                         var excludedContactIds = selectDto.ExcludedContactIds.ToHashSet();
@@ -385,13 +392,16 @@ namespace Api_Vapp.Services
                             .ToList();
                     }
 
-                    // اعمال فیلتر بر اساس نوع پیام خودکار
                     var filteredContacts = await FilterContactsByAutomationTypeAsync(
-                        validContacts, 
-                        automatedMessage.AutomationType, 
+                        validContacts,
+                        automatedMessage.AutomationType,
                         userId);
 
                     recipients.AddRange(filteredContacts);
+
+                    _logger.LogInformation(
+                        "گیرندگان پیام خودکار از {NotebookCount} دفترچه جمع‌آوری شد — AutomatedMessageId: {Id}, UserId: {UserId}",
+                        validNotebookIds.Count, automatedMessageId, userId);
                 }
 
                 // حذف تکراری‌ها بر اساس شماره موبایل
@@ -428,11 +438,16 @@ namespace Api_Vapp.Services
                     .OrderByDescending(s => s.CreatedAt)
                     .FirstOrDefaultAsync();
 
+                var persistedNotebookIds = selectDto.ApplyToAllContacts
+                    ? new List<int>()
+                    : NotebookIdSelectionHelper.Normalize(selectDto.ContactNotebookIds, selectDto.ContactNotebookId);
+
                 var selectionCriteria = new
                 {
                     AutomatedMessageId = automatedMessageId,
                     ApplyToAllContacts = selectDto.ApplyToAllContacts,
-                    ContactNotebookId = selectDto.ContactNotebookId,
+                    ContactNotebookIds = persistedNotebookIds,
+                    ContactNotebookId = persistedNotebookIds.Count == 1 ? persistedNotebookIds[0] : (int?)null,
                     ExcludedContactIds = selectDto.ExcludedContactIds
                 };
 
@@ -489,6 +504,7 @@ namespace Api_Vapp.Services
                     }
                 }
 
+                response.Recipients = await MaskAutomationRecipientsForClientAsync(userId, recipients);
                 return ApiResponse<RecipientListForAutomatedMessageResponseDto>.CreateSuccess(response);
             }
             catch (DbUpdateConcurrencyException ex)
@@ -3095,12 +3111,9 @@ namespace Api_Vapp.Services
                 if (applyAll)
                     return true;
 
-                if ((root.TryGetProperty("ContactNotebookId", out var nbProp)
-                     || root.TryGetProperty("contactNotebookId", out nbProp))
-                    && nbProp.ValueKind != JsonValueKind.Null
-                    && nbProp.TryGetInt32(out var notebookId)
-                    && notebookId > 0
-                    && contact.ContactNotebookId != notebookId)
+                var selectedNotebookIds = NotebookIdSelectionHelper.ReadFromJsonElement(root);
+                if (selectedNotebookIds.Count > 0
+                    && !selectedNotebookIds.Contains(contact.ContactNotebookId))
                 {
                     return false;
                 }
@@ -3250,6 +3263,43 @@ namespace Api_Vapp.Services
                 await transaction.RollbackAsync();
                 throw;
             }
+        }
+
+        private async Task<List<RecipientItemForAutomatedMessageDto>> MaskAutomationRecipientsForClientAsync(
+            int userId,
+            List<RecipientItemForAutomatedMessageDto> recipients)
+        {
+            if (recipients.Count == 0)
+                return recipients;
+
+            var user = await _userRepository.GetByIdAsync(userId);
+            if (user is { IsDeleted: false, CanViewNumberSeekerPhones: true })
+                return recipients;
+
+            var hiddenMobiles = await _context.Contacts
+                .AsNoTracking()
+                .Where(c => !c.IsDeleted
+                            && c.HideMobileNumber
+                            && c.ContactNotebook.UserId == userId
+                            && !c.ContactNotebook.IsDeleted)
+                .Select(c => c.MobileNumber)
+                .ToListAsync();
+
+            if (hiddenMobiles.Count == 0)
+                return recipients;
+
+            var hidden = hiddenMobiles.ToHashSet(StringComparer.Ordinal);
+            return recipients.Select(r => new RecipientItemForAutomatedMessageDto
+            {
+                ContactId = r.ContactId,
+                MobileNumber = hidden.Contains(r.MobileNumber)
+                    ? PhoneNumberMasker.Mask(r.MobileNumber)
+                    : r.MobileNumber,
+                FullName = r.FullName,
+                HasDateOfBirth = r.HasDateOfBirth,
+                HasCashback = r.HasCashback,
+                IsEligible = r.IsEligible
+            }).ToList();
         }
 
         #endregion

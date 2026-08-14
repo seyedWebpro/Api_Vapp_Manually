@@ -46,7 +46,7 @@ namespace Api_Vapp.Controller
         }
 
         /// <summary>
-        /// لیست ارسال‌ها (کمپین = یک ردیف با sendCount؛ بقیه بر اساس Sid)
+        /// لیست ارسال‌ها — قالب/متن به دفترچه و کمپین = یک ردیف با sendCount؛ بقیه بر اساس Sid ایران‌نوین
         /// </summary>
         [HttpGet("sends")]
         [ProducesResponseType(typeof(ApiResponse<SmsSendBatchListDto>), StatusCodes.Status200OK)]
@@ -136,7 +136,7 @@ namespace Api_Vapp.Controller
         }
 
         /// <summary>
-        /// جزئیات یک ارسال (هدر + آمار + متن پیام) — اگر Sid متعلق به کمپین باشد کل کمپین برگردانده می‌شود
+        /// جزئیات یک ارسال (هدر + آمار + متن پیام) — اگر Sid متعلق به ارسال گروهی باشد کل دسته برگردانده می‌شود
         /// </summary>
         [HttpGet("sends/{sid:long}")]
         [ProducesResponseType(typeof(ApiResponse<SmsSendBatchDetailDto>), StatusCodes.Status200OK)]

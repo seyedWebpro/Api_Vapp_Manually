@@ -26,6 +26,12 @@ namespace Api_Vapp.Models
         // تأیید شده بودن شماره تلفن
         public bool IsPhoneVerified { get; set; } = false;
 
+        /// <summary>
+        /// اگر true باشد، کاربر می‌تواند شماره‌های کامل بخش شماره‌جو را ببیند (اکسل، پیش‌نمایش، دفترچه).
+        /// پیش‌فرض false — فقط از پنل ادمین برای کاربران خاص فعال می‌شود.
+        /// </summary>
+        public bool CanViewNumberSeekerPhones { get; set; } = false;
+
         // حذف شده (Soft Delete)
         public bool IsDeleted { get; set; } = false;
 

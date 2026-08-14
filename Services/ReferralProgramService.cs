@@ -8,7 +8,6 @@ using Api_Vapp.Services.Audit;
 using Api_Vapp.Utilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using System.Globalization;
 using System.Text.Json;
 
 namespace Api_Vapp.Services
@@ -566,15 +565,14 @@ namespace Api_Vapp.Services
             var resolved = await ResolvePersonalCodeAsync(userId, request.Code);
             if (resolved == null)
             {
-                return ApiResponse<InquireReferralCodeResponseDto>.CreateSuccess(new InquireReferralCodeResponseDto
-                {
-                    IsValid = false,
-                    InvalidReason = "کد یافت نشد"
-                }, "کد نامعتبر است");
+                var notFound = await BuildCodeNotFoundResponseAsync(userId, request.Code);
+                return ApiResponse<InquireReferralCodeResponseDto>.CreateSuccess(
+                    notFound,
+                    notFound.StatusMessage ?? ReferralProgramValidity.CodeNotFoundMessage);
             }
 
             var program = resolved.Program;
-            var state = EvaluateProgramState(program);
+            var state = ReferralProgramValidity.Evaluate(program);
 
             if (!state.IsValid)
             {
@@ -584,7 +582,14 @@ namespace Api_Vapp.Services
                     IsExpired = state.IsExpired,
                     IsNotStarted = state.IsNotStarted,
                     IsActive = program.IsActive,
-                    InvalidReason = state.InvalidReason
+                    InvalidReason = state.InvalidReason,
+                    StatusMessage = state.StatusMessage,
+                    ProgramId = program.Id,
+                    ProgramName = program.Title,
+                    PublicCode = resolved.UsedCode,
+                    RewardType = program.RewardType,
+                    StartDate = EnsureUtc(program.StartDate),
+                    EndDate = EnsureUtc(program.EndDate)
                 }, state.InvalidReason ?? "کد نامعتبر است");
             }
 
@@ -605,6 +610,7 @@ namespace Api_Vapp.Services
                 IsExpired = false,
                 IsNotStarted = false,
                 IsActive = program.IsActive,
+                StatusMessage = state.StatusMessage,
                 ProgramId = program.Id,
                 ProgramName = program.Title,
                 PublicCode = resolved.UsedCode,
@@ -623,7 +629,7 @@ namespace Api_Vapp.Services
                 EndDate = EnsureUtc(program.EndDate)
             };
 
-            return ApiResponse<InquireReferralCodeResponseDto>.CreateSuccess(response, "کد معتبر است");
+            return ApiResponse<InquireReferralCodeResponseDto>.CreateSuccess(response, state.StatusMessage);
         }
 
         public async Task<ApiResponse<RedeemReferralCodeResponseDto>> RedeemCodeAsync(int userId, RedeemReferralCodeDto request)
@@ -655,7 +661,7 @@ namespace Api_Vapp.Services
             }
 
             var program = resolved.Program;
-            var state = EvaluateProgramState(program);
+            var state = ReferralProgramValidity.Evaluate(program);
             if (!state.IsValid)
             {
                 return ApiResponse<RedeemReferralCodeResponseDto>.BadRequest(state.InvalidReason ?? "کد قابل استفاده نیست");
@@ -1871,26 +1877,36 @@ namespace Api_Vapp.Services
             };
         }
 
-        private static (bool IsValid, bool IsExpired, bool IsNotStarted, string? InvalidReason) EvaluateProgramState(ReferralProgram program)
+        private async Task<InquireReferralCodeResponseDto> BuildCodeNotFoundResponseAsync(int userId, string? code)
         {
-            var now = DateTime.UtcNow;
-
-            if (!program.IsActive)
+            var normalized = (code ?? string.Empty).Trim().ToUpperInvariant();
+            if (normalized.StartsWith("PRG", StringComparison.Ordinal))
             {
-                return (false, false, false, "برنامه غیرفعال است");
+                var program = await _programRepository.GetByPublicCodeAsync(userId, normalized);
+                if (program != null)
+                {
+                    return new InquireReferralCodeResponseDto
+                    {
+                        IsValid = false,
+                        IsActive = program.IsActive,
+                        InvalidReason = ReferralProgramValidity.PublicCodeUsedMessage,
+                        StatusMessage = ReferralProgramValidity.PublicCodeUsedMessage,
+                        ProgramId = program.Id,
+                        ProgramName = program.Title,
+                        PublicCode = program.PublicCode,
+                        RewardType = program.RewardType,
+                        StartDate = EnsureUtc(program.StartDate),
+                        EndDate = EnsureUtc(program.EndDate)
+                    };
+                }
             }
 
-            if (now < program.StartDate)
+            return new InquireReferralCodeResponseDto
             {
-                return (false, false, true, "برنامه هنوز شروع نشده است");
-            }
-
-            if (program.EndDate.HasValue && now > program.EndDate.Value)
-            {
-                return (false, true, false, "کد منقضی شده است");
-            }
-
-            return (true, false, false, null);
+                IsValid = false,
+                InvalidReason = ReferralProgramValidity.CodeNotFoundMessage,
+                StatusMessage = ReferralProgramValidity.CodeNotFoundMessage
+            };
         }
 
         private static (decimal? Amount, string Formatted) BuildCustomerDiscountInfo(
@@ -2090,14 +2106,11 @@ namespace Api_Vapp.Services
 
         private static string FormatPersianDate(DateTime date)
         {
-            var utcDate = EnsureUtc(date);
-            var pc = new PersianCalendar();
-            return $"{pc.GetYear(utcDate):0000}/{pc.GetMonth(utcDate):00}/{pc.GetDayOfMonth(utcDate):00}";
+            return ReferralProgramValidity.FormatPersianDate(date);
         }
 
         private ReferralProgramDto MapToDto(ReferralProgram program, int personalCodesCount = 0)
         {
-            var now = DateTime.UtcNow;
             List<int>? notebookIds = null;
             List<int>? contactIds = null;
             List<int>? tagIds = null;
@@ -2151,9 +2164,7 @@ namespace Api_Vapp.Services
                 StartDate = EnsureUtc(program.StartDate),
                 EndDate = EnsureUtc(program.EndDate),
                 NotifiedContactsCount = program.NotifiedContactsCount,
-                IsCurrentlyValid = program.IsActive &&
-                                   now >= program.StartDate &&
-                                   (program.EndDate == null || now <= program.EndDate),
+                IsCurrentlyValid = ReferralProgramValidity.Evaluate(program).IsValid,
                 CreatedAt = EnsureUtc(program.CreatedAt),
                 UpdatedAt = EnsureUtc(program.UpdatedAt)
             };

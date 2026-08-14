@@ -27,6 +27,7 @@ namespace Api_Vapp.Services
         private readonly IFileUploadService _fileUploadService;
         private readonly IUserPushNotifier _pushNotifier;
         private readonly IAutomatedMessageService _automatedMessageService;
+        private readonly INumberSeekerPhoneAccessService _phoneAccess;
 
         public ContactService(
             IContactRepository contactRepository,
@@ -36,7 +37,8 @@ namespace Api_Vapp.Services
             ILogger<ContactService> logger,
             IFileUploadService fileUploadService,
             IUserPushNotifier pushNotifier,
-            IAutomatedMessageService automatedMessageService)
+            IAutomatedMessageService automatedMessageService,
+            INumberSeekerPhoneAccessService phoneAccess)
         {
             _contactRepository = contactRepository;
             _notebookRepository = notebookRepository;
@@ -46,6 +48,7 @@ namespace Api_Vapp.Services
             _fileUploadService = fileUploadService;
             _pushNotifier = pushNotifier;
             _automatedMessageService = automatedMessageService;
+            _phoneAccess = phoneAccess;
         }
 
         public async Task<ApiResponse<ContactResponseDto>> CreateContactAsync(int userId, CreateContactDto createDto)
@@ -78,10 +81,11 @@ namespace Api_Vapp.Services
                         createDto.MobileNumber, createDto.ContactNotebookId);
                     
                     // بارگذاری مجدد با اطلاعات تکمیلی
+                    var canViewPhones = await _phoneAccess.CanViewPhonesAsync(userId);
                     var contactWithInfo = await _contactRepository.GetByIdWithAdditionalInfoAsync(existingContact.Id);
                     
                     return ApiResponse<ContactResponseDto>.CreateSuccess(
-                        await MapToContactResponseDtoAsync(contactWithInfo!),
+                        await MapToContactResponseDtoAsync(contactWithInfo!, canViewPhones),
                         "مخاطب قبلاً در این دفترچه ثبت شده است",
                         200
                     );
@@ -319,7 +323,7 @@ namespace Api_Vapp.Services
                     }
 
                     return ApiResponse<ContactResponseDto>.CreateSuccess(
-                        await MapToContactResponseDtoAsync(contactWithInfo!),
+                        await MapToContactResponseDtoAsync(contactWithInfo!, await _phoneAccess.CanViewPhonesAsync(userId)),
                         "مخاطب با موفقیت ایجاد شد",
                         201
                     );
@@ -369,7 +373,7 @@ namespace Api_Vapp.Services
                                 {
                                     var contactWithInfo = await _contactRepository.GetByIdWithAdditionalInfoAsync(duplicateContact.Id);
                                     return ApiResponse<ContactResponseDto>.CreateSuccess(
-                                        await MapToContactResponseDtoAsync(contactWithInfo!),
+                                        await MapToContactResponseDtoAsync(contactWithInfo!, await _phoneAccess.CanViewPhonesAsync(userId)),
                                         "مخاطب قبلاً در این دفترچه ثبت شده است",
                                         200
                                     );
@@ -412,7 +416,7 @@ namespace Api_Vapp.Services
                 }
 
                 return ApiResponse<ContactResponseDto>.CreateSuccess(
-                    await MapToContactResponseDtoAsync(contact)
+                    await MapToContactResponseDtoAsync(contact, await _phoneAccess.CanViewPhonesAsync(userId))
                 );
             }
             catch (Exception ex)
@@ -466,10 +470,11 @@ namespace Api_Vapp.Services
                     .Take(pageSize)
                     .ToList();
 
+                var canViewPhones = await _phoneAccess.CanViewPhonesAsync(userId);
                 var contactDtos = new List<ContactResponseDto>();
                 foreach (var contact in pagedContacts)
                 {
-                    contactDtos.Add(await MapToContactResponseDtoAsync(contact));
+                    contactDtos.Add(await MapToContactResponseDtoAsync(contact, canViewPhones));
                 }
 
                 // دریافت تعداد فایل‌های ایمپورت شده
@@ -569,10 +574,11 @@ namespace Api_Vapp.Services
 
                 var totalPages = totalCount == 0 ? 0 : (int)Math.Ceiling(totalCount / (double)pageSize);
 
+                var canViewPhones = await _phoneAccess.CanViewPhonesAsync(userId);
                 var contactDtos = new List<ContactResponseDto>();
                 foreach (var contact in contacts)
                 {
-                    contactDtos.Add(await MapToContactResponseDtoAsync(contact));
+                    contactDtos.Add(await MapToContactResponseDtoAsync(contact, canViewPhones));
                 }
 
                 var response = new ContactListResponseDto
@@ -615,23 +621,37 @@ namespace Api_Vapp.Services
                 }
 
                 // به‌روزرسانی فیلدها
+                var canViewPhones = await _phoneAccess.CanViewPhonesAsync(userId);
                 if (!string.IsNullOrWhiteSpace(updateDto.MobileNumber))
                 {
+                    var incomingMobile = updateDto.MobileNumber.Trim();
+                    var skipHiddenMobileUpdate = contact.HideMobileNumber
+                        && (!canViewPhones || PhoneNumberMasker.IsMaskedVersionOf(incomingMobile, contact.MobileNumber));
+
+                    if (!skipHiddenMobileUpdate)
+                    {
                     // بررسی تکراری بودن شماره موبایل
                     // اگر تکراری بود، شماره را تغییر نمی‌دهیم (بدون خطا)
                     var exists = await _contactRepository.ExistsByMobileNumberInNotebookAsync(
                         contact.ContactNotebookId, 
-                        updateDto.MobileNumber, 
+                        incomingMobile, 
                         id);
                     if (exists)
                     {
                         _logger.LogInformation("شماره موبایل {MobileNumber} در دفترچه {NotebookId} تکراری است. شماره تغییر داده نمی‌شود.", 
-                            updateDto.MobileNumber, contact.ContactNotebookId);
+                            incomingMobile, contact.ContactNotebookId);
                         // شماره را تغییر نمی‌دهیم، اما سایر فیلدها را به‌روزرسانی می‌کنیم
                     }
                     else
                     {
-                        contact.MobileNumber = updateDto.MobileNumber;
+                        contact.MobileNumber = incomingMobile;
+                    }
+                    }
+                    else
+                    {
+                        _logger.LogInformation(
+                            "به‌روزرسانی شماره مخاطب مخفی {ContactId} نادیده گرفته شد — UserId: {UserId}",
+                            id, userId);
                     }
                 }
 
@@ -818,7 +838,7 @@ namespace Api_Vapp.Services
                 var updatedContactWithInfo = await _contactRepository.GetByIdWithAdditionalInfoAsync(id);
 
                 return ApiResponse<ContactResponseDto>.CreateSuccess(
-                    await MapToContactResponseDtoAsync(updatedContactWithInfo!),
+                    await MapToContactResponseDtoAsync(updatedContactWithInfo!, await _phoneAccess.CanViewPhonesAsync(userId)),
                     "اطلاعات مخاطب با موفقیت به‌روزرسانی شد"
                 );
             }
@@ -1564,12 +1584,16 @@ namespace Api_Vapp.Services
                 headerRange.Style.Border.InsideBorder = XLBorderStyleValues.Thin;
 
                 // پر کردن داده‌ها
+                var canViewPhones = await _phoneAccess.CanViewPhonesAsync(userId);
                 var rowNum = 2;
                 var itemIndex = (pageNumber - 1) * pageSize + 1;
                 foreach (var contact in pagedContacts)
                 {
                     worksheet.Cell(rowNum, 1).Value = itemIndex;
-                    worksheet.Cell(rowNum, 2).Value = contact.MobileNumber;
+                    worksheet.Cell(rowNum, 2).Value = PhoneNumberMasker.ForClient(
+                        contact.MobileNumber,
+                        contact.HideMobileNumber,
+                        canViewPhones);
                     worksheet.Cell(rowNum, 3).Value = contact.FullName ?? "";
                     worksheet.Cell(rowNum, 4).Value = contact.Brand ?? "";
                     
@@ -1669,7 +1693,7 @@ namespace Api_Vapp.Services
         /// <summary>
         /// تبدیل Contact به ContactResponseDto
         /// </summary>
-        private async Task<ContactResponseDto> MapToContactResponseDtoAsync(Contact contact)
+        private async Task<ContactResponseDto> MapToContactResponseDtoAsync(Contact contact, bool canViewPhones = false)
         {
             // بارگذاری دفترچه در صورت نیاز
             string notebookName;
@@ -1683,12 +1707,17 @@ namespace Api_Vapp.Services
                 notebookName = contact.ContactNotebook.Name;
             }
 
+            var isMasked = contact.HideMobileNumber && !canViewPhones;
             var responseDto = new ContactResponseDto
             {
                 Id = contact.Id,
                 ContactNotebookId = contact.ContactNotebookId,
                 ContactNotebookName = notebookName,
-                MobileNumber = contact.MobileNumber,
+                MobileNumber = isMasked
+                    ? PhoneNumberMasker.Mask(contact.MobileNumber)
+                    : contact.MobileNumber,
+                HideMobileNumber = contact.HideMobileNumber,
+                IsMobileMasked = isMasked,
                 FullName = contact.FullName,
                 Brand = contact.Brand,
                 ProfileImagePath = contact.ProfileImagePath,
@@ -2146,6 +2175,7 @@ namespace Api_Vapp.Services
                 // Regex برای اعتبارسنجی شماره موبایل
                 var mobileRegex = new Regex(@"^09\d{9}$");
 
+                var canViewPhones = await _phoneAccess.CanViewPhonesAsync(userId);
                 var contactsToAdd = new List<Contact>();
                 int index = 0;
 
@@ -2156,6 +2186,11 @@ namespace Api_Vapp.Services
 
                     // نرمال‌سازی شماره موبایل
                     mobileNumber = NormalizeMobileNumber(mobileNumber);
+
+                    var displayMobile = PhoneNumberMasker.ForClient(
+                        mobileNumber,
+                        item.HideMobileNumber,
+                        canViewPhones);
 
                     // بررسی خالی بودن
                     if (string.IsNullOrWhiteSpace(mobileNumber))
@@ -2177,7 +2212,7 @@ namespace Api_Vapp.Services
                         result.Errors.Add(new ImportRowError
                         {
                             RowNumber = index,
-                            MobileNumber = mobileNumber,
+                            MobileNumber = displayMobile,
                             ErrorMessage = "فرمت شماره موبایل نامعتبر است (باید با 09 شروع شود و 11 رقم باشد)"
                         });
                         continue;
@@ -2190,7 +2225,7 @@ namespace Api_Vapp.Services
                         result.Errors.Add(new ImportRowError
                         {
                             RowNumber = index,
-                            MobileNumber = mobileNumber,
+                            MobileNumber = displayMobile,
                             ErrorMessage = "این شماره موبایل قبلاً در دفترچه ثبت شده است"
                         });
                         continue;
@@ -2203,7 +2238,7 @@ namespace Api_Vapp.Services
                         result.Errors.Add(new ImportRowError
                         {
                             RowNumber = index,
-                            MobileNumber = mobileNumber,
+                            MobileNumber = displayMobile,
                             ErrorMessage = "این شماره موبایل در لیست تکراری است"
                         });
                         continue;
@@ -2217,7 +2252,7 @@ namespace Api_Vapp.Services
                         result.Errors.Add(new ImportRowError
                         {
                             RowNumber = index,
-                            MobileNumber = mobileNumber,
+                            MobileNumber = displayMobile,
                             ErrorMessage = "نام کامل مخاطب الزامی است"
                         });
                         continue;
@@ -2229,6 +2264,7 @@ namespace Api_Vapp.Services
                         ContactNotebookId = importDto.ContactNotebookId,
                         MobileNumber = mobileNumber,
                         FullName = fullName,
+                        HideMobileNumber = item.HideMobileNumber,
                         Tags = null, // فیلد Tags دیگر استفاده نمی‌شود
                         CreatedAt = DateTime.UtcNow
                     };
