@@ -38,5 +38,8 @@ namespace Api_Vapp.Constants
         public const string AutomatedMessage = "AutomatedMessage";
         public const string AutomationType = "AutomationType";
         public const string AppBanner = "AppBanner";
+        public const string AppVersionPolicy = "AppVersionPolicy";
+        public const string Otp = "Otp";
+        public const string SmsSend = "SmsSend";
     }
 }

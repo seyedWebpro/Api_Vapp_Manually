@@ -54,6 +54,7 @@ namespace Api_Vapp.Data
         public DbSet<EducationalVideo> EducationalVideos { get; set; }
         public DbSet<AutomationTypeDefinition> AutomationTypes { get; set; }
         public DbSet<AppBanner> AppBanners { get; set; }
+        public DbSet<AppVersionPolicy> AppVersionPolicies { get; set; }
         public DbSet<SmsApprovalRequest> SmsApprovalRequests { get; set; }
         public DbSet<UserForm> UserForms { get; set; }
         public DbSet<UserFormField> UserFormFields { get; set; }
@@ -146,7 +147,8 @@ namespace Api_Vapp.Data
                 entity.Property(rt => rt.Id).ValueGeneratedOnAdd();
 
                 entity.Property(rt => rt.Token)
-                    .IsRequired();
+                    .IsRequired()
+                    .HasMaxLength(450);
 
                 entity.Property(rt => rt.UserId)
                     .IsRequired();
@@ -160,6 +162,11 @@ namespace Api_Vapp.Data
                 entity.Property(rt => rt.IsRevoked)
                     .HasDefaultValue(false);
 
+                entity.Property(rt => rt.ReplacementToken)
+                    .HasMaxLength(450);
+
+                entity.Property(rt => rt.ReplacedByTokenId);
+
                 // رابطه با User
                 entity.HasOne(rt => rt.User)
                     .WithMany()
@@ -170,6 +177,7 @@ namespace Api_Vapp.Data
                 entity.HasIndex(rt => rt.Token).IsUnique();
                 entity.HasIndex(rt => rt.UserId);
                 entity.HasIndex(rt => rt.IsRevoked);
+                entity.HasIndex(rt => rt.ReplacementToken);
             });
 
             // تنظیمات Role
@@ -1327,6 +1335,26 @@ namespace Api_Vapp.Data
                 entity.HasIndex(b => b.Key).IsUnique();
                 entity.HasIndex(b => b.IsActive);
                 entity.HasIndex(b => b.SortOrder);
+            });
+
+            // سیاست نسخه اپ موبایل
+            modelBuilder.Entity<AppVersionPolicy>(entity =>
+            {
+                entity.ToTable("AppVersionPolicies");
+                entity.HasKey(p => p.Id);
+                entity.Property(p => p.Id).ValueGeneratedOnAdd();
+                entity.Property(p => p.Platform).IsRequired().HasMaxLength(20);
+                entity.Property(p => p.LatestVersion).IsRequired().HasMaxLength(32);
+                entity.Property(p => p.MinSupportedVersion).IsRequired().HasMaxLength(32);
+                entity.Property(p => p.StoreUrl).HasMaxLength(1000);
+                entity.Property(p => p.Title).HasMaxLength(200);
+                entity.Property(p => p.Message).HasMaxLength(1000);
+                entity.Property(p => p.ChangelogJson).HasMaxLength(4000);
+                entity.Property(p => p.IsActive).HasDefaultValue(true);
+                entity.Property(p => p.IsDeleted).HasDefaultValue(false);
+                entity.Property(p => p.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+                entity.HasIndex(p => p.Platform).IsUnique();
+                entity.HasIndex(p => p.IsActive);
             });
 
             // تنظیمات SmsApprovalRequest

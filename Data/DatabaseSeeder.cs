@@ -29,6 +29,49 @@ namespace Api_Vapp.Data
             await SeedSubscriptionPlansAsync(context, logger);
             await SeedAutomationTypesAsync(context, logger);
             await SeedAppBannersAsync(context, logger);
+            await SeedAppVersionPoliciesAsync(context, logger);
+        }
+
+        private static async Task SeedAppVersionPoliciesAsync(Api_Context context, ILogger logger)
+        {
+            foreach (var platform in AppVersionPlatforms.All)
+            {
+                var exists = await context.AppVersionPolicies
+                    .AnyAsync(p => p.Platform == platform && !p.IsDeleted);
+
+                if (exists)
+                    continue;
+
+                var softDeleted = await context.AppVersionPolicies
+                    .FirstOrDefaultAsync(p => p.Platform == platform);
+
+                if (softDeleted != null)
+                {
+                    softDeleted.IsDeleted = false;
+                    softDeleted.IsActive = true;
+                    softDeleted.LatestVersion = "1.0.0";
+                    softDeleted.MinSupportedVersion = "1.0.0";
+                    softDeleted.UpdatedAt = DateTime.UtcNow;
+                    await context.SaveChangesAsync();
+                    logger.LogInformation("AppVersionPolicy restored for platform {Platform}.", platform);
+                    continue;
+                }
+
+                context.AppVersionPolicies.Add(new AppVersionPolicy
+                {
+                    Platform = platform,
+                    LatestVersion = "1.0.0",
+                    MinSupportedVersion = "1.0.0",
+                    Title = "نسخه جدید آماده است",
+                    Message = "نسخه جدید اپ در دسترس است. می‌توانید هر زمان به‌روزرسانی کنید.",
+                    ChangelogJson = "[]",
+                    IsActive = true,
+                    CreatedAt = DateTime.UtcNow
+                });
+
+                await context.SaveChangesAsync();
+                logger.LogInformation("AppVersionPolicy seeded for platform {Platform} at version 1.0.0 (optional updates).", platform);
+            }
         }
 
         private static async Task<IReadOnlyDictionary<string, Role>> SeedDefaultRolesAsync(

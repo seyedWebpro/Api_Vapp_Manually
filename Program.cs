@@ -459,6 +459,7 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.IUserSupportTicketService, Api_Va
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminEducationalVideoService, Api_Vapp.Services.Admin.AdminEducationalVideoService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminAutomationTypeService, Api_Vapp.Services.Admin.AdminAutomationTypeService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminAppBannerService, Api_Vapp.Services.Admin.AdminAppBannerService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IAppVersionService, Api_Vapp.Services.AppVersionService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminMessageApprovalService, Api_Vapp.Services.Admin.AdminMessageApprovalService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminTemplateApprovalService, Api_Vapp.Services.Admin.AdminTemplateApprovalService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminQuickSendApprovalService, Api_Vapp.Services.Admin.AdminQuickSendApprovalService>();
@@ -472,6 +473,7 @@ builder.Services.AddHostedService<Api_Vapp.Services.BackgroundServices.Scheduled
 builder.Services.AddHostedService<Api_Vapp.Services.BackgroundServices.SmsDeliverySyncBackgroundService>();
 builder.Services.AddHostedService<Api_Vapp.Services.BackgroundServices.BookingReminderBackgroundService>();
 builder.Services.AddHostedService<Api_Vapp.Services.BackgroundServices.FinancialReportPushBackgroundService>();
+builder.Services.AddHostedService<Api_Vapp.Services.BackgroundServices.SubscriptionExpiryBackgroundService>();
 
 // use in OTP 
 builder.Services.AddSingleton<IConfiguration>(builder.Configuration);

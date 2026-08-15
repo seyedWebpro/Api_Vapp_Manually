@@ -3,6 +3,7 @@ using Api_Vapp.DTOs.Common;
 using Api_Vapp.DTOs.User;
 using Api_Vapp.Exceptions;
 using Api_Vapp.Interfaces;
+using Api_Vapp.Services;
 using Api_Vapp.Utilities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -171,14 +172,9 @@ namespace Api_Vapp.Controller
             if (!ModelState.IsValid)
             {
                 var errors = ExtractModelStateErrors();
-                return StatusCode(400, new SendOtpResponseDto
-                {
-                    StatusCode = 400,
-                    Success = false,
-                    Message = "داده‌های ورودی نامعتبر است",
-                    ExpiresInSeconds = 0,
-                    Errors = errors
-                });
+                return StatusCode(400, AuthOtpResponseFactory.BadRequest(
+                    "داده‌های ورودی نامعتبر است",
+                    errors));
             }
 
             var result = await _authService.ResendRegistrationOtpAsync(loginDto, GetClientIpAddress());
@@ -391,14 +387,9 @@ namespace Api_Vapp.Controller
             if (!ModelState.IsValid)
             {
                 var errors = ExtractModelStateErrors();
-                return StatusCode(400, new SendOtpResponseDto
-                {
-                    StatusCode = 400,
-                    Success = false,
-                    Message = "داده‌های ورودی نامعتبر است",
-                    ExpiresInSeconds = 0,
-                    Errors = errors
-                });
+                return StatusCode(400, AuthOtpResponseFactory.BadRequest(
+                    "داده‌های ورودی نامعتبر است",
+                    errors));
             }
 
             var result = await _authService.ResendLoginOtpAsync(loginDto, GetClientIpAddress());
@@ -528,14 +519,9 @@ namespace Api_Vapp.Controller
             if (!ModelState.IsValid)
             {
                 var errors = ExtractModelStateErrors();
-                return StatusCode(400, new SendOtpResponseDto
-                {
-                    StatusCode = 400,
-                    Success = false,
-                    Message = "داده‌های ورودی نامعتبر است",
-                    ExpiresInSeconds = 0,
-                    Errors = errors
-                });
+                return StatusCode(400, AuthOtpResponseFactory.BadRequest(
+                    "داده‌های ورودی نامعتبر است",
+                    errors));
             }
 
             var result = await _authService.ResendForgotPasswordOtpAsync(loginDto, GetClientIpAddress());

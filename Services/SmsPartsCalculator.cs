@@ -221,8 +221,9 @@ namespace Api_Vapp.Services
             if (string.IsNullOrEmpty(suffix))
                 return prepared;
 
-            if (prepared.TrimEnd().EndsWith(suffix, StringComparison.Ordinal))
-                return prepared;
+            // OTP autofill: ممکن است بعد از «لغو11» یک خط Android App Hash بیاید
+            if (OtpSmsMessageBuilder.HasOptOutSuffix(prepared, suffix))
+                return prepared.TrimEnd();
 
             if (string.IsNullOrEmpty(prepared))
                 return suffix;

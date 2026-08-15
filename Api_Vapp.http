@@ -1048,6 +1048,37 @@ Authorization: Bearer {{accessToken}}
 GET {{Api_Vapp_HostAddress}}/api/AppBanner
 Authorization: Bearer {{accessToken}}
 
+### ========== App Version (مدیریت آپدیت اپ) ==========
+
+### چک آپدیت — بدون لاگین (Splash)
+GET {{Api_Vapp_HostAddress}}/api/AppVersion/check?platform=android&currentVersion=1.0.0
+
+### چک آپدیت iOS
+GET {{Api_Vapp_HostAddress}}/api/AppVersion/check?platform=ios&currentVersion=1.0.0
+
+### لیست سیاست نسخه (ادمین)
+GET {{Api_Vapp_HostAddress}}/api/Admin/AppVersion
+Authorization: Bearer {{accessToken}}
+
+### دریافت سیاست یک پلتفرم
+GET {{Api_Vapp_HostAddress}}/api/Admin/AppVersion/android
+Authorization: Bearer {{accessToken}}
+
+### به‌روزرسانی سیاست نسخه (آخرین نسخه را بالا ببرید؛ min را برای آپدیت اختیاری روی 1.0.0 نگه دارید)
+POST {{Api_Vapp_HostAddress}}/api/Admin/AppVersion/android/update
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "latestVersion": "1.1.0",
+  "minSupportedVersion": "1.0.0",
+  "storeUrl": "https://cafebazaar.ir/app/...",
+  "title": "نسخه جدید آماده است",
+  "message": "می‌توانید اپ را به‌روزرسانی کنید.",
+  "changelog": ["بهبود عملکرد", "رفع چند باگ"],
+  "isActive": true
+}
+
 ### لیست همه بنرها برای ادمین
 GET {{Api_Vapp_HostAddress}}/api/Admin/AppBanner?includeInactive=true
 Authorization: Bearer {{accessToken}}

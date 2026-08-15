@@ -147,28 +147,18 @@ namespace Api_Vapp.Services
         }
 
         // DEV ONLY — TODO(production): قبل از release این متد و فیلد OtpCode در SendOtpResponseDto را حذف کنید (جستجو: CreateSuccessOtpResponse)
-        private static SendOtpResponseDto CreateSuccessOtpResponse(string message, string otpCode, int expiresInSeconds)
-        {
-            return new SendOtpResponseDto
-            {
-                StatusCode = 200,
-                Success = true,
-                Message = message,
-                ExpiresInSeconds = expiresInSeconds,
-                OtpCode = otpCode
-            };
-        }
+        private SendOtpResponseDto CreateSuccessOtpResponse(string message, string otpCode, int expiresInSeconds)
+            => AuthOtpResponseFactory.Success(
+                message,
+                otpCode,
+                expiresInSeconds,
+                OtpRateLimitMinutes * 60);
 
         private static SendOtpResponseDto CreateSmsFailedOtpResponse()
-        {
-            return new SendOtpResponseDto
-            {
-                StatusCode = 503,
-                Success = false,
-                Message = ControlledErrorHelper.SmsFailed,
-                ExpiresInSeconds = 0
-            };
-        }
+            => AuthOtpResponseFactory.SmsFailed();
+
+        private static SendOtpResponseDto CreateRateLimitedOtpResponse(int? retryAfterSeconds)
+            => AuthOtpResponseFactory.RateLimited(retryAfterSeconds ?? (OtpRateLimitMinutes * 60));
 
         private void ClearOtpRateLimit(string phoneNumber)
         {
@@ -187,17 +177,25 @@ namespace Api_Vapp.Services
             string templateType,
             string otpCacheKey,
             string purpose,
-            string? ipAddress = null)
+            string? ipAddress = null,
+            int? userId = null)
         {
             var sent = await _smsService.SendOtpAsync(phoneNumber, otpCode, templateType);
             if (sent)
             {
+                await LogOtpEventAsync(
+                    AuditActions.OtpSent,
+                    purpose,
+                    phoneNumber,
+                    ipAddress,
+                    succeeded: true,
+                    userId: userId);
                 return (true, null);
             }
 
             _logger.LogWarning(
-                "OTP SMS delivery failed for {Purpose} - Phone: {PhoneNumber} from IP {IpAddress}",
-                purpose, phoneNumber, ipAddress);
+                "OTP SMS delivery failed for {Purpose} - Phone: {PhoneNumber} from IP {IpAddress} TraceId={TraceId}",
+                purpose, phoneNumber, ipAddress, CurrentTraceId());
 
             // Local/dev: keep OTP in cache when SMS provider DNS/network fails (VPN, etc.)
             if (_environment.IsDevelopment())
@@ -205,11 +203,28 @@ namespace Api_Vapp.Services
                 _logger.LogWarning(
                     "OTP SMS failed in Development — continuing with cached OTP for {Purpose}, phone {PhoneNumber}",
                     purpose, phoneNumber);
+                await LogOtpEventAsync(
+                    AuditActions.OtpSent,
+                    purpose,
+                    phoneNumber,
+                    ipAddress,
+                    succeeded: true,
+                    userId: userId,
+                    reason: "DevFallbackAfterSmsFail");
                 return (true, null);
             }
 
+            await LogOtpEventAsync(
+                AuditActions.OtpSendFailed,
+                purpose,
+                phoneNumber,
+                ipAddress,
+                succeeded: false,
+                userId: userId,
+                reason: "SmsProviderFailed");
+
             RollbackFailedOtpSend(phoneNumber, otpCacheKey);
-            return (false, CreateSmsFailedOtpResponse());
+            return (false, WithTraceId(CreateSmsFailedOtpResponse()));
         }
 
         private async Task<(User? User, SendOtpResponseDto? BlockedResponse)> ResolveLoginUserForOtpAsync(string phoneNumber)
@@ -218,24 +233,12 @@ namespace Api_Vapp.Services
 
             if (user == null || user.IsDeleted)
             {
-                return (null, new SendOtpResponseDto
-                {
-                    StatusCode = 404,
-                    Success = false,
-                    Message = UserNotFoundLoginMessage,
-                    ExpiresInSeconds = 0
-                });
+                return (null, AuthOtpResponseFactory.NotFound(UserNotFoundLoginMessage));
             }
 
             if (!user.IsActive)
             {
-                return (null, new SendOtpResponseDto
-                {
-                    StatusCode = 403,
-                    Success = false,
-                    Message = ControlledErrorHelper.InactiveUserAccount,
-                    ExpiresInSeconds = 0
-                });
+                return (null, AuthOtpResponseFactory.Forbidden(ControlledErrorHelper.InactiveUserAccount));
             }
 
             return (user, null);
@@ -279,15 +282,7 @@ namespace Api_Vapp.Services
         }
 
         private SendOtpResponseDto CreateAdminPanelAccessDeniedOtpResponse()
-        {
-            return new SendOtpResponseDto
-            {
-                StatusCode = 403,
-                Success = false,
-                Message = ControlledErrorHelper.AdminPanelAccessDenied,
-                ExpiresInSeconds = 0
-            };
-        }
+            => AuthOtpResponseFactory.Forbidden(ControlledErrorHelper.AdminPanelAccessDenied);
 
         private AuthResponseDto CreateAdminPanelAccessDeniedAuthResponse()
         {
@@ -320,11 +315,13 @@ namespace Api_Vapp.Services
                 EntityId = userId?.ToString(),
                 ActorUserId = userId,
                 Succeeded = false,
+                ErrorMessage = reason,
                 Metadata = new
                 {
                     phone = phoneNumber,
                     reason,
-                    ip = ipAddress
+                    ip = ipAddress,
+                    traceId = CurrentTraceId()
                 }
             });
         }
@@ -341,9 +338,102 @@ namespace Api_Vapp.Services
                 Metadata = new
                 {
                     phone = phoneNumber,
-                    ip = ipAddress
+                    ip = ipAddress,
+                    traceId = CurrentTraceId()
                 }
             });
+        }
+
+        private Task LogUserLoginFailedAsync(string? phoneNumber, string reason, string? ipAddress, int? userId = null)
+        {
+            return _audit.WriteAsync(new AuditEntry
+            {
+                Category = AuditCategories.Auth,
+                Action = AuditActions.UserLoginFailed,
+                EntityType = AuditEntityTypes.User,
+                EntityId = userId?.ToString(),
+                ActorUserId = userId,
+                Succeeded = false,
+                ErrorMessage = reason,
+                Metadata = new
+                {
+                    phone = phoneNumber,
+                    reason,
+                    ip = ipAddress,
+                    traceId = CurrentTraceId()
+                }
+            });
+        }
+
+        private Task LogUserLoginSucceededAsync(int userId, string? phoneNumber, string? ipAddress)
+        {
+            return _audit.WriteAsync(new AuditEntry
+            {
+                Category = AuditCategories.Auth,
+                Action = AuditActions.UserLoginSucceeded,
+                EntityType = AuditEntityTypes.User,
+                EntityId = userId.ToString(),
+                ActorUserId = userId,
+                Metadata = new
+                {
+                    phone = phoneNumber,
+                    ip = ipAddress,
+                    traceId = CurrentTraceId()
+                }
+            });
+        }
+
+        private Task LogOtpEventAsync(
+            string action,
+            string purpose,
+            string? phoneNumber,
+            string? ipAddress,
+            bool succeeded,
+            int? userId = null,
+            string? reason = null)
+        {
+            return _audit.WriteAsync(new AuditEntry
+            {
+                Category = AuditCategories.Auth,
+                Action = action,
+                EntityType = AuditEntityTypes.Otp,
+                EntityId = phoneNumber,
+                ActorUserId = userId,
+                Succeeded = succeeded,
+                ErrorMessage = reason,
+                Metadata = new
+                {
+                    purpose,
+                    phone = phoneNumber,
+                    reason,
+                    ip = ipAddress,
+                    // عمداً OTP متنی ذخیره نمی‌شود
+                    traceId = CurrentTraceId()
+                }
+            });
+        }
+
+        private static string CurrentTraceId() =>
+            System.Diagnostics.Activity.Current?.Id
+            ?? System.Diagnostics.Activity.Current?.TraceId.ToString()
+            ?? Guid.NewGuid().ToString("N");
+
+        private static T WithTraceId<T>(T dto) where T : class
+        {
+            var traceId = CurrentTraceId();
+            switch (dto)
+            {
+                case SendOtpResponseDto otp:
+                    otp.TraceId ??= traceId;
+                    break;
+                case AuthResponseDto auth:
+                    auth.TraceId ??= traceId;
+                    break;
+                case LogoutResponseDto logout:
+                    logout.TraceId ??= traceId;
+                    break;
+            }
+            return dto;
         }
 
         public async Task<SendOtpResponseDto> RegisterAsync(RegisterDto registerDto, string? ipAddress = null)
@@ -356,14 +446,7 @@ namespace Api_Vapp.Services
                 {
                     _logger.LogWarning("محدودیت نرخ برای شماره تلفن {PhoneNumber} از IP {IpAddress} exceeded", 
                         registerDto.PhoneNumber, ipAddress);
-                    return new SendOtpResponseDto
-                    {
-                        StatusCode = 429, // Too Many Requests
-                        Success = false,
-                        Message = $"لطفاً {retryAfterSeconds} ثانیه صبر کنید و مجدداً تلاش کنید",
-                        ExpiresInSeconds = 0,
-                        RetryAfterSeconds = retryAfterSeconds
-                    };
+                    return CreateRateLimitedOtpResponse(retryAfterSeconds);
                 }
 
                 // بررسی وجود کاربر با شماره تلفن
@@ -443,7 +526,7 @@ namespace Api_Vapp.Services
                 LogDevOtpForDevelopment(registerDto.PhoneNumber, otpCode, "Register");
 
                 return CreateSuccessOtpResponse(
-                    "کد تایید ارسال شد",
+                    "کد تایید به شماره موبایل شما ارسال شد",
                     otpCode,
                     OtpExpirationMinutes * 60);
             }
@@ -620,40 +703,23 @@ namespace Api_Vapp.Services
                 {
                     _logger.LogWarning("Rate limit exceeded for resend registration OTP {PhoneNumber} from IP {IpAddress}", 
                         loginDto.PhoneNumber, ipAddress);
-                    return new SendOtpResponseDto
-                    {
-                        StatusCode = 429, // Too Many Requests
-                        Success = false,
-                        Message = $"لطفاً {retryAfterSeconds} ثانیه صبر کنید و مجدداً تلاش کنید",
-                        ExpiresInSeconds = 0,
-                        RetryAfterSeconds = retryAfterSeconds
-                    };
+                    return CreateRateLimitedOtpResponse(retryAfterSeconds);
                 }
 
                 // بررسی وجود OTP قبلی در cache
                 var cacheKey = $"RegisterOtp_{loginDto.PhoneNumber}";
                 if (!_cache.TryGetValue(cacheKey, out RegisterOtpCacheDto? cachedData) || cachedData == null)
                 {
-                    return new SendOtpResponseDto
-                    {
-                        StatusCode = 404, // Not Found
-                        Success = false,
-                        Message = "کد تایید قبلی یافت نشد. لطفاً ابتدا ثبت‌نام کنید",
-                        ExpiresInSeconds = 0
-                    };
+                    return AuthOtpResponseFactory.NotFound(
+                        "کد تایید قبلی یافت نشد یا منقضی شده است. لطفاً دوباره از مرحله ثبت‌نام شروع کنید");
                 }
 
                 // بررسی وجود کاربر با شماره تلفن (نباید کاربری با این شماره وجود داشته باشد)
                 var existsByPhone = await _userRepository.ExistsByPhoneNumberAsync(loginDto.PhoneNumber);
                 if (existsByPhone)
                 {
-                    return new SendOtpResponseDto
-                    {
-                        StatusCode = 409, // Conflict
-                        Success = false,
-                        Message = "شماره تلفن وارد شده قبلاً در سیستم ثبت شده است. لطفاً از بخش ورود استفاده کنید",
-                        ExpiresInSeconds = 0
-                    };
+                    return AuthOtpResponseFactory.Conflict(
+                        "شماره تلفن وارد شده قبلاً در سیستم ثبت شده است. لطفاً از بخش ورود استفاده کنید");
                 }
 
                 // تولید و ارسال OTP جدید
@@ -675,15 +741,18 @@ namespace Api_Vapp.Services
                 var attemptKey = $"OtpAttempt_{loginDto.PhoneNumber}_register";
                 _cache.Remove(attemptKey);
 
-                var sent = await _smsService.SendOtpAsync(loginDto.PhoneNumber, otpCode, "Register");
+                var (sent, failureResponse) = await SendOtpOrFailAsync(
+                    loginDto.PhoneNumber,
+                    otpCode,
+                    "Register",
+                    cacheKey,
+                    "Register resend",
+                    ipAddress);
                 if (!sent)
                 {
-                    _logger.LogWarning(
-                        "OTP SMS delivery failed for Register resend - Phone: {PhoneNumber} from IP {IpAddress}",
-                        loginDto.PhoneNumber, ipAddress);
+                    // حفظ داده‌های ثبت‌نام قبلی (نام/کدملی) تا کاربر بتواند دوباره تلاش کند
                     SetCacheData(cacheKey, cachedData, OtpExpirationMinutes);
-                    ClearOtpRateLimit(loginDto.PhoneNumber);
-                    return CreateSmsFailedOtpResponse();
+                    return failureResponse!;
                 }
                 
                 _logger.LogInformation("Registration OTP resent for {PhoneNumber} from IP {IpAddress}",
@@ -692,7 +761,7 @@ namespace Api_Vapp.Services
                 LogDevOtpForDevelopment(loginDto.PhoneNumber, otpCode, "Register");
 
                 return CreateSuccessOtpResponse(
-                    "کد تایید مجدداً ارسال شد",
+                    "کد تایید جدید به شماره موبایل شما ارسال شد",
                     otpCode,
                     OtpExpirationMinutes * 60);
             }
@@ -715,14 +784,9 @@ namespace Api_Vapp.Services
                         loginDto.PhoneNumber, ipAddress);
                     if (requireAdminPanelAccess)
                         await LogAdminLoginFailedAsync(loginDto.PhoneNumber, "RateLimited", ipAddress);
-                    return new SendOtpResponseDto
-                    {
-                        StatusCode = 429, // Too Many Requests
-                        Success = false,
-                        Message = $"لطفاً {retryAfterSeconds} ثانیه صبر کنید و مجدداً تلاش کنید",
-                        ExpiresInSeconds = 0,
-                        RetryAfterSeconds = retryAfterSeconds
-                    };
+                    else
+                        await LogUserLoginFailedAsync(loginDto.PhoneNumber, "RateLimited", ipAddress);
+                    return WithTraceId(CreateRateLimitedOtpResponse(retryAfterSeconds));
                 }
 
                 var (user, blockedResponse) = await ResolveLoginUserForOtpAsync(loginDto.PhoneNumber);
@@ -730,7 +794,9 @@ namespace Api_Vapp.Services
                 {
                     if (requireAdminPanelAccess)
                         await LogAdminLoginFailedAsync(loginDto.PhoneNumber, "UserNotFoundOrInactive", ipAddress);
-                    return blockedResponse;
+                    else
+                        await LogUserLoginFailedAsync(loginDto.PhoneNumber, "UserNotFoundOrInactive", ipAddress);
+                    return WithTraceId(blockedResponse);
                 }
 
                 if (requireAdminPanelAccess && user != null)
@@ -739,7 +805,7 @@ namespace Api_Vapp.Services
                     if (adminBlock != null)
                     {
                         await LogAdminLoginFailedAsync(loginDto.PhoneNumber, "NotAdmin", ipAddress, user.Id);
-                        return adminBlock;
+                        return WithTraceId(adminBlock);
                     }
                 }
 
@@ -755,18 +821,22 @@ namespace Api_Vapp.Services
                 var attemptKey = $"OtpAttempt_{loginDto.PhoneNumber}_login";
                 _cache.Remove(attemptKey);
 
+                var purpose = requireAdminPanelAccess ? "AdminLogin" : "Login";
                 var (sent, failureResponse) = await SendOtpOrFailAsync(
                     loginDto.PhoneNumber,
                     otpCode,
                     "VerifyOtp",
                     cacheKey,
-                    "Login",
-                    ipAddress);
+                    purpose,
+                    ipAddress,
+                    user?.Id);
                 if (!sent)
                 {
                     if (requireAdminPanelAccess)
                         await LogAdminLoginFailedAsync(loginDto.PhoneNumber, "OtpSendFailed", ipAddress, user?.Id);
-                    return failureResponse!;
+                    else
+                        await LogUserLoginFailedAsync(loginDto.PhoneNumber, "OtpSendFailed", ipAddress, user?.Id);
+                    return WithTraceId(failureResponse!);
                 }
                 
                 _logger.LogInformation("Login OTP generated for {PhoneNumber} from IP {IpAddress}", 
@@ -774,10 +844,10 @@ namespace Api_Vapp.Services
 
                 LogDevOtpForDevelopment(loginDto.PhoneNumber, otpCode, "Login");
 
-                return CreateSuccessOtpResponse(
-                    "کد تایید ارسال شد",
+                return WithTraceId(CreateSuccessOtpResponse(
+                    "کد تایید به شماره موبایل شما ارسال شد",
                     otpCode,
-                    OtpExpirationMinutes * 60);
+                    OtpExpirationMinutes * 60));
             }
             catch (Exception ex)
             {
@@ -799,14 +869,23 @@ namespace Api_Vapp.Services
                     var remainingMinutes = (int)(attemptData.LockedUntil.Value - DateTime.UtcNow).TotalMinutes;
                     _logger.LogWarning("OTP attempts locked for login {PhoneNumber} from IP {IpAddress}", 
                         verifyOtpDto.PhoneNumber, ipAddress);
+                    await LogOtpEventAsync(
+                        AuditActions.OtpLocked,
+                        requireAdminPanelAccess ? "AdminLogin" : "Login",
+                        verifyOtpDto.PhoneNumber,
+                        ipAddress,
+                        succeeded: false,
+                        reason: "Locked");
                     if (requireAdminPanelAccess)
                         await LogAdminLoginFailedAsync(verifyOtpDto.PhoneNumber, "Locked", ipAddress);
-                    return new AuthResponseDto
+                    else
+                        await LogUserLoginFailedAsync(verifyOtpDto.PhoneNumber, "Locked", ipAddress);
+                    return WithTraceId(new AuthResponseDto
                     {
                         StatusCode = 423, // Locked
                         Success = false,
                         Message = $"حساب شما به دلیل تلاش‌های ناموفق به مدت {remainingMinutes} دقیقه قفل شده است"
-                    };
+                    });
                 }
 
                 var cacheKey = $"LoginOtp_{verifyOtpDto.PhoneNumber}";
@@ -814,16 +893,16 @@ namespace Api_Vapp.Services
                 // بررسی وجود OTP در cache
                 if (!_cache.TryGetValue(cacheKey, out var cachedOtp) || cachedOtp == null)
                 {
-                    // اگر OTP در cache وجود نداشت، ممکن است شماره تلفن اشتباه باشد یا OTP منقضی شده باشد
-                    // برای امنیت، پیام کلی می‌دهیم
                     if (requireAdminPanelAccess)
                         await LogAdminLoginFailedAsync(verifyOtpDto.PhoneNumber, "OtpExpired", ipAddress);
-                    return new AuthResponseDto
+                    else
+                        await LogUserLoginFailedAsync(verifyOtpDto.PhoneNumber, "OtpExpired", ipAddress);
+                    return WithTraceId(new AuthResponseDto
                     {
                         StatusCode = 400, // Bad Request
                         Success = false,
                         Message = ControlledErrorHelper.OtpExpired
-                    };
+                    });
                 }
 
                 // بررسی صحت کد تایید
@@ -855,19 +934,28 @@ namespace Api_Vapp.Services
                         attemptData.LockedUntil = DateTime.UtcNow.AddMinutes(OtpLockoutMinutes);
                         _logger.LogWarning("OTP attempts exceeded for login {PhoneNumber} from IP {IpAddress}. Account locked.", 
                             verifyOtpDto.PhoneNumber, ipAddress);
+                        await LogOtpEventAsync(
+                            AuditActions.OtpLocked,
+                            requireAdminPanelAccess ? "AdminLogin" : "Login",
+                            verifyOtpDto.PhoneNumber,
+                            ipAddress,
+                            succeeded: false,
+                            reason: "MaxAttemptsExceeded");
                     }
 
                     SetCacheData(attemptKey, attemptData, OtpLockoutMinutes + 5);
 
                     if (requireAdminPanelAccess)
                         await LogAdminLoginFailedAsync(verifyOtpDto.PhoneNumber, "IncorrectOtp", ipAddress);
+                    else
+                        await LogUserLoginFailedAsync(verifyOtpDto.PhoneNumber, "IncorrectOtp", ipAddress);
 
-                    return new AuthResponseDto
+                    return WithTraceId(new AuthResponseDto
                     {
                         StatusCode = 400, // Bad Request
                         Success = false,
                         Message = ControlledErrorHelper.OtpIncorrect
-                    };
+                    });
                 }
 
                 // بررسی وجود کاربر (بعد از تأیید OTP)
@@ -876,19 +964,23 @@ namespace Api_Vapp.Services
                 {
                     if (requireAdminPanelAccess)
                         await LogAdminLoginFailedAsync(verifyOtpDto.PhoneNumber, "UserNotFoundOrInactive", ipAddress);
-                    return blockedResponse;
+                    else
+                        await LogUserLoginFailedAsync(verifyOtpDto.PhoneNumber, "UserNotFoundOrInactive", ipAddress);
+                    return WithTraceId(blockedResponse);
                 }
 
                 if (user == null)
                 {
                     if (requireAdminPanelAccess)
                         await LogAdminLoginFailedAsync(verifyOtpDto.PhoneNumber, "UserNotFound", ipAddress);
-                    return new AuthResponseDto
+                    else
+                        await LogUserLoginFailedAsync(verifyOtpDto.PhoneNumber, "UserNotFound", ipAddress);
+                    return WithTraceId(new AuthResponseDto
                     {
                         StatusCode = 400,
                         Success = false,
                         Message = "کد تایید یا شماره تلفن صحیح نیست"
-                    };
+                    });
                 }
 
                 if (requireAdminPanelAccess && !await UserHasAdminRoleAsync(user.Id))
@@ -897,7 +989,7 @@ namespace Api_Vapp.Services
                     _cache.Remove(attemptKey);
                     _logger.LogWarning("Admin panel login blocked for non-admin user {UserId}", user.Id);
                     await LogAdminLoginFailedAsync(verifyOtpDto.PhoneNumber, "NotAdmin", ipAddress, user.Id);
-                    return CreateAdminPanelAccessDeniedAuthResponse();
+                    return WithTraceId(CreateAdminPanelAccessDeniedAuthResponse());
                 }
 
                 // به‌روزرسانی آخرین ورود
@@ -916,8 +1008,10 @@ namespace Api_Vapp.Services
 
                 if (requireAdminPanelAccess)
                     await LogAdminLoginSucceededAsync(user.Id, verifyOtpDto.PhoneNumber, ipAddress);
+                else
+                    await LogUserLoginSucceededAsync(user.Id, verifyOtpDto.PhoneNumber, ipAddress);
 
-                return new AuthResponseDto
+                return WithTraceId(new AuthResponseDto
                 {
                     StatusCode = 200, // OK
                     Success = true,
@@ -936,7 +1030,7 @@ namespace Api_Vapp.Services
                             PhoneNumber = user.PhoneNumber,
                             IsPhoneVerified = user.IsPhoneVerified
                         }
-                };
+                });
             }
             catch (Exception ex)
             {
@@ -955,14 +1049,7 @@ namespace Api_Vapp.Services
                 {
                     _logger.LogWarning("Rate limit exceeded for resend login OTP {PhoneNumber} from IP {IpAddress}", 
                         loginDto.PhoneNumber, ipAddress);
-                    return new SendOtpResponseDto
-                    {
-                        StatusCode = 429, // Too Many Requests
-                        Success = false,
-                        Message = $"لطفاً {retryAfterSeconds} ثانیه صبر کنید و مجدداً تلاش کنید",
-                        ExpiresInSeconds = 0,
-                        RetryAfterSeconds = retryAfterSeconds
-                    };
+                    return CreateRateLimitedOtpResponse(retryAfterSeconds);
                 }
 
                 var (user, blockedResponse) = await ResolveLoginUserForOtpAsync(loginDto.PhoneNumber);
@@ -998,11 +1085,12 @@ namespace Api_Vapp.Services
                     otpCode,
                     "VerifyOtp",
                     cacheKey,
-                    "Login resend",
-                    ipAddress);
+                    requireAdminPanelAccess ? "AdminLoginResend" : "LoginResend",
+                    ipAddress,
+                    user?.Id);
                 if (!sent)
                 {
-                    return failureResponse!;
+                    return WithTraceId(failureResponse!);
                 }
                 
                 _logger.LogInformation("Login OTP resent for {PhoneNumber} from IP {IpAddress}", 
@@ -1010,10 +1098,10 @@ namespace Api_Vapp.Services
 
                 LogDevOtpForDevelopment(loginDto.PhoneNumber, otpCode, "Login");
 
-                return CreateSuccessOtpResponse(
-                    "کد تایید مجدداً ارسال شد",
+                return WithTraceId(CreateSuccessOtpResponse(
+                    "کد تایید جدید به شماره موبایل شما ارسال شد",
                     otpCode,
-                    OtpExpirationMinutes * 60);
+                    OtpExpirationMinutes * 60));
             }
             catch (Exception ex)
             {
@@ -1032,27 +1120,14 @@ namespace Api_Vapp.Services
                 {
                     _logger.LogWarning("Rate limit exceeded for forgot password {PhoneNumber} from IP {IpAddress}", 
                         forgotPasswordDto.PhoneNumber, ipAddress);
-                    return new SendOtpResponseDto
-                    {
-                        StatusCode = 429, // Too Many Requests
-                        Success = false,
-                        Message = $"لطفاً {retryAfterSeconds} ثانیه صبر کنید و مجدداً تلاش کنید",
-                        ExpiresInSeconds = 0,
-                        RetryAfterSeconds = retryAfterSeconds
-                    };
+                    return CreateRateLimitedOtpResponse(retryAfterSeconds);
                 }
 
                 var user = await _userRepository.GetByPhoneNumberAsync(forgotPasswordDto.PhoneNumber);
 
                 if (user == null)
                 {
-                    return new SendOtpResponseDto
-                    {
-                        StatusCode = 404, // Not Found
-                        Success = false,
-                        Message = "کاربری با این شماره تلفن یافت نشد",
-                        ExpiresInSeconds = 0
-                    };
+                    return AuthOtpResponseFactory.NotFound(UserNotFoundLoginMessage);
                 }
 
                 // تولید و ارسال OTP
@@ -1085,7 +1160,7 @@ namespace Api_Vapp.Services
                 LogDevOtpForDevelopment(forgotPasswordDto.PhoneNumber, otpCode, "ResetPassword");
 
                 return CreateSuccessOtpResponse(
-                    "کد تایید ارسال شد",
+                    "کد تایید به شماره موبایل شما ارسال شد",
                     otpCode,
                     OtpExpirationMinutes * 60);
             }
@@ -1106,27 +1181,14 @@ namespace Api_Vapp.Services
                 {
                     _logger.LogWarning("Rate limit exceeded for resend forgot password OTP {PhoneNumber} from IP {IpAddress}", 
                         loginDto.PhoneNumber, ipAddress);
-                    return new SendOtpResponseDto
-                    {
-                        StatusCode = 429, // Too Many Requests
-                        Success = false,
-                        Message = $"لطفاً {retryAfterSeconds} ثانیه صبر کنید و مجدداً تلاش کنید",
-                        ExpiresInSeconds = 0,
-                        RetryAfterSeconds = retryAfterSeconds
-                    };
+                    return CreateRateLimitedOtpResponse(retryAfterSeconds);
                 }
 
                 var user = await _userRepository.GetByPhoneNumberAsync(loginDto.PhoneNumber);
 
                 if (user == null)
                 {
-                    return new SendOtpResponseDto
-                    {
-                        StatusCode = 404, // Not Found
-                        Success = false,
-                        Message = "کاربری با این شماره تلفن یافت نشد",
-                        ExpiresInSeconds = 0
-                    };
+                    return AuthOtpResponseFactory.NotFound(UserNotFoundLoginMessage);
                 }
 
                 // تولید و ارسال OTP جدید
@@ -1159,7 +1221,7 @@ namespace Api_Vapp.Services
                 LogDevOtpForDevelopment(loginDto.PhoneNumber, otpCode, "ResetPassword");
 
                 return CreateSuccessOtpResponse(
-                    "کد تایید مجدداً ارسال شد",
+                    "کد تایید جدید به شماره موبایل شما ارسال شد",
                     otpCode,
                     OtpExpirationMinutes * 60);
             }
@@ -1303,62 +1365,52 @@ namespace Api_Vapp.Services
         {
             try
             {
-                var isValid = await _refreshTokenService.IsRefreshTokenValidAsync(refreshTokenDto.RefreshToken);
-                
-                if (!isValid)
+                // Atomic rotation + grace reuse — درخواست‌های همزمان با یک refresh نباید 401 بگیرند
+                var rotation = await _refreshTokenService.RotateOrReuseAsync(refreshTokenDto.RefreshToken);
+
+                if (rotation.Status == RefreshTokenRotationStatus.Invalid)
                 {
                     _logger.LogWarning("Invalid refresh token attempt from IP {IpAddress}", ipAddress);
                     return new AuthResponseDto
                     {
-                        StatusCode = 401, // Unauthorized
+                        StatusCode = 401,
                         Success = false,
                         Message = "Refresh Token نامعتبر یا منقضی شده است"
                     };
                 }
 
-                var refreshToken = await _refreshTokenService.GetRefreshTokenAsync(refreshTokenDto.RefreshToken);
-                
-                if (refreshToken == null || refreshToken.User == null)
+                if (rotation.Status == RefreshTokenRotationStatus.InactiveUser
+                    || rotation.User == null
+                    || rotation.RefreshToken == null)
                 {
+                    _logger.LogWarning(
+                        "Refresh token attempt for inactive/deleted user from IP {IpAddress}",
+                        ipAddress);
                     return new AuthResponseDto
                     {
-                        StatusCode = 404, // Not Found
-                        Success = false,
-                        Message = "Refresh Token یافت نشد"
-                    };
-                }
-
-                var user = refreshToken.User;
-
-                // بررسی وضعیت کاربر
-                if (!user.IsActive || user.IsDeleted)
-                {
-                    _logger.LogWarning("Refresh token attempt for inactive/deleted user {UserId} from IP {IpAddress}", 
-                        user.Id, ipAddress);
-                    return new AuthResponseDto
-                    {
-                        StatusCode = 403, // Forbidden
+                        StatusCode = 403,
                         Success = false,
                         Message = ControlledErrorHelper.InactiveUserAccount
                     };
                 }
 
-                // لغو توکن قدیمی
-                await _refreshTokenService.RevokeRefreshTokenAsync(refreshTokenDto.RefreshToken);
-
-                // تولید توکن‌های جدید با Sliding Expiration
-                // هر بار رفرش، عمر Refresh Token از نو تمدید می‌شود تا کاربر فعال از پنل بیرون نیفتد
+                var user = rotation.User;
+                var newRefreshToken = rotation.RefreshToken;
                 var accessToken = await GenerateAccessTokenWithRolesAsync(user);
-                var newRefreshToken = await _refreshTokenService.CreateRefreshTokenAsync(user.Id);
 
-                _logger.LogInformation("Token refreshed successfully for user {UserId} from IP {IpAddress}", 
-                    user.Id, ipAddress);
+                _logger.LogInformation(
+                    "Token refreshed successfully for user {UserId} from IP {IpAddress} (mode={Mode})",
+                    user.Id,
+                    ipAddress,
+                    rotation.Status);
 
                 return new AuthResponseDto
                 {
-                    StatusCode = 200, // OK
+                    StatusCode = 200,
                     Success = true,
-                    Message = "توکن‌ها با موفقیت به‌روزرسانی شدند",
+                    Message = rotation.Status == RefreshTokenRotationStatus.GraceReuse
+                        ? "توکن‌ها با موفقیت به‌روزرسانی شدند"
+                        : "توکن‌ها با موفقیت به‌روزرسانی شدند",
                     Tokens = new TokenResponseDto
                     {
                         AccessToken = accessToken,
@@ -1366,19 +1418,19 @@ namespace Api_Vapp.Services
                         ExpiresAt = DateTime.UtcNow.AddMinutes(_jwtService.GetAccessTokenExpirationMinutes()),
                         RefreshTokenExpiresAt = newRefreshToken.ExpiresAt
                     },
-                        User = new UserInfoDto
-                        {
-                            Id = user.Id,
-                            FullName = user.FullName ?? string.Empty,
-                            PhoneNumber = user.PhoneNumber,
-                            IsPhoneVerified = user.IsPhoneVerified
-                        }
+                    User = new UserInfoDto
+                    {
+                        Id = user.Id,
+                        FullName = user.FullName ?? string.Empty,
+                        PhoneNumber = user.PhoneNumber,
+                        IsPhoneVerified = user.IsPhoneVerified
+                    }
                 };
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error in RefreshTokenAsync");
-                throw; // اجازه می‌دهیم Global Exception Handler آن را مدیریت کند
+                throw;
             }
         }
 
@@ -1392,12 +1444,23 @@ namespace Api_Vapp.Services
                 {
                     _logger.LogWarning("Logout attempt for non-existent or deleted user {UserId} from IP {IpAddress}", 
                         userId, ipAddress);
-                    return new LogoutResponseDto
+                    await _audit.WriteAsync(new AuditEntry
+                    {
+                        Category = AuditCategories.Auth,
+                        Action = AuditActions.UserLogout,
+                        EntityType = AuditEntityTypes.User,
+                        EntityId = userId.ToString(),
+                        ActorUserId = userId,
+                        Succeeded = false,
+                        ErrorMessage = "UserNotFound",
+                        Metadata = new { ip = ipAddress, traceId = CurrentTraceId() }
+                    });
+                    return WithTraceId(new LogoutResponseDto
                     {
                         StatusCode = 404, // Not Found
                         Success = false,
                         Message = "کاربر یافت نشد"
-                    };
+                    });
                 }
 
                 // لغو تمام Refresh Token های کاربر
@@ -1418,12 +1481,28 @@ namespace Api_Vapp.Services
                 _logger.LogInformation("User {UserId} ({PhoneNumber}) logged out successfully from IP {IpAddress}", 
                     userId, user.PhoneNumber, ipAddress);
 
-                return new LogoutResponseDto
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Auth,
+                    Action = AuditActions.UserLogout,
+                    EntityType = AuditEntityTypes.User,
+                    EntityId = userId.ToString(),
+                    ActorUserId = userId,
+                    Metadata = new
+                    {
+                        phone = user.PhoneNumber,
+                        ip = ipAddress,
+                        hadJti = !string.IsNullOrWhiteSpace(jti),
+                        traceId = CurrentTraceId()
+                    }
+                });
+
+                return WithTraceId(new LogoutResponseDto
                 {
                     StatusCode = 200, // OK
                     Success = true,
                     Message = "خروج از سیستم با موفقیت انجام شد"
-                };
+                });
             }
             catch (Exception ex)
             {

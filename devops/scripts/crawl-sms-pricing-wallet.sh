@@ -144,7 +144,7 @@ check "costPerPart updated to $NEW_COST_PER_PART" "$(python3 -c "import sys; pri
 echo "      after update: costPerPart=$NEW_COST"
 
 # 3) preview: OTP کوتاه / پیام متوسط / پیام خیلی بلند (چند پارت)
-OTP_SAMPLE='کد تایید شما: 123456'
+OTP_SAMPLE=$'کد تایید شما: 1234\n\n@ok-sms.ir #1234'
 MED_SAMPLE="$(python3 - <<'PY'
 print("سلام مشتری عزیز، " + ("تخفیف ویژه فروشگاه ما فقط امروز فعال است. " * 3))
 PY

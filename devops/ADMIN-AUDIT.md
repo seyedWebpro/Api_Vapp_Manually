@@ -2,6 +2,8 @@
 
 ردپای اکشن‌های حساس ادمین/سیستم در SQL Server. فقط append می‌شود (بدون ویرایش/حذف دستی).
 
+> برای پشتیبانی روزمره (کجا بگردم؟ پرداخت / ۵۰۰ / SMS): [`SUPPORT-TROUBLESHOOTING.md`](SUPPORT-TROUBLESHOOTING.md)
+
 ## جدول
 
 | مورد | مقدار |

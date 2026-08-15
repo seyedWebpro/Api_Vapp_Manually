@@ -2,6 +2,8 @@
 
 جستجوی سریع تغییرات حساس بدون نیاز به UI.
 
+> نقطه شروع پشتیبانی کلی (۵۰۰، پرداخت، SMS، …): [`SUPPORT-TROUBLESHOOTING.md`](SUPPORT-TROUBLESHOOTING.md)
+
 ## پیش‌نیاز
 
 روی سرور یا لوکال:

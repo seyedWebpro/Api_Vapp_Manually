@@ -111,7 +111,24 @@ FRONT_STATIC_ROOT=/var/www/vapp-admin PUBLIC_STATIC_ROOT=/var/www/vapp-public SE
 ssh vapp-prod 'sudo nginx -t && sudo nginx -s reload'
 
 # ============================================================
-# 8. DOCKER — USEFUL COMMANDS
+# 8. LOGS / SUPPORT (where to look)
+# ============================================================
+# Full guide: devops/SUPPORT-TROUBLESHOOTING.md
+# Short file logs: devops/SERVER-LOGS.md
+# Audit DB: devops/ADMIN-AUDIT.md + devops/scripts/audit-search.sh
+
+ssh vapp-prod
+ls -lt ~/Api_Vapp_Manually/log/
+tail -f ~/Api_Vapp_Manually/log/log-$(date +%Y%m%d).txt
+grep -iE '\[ERR\]|exception' ~/Api_Vapp_Manually/log/log-$(date +%Y%m%d).txt | tail -50
+
+bash ~/Api_Vapp_Manually/devops/scripts/audit-search.sh --lines 50
+bash ~/Api_Vapp_Manually/devops/scripts/audit-search.sh --category payment --lines 50
+bash ~/Api_Vapp_Manually/devops/scripts/audit-search.sh --action Auth.AdminLoginFailed --lines 50
+bash ~/Api_Vapp_Manually/devops/scripts/crawl-support-audit.sh
+
+# ============================================================
+# 9. DOCKER — USEFUL COMMANDS
 # ============================================================
 
 ssh vapp-prod
@@ -127,7 +144,7 @@ docker compose -f docker/docker-compose.production.yml --env-file docker/.env do
 docker compose -f docker/docker-compose.production.yml --env-file docker/.env up -d --no-deps --force-recreate --no-build api
 
 # ============================================================
-# 9. NUMBER SCRAPER (separate repo)
+# 10. NUMBER SCRAPER (separate repo)
 # ============================================================
 
 cd ~/Documents/javad_project/vapp/scraping_Number_Vapp
@@ -136,7 +153,7 @@ bash devops/scripts/deploy-from-mac.sh api-restart
 bash devops/scripts/deploy-from-mac.sh sync-data
 
 # ============================================================
-# 10. PATHS REFERENCE
+# 11. PATHS REFERENCE
 # ============================================================
 
 # Local (Mac):

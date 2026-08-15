@@ -10,10 +10,17 @@ namespace Api_Vapp.Models
         public bool IsRevoked { get; set; } = false;
         public DateTime? RevokedAt { get; set; }
 
-        // Navigation Property
+        /// <summary>
+        /// پس از rotation اتمیک، مقدار refresh token جایگزین روی ردیف قدیمی نوشته می‌شود
+        /// تا درخواست‌های همزمان در پنجره grace همان توکن را بگیرند (نه 401).
+        /// </summary>
+        public string? ReplacementToken { get; set; }
+
+        /// <summary>
+        /// FK اختیاری به ردیف توکن جدید پس از rotation.
+        /// </summary>
+        public int? ReplacedByTokenId { get; set; }
+
         public virtual User User { get; set; } = null!;
     }
 }
-
-
-

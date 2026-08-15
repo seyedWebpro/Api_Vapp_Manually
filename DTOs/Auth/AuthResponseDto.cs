@@ -8,6 +8,8 @@ namespace Api_Vapp.DTOs.Auth
         public TokenResponseDto? Tokens { get; set; }
         public UserInfoDto? User { get; set; }
         public List<string>? Errors { get; set; } // لیست خطاهای اعتبارسنجی (اختیاری)
+        /// <summary>برای پیگیری پشتیبانی — با TraceId در لاگ سرور جور است</summary>
+        public string? TraceId { get; set; }
     }
 
     public class TokenResponseDto
@@ -15,7 +17,7 @@ namespace Api_Vapp.DTOs.Auth
         public string AccessToken { get; set; } = string.Empty;
         public string RefreshToken { get; set; } = string.Empty;
         public DateTime ExpiresAt { get; set; } // زمان انقضای Access Token
-        public DateTime RefreshTokenExpiresAt { get; set; } // زمان انقضای Refresh Token (sliding، پیش‌فرض ۷ روز)
+        public DateTime RefreshTokenExpiresAt { get; set; } // Sliding؛ با هر refresh موفق از نو تمدید می‌شود (پیش‌فرض ۷ روز). درخواست‌های همزمان در پنجره grace همان refresh جایگزین را می‌گیرند.
     }
 
     public class UserInfoDto

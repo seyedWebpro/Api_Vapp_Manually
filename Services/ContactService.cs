@@ -887,7 +887,15 @@ namespace Api_Vapp.Services
                     Action = AuditActions.ContactDeleted,
                     EntityType = AuditEntityTypes.Contact,
                     EntityId = contact.Id.ToString(),
-                    ActorUserId = userId
+                    ActorUserId = userId,
+                    After = new
+                    {
+                        contactNotebookId = contact.ContactNotebookId,
+                        fullName = contact.FullName,
+                        mobileLast4 = contact.MobileNumber != null && contact.MobileNumber.Length >= 4
+                            ? contact.MobileNumber[^4..]
+                            : null
+                    }
                 });
 
                 _logger.LogInformation("Contact soft deleted successfully with ID: {ContactId}", id);

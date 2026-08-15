@@ -21,5 +21,6 @@ namespace Api_Vapp.Constants
         public const string NumberSeeker = "number_seeker";
         public const string Contact = "contact";
         public const string Role = "role";
+        public const string Sms = "sms";
     }
 }

@@ -1,8 +1,10 @@
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Utilities;
+using System.Collections.Concurrent;
 using System.Security.Claims;
 using System.Text.Json;
+using System.Threading;
 
 namespace Api_Vapp.Middleware
 {
@@ -10,6 +12,7 @@ namespace Api_Vapp.Middleware
     /// When a Bearer token is sent, enforce a valid authenticated session.
     /// Prevents Development:DisableAuth from silently falling back to the default user
     /// for deactivated or invalid tokens.
+    /// Also samples 401/403 denials to server logs for support (AUTH_DENY).
     /// </summary>
     public class BearerAuthenticationEnforcementMiddleware
     {
@@ -30,11 +33,19 @@ namespace Api_Vapp.Middleware
             "/api/auth/refresh-token",
         ];
 
-        private readonly RequestDelegate _next;
+        /// <summary>شمارنده ساده برای نمونه‌برداری لاگ (هر دقیقه ریست می‌شود).</summary>
+        private static readonly ConcurrentDictionary<string, long> DenyCounters = new();
+        private static long _windowMinute = DateTime.UtcNow.Ticks / TimeSpan.TicksPerMinute;
 
-        public BearerAuthenticationEnforcementMiddleware(RequestDelegate next)
+        private readonly RequestDelegate _next;
+        private readonly ILogger<BearerAuthenticationEnforcementMiddleware> _logger;
+
+        public BearerAuthenticationEnforcementMiddleware(
+            RequestDelegate next,
+            ILogger<BearerAuthenticationEnforcementMiddleware> logger)
         {
             _next = next;
+            _logger = logger;
         }
 
         public async Task InvokeAsync(HttpContext context, IUserRepository userRepository)
@@ -48,9 +59,12 @@ namespace Api_Vapp.Middleware
             if (context.User?.Identity?.IsAuthenticated != true)
             {
                 var isInactive = context.Items.ContainsKey("InactiveUser");
+                var status = isInactive ? 403 : 401;
+                var reason = isInactive ? "InactiveUser" : "InvalidOrUnauthenticatedToken";
+                MaybeLogAuthDeny(context, status, reason);
                 await WriteJsonResponseAsync(
                     context,
-                    isInactive ? 403 : 401,
+                    status,
                     isInactive
                         ? ApiResponse<object>.Forbidden(ControlledErrorHelper.InactiveUserAccount)
                         : ApiResponse<object>.Unauthorized(ControlledErrorHelper.InvalidToken));
@@ -63,6 +77,7 @@ namespace Api_Vapp.Middleware
                 var user = await userRepository.GetByIdAsync(userId);
                 if (user == null || user.IsDeleted || !user.IsActive)
                 {
+                    MaybeLogAuthDeny(context, 403, "UserMissingOrInactive", userId);
                     await WriteJsonResponseAsync(
                         context,
                         403,
@@ -72,6 +87,36 @@ namespace Api_Vapp.Middleware
             }
 
             await _next(context);
+        }
+
+        private void MaybeLogAuthDeny(HttpContext context, int statusCode, string reason, int? userId = null)
+        {
+            var minute = DateTime.UtcNow.Ticks / TimeSpan.TicksPerMinute;
+            var prev = Interlocked.Read(ref _windowMinute);
+            if (minute != prev)
+            {
+                Interlocked.Exchange(ref _windowMinute, minute);
+                DenyCounters.Clear();
+            }
+
+            var key = $"{statusCode}:{reason}";
+            var count = DenyCounters.AddOrUpdate(key, 1, (_, c) => c + 1);
+
+            // ۲۰ تای اول هر دقیقه + هر ۵۰م بعد از آن
+            if (count > 20 && count % 50 != 0)
+                return;
+
+            var traceId = ControlledErrorHelper.GetTraceId(context);
+            _logger.LogWarning(
+                "AUTH_DENY status={Status} reason={Reason} path={Path} method={Method} userId={UserId} ip={Ip} sample={Sample} TraceId={TraceId}",
+                statusCode,
+                reason,
+                context.Request.Path.Value,
+                context.Request.Method,
+                userId,
+                context.Connection.RemoteIpAddress?.ToString(),
+                count,
+                traceId);
         }
 
         private static bool HasBearerToken(HttpRequest request)
@@ -91,6 +136,7 @@ namespace Api_Vapp.Middleware
         {
             context.Response.StatusCode = statusCode;
             context.Response.ContentType = "application/json";
+            payload.TraceId ??= ControlledErrorHelper.GetTraceId(context);
 
             // Ensure CORS headers exist when this middleware short-circuits the pipeline.
             var origin = context.Request.Headers.Origin.ToString();

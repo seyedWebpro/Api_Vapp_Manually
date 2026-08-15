@@ -80,6 +80,7 @@ namespace Api_Vapp.Constants
         public const string AutomationTypeUpdated = "AutomationType.Updated";
         public const string AutomationTypeDeleted = "AutomationType.Deleted";
         public const string AppBannerUpdated = "AppBanner.Updated";
+        public const string AppVersionPolicyUpdated = "AppVersionPolicy.Updated";
         public const string LuckyWheelStatusChanged = "LuckyWheel.StatusChanged";
         public const string LuckyWheelCreated = "LuckyWheel.Created";
         public const string LuckyWheelUpdated = "LuckyWheel.Updated";
@@ -89,11 +90,20 @@ namespace Api_Vapp.Constants
         public const string ReferralProgramDeleted = "ReferralProgram.Deleted";
         public const string ReferralProgramActivated = "ReferralProgram.Activated";
 
-        // —— Auth (فاز ۲ اولویت ۹)
+        // —— Auth (فاز ۲ اولویت ۹ + پشتیبانی)
         public const string AdminLoginSucceeded = "Auth.AdminLoginSucceeded";
         public const string AdminLoginFailed = "Auth.AdminLoginFailed";
         public const string UserLoginSucceeded = "Auth.UserLoginSucceeded";
         public const string UserLoginFailed = "Auth.UserLoginFailed";
+        public const string UserLogout = "Auth.Logout";
+        public const string OtpSent = "Auth.OtpSent";
+        public const string OtpSendFailed = "Auth.OtpSendFailed";
+        public const string OtpLocked = "Auth.OtpLocked";
+
+        // —— SMS billed send (پشتیبانی اولویت ۲)
+        public const string SmsSendSucceeded = "Sms.SendSucceeded";
+        public const string SmsSendFailed = "Sms.SendFailed";
+        public const string SmsInsufficientBalance = "Sms.InsufficientBalance";
 
         // —— NumberSeeker (فاز ۳)
         public const string NumberSeekerTaskCreated = "NumberSeeker.TaskCreated";

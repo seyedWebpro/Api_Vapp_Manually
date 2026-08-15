@@ -22,6 +22,8 @@ namespace Api_Vapp.Services
         private readonly string _apiKey;
         private readonly string _baseUrl;
         private readonly string _senderNumber;
+        private readonly string? _otpAutofillDomain;
+        private readonly string? _androidAppHash;
 
         public SmsService(
             ILogger<SmsService> logger,
@@ -36,6 +38,8 @@ namespace Api_Vapp.Services
             _apiKey = _configuration["Sms:ApiKey"] ?? throw new InvalidOperationException("SMS ApiKey is not configured");
             _baseUrl = _configuration["Sms:BaseUrl"] ?? throw new InvalidOperationException("SMS BaseUrl is not configured");
             _senderNumber = _configuration["Sms:SenderNumber"] ?? throw new InvalidOperationException("SMS SenderNumber is not configured");
+            _otpAutofillDomain = _configuration["Sms:OtpAutofillDomain"];
+            _androidAppHash = _configuration["Sms:AndroidAppHash"];
         }
 
         /// <summary>
@@ -64,23 +68,17 @@ namespace Api_Vapp.Services
             {
                 // نرمال‌سازی شماره موبایل (حذف فاصله و کاراکترهای اضافی)
                 var normalizedPhone = NormalizePhoneNumber(phoneNumber);
-                
-                // ساخت متن پیامک بر اساس نوع Template
-                string message = templateType switch
-                {
-                    "VerifyOtp" => $"کد تایید شما: {otpCode}",
-                    "ResetPassword" => $"کد بازیابی رمز عبور: {otpCode}",
-                    "Register" => $"کد تایید ثبت نام: {otpCode}",
-                    "ForgotPassword" => $"کد بازیابی رمز عبور: {otpCode}", // پشتیبانی از ForgotPassword
-                    "Registration" => $"کد تایید ثبت نام: {otpCode}", // پشتیبانی از Registration
-                    _ => $"کد تایید شما: {otpCode}"
-                };
+
+                // متن استاندارد autofill (iOS domain-bound + Android hash + لغو11)
+                var message = OtpSmsMessageBuilder.BuildForSend(
+                    otpCode,
+                    templateType,
+                    _otpAutofillDomain,
+                    _androidAppHash);
                 
                 // DEV ONLY — TODO(production): لاگ‌های زیر که شامل کد OTP هستند را قبل از release حذف کنید.
                 _logger.LogInformation("Sending OTP via SMS - Template: {TemplateType}, OTP Code: {OtpCode}, Phone: {PhoneNumber}", 
                     templateType, otpCode, normalizedPhone);
-                
-                message = EnsureCancelSuffix(message);
 
                 var result = await SendSmsInternalAsync(normalizedPhone, message);
                 

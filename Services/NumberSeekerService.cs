@@ -882,6 +882,7 @@ namespace Api_Vapp.Services
 
         private async Task SyncOwnedTaskAsync(NumberSeekerTask ownedTask, NumberSeekerTaskStatusDto status)
         {
+            var previousStatus = ownedTask.Status;
             var changed = false;
 
             if (!string.Equals(ownedTask.Status, status.Status, StringComparison.OrdinalIgnoreCase))
@@ -927,6 +928,39 @@ namespace Api_Vapp.Services
             {
                 ownedTask.UpdatedAt = DateTime.UtcNow;
                 await _taskRepository.UpdateAsync(ownedTask);
+            }
+
+            // وقتی وضعیت از poll به terminal می‌رسد (نه فقط webhook) هم audit بنویس
+            if (changed
+                && TerminalStatuses.Contains(status.Status)
+                && !string.Equals(previousStatus, status.Status, StringComparison.OrdinalIgnoreCase))
+            {
+                var action = status.Status.Equals("cancelled", StringComparison.OrdinalIgnoreCase)
+                    ? AuditActions.NumberSeekerTaskCancelled
+                    : status.Status.Equals("failed", StringComparison.OrdinalIgnoreCase)
+                        ? AuditActions.NumberSeekerTaskFailed
+                        : AuditActions.NumberSeekerTaskCompleted;
+
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.NumberSeeker,
+                    Action = action,
+                    EntityType = AuditEntityTypes.NumberSeekerTask,
+                    EntityId = ownedTask.ScraperTaskId,
+                    ActorUserId = ownedTask.UserId,
+                    TargetUserId = ownedTask.UserId,
+                    Succeeded = action == AuditActions.NumberSeekerTaskCompleted,
+                    ErrorMessage = action == AuditActions.NumberSeekerTaskFailed ? status.ResultCode : null,
+                    Source = "Http",
+                    After = new
+                    {
+                        previousStatus,
+                        status = status.Status,
+                        resultCode = status.ResultCode,
+                        currentCount = status.CurrentCount,
+                        via = "poll-sync"
+                    }
+                });
             }
         }
 

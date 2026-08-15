@@ -912,6 +912,37 @@ namespace Api_Vapp.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "خطا در درخواست پرداخت زرین‌پال برای {PaymentId}", paymentId);
+                try
+                {
+                    var payment = await _paymentRepository.GetByIdAsync(paymentId);
+                    var user = payment != null
+                        ? await _userRepository.GetByIdAsync(payment.UserId)
+                        : null;
+                    var isTimeout = ex is OperationCanceledException
+                        || ex.GetType().Name.Contains("Timeout", StringComparison.OrdinalIgnoreCase)
+                        || (ex.InnerException != null && ex.InnerException.GetType().Name.Contains("Timeout", StringComparison.OrdinalIgnoreCase));
+                    await WriteZarinPalAuthorityAuditAsync(
+                        payment,
+                        user,
+                        amountToman,
+                        description,
+                        mobile,
+                        orderId,
+                        succeeded: false,
+                        authority: payment?.RefId,
+                        paymentUrl: null,
+                        error: isTimeout
+                            ? $"ZarinPal timeout/cancel: {ex.GetType().Name}"
+                            : $"ZarinPal exception: {ex.GetType().Name}");
+                    _logger.LogWarning(
+                        "ZarinPal request exception audited. PaymentId={PaymentId} UserId={UserId} Authority={Authority} Timeout={IsTimeout}",
+                        paymentId, payment?.UserId, payment?.RefId, isTimeout);
+                }
+                catch (Exception auditEx)
+                {
+                    _logger.LogError(auditEx, "Failed to write ZarinPal exception audit for {PaymentId}", paymentId);
+                }
+
                 return (false, null, null, ControlledErrorHelper.PaymentFailed);
             }
         }

@@ -151,8 +151,11 @@ if command -v docker >/dev/null 2>&1; then
     [[ -n "$CONNECTION_STRING" ]] && DB_NAME="$(parse_cs "$CONNECTION_STRING" | sed -n '2p')"
     [[ -z "$DB_NAME" ]] && DB_NAME="DbVapp"
     PASS="${MSSQL_SA_PASSWORD:-}"
+    if [[ -z "$PASS" ]]; then
+      PASS="$(docker exec "$CNAME" printenv MSSQL_SA_PASSWORD 2>/dev/null || true)"
+    fi
     if [[ -z "$PASS" && -f "$ROOT_DIR/docker/.env" ]]; then
-      PASS="$(grep '^SA_PASSWORD=' "$ROOT_DIR/docker/.env" | cut -d= -f2- || true)"
+      PASS="$(grep -E '^(MSSQL_SA_PASSWORD|SA_PASSWORD)=' "$ROOT_DIR/docker/.env" | head -1 | cut -d= -f2- || true)"
     fi
     [[ -z "$PASS" ]] && PASS="Vapp@Secure2025!"
     echo "Using docker exec: $CNAME (db=$DB_NAME)"

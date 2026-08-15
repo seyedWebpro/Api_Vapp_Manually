@@ -23,19 +23,20 @@ All commands, options and server-side commands are in [`COMMANDS.txt`](COMMANDS.
 
 ```
 devops/
-  COMMANDS.txt          ← all deploy/ops commands (cheat sheet)
-  MAC-QUICK-DEPLOY.md   ← Mac deploy guide by change type
-  SERVER-LOGS.md        ← where/how to read server logs
-  ADMIN-AUDIT.md        ← AdminAuditLogs table usage (short)
-  AUDIT_RUNBOOK.md      ← audit search scenarios (detailed)
-  PUBLIC-VAPP.md        ← public form/wheel details
-  NUMBER-SCRAPER.md     ← number-scraper robot
-  MAC-SERVER.md         ← SSH / first-time setup
-  GITHUB_SSH.md         ← deploy key setup
-  scripts/              ← deploy, bootstrap, backup, health-check scripts
-  deploy/               ← nginx example config
-  backup/               ← DB backup scripts
-  domain/               ← domain / Cloudflare guide
+  COMMANDS.txt                    ← all deploy/ops commands (cheat sheet)
+  MAC-QUICK-DEPLOY.md             ← Mac deploy guide by change type
+  SUPPORT-TROUBLESHOOTING.md      ← START HERE for support: where to look for errors
+  SERVER-LOGS.md                  ← where/how to read server file logs
+  ADMIN-AUDIT.md                  ← AdminAuditLogs table usage (short)
+  AUDIT_RUNBOOK.md                ← audit search scenarios (detailed)
+  PUBLIC-VAPP.md                  ← public form/wheel details
+  NUMBER-SCRAPER.md               ← number-scraper robot
+  MAC-SERVER.md                   ← SSH / first-time setup
+  GITHUB_SSH.md                   ← deploy key setup
+  scripts/                        ← deploy, bootstrap, backup, health-check scripts
+  deploy/                         ← nginx example config
+  backup/                         ← DB backup scripts
+  domain/                         ← domain / Cloudflare guide
 ```
 
 ---
@@ -79,6 +80,7 @@ Mobile → Vapp .NET API → Number Scraper (:8000 internally)
 
 - [`COMMANDS.txt`](COMMANDS.txt) — **all commands in one place**
 - [`MAC-QUICK-DEPLOY.md`](MAC-QUICK-DEPLOY.md) — which mode to pick
+- [`SUPPORT-TROUBLESHOOTING.md`](SUPPORT-TROUBLESHOOTING.md) — **support: where to look when something breaks**
 - [`SERVER-LOGS.md`](SERVER-LOGS.md) — server logs location & commands
 - [`ADMIN-AUDIT.md`](ADMIN-AUDIT.md) — AdminAuditLogs usage (short)
 - [`AUDIT_RUNBOOK.md`](AUDIT_RUNBOOK.md) — audit search scenarios
