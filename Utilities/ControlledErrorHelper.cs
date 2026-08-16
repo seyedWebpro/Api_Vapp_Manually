@@ -31,6 +31,9 @@ namespace Api_Vapp.Utilities
         public const string SystemError = "خطای سیستمی. لطفاً با پشتیبانی تماس بگیرید.";
         public const string OtpIncorrect = "کد تایید را اشتباه وارد کرده‌اید.";
         public const string OtpExpired = "کد تایید شما منقضی شده است.";
+        public const string IdentityVerificationFailed = "کد ملی با شماره موبایل وارد شده مطابقت ندارد.";
+        public const string IdentityVerificationUnavailable =
+            "سرویس تطبیق هویت در حال حاضر در دسترس نیست. لطفاً چند دقیقه دیگر دوباره تلاش کنید.";
 
         /// <summary>خطای استخراج شماره — NumberSeeker / اسکرپر</summary>
         public const string NumberExtractionFailed =

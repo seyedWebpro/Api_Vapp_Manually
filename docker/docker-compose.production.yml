@@ -72,6 +72,10 @@ services:
       - NumberScraperApi__BaseUrl=${NumberScraperApi__BaseUrl:-http://host.docker.internal:8000}
       - NumberScraperApi__ApiKey=${SCRAPER_API_KEY:-}
       - NumberScraperApi__TimeoutSeconds=${NumberScraperApi__TimeoutSeconds:-120}
+      - Zohal__Enabled=${Zohal__Enabled:-true}
+      - Zohal__BaseUrl=${Zohal__BaseUrl:-https://service.zohal.io/api/v0}
+      - Zohal__ApiToken=${ZOHAL_API_TOKEN:-}
+      - Zohal__TimeoutSeconds=${Zohal__TimeoutSeconds:-30}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

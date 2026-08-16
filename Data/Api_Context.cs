@@ -85,6 +85,7 @@ namespace Api_Vapp.Data
         public DbSet<BusinessCardServiceItem> BusinessCardServiceItems { get; set; }
         public DbSet<BusinessCardSocialLink> BusinessCardSocialLinks { get; set; }
         public DbSet<AdminAuditLog> AdminAuditLogs { get; set; }
+        public DbSet<ZohalInquiryLog> ZohalInquiryLogs { get; set; }
 
         public Api_Context(DbContextOptions<Api_Context> options) : base(options)
         {
@@ -2139,6 +2140,32 @@ namespace Api_Vapp.Data
                 entity.HasIndex(e => new { e.EntityType, e.EntityId });
                 entity.HasIndex(e => new { e.Category, e.CreatedAt });
                 entity.HasIndex(e => new { e.ActorUserId, e.CreatedAt });
+            });
+
+            modelBuilder.Entity<ZohalInquiryLog>(entity =>
+            {
+                entity.ToTable("ZohalInquiryLogs");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).ValueGeneratedOnAdd();
+                entity.Property(e => e.InquiryType).IsRequired().HasMaxLength(40);
+                entity.Property(e => e.Source).IsRequired().HasMaxLength(40);
+                entity.Property(e => e.MobileMasked).IsRequired().HasMaxLength(20);
+                entity.Property(e => e.NationalCodeMasked).IsRequired().HasMaxLength(20);
+                entity.Property(e => e.OutcomeStatus).IsRequired().HasMaxLength(40);
+                entity.Property(e => e.UserFacingErrorCode).HasMaxLength(64);
+                entity.Property(e => e.ProviderErrorCode).HasMaxLength(120);
+                entity.Property(e => e.ProviderMessage).HasMaxLength(1000);
+                entity.Property(e => e.RequestJson).HasColumnType("nvarchar(max)");
+                entity.Property(e => e.ResponseJson).HasColumnType("nvarchar(max)");
+                entity.Property(e => e.TraceId).HasMaxLength(128);
+                entity.Property(e => e.IpAddress).HasMaxLength(45);
+                entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+                entity.HasIndex(e => e.CreatedAt);
+                entity.HasIndex(e => e.TraceId);
+                entity.HasIndex(e => e.MobileMasked);
+                entity.HasIndex(e => new { e.InquiryType, e.CreatedAt });
+                entity.HasIndex(e => new { e.OutcomeStatus, e.CreatedAt });
             });
 
             // تنظیمات سیستم معرفی کیف پول

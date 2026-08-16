@@ -8,6 +8,39 @@ Accept: application/json
 
 ###
 
+# --- Auth (ثبت‌نام/ورود) — تطبیق کد ملی با موبایل از طریق شاهکار زحل ---
+
+### ثبت‌نام — body معتبر (شاهکار + OTP)
+POST {{Api_Vapp_HostAddress}}/api/Auth/register
+Content-Type: application/json
+
+{
+  "fullName": "کاربر تست",
+  "phoneNumber": "09123456789",
+  "nationalId": "0021234567"
+}
+
+### ثبت‌نام — validation fail (کد ملی خالی)
+POST {{Api_Vapp_HostAddress}}/api/Auth/register
+Content-Type: application/json
+
+{
+  "fullName": "کاربر تست",
+  "phoneNumber": "09123456789"
+}
+
+### ثبت‌نام — کد ملی نامعتبر (فرمت)
+POST {{Api_Vapp_HostAddress}}/api/Auth/register
+Content-Type: application/json
+
+{
+  "fullName": "کاربر تست",
+  "phoneNumber": "09123456789",
+  "nationalId": "123"
+}
+
+###
+
 # --- LuckyWheel (گردونه شانس) — نیاز به JWT یا Development:DisableAuth=true ---
 
 ### ایجاد پیش‌نویس (مرحله ۱)

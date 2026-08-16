@@ -166,5 +166,14 @@ namespace Api_Vapp.Constants
         public const string AutomatedMessageCancelled = "AutomatedMessage.Cancelled";
         public const string AutomatedMessageDeleted = "AutomatedMessage.Deleted";
         public const string AutomatedMessageStatusChanged = "AutomatedMessage.StatusChanged";
+
+        // —— Zohal / Shahkar (احراز هویت)
+        public const string ShahkarMatched = "Shahkar.Matched";
+        public const string ShahkarNotMatched = "Shahkar.NotMatched";
+        public const string ShahkarInvalidInput = "Shahkar.InvalidInput";
+        public const string ShahkarFailed = "Shahkar.Failed";
+        public const string ShahkarInsufficientBalance = "Shahkar.InsufficientBalance";
+        public const string ShahkarProviderAuthFailed = "Shahkar.ProviderAuthFailed";
+        public const string ShahkarIpNotAllowed = "Shahkar.IpNotAllowed";
     }
 }

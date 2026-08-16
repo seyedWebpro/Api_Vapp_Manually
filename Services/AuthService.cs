@@ -1,9 +1,12 @@
 using Api_Vapp.Constants;
 using Api_Vapp.Data;
 using Api_Vapp.DTOs.Auth;
+using Api_Vapp.DTOs.Common;
+using Api_Vapp.DTOs.Zohal;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
 using Api_Vapp.Services.Audit;
+using Api_Vapp.Services.Zohal;
 using Api_Vapp.Utilities;
 using BCrypt.Net;
 using Microsoft.EntityFrameworkCore;
@@ -20,6 +23,7 @@ namespace Api_Vapp.Services
         private readonly IUserRoleRepository _userRoleRepository;
         private readonly IJwtService _jwtService;
         private readonly ISmsService _smsService;
+        private readonly IZohalShahkarService _shahkarService;
         private readonly IRefreshTokenService _refreshTokenService;
         private readonly ITokenBlacklistService _tokenBlacklistService;
         private readonly IMemoryCache _cache;
@@ -40,6 +44,7 @@ namespace Api_Vapp.Services
             IUserRoleRepository userRoleRepository,
             IJwtService jwtService,
             ISmsService smsService,
+            IZohalShahkarService shahkarService,
             IRefreshTokenService refreshTokenService,
             ITokenBlacklistService tokenBlacklistService,
             IMemoryCache cache,
@@ -53,6 +58,7 @@ namespace Api_Vapp.Services
             _userRoleRepository = userRoleRepository;
             _jwtService = jwtService;
             _smsService = smsService;
+            _shahkarService = shahkarService;
             _refreshTokenService = refreshTokenService;
             _tokenBlacklistService = tokenBlacklistService;
             _cache = cache;
@@ -486,6 +492,62 @@ namespace Api_Vapp.Services
                         Message = "کد ملی وارد شده قبلاً در سیستم ثبت شده است",
                         ExpiresInSeconds = 0
                     };
+                }
+
+                var shahkarResult = await _shahkarService.VerifyAsync(
+                    registerDto.NationalId,
+                    registerDto.PhoneNumber,
+                    new ShahkarVerifyContext
+                    {
+                        Source = "register",
+                        IpAddress = ipAddress,
+                        TraceId = CurrentTraceId()
+                    });
+
+                if (shahkarResult.Status is ShahkarVerificationStatus.ServiceUnavailable
+                    or ShahkarVerificationStatus.InsufficientBalance
+                    or ShahkarVerificationStatus.ProviderAuthFailed
+                    or ShahkarVerificationStatus.IpNotAllowed)
+                {
+                    _logger.LogWarning(
+                        "Shahkar unavailable during register — Status={Status}, ProviderErrorCode={ProviderErrorCode}, InquiryLogId={InquiryLogId}, Phone={Phone}",
+                        shahkarResult.Status,
+                        shahkarResult.ProviderErrorCode,
+                        shahkarResult.InquiryLogId,
+                        registerDto.PhoneNumber);
+
+                    return WithTraceId(new SendOtpResponseDto
+                    {
+                        StatusCode = 503,
+                        Success = false,
+                        Message = ControlledErrorHelper.IdentityVerificationUnavailable,
+                        ErrorCode = ErrorCodes.IdentityVerificationUnavailable,
+                        ExpiresInSeconds = 0
+                    });
+                }
+
+                if (shahkarResult.Status == ShahkarVerificationStatus.InvalidInput)
+                {
+                    return WithTraceId(new SendOtpResponseDto
+                    {
+                        StatusCode = 400,
+                        Success = false,
+                        Message = "کد ملی وارد شده نامعتبر است",
+                        ErrorCode = ErrorCodes.InvalidInput,
+                        ExpiresInSeconds = 0
+                    });
+                }
+
+                if (shahkarResult.Status == ShahkarVerificationStatus.NotMatched)
+                {
+                    return WithTraceId(new SendOtpResponseDto
+                    {
+                        StatusCode = 400,
+                        Success = false,
+                        Message = ControlledErrorHelper.IdentityVerificationFailed,
+                        ErrorCode = ErrorCodes.IdentityVerificationFailed,
+                        ExpiresInSeconds = 0
+                    });
                 }
 
                 // تولید و ارسال OTP

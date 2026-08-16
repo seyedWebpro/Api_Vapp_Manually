@@ -120,6 +120,8 @@ builder.Services.AddCors(options =>
 // HttpClient
 builder.Services.AddHttpClient();
 builder.Services.AddNumberScraperIntegration(builder.Configuration);
+builder.Services.AddZohalIntegration(builder.Configuration);
+builder.Services.AddScoped<Api_Vapp.Interfaces.IZohalInquiryLogRepository, Api_Vapp.Repositories.ZohalInquiryLogRepository>();
 
 
 

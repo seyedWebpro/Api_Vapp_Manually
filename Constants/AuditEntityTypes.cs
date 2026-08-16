@@ -41,5 +41,6 @@ namespace Api_Vapp.Constants
         public const string AppVersionPolicy = "AppVersionPolicy";
         public const string Otp = "Otp";
         public const string SmsSend = "SmsSend";
+        public const string ZohalInquiry = "ZohalInquiry";
     }
 }

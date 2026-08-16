@@ -22,5 +22,6 @@ namespace Api_Vapp.Constants
         public const string Contact = "contact";
         public const string Role = "role";
         public const string Sms = "sms";
+        public const string IdentityVerification = "identity_verification";
     }
 }

@@ -498,3 +498,6 @@ public
 # Temporary folders
 tmp/
 temp/
+
+# Local secrets (توکن زحل، JWT و ...)
+appsettings.Development.Local.json
