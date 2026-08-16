@@ -484,7 +484,7 @@ namespace Api_Vapp.Services
 
                 return ApiResponse<BusinessCardResponseDto>.CreateSuccess(
                     MapToResponseDto(card),
-                    "کارت ویزیت با موفقیت منتشر شد");
+                    QuickSendContentApprovalHelper.BuildPublishSubmittedMessage("کارت ویزیت"));
             }
             catch (DbUpdateException dbEx)
             {

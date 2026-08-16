@@ -319,7 +319,7 @@ namespace Api_Vapp.Services
 
                 return ApiResponse<UserFormResponseDto>.CreateSuccess(
                     MapToResponseDto(form),
-                    "فرم با موفقیت منتشر شد");
+                    QuickSendContentApprovalHelper.BuildPublishSubmittedMessage("فرم"));
             }
             catch (DbUpdateException dbEx)
             {

@@ -1393,6 +1393,14 @@ namespace Api_Vapp.Services
                 return ApiResponse<T>.Forbidden(BookingInactiveMessage, ErrorCodes.ResourceInactive);
             }
 
+            var approvalError = QuickSendContentApprovalHelper.TryBlockPublicAccess<T>(
+                system.ApprovalStatus,
+                "صفحه رزرو");
+            if (approvalError != null)
+            {
+                return approvalError;
+            }
+
             return null;
         }
 

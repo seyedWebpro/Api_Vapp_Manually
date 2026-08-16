@@ -504,7 +504,7 @@ namespace Api_Vapp.Services
 
                 return ApiResponse<LuckyWheelResponseDto>.CreateSuccess(
                     MapToResponseDto(wheel),
-                    "گردونه با موفقیت منتشر شد");
+                    QuickSendContentApprovalHelper.BuildPublishSubmittedMessage("گردونه شانس"));
             }
             catch (DbUpdateException dbEx)
             {

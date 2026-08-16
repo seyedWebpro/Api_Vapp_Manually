@@ -154,7 +154,7 @@ HTTP=$(req POST "/api/SocialMediaLink/quick-send" "$TMP_DIR/qs_rej.json" \
 SC=$(json_get "$TMP_DIR/qs_rej.json" statusCode)
 MSG=$(json_get "$TMP_DIR/qs_rej.json" message)
 assert_eq "rejected quick-send status" "400" "$SC"
-assert_contains "rejected message" "رد شده" "$MSG"
+assert_contains "rejected message" "تأیید نشد" "$MSG"
 
 # 10) Reset to Pending via update (URL change), then approve
 HTTP=$(req POST "/api/SocialMediaLink/${LINK_ID}/update" "$TMP_DIR/upd.json" \

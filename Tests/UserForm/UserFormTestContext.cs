@@ -1,3 +1,4 @@
+using Api_Vapp.Constants;
 using Api_Vapp.Data;
 using Api_Vapp.DTOs.File;
 using Api_Vapp.DTOs.UserForm;
@@ -143,13 +144,26 @@ internal sealed class UserFormTestContext : IDisposable
         return result.Data.Id;
     }
 
-    public async Task<int> CreatePublishedFormAsync(string? slug = "job-alpha")
+    public async Task ApproveFormAsync(int formId)
+    {
+        var form = await _context.UserForms.FirstAsync(f => f.Id == formId);
+        form.ApprovalStatus = AdminApprovalStatuses.Approved;
+        form.ApprovedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task<int> CreatePublishedFormAsync(string? slug = "job-alpha", bool approveForPublic = true)
     {
         var formId = await CreateDraftAsync();
         var publish = await Service.PublishAsync(formId, OwnerUserId, new PublishUserFormDto { Slug = slug });
         if (!publish.Success)
         {
             throw new InvalidOperationException($"Expected publish success, got {publish.StatusCode}: {publish.Message}");
+        }
+
+        if (approveForPublic)
+        {
+            await ApproveFormAsync(formId);
         }
 
         return formId;

@@ -1,4 +1,5 @@
 using Api_Vapp.Constants;
+using Api_Vapp.DTOs.Common;
 using Api_Vapp.Models;
 using Api_Vapp.Utilities;
 using Xunit;
@@ -50,7 +51,6 @@ namespace Api_Vapp.Tests.QuickSend
             Assert.True(result.Success);
             Assert.Equal(AdminApprovalStatuses.Pending, result.Data!.AdminApprovalStatus);
             Assert.Contains("صف تأیید", result.Message);
-            Assert.Contains("بدون نیاز به تأیید مجدد", result.Message);
         }
 
         [Fact]
@@ -64,7 +64,8 @@ namespace Api_Vapp.Tests.QuickSend
             Assert.NotNull(result);
             Assert.Equal(400, result!.StatusCode);
             Assert.False(result.Success);
-            Assert.Contains("رد شده", result.Message);
+            Assert.Equal(ErrorCodes.ContentRejected, result.ErrorCode);
+            Assert.Contains("تأیید نشد", result.Message);
             Assert.Contains("محتوای نامناسب", result.Message);
         }
 
@@ -77,6 +78,54 @@ namespace Api_Vapp.Tests.QuickSend
                 "رزرو نوبت");
 
             Assert.Null(result);
+        }
+
+        [Fact]
+        public void TryBlockPublicAccess_Returns403Pending()
+        {
+            var result = QuickSendContentApprovalHelper.TryBlockPublicAccess<object>(
+                AdminApprovalStatuses.Pending,
+                "فرم");
+
+            Assert.NotNull(result);
+            Assert.Equal(403, result!.StatusCode);
+            Assert.False(result.Success);
+            Assert.Equal(ErrorCodes.ContentPendingApproval, result.ErrorCode);
+            Assert.Contains("منتشر نشده", result.Message);
+            Assert.DoesNotContain("دلیل", result.Message);
+        }
+
+        [Fact]
+        public void TryBlockPublicAccess_Returns403RejectedWithoutReason()
+        {
+            var result = QuickSendContentApprovalHelper.TryBlockPublicAccess<object>(
+                AdminApprovalStatuses.Rejected,
+                "کارت ویزیت");
+
+            Assert.NotNull(result);
+            Assert.Equal(403, result!.StatusCode);
+            Assert.False(result.Success);
+            Assert.Equal(ErrorCodes.ContentRejected, result.ErrorCode);
+            Assert.Contains("در دسترس عمومی نیست", result.Message);
+            Assert.DoesNotContain("محتوای نامناسب", result.Message);
+        }
+
+        [Fact]
+        public void TryBlockPublicAccess_ReturnsNullForApproved()
+        {
+            var result = QuickSendContentApprovalHelper.TryBlockPublicAccess<object>(
+                AdminApprovalStatuses.Approved,
+                "گردونه شانس");
+
+            Assert.Null(result);
+        }
+
+        [Fact]
+        public void BuildPublishSubmittedMessage_MentionsAdminApproval()
+        {
+            var message = QuickSendContentApprovalHelper.BuildPublishSubmittedMessage("فرم");
+            Assert.Contains("تأیید ادمین", message);
+            Assert.Contains("لینک عمومی", message);
         }
 
         [Theory]

@@ -44,13 +44,6 @@ namespace Api_Vapp.Services
                         errorCode: ErrorCodes.InvalidInput);
                 }
 
-                var cacheKey = BuildCacheKey(normalizedSlug);
-                if (_cache.TryGetValue(cacheKey, out BusinessCardPublicDto? cached) && cached != null)
-                {
-                    _logger.LogInformation("کارت ویزیت عمومی از کش — Slug: {Slug}", normalizedSlug);
-                    return ApiResponse<BusinessCardPublicDto>.CreateSuccess(cached);
-                }
-
                 var card = await _businessCardRepository.GetBySlugReadOnlyAsync(normalizedSlug);
                 if (card == null)
                 {
@@ -62,6 +55,21 @@ namespace Api_Vapp.Services
                     return ApiResponse<BusinessCardPublicDto>.Forbidden(
                         "این کارت ویزیت در حال حاضر فعال نیست",
                         ErrorCodes.ResourceInactive);
+                }
+
+                var approvalError = QuickSendContentApprovalHelper.TryBlockPublicAccess<BusinessCardPublicDto>(
+                    card.ApprovalStatus,
+                    "کارت ویزیت");
+                if (approvalError != null)
+                {
+                    return approvalError;
+                }
+
+                var cacheKey = BuildCacheKey(normalizedSlug);
+                if (_cache.TryGetValue(cacheKey, out BusinessCardPublicDto? cached) && cached != null)
+                {
+                    _logger.LogInformation("کارت ویزیت عمومی از کش — Slug: {Slug}", normalizedSlug);
+                    return ApiResponse<BusinessCardPublicDto>.CreateSuccess(cached);
                 }
 
                 var dto = MapToPublicDto(card);

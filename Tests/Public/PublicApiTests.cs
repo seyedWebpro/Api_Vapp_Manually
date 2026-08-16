@@ -94,6 +94,20 @@ public class PublicApiTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task GetPublicForm_PendingApproval_Returns403()
+    {
+        var slug = $"pending-{Guid.NewGuid():N}"[..20];
+        await _formCtx.CreatePublishedFormAsync(slug, approveForPublic: false);
+
+        var result = await _formPublicService.GetPublicFormAsync(slug);
+
+        Assert.False(result.Success);
+        Assert.Equal(403, result.StatusCode);
+        Assert.Equal(ErrorCodes.ContentPendingApproval, result.ErrorCode);
+        Assert.Contains("منتشر نشده", result.Message);
+    }
+
+    [Fact]
     public async Task GetPublicForm_ValidSlug_Returns200()
     {
         var slug = $"contact-{Guid.NewGuid():N}"[..20];
@@ -232,6 +246,21 @@ public class PublicApiTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task GetPublicWheel_PendingApproval_Returns403()
+    {
+        var slug = $"pend-wh-{Guid.NewGuid():N}"[..20];
+        var wheelId = await _wheelCtx.CreateWheelWithItemsAsync();
+        await _wheelCtx.Service.PublishAsync(wheelId, _wheelCtx.OwnerUserId, new PublishLuckyWheelDto { Slug = slug });
+
+        var result = await _wheelPublicService.GetPublicWheelAsync(slug);
+
+        Assert.False(result.Success);
+        Assert.Equal(403, result.StatusCode);
+        Assert.Equal(ErrorCodes.ContentPendingApproval, result.ErrorCode);
+        Assert.Contains("منتشر نشده", result.Message);
+    }
+
+    [Fact]
     public async Task GetPublicWheel_ValidSlug_Returns200()
     {
         var slug = $"wheel-{Guid.NewGuid():N}"[..20];
@@ -240,6 +269,7 @@ public class PublicApiTests : IAsyncLifetime
         {
             Slug = slug
         });
+        await _wheelCtx.ApproveWheelAsync(wheelId);
 
         var result = await _wheelPublicService.GetPublicWheelAsync(slug);
 
@@ -257,6 +287,7 @@ public class PublicApiTests : IAsyncLifetime
         {
             Slug = slug
         });
+        await _wheelCtx.ApproveWheelAsync(wheelId);
 
         var register = await _wheelPublicService.RegisterAsync(slug, new RegisterPublicParticipantDto
         {
@@ -296,6 +327,7 @@ public class PublicApiTests : IAsyncLifetime
         {
             Slug = slug
         });
+        await _wheelCtx.ApproveWheelAsync(wheelId);
 
         var register = await _wheelPublicService.RegisterAsync(slug, new RegisterPublicParticipantDto
         {
@@ -323,6 +355,7 @@ public class PublicApiTests : IAsyncLifetime
         {
             Slug = slug
         });
+        await _wheelCtx.ApproveWheelAsync(wheelId);
 
         var registerDto = new RegisterPublicParticipantDto
         {

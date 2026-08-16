@@ -445,6 +445,14 @@ namespace Api_Vapp.Services
                 return ApiResponse<T>.Forbidden(FormInactiveMessage, ErrorCodes.ResourceInactive);
             }
 
+            var approvalError = QuickSendContentApprovalHelper.TryBlockPublicAccess<T>(
+                form.ApprovalStatus,
+                "فرم");
+            if (approvalError != null)
+            {
+                return approvalError;
+            }
+
             return null;
         }
 

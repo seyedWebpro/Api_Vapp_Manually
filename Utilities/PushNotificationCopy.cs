@@ -171,8 +171,8 @@ namespace Api_Vapp.Utilities
                 ? itemTypePersian
                 : $"«{title.Trim()}»";
             return (
-                "ارسال سریع تأیید شد",
-                $"{name} ({itemTypePersian}) تأیید شد. از این به بعد می‌توانید بدون تأیید مجدد ارسال کنید.");
+                "محتوا تأیید شد",
+                $"{name} ({itemTypePersian}) تأیید شد. لینک عمومی فعال است و می‌توانید بدون تأیید مجدد ارسال کنید.");
         }
 
         public static (string Title, string Body) QuickSendRejected(string itemTypePersian, string? title, string? reason)
@@ -181,10 +181,10 @@ namespace Api_Vapp.Utilities
                 ? itemTypePersian
                 : $"«{title.Trim()}»";
             var detail = string.IsNullOrWhiteSpace(reason)
-                ? "لطفاً محتوا را بازبینی و دوباره ارسال کنید."
+                ? "لطفاً محتوا را اصلاح کنید و دوباره برای تأیید ارسال کنید."
                 : reason.Trim();
             return (
-                "ارسال سریع تأیید نشد",
+                "محتوا تأیید نشد",
                 $"{name} ({itemTypePersian}) رد شد. دلیل: {detail}");
         }
 

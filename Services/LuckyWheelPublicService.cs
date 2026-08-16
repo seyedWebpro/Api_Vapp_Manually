@@ -485,6 +485,14 @@ namespace Api_Vapp.Services
                 return ApiResponse<T>.Forbidden(WheelInactiveMessage, ErrorCodes.ResourceInactive);
             }
 
+            var approvalError = QuickSendContentApprovalHelper.TryBlockPublicAccess<T>(
+                wheel.ApprovalStatus,
+                "گردونه شانس");
+            if (approvalError != null)
+            {
+                return approvalError;
+            }
+
             return null;
         }
 

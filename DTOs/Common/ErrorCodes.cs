@@ -16,6 +16,16 @@ namespace Api_Vapp.DTOs.Common
         /// منبع منتشرشده وجود دارد ولی برای دسترسی عمومی غیرفعال است (مثلاً فرم/گردونه)
         /// </summary>
         public const string ResourceInactive = "RESOURCE_INACTIVE";
+
+        /// <summary>
+        /// محتوا منتشر شده ولی هنوز توسط ادمین تأیید نشده (کارت/فرم/گردونه/رزرو)
+        /// </summary>
+        public const string ContentPendingApproval = "CONTENT_PENDING_APPROVAL";
+
+        /// <summary>
+        /// محتوا توسط ادمین رد شده (برای مالک یا دسترسی عمومی)
+        /// </summary>
+        public const string ContentRejected = "CONTENT_REJECTED";
         public const string DatabaseError = "DATABASE_ERROR";
         public const string TokenExpired = "TOKEN_EXPIRED";
         public const string TokenInvalid = "TOKEN_INVALID";

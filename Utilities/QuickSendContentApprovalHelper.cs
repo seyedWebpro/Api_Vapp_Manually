@@ -12,7 +12,10 @@ namespace Api_Vapp.Utilities
     public static class QuickSendContentApprovalHelper
     {
         public const string PendingUserMessage =
-            "پیام سریع شما در صف تأیید ادمین است. پس از تأیید، می‌توانید بدون نیاز به تأیید مجدد ارسال کنید.";
+            "محتوای شما در صف تأیید ادمین است. پس از تأیید، می‌توانید لینک را بدون نیاز به تأیید مجدد ارسال کنید.";
+
+        public static string BuildPublishSubmittedMessage(string resourcePersianLabel) =>
+            $"درخواست انتشار {resourcePersianLabel} ثبت شد. پس از تأیید ادمین، لینک عمومی فعال می‌شود.";
 
         public static bool IsApproved(string? approvalStatus) =>
             string.Equals(approvalStatus, AdminApprovalStatuses.Approved, StringComparison.Ordinal);
@@ -42,7 +45,7 @@ namespace Api_Vapp.Utilities
         }
 
         /// <summary>
-        /// اگر Approved نباشد، پاسخ مناسب برای کاربر برمی‌گرداند؛ در غیر این صورت null (ادامه ارسال).
+        /// اگر Approved نباشد، پاسخ مناسب برای مالک محتوا برمی‌گرداند؛ در غیر این صورت null (ادامه ارسال).
         /// </summary>
         public static ApiResponse<DirectSendResultDto>? TryBlockIfNotApproved(
             string? approvalStatus,
@@ -54,13 +57,9 @@ namespace Api_Vapp.Utilities
 
             if (IsRejected(approvalStatus))
             {
-                var reason = string.IsNullOrWhiteSpace(rejectionReason)
-                    ? "دلیل مشخص نشده است"
-                    : rejectionReason.Trim();
-
                 return ApiResponse<DirectSendResultDto>.BadRequest(
-                    $"محتوای ارسال سریع {entityPersianLabel} رد شده است. دلیل: {reason}",
-                    errorCode: ErrorCodes.InvalidInput);
+                    BuildOwnerRejectedMessage(entityPersianLabel, rejectionReason),
+                    errorCode: ErrorCodes.ContentRejected);
             }
 
             return ApiResponse<DirectSendResultDto>.CreateSuccess(
@@ -71,5 +70,44 @@ namespace Api_Vapp.Utilities
                 PendingUserMessage,
                 202);
         }
+
+        /// <summary>
+        /// دسترسی عمومی فقط پس از Approved — Pending/Rejected مسدود می‌شود.
+        /// دلیل رد ادمین فقط برای مالک محتواست، نه بازدیدکننده عمومی.
+        /// </summary>
+        public static ApiResponse<T>? TryBlockPublicAccess<T>(
+            string? approvalStatus,
+            string resourcePersianLabel)
+        {
+            if (IsApproved(approvalStatus))
+                return null;
+
+            if (IsRejected(approvalStatus))
+            {
+                return ApiResponse<T>.Forbidden(
+                    BuildPublicRejectedMessage(resourcePersianLabel),
+                    ErrorCodes.ContentRejected);
+            }
+
+            return ApiResponse<T>.Forbidden(
+                BuildPublicPendingMessage(resourcePersianLabel),
+                ErrorCodes.ContentPendingApproval);
+        }
+
+        public static string BuildOwnerRejectedMessage(string resourcePersianLabel, string? rejectionReason)
+        {
+            if (string.IsNullOrWhiteSpace(rejectionReason))
+            {
+                return $"{resourcePersianLabel} تأیید نشد. لطفاً محتوا را اصلاح کنید و دوباره برای تأیید ارسال کنید.";
+            }
+
+            return $"{resourcePersianLabel} تأیید نشد. دلیل: {rejectionReason.Trim()} — پس از اصلاح، دوباره برای تأیید ارسال می‌شود.";
+        }
+
+        public static string BuildPublicPendingMessage(string resourcePersianLabel) =>
+            $"{resourcePersianLabel} هنوز منتشر نشده است. پس از تأیید ادمین، این لینک فعال می‌شود.";
+
+        public static string BuildPublicRejectedMessage(string resourcePersianLabel) =>
+            $"{resourcePersianLabel} در دسترس عمومی نیست. لطفاً با سازنده لینک تماس بگیرید.";
     }
 }

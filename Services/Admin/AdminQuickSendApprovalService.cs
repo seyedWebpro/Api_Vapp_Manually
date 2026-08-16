@@ -4,9 +4,11 @@ using Api_Vapp.DTOs.Admin;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
+using Api_Vapp.Services;
 using Api_Vapp.Services.Audit;
 using Api_Vapp.Utilities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 
 namespace Api_Vapp.Services.Admin
@@ -21,6 +23,7 @@ namespace Api_Vapp.Services.Admin
         private readonly BookingSystemOptions _bookingOptions;
         private readonly FormBuilderOptions _formOptions;
         private readonly LuckyWheelOptions _luckyWheelOptions;
+        private readonly IMemoryCache _cache;
 
         public AdminQuickSendApprovalService(
             Api_Context context,
@@ -30,7 +33,8 @@ namespace Api_Vapp.Services.Admin
             IOptions<BusinessCardOptions> businessCardOptions,
             IOptions<BookingSystemOptions> bookingOptions,
             IOptions<FormBuilderOptions> formOptions,
-            IOptions<LuckyWheelOptions> luckyWheelOptions)
+            IOptions<LuckyWheelOptions> luckyWheelOptions,
+            IMemoryCache cache)
         {
             _context = context;
             _audit = audit;
@@ -40,6 +44,7 @@ namespace Api_Vapp.Services.Admin
             _bookingOptions = bookingOptions.Value;
             _formOptions = formOptions.Value;
             _luckyWheelOptions = luckyWheelOptions.Value;
+            _cache = cache;
         }
 
         public Task<ApiResponse<PagedResponse<QuickSendApprovalResponseDto>>> GetPendingAsync(
@@ -160,6 +165,8 @@ namespace Api_Vapp.Services.Admin
                 entity.Approval.UpdatedAt = DateTime.UtcNow;
                 await _context.SaveChangesAsync();
 
+                InvalidatePublicCacheIfNeeded(normalized, entity);
+
                 await _audit.WriteAsync(new AuditEntry
                 {
                     Category = AuditCategories.Approval,
@@ -194,7 +201,7 @@ namespace Api_Vapp.Services.Admin
                         title = before.Title
                     }));
 
-                return ApiResponse<bool>.CreateSuccess(true, $"{persian} تأیید شد");
+                return ApiResponse<bool>.CreateSuccess(true, $"{persian} تأیید و منتشر شد");
             }
             catch (Exception ex)
             {
@@ -239,6 +246,8 @@ namespace Api_Vapp.Services.Admin
                 entity.Approval.UpdatedAt = DateTime.UtcNow;
                 await _context.SaveChangesAsync();
 
+                InvalidatePublicCacheIfNeeded(normalized, entity);
+
                 await _audit.WriteAsync(new AuditEntry
                 {
                     Category = AuditCategories.Approval,
@@ -275,7 +284,7 @@ namespace Api_Vapp.Services.Admin
                         rejectionReason = reason
                     }));
 
-                return ApiResponse<bool>.CreateSuccess(true, $"{persian} رد شد");
+                return ApiResponse<bool>.CreateSuccess(true, $"{persian} رد شد و لینک عمومی غیرفعال ماند");
             }
             catch (Exception ex)
             {
@@ -493,6 +502,19 @@ namespace Api_Vapp.Services.Admin
             }
 
             return query ?? Enumerable.Empty<QuickSendApprovalResponseDto>().AsQueryable();
+        }
+
+        private void InvalidatePublicCacheIfNeeded(string itemType, TrackedQuickSendEntity entity)
+        {
+            if (itemType != QuickSendItemTypes.BusinessCard)
+                return;
+
+            var card = _context.BusinessCards.AsNoTracking()
+                .FirstOrDefault(c => c.Id == entity.Id && !c.IsDeleted);
+            if (card?.Slug != null)
+            {
+                BusinessCardPublicService.InvalidatePublicCache(_cache, card.Slug);
+            }
         }
 
         private void EnrichPublicUrl(QuickSendApprovalResponseDto item)

@@ -718,7 +718,7 @@ namespace Api_Vapp.Services
                 var created = await _systemRepository.GetByIdWithDetailsAsync(system.Id, userId);
                 return ApiResponse<ConfirmBookingSystemResponseDto>.CreateSuccess(
                     new ConfirmBookingSystemResponseDto { System = MapToDetailDto(created!) },
-                    "سیستم رزرو با موفقیت ایجاد شد",
+                    QuickSendContentApprovalHelper.BuildPublishSubmittedMessage("صفحه رزرو"),
                     201);
             }
             catch (DbUpdateException dbEx)

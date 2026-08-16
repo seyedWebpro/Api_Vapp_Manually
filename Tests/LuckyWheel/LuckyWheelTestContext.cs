@@ -1,3 +1,4 @@
+using Api_Vapp.Constants;
 using Api_Vapp.Data;
 using Api_Vapp.DTOs.LuckyWheel;
 using Api_Vapp.Interfaces;
@@ -129,6 +130,14 @@ internal sealed class LuckyWheelTestContext : IDisposable
         }
 
         return wheelId;
+    }
+
+    public async Task ApproveWheelAsync(int wheelId)
+    {
+        var wheel = await _context.LuckyWheels.FirstAsync(w => w.Id == wheelId);
+        wheel.ApprovalStatus = AdminApprovalStatuses.Approved;
+        wheel.ApprovedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
     }
 
     public async Task SeedParticipantAsync(
