@@ -22,7 +22,12 @@ namespace Api_Vapp.DTOs.Auth
         /// <summary>برای پیگیری پشتیبانی — با TraceId در لاگ سرور جور است</summary>
         public string? TraceId { get; set; }
 
-        // DEV ONLY — TODO(production): قبل از release این property را حذف کنید (جستجو: OtpCode)
+        /// <summary>
+        /// موقتی برای برنامه‌نویس موبایل: کد تایید را از پاسخ login/register بخواند تا وقتی SMS نرسیده تست کند.
+        /// </summary>
+        // TODO(remove-before-production) REMOVE_DEV_OTP
+        // این فیلد را قبل از انتشار نهایی برای کاربران واقعی حذف کنید.
+        // جستجو در پروژه: REMOVE_DEV_OTP
         public string? OtpCode { get; set; }
     }
 }

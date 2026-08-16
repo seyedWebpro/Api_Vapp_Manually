@@ -43,6 +43,8 @@ public class AuthOtpResponseFactoryTests
         Assert.Equal(120, dto.RetryAfterSeconds);
         Assert.Null(dto.ErrorCode);
         Assert.Equal("کد تایید جدید به شماره موبایل شما ارسال شد", dto.Message);
+        // TODO(remove-before-production) REMOVE_DEV_OTP
+        Assert.Equal("1234", dto.OtpCode);
     }
 
     [Fact]

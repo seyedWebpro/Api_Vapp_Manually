@@ -94,8 +94,11 @@ namespace Api_Vapp.Examples
                 {
                     StatusCode = 200,
                     Success = true,
-                    Message = "کد OTP با موفقیت ارسال شد",
-                    ExpiresInSeconds = 300
+                    Message = "کد تایید به شماره موبایل شما ارسال شد",
+                    ExpiresInSeconds = 300,
+                    RetryAfterSeconds = 120,
+                    // TODO(remove-before-production) REMOVE_DEV_OTP
+                    OtpCode = "1234"
                 };
 
                 if (operation.Responses.TryGetValue("200", out var response200))
@@ -135,8 +138,11 @@ namespace Api_Vapp.Examples
                 {
                     StatusCode = 200,
                     Success = true,
-                    Message = "کد OTP با موفقیت ارسال شد",
-                    ExpiresInSeconds = 300
+                    Message = "کد تایید به شماره موبایل شما ارسال شد",
+                    ExpiresInSeconds = 300,
+                    RetryAfterSeconds = 120,
+                    // TODO(remove-before-production) REMOVE_DEV_OTP
+                    OtpCode = "1234"
                 };
 
                 if (operation.Responses.TryGetValue("200", out var response200))

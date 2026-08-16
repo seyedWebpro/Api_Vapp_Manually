@@ -152,7 +152,9 @@ namespace Api_Vapp.Services
             DevOtpLogger.Write(_logger, phoneNumber, otpCode, purpose);
         }
 
-        // DEV ONLY — TODO(production): قبل از release این متد و فیلد OtpCode در SendOtpResponseDto را حذف کنید (جستجو: CreateSuccessOtpResponse)
+        // TODO(remove-before-production) REMOVE_DEV_OTP
+        // این متد otpCode را در پاسخ می‌گذارد تا برنامه‌نویس موبایل کد تایید را ببیند.
+        // قبل از انتشار نهایی: پارامتر otpCode را حذف کنید و SendOtpResponseDto.OtpCode را بردارید.
         private SendOtpResponseDto CreateSuccessOtpResponse(string message, string otpCode, int expiresInSeconds)
             => AuthOtpResponseFactory.Success(
                 message,

@@ -11,13 +11,13 @@ namespace Api_Vapp.Models
         /// <summary>android | ios</summary>
         public string Platform { get; set; } = string.Empty;
 
-        /// <summary>آخرین نسخه منتشرشده (مثلاً 1.0.0)</summary>
-        public string LatestVersion { get; set; } = "1.0.0";
+        /// <summary>آخرین نسخه منتشرشده (مثلاً 1.1.0)</summary>
+        public string LatestVersion { get; set; } = "1.1.0";
 
         /// <summary>
         /// حداقل نسخه پشتیبانی‌شده.
         /// اگر اپ کمتر از این باشد → forced؛ در غیر این صورت اگر کمتر از Latest باشد → optional.
-        /// برای شروع برابر Latest نگه داشته می‌شود تا آپدیت اجباری فعال نباشد.
+        /// برای آپدیت اختیاری روی 1.0.0 نگه داشته می‌شود.
         /// </summary>
         public string MinSupportedVersion { get; set; } = "1.0.0";
 

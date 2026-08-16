@@ -263,7 +263,7 @@ namespace Api_Vapp.Services
                 {
                     softDeleted.IsDeleted = false;
                     softDeleted.IsActive = true;
-                    softDeleted.LatestVersion = "1.0.0";
+                    softDeleted.LatestVersion = "1.1.0";
                     softDeleted.MinSupportedVersion = "1.0.0";
                     softDeleted.UpdatedAt = DateTime.UtcNow;
                     continue;
@@ -279,7 +279,7 @@ namespace Api_Vapp.Services
         private static AppVersionPolicy CreateDefaultPolicy(string platform) => new()
         {
             Platform = platform,
-            LatestVersion = "1.0.0",
+            LatestVersion = "1.1.0",
             MinSupportedVersion = "1.0.0",
             Title = "نسخه جدید آماده است",
             Message = "نسخه جدید اپ در دسترس است. می‌توانید هر زمان به‌روزرسانی کنید.",

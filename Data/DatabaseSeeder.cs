@@ -34,13 +34,31 @@ namespace Api_Vapp.Data
 
         private static async Task SeedAppVersionPoliciesAsync(Api_Context context, ILogger logger)
         {
+            const string latestVersion = "1.1.0";
+            const string minSupportedVersion = "1.0.0";
+
             foreach (var platform in AppVersionPlatforms.All)
             {
-                var exists = await context.AppVersionPolicies
-                    .AnyAsync(p => p.Platform == platform && !p.IsDeleted);
+                var existing = await context.AppVersionPolicies
+                    .FirstOrDefaultAsync(p => p.Platform == platform && !p.IsDeleted);
 
-                if (exists)
+                if (existing != null)
+                {
+                    if (existing.LatestVersion != latestVersion
+                        || existing.MinSupportedVersion != minSupportedVersion)
+                    {
+                        existing.LatestVersion = latestVersion;
+                        existing.MinSupportedVersion = minSupportedVersion;
+                        existing.IsActive = true;
+                        existing.UpdatedAt = DateTime.UtcNow;
+                        await context.SaveChangesAsync();
+                        logger.LogInformation(
+                            "AppVersionPolicy updated for platform {Platform} → Latest {Latest}, Min {Min}.",
+                            platform, latestVersion, minSupportedVersion);
+                    }
+
                     continue;
+                }
 
                 var softDeleted = await context.AppVersionPolicies
                     .FirstOrDefaultAsync(p => p.Platform == platform);
@@ -49,8 +67,8 @@ namespace Api_Vapp.Data
                 {
                     softDeleted.IsDeleted = false;
                     softDeleted.IsActive = true;
-                    softDeleted.LatestVersion = "1.0.0";
-                    softDeleted.MinSupportedVersion = "1.0.0";
+                    softDeleted.LatestVersion = latestVersion;
+                    softDeleted.MinSupportedVersion = minSupportedVersion;
                     softDeleted.UpdatedAt = DateTime.UtcNow;
                     await context.SaveChangesAsync();
                     logger.LogInformation("AppVersionPolicy restored for platform {Platform}.", platform);
@@ -60,8 +78,8 @@ namespace Api_Vapp.Data
                 context.AppVersionPolicies.Add(new AppVersionPolicy
                 {
                     Platform = platform,
-                    LatestVersion = "1.0.0",
-                    MinSupportedVersion = "1.0.0",
+                    LatestVersion = latestVersion,
+                    MinSupportedVersion = minSupportedVersion,
                     Title = "نسخه جدید آماده است",
                     Message = "نسخه جدید اپ در دسترس است. می‌توانید هر زمان به‌روزرسانی کنید.",
                     ChangelogJson = "[]",
@@ -70,7 +88,9 @@ namespace Api_Vapp.Data
                 });
 
                 await context.SaveChangesAsync();
-                logger.LogInformation("AppVersionPolicy seeded for platform {Platform} at version 1.0.0 (optional updates).", platform);
+                logger.LogInformation(
+                    "AppVersionPolicy seeded for platform {Platform} at version {Latest} (optional updates, min {Min}).",
+                    platform, latestVersion, minSupportedVersion);
             }
         }
 

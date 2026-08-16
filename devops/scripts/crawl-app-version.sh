@@ -7,10 +7,8 @@
 # سناریوها:
 #   - health
 #   - check بدون پارامتر / پلتفرم نامعتبر / ورژن نامعتبر → 400
-#   - check با 1.0.0 → none (ورژن اولیه)
-#   - admin list + update latest به 1.1.0 (min همان 1.0.0) → optional
-#   - check بعد از آپدیت → optional
-#   - بازگرداندن به 1.0.0
+#   - seed: latest=1.1.0 ، min=1.0.0 → چک با 1.0.0 = optional ، با 1.1.0 = none
+#   - forced path و restore به seed
 set -euo pipefail
 
 BASE_URL="${BASE_URL:-http://127.0.0.1:5054}"
@@ -105,30 +103,36 @@ code="$(http_json GET '/api/AppVersion/check?platform=android&currentVersion=abc
 ERR="$(json_get "$BAD_VER" errorCode)"
 check "invalid version → 400 INVALID_INPUT" "$([[ "$code" == "400" && "$ERR" == "INVALID_INPUT" ]] && echo 1 || echo 0)"
 
-# 4) happy path none (seed 1.0.0)
-NONE="$TMP_DIR/none.json"
-code="$(http_json GET '/api/AppVersion/check?platform=android&currentVersion=1.0.0' "" "$NONE")"
-UT="$(json_get "$NONE" data.updateType)"
-LV="$(json_get "$NONE" data.latestVersion)"
-MV="$(json_get "$NONE" data.minSupportedVersion)"
-SUCCESS="$(json_get "$NONE" success)"
+# 4) seed: latest=1.1.0 / min=1.0.0 → current 1.0.0 = optional
+OPT_SEED="$TMP_DIR/opt_seed.json"
+code="$(http_json GET '/api/AppVersion/check?platform=android&currentVersion=1.0.0' "" "$OPT_SEED")"
+UT="$(json_get "$OPT_SEED" data.updateType)"
+LV="$(json_get "$OPT_SEED" data.latestVersion)"
+MV="$(json_get "$OPT_SEED" data.minSupportedVersion)"
+SUCCESS="$(json_get "$OPT_SEED" success)"
 check "check 1.0.0 → 200 success" "$(http_ok "$code" && [[ "$SUCCESS" == "true" ]] && echo 1 || echo 0)"
-check "check 1.0.0 → updateType=none" "$([[ "$UT" == "none" ]] && echo 1 || echo 0)"
-check "seed latestVersion=1.0.0" "$([[ "$LV" == "1.0.0" ]] && echo 1 || echo 0)"
+check "check 1.0.0 → updateType=optional" "$([[ "$UT" == "optional" ]] && echo 1 || echo 0)"
+check "seed latestVersion=1.1.0" "$([[ "$LV" == "1.1.0" ]] && echo 1 || echo 0)"
 check "seed minSupportedVersion=1.0.0" "$([[ "$MV" == "1.0.0" ]] && echo 1 || echo 0)"
 
 # ios parity
 IOS="$TMP_DIR/ios.json"
 code="$(http_json GET '/api/AppVersion/check?platform=ios&currentVersion=1.0.0' "" "$IOS")"
 UT="$(json_get "$IOS" data.updateType)"
-check "ios check 1.0.0 → none" "$(http_ok "$code" && [[ "$UT" == "none" ]] && echo 1 || echo 0)"
+check "ios check 1.0.0 → optional" "$(http_ok "$code" && [[ "$UT" == "optional" ]] && echo 1 || echo 0)"
+
+# up-to-date on latest
+UPTODATE_SEED="$TMP_DIR/uptodate_seed.json"
+code="$(http_json GET '/api/AppVersion/check?platform=android&currentVersion=1.1.0' "" "$UPTODATE_SEED")"
+UT="$(json_get "$UPTODATE_SEED" data.updateType)"
+check "check current=1.1.0 → none" "$(http_ok "$code" && [[ "$UT" == "none" ]] && echo 1 || echo 0)"
 
 # 5) admin list (DisableAuth local)
 ADMIN_LIST="$TMP_DIR/admin_list.json"
 code="$(http_json GET /api/Admin/AppVersion "" "$ADMIN_LIST")"
 check "GET Admin/AppVersion → 200" "$(http_ok "$code" && echo 1 || echo 0)"
 
-# 6) snapshot android + bump latest to 1.1.0 (keep min 1.0.0 → optional)
+# 6) snapshot android + bump latest to 1.2.0 (keep min 1.0.0 → still optional)
 code="$(http_json GET /api/Admin/AppVersion/android "" "$ORIG_ANDROID")"
 check "GET Admin/AppVersion/android → 200" "$(http_ok "$code" && echo 1 || echo 0)"
 
@@ -137,7 +141,7 @@ UPDATE_BODY="$(python3 - "$ORIG_ANDROID" <<'PY'
 import json,sys
 d=json.load(open(sys.argv[1],encoding='utf-8'))['data']
 body={
-  "latestVersion": "1.1.0",
+  "latestVersion": "1.2.0",
   "minSupportedVersion": "1.0.0",
   "storeUrl": d.get("storeUrl") or "https://example.com/store/android",
   "title": "نسخه جدید آماده است",
@@ -151,7 +155,7 @@ PY
 code="$(http_json POST /api/Admin/AppVersion/android/update "$UPDATE_BODY" "$UPDATE_OUT")"
 NEW_LV="$(json_get "$UPDATE_OUT" data.latestVersion)"
 NEW_MV="$(json_get "$UPDATE_OUT" data.minSupportedVersion)"
-check "POST Admin update latest=1.1.0 → 200" "$(http_ok "$code" && [[ "$NEW_LV" == "1.1.0" ]] && echo 1 || echo 0)"
+check "POST Admin update latest=1.2.0 → 200" "$(http_ok "$code" && [[ "$NEW_LV" == "1.2.0" ]] && echo 1 || echo 0)"
 check "min stays 1.0.0 (optional mode)" "$([[ "$NEW_MV" == "1.0.0" ]] && echo 1 || echo 0)"
 
 # 7) check after bump → optional
@@ -166,9 +170,9 @@ check "optional has title" "$([[ -n "$TITLE" ]] && echo 1 || echo 0)"
 
 # 8) still on latest → none
 UPTODATE="$TMP_DIR/uptodate.json"
-code="$(http_json GET '/api/AppVersion/check?platform=android&currentVersion=1.1.0' "" "$UPTODATE")"
+code="$(http_json GET '/api/AppVersion/check?platform=android&currentVersion=1.2.0' "" "$UPTODATE")"
 UT="$(json_get "$UPTODATE" data.updateType)"
-check "check current=1.1.0 → none" "$(http_ok "$code" && [[ "$UT" == "none" ]] && echo 1 || echo 0)"
+check "check current=1.2.0 → none" "$(http_ok "$code" && [[ "$UT" == "none" ]] && echo 1 || echo 0)"
 
 # 9) forced path (raise min above current) then restore
 FORCE_BODY='{"latestVersion":"1.2.0","minSupportedVersion":"1.2.0","storeUrl":"https://example.com/store/android","title":"به‌روزرسانی الزامی","message":"لطفاً آپدیت کنید","changelog":["امنیتی"],"isActive":true}'
@@ -181,17 +185,17 @@ code="$(http_json GET '/api/AppVersion/check?platform=android&currentVersion=1.0
 UT="$(json_get "$FORCED" data.updateType)"
 check "check forced → forced" "$(http_ok "$code" && [[ "$UT" == "forced" ]] && echo 1 || echo 0)"
 
-# 10) restore seed (1.0.0 / 1.0.0 optional-ready)
-RESTORE_BODY='{"latestVersion":"1.0.0","minSupportedVersion":"1.0.0","storeUrl":null,"title":"نسخه جدید آماده است","message":"نسخه جدید اپ در دسترس است. می‌توانید هر زمان به‌روزرسانی کنید.","changelog":[],"isActive":true}'
+# 10) restore seed (1.1.0 / 1.0.0 optional)
+RESTORE_BODY='{"latestVersion":"1.1.0","minSupportedVersion":"1.0.0","storeUrl":null,"title":"نسخه جدید آماده است","message":"نسخه جدید اپ در دسترس است. می‌توانید هر زمان به‌روزرسانی کنید.","changelog":[],"isActive":true}'
 RESTORE_OUT="$TMP_DIR/restore.json"
 code="$(http_json POST /api/Admin/AppVersion/android/update "$RESTORE_BODY" "$RESTORE_OUT")"
 UT_RESTORE="$(json_get "$RESTORE_OUT" data.latestVersion)"
-check "restore android to 1.0.0" "$(http_ok "$code" && [[ "$UT_RESTORE" == "1.0.0" ]] && echo 1 || echo 0)"
+check "restore android to 1.1.0" "$(http_ok "$code" && [[ "$UT_RESTORE" == "1.1.0" ]] && echo 1 || echo 0)"
 
 FINAL="$TMP_DIR/final.json"
 code="$(http_json GET '/api/AppVersion/check?platform=android&currentVersion=1.0.0' "" "$FINAL")"
 UT="$(json_get "$FINAL" data.updateType)"
-check "final check → none" "$(http_ok "$code" && [[ "$UT" == "none" ]] && echo 1 || echo 0)"
+check "final check → optional" "$(http_ok "$code" && [[ "$UT" == "optional" ]] && echo 1 || echo 0)"
 
 # 11) admin update validation (min > latest)
 BAD_UPDATE="$TMP_DIR/bad_update.json"

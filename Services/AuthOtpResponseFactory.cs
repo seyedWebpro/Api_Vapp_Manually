@@ -41,6 +41,7 @@ namespace Api_Vapp.Services
                 Message = message,
                 ExpiresInSeconds = expiresInSeconds,
                 RetryAfterSeconds = retryAfterSeconds,
+                // TODO(remove-before-production) REMOVE_DEV_OTP — کد تایید موقتی در پاسخ برای موبایل؛ قبل از release حذف شود
                 OtpCode = otpCode
             };
         }

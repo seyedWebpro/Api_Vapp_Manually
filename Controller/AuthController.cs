@@ -200,6 +200,7 @@ namespace Api_Vapp.Controller
         /// - شماره موبایل باید قبلاً ثبت‌نام شده باشد
         /// - کد OTP به مدت 5 دقیقه معتبر است
         /// - در صورت عدم دریافت کد، می‌توانید از endpoint /resend-login-otp استفاده کنید
+        /// - موقتی: فیلد otpCode در پاسخ ۲۰۰ هست تا برنامه‌نویس موبایل کد را ببیند — TODO(remove-before-production) REMOVE_DEV_OTP
         /// </remarks>
         /// <response code="200">کد OTP با موفقیت ارسال شد</response>
         /// <response code="400">داده‌های ورودی نامعتبر است</response>
