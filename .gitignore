@@ -475,7 +475,11 @@ dist
 
 # Gatsby files
 .cache/
-public
+/public
+
+# Keep API public-participant DTOs (path contains "Public")
+!DTOs/Public/
+!DTOs/Public/**
 
 # Vuepress build output
 .vuepress/dist
