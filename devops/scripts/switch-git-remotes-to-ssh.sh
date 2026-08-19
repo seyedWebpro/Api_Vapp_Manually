@@ -25,8 +25,13 @@ to_ssh() {
   echo "OK: $dir → $ssh_url (was: $current)"
 }
 
+PUBLIC_DIR="${PUBLIC_DIR:-$HOME/Public_Vapp}"
+SCRAPER_DIR="${SCRAPER_DIR:-$HOME/scraping_Number_Vapp}"
+
 to_ssh "$API_REPO_DIR" "git@github.com:seyedWebpro/Api_Vapp_Manually.git"
 to_ssh "$FRONT_DIR" "git@github.com:seyedWebpro/Admin_Pannel_Vapp.git"
+to_ssh "$PUBLIC_DIR" "git@github.com:seyedWebpro/PublicWeb_Vapp.git"
+to_ssh "$SCRAPER_DIR" "git@github.com:seyedWebpro/scraping_Number_Vapp.git"
 
 echo ""
 echo "Test pull:"

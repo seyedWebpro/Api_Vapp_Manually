@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Docker + NPM mirror ایران‌سرور — قبل از build روی سرور ایران
-# Usage: sudo bash apply-build-mirrors-iranserver.sh
+# Docker + NPM + NuGet mirror ایران‌سرور — فقط برای VPS قدیمی ایران‌سرور
+# روی دیتاسنتر فعلی (195.24.237.x) استفاده نشود. به‌جای آن:
+#   bash devops/scripts/clear-iranserver-mirrors.sh
+#   bash devops/scripts/server-net-check.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

@@ -5,9 +5,12 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/load-server-conf.sh
+source "$SCRIPT_DIR/lib/load-server-conf.sh"
 API_DIR="${API_DIR:-$HOME/Api_Vapp_Manually}"
 FRONT_DIR="${FRONT_DIR:-$HOME/Admin_Vapp}"
-SERVER_IP="${SERVER_IP:-185.116.162.233}"
+PUBLIC_DIR="${PUBLIC_DIR:-$HOME/Public_Vapp}"
+SERVER_IP="${SERVER_IP:-195.24.237.132}"
 SECRETS_FILE="${SECRETS_FILE:-$HOME/vapp-secrets.txt}"
 
 log() { echo "[$(date -Is)] $*"; }
@@ -69,6 +72,30 @@ EOF
   log "Created $ENV_FILE and saved secrets to $SECRETS_FILE"
 else
   log "Using existing $ENV_FILE"
+  # IP عوض شده — URL عمومی را با SERVER_IP فعلی هم‌تراز کن
+  python3 - "$ENV_FILE" "$SERVER_IP" <<'PY' || true
+import re, sys
+from pathlib import Path
+p, ip = Path(sys.argv[1]), sys.argv[2]
+text = p.read_text()
+for key in ("PUBLIC_API_BASE_URL", "PUBLIC_FRONTEND_URL"):
+    text = re.sub(rf"^{key}=.*$", f"{key}=http://{ip}", text, flags=re.M)
+for key, suffix in (
+    ("FORM_PUBLIC_BASE_URL", "/form"),
+    ("WHEEL_PUBLIC_BASE_URL", "/wheel"),
+    ("CARD_PUBLIC_BASE_URL", "/card"),
+    ("BOOKING_PUBLIC_BASE_URL", "/book"),
+):
+    text = re.sub(rf"^{key}=.*$", f"{key}=http://{ip}{suffix}", text, flags=re.M)
+p.write_text(text)
+print(f"OK: public URLs → http://{ip}")
+PY
+fi
+
+mkdir -p "$API_DIR/secrets"
+if [[ ! -f "$API_DIR/secrets/firebase-service-account.json" ]]; then
+  echo '{}' >"$API_DIR/secrets/firebase-service-account.json"
+  log "WARN: placeholder firebase-service-account.json — replace with real JSON"
 fi
 
 # --- 4) Nginx reverse proxy ---
@@ -209,6 +236,13 @@ else
   fi
 fi
 
+if [[ -d "$PUBLIC_DIR" ]]; then
+  log "Building Public front on host..."
+  FRONT_STATIC_ROOT="${FRONT_STATIC_ROOT:-/var/www/vapp-admin}" \
+    PUBLIC_STATIC_ROOT="${PUBLIC_STATIC_ROOT:-/var/www/vapp-public}" \
+    SERVER_IP="$SERVER_IP" bash "$SCRIPT_DIR/deploy-public-front-host.sh" || log "WARN: public front deploy failed"
+fi
+
 public_code="$(curl -sS -m 10 -o /dev/null -w '%{http_code}' http://127.0.0.1/ 2>/dev/null || echo "000")"
 
 echo ""
@@ -219,6 +253,7 @@ echo "  API:     $api_code   http://${SERVER_IP}/health"
 echo "  Admin:   $front_code   http://${SERVER_IP}/admin"
 echo "  Swagger: http://${SERVER_IP}/swagger"
 echo "  Nginx:   $public_code"
+echo "  Form:    http://${SERVER_IP}/form/{slug}"
 echo ""
 echo "  Secrets: $SECRETS_FILE"
 echo "  docker ps:"

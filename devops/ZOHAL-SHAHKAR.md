@@ -4,7 +4,7 @@
 
 | محیط | IP | توضیح |
 |------|-----|--------|
-| **Production (سرور)** | `185.116.162.233` | IP عمومی VPS — **الزامی** |
+| **Production (سرور)** | `195.24.237.132` | IP عمومی VPS — **الزامی** |
 | **توسعه Mac (فعلی)** | `188.245.97.173` | برای تست local از Mac — اختیاری |
 
 مسیر پنل: [dashboard.zohal.io](https://dashboard.zohal.io/) → **توسعه‌دهندگان** → **IPهای مجاز**
@@ -56,7 +56,7 @@ ssh vapp-prod "SA=\$(grep ^SA_PASSWORD= /root/Api_Vapp_Manually/docker/.env|cut 
 bash devops/scripts/crawl-shahkar-register.sh
 
 # production
-BASE_URL=http://185.116.162.233 \
+BASE_URL=http://195.24.237.132 \
 AUTH_PHONE=09920374397 \
 AUTH_NATIONAL_ID=4220855361 \
 PREPARE_USER=1 \

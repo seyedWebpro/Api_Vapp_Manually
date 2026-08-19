@@ -8,7 +8,11 @@
 #   FRONT_STATIC_ROOT=/var/www/vapp-admin PUBLIC_STATIC_ROOT=/var/www/vapp-public bash apply-nginx.sh
 set -euo pipefail
 
-SERVER_IP="${SERVER_IP:-185.116.162.233}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/load-server-conf.sh
+source "$SCRIPT_DIR/lib/load-server-conf.sh"
+
+SERVER_IP="${SERVER_IP:-195.24.237.132}"
 DOMAIN_HOST="${DOMAIN_HOST:-}"
 FRONT_STATIC_ROOT="${FRONT_STATIC_ROOT:-}"
 PUBLIC_STATIC_ROOT="${PUBLIC_STATIC_ROOT:-}"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# docker pull — اول mirror ایران‌سرور؛ اگر image نبود → موقت بدون mirror از docker.io
+# docker pull از registry رسمی — این دیتاسنتر به docker.io / MCR وصل است
 # Usage: source lib/docker-pull-fallback.sh && docker_pull_with_fallback node:20-alpine
 
 docker_pull_with_fallback() {
@@ -9,56 +9,12 @@ docker_pull_with_fallback() {
     echo "OK: $image"
     return 0
   fi
-
-  # docker.io از ایران معمولاً block است — restart docker فقط اگر صریحاً فعال شده
-  if [[ "${DOCKER_PULL_ALLOW_DIRECT:-0}" != "1" ]]; then
-    echo "ERROR: mirror pull failed for $image (docker.io block — DOCKER_PULL_ALLOW_DIRECT=1 برای تلاش مستقیم)" >&2
-    return 1
-  fi
-
-  echo "WARN: mirror pull failed for $image — trying docker.io without mirror"
-  local daemon_json="/etc/docker/daemon.json"
-  local backup="/tmp/docker-daemon.json.bak.$$"
-
-  if [[ -f "$daemon_json" ]] && grep -q 'docker.iranserver.com' "$daemon_json" 2>/dev/null; then
-    cp "$daemon_json" "$backup"
-    cat >"$daemon_json" <<'EOF'
-{
-  "dns": ["217.218.127.127", "8.8.8.8", "1.1.1.1"],
-  "max-concurrent-downloads": 4,
-  "max-concurrent-uploads": 4
-}
-EOF
-    systemctl daemon-reload
-    systemctl restart docker
-    sleep 3
-  fi
-
-  set +e
-  docker pull "$image"
-  local rc=$?
-  set -e
-
-  if [[ -f "$backup" ]]; then
-    cp "$backup" "$daemon_json"
-    rm -f "$backup"
-    systemctl daemon-reload
-    systemctl restart docker
-    sleep 2
-    echo "OK: IranServer Docker mirror restored"
-  fi
-
-  if [[ "$rc" -eq 0 ]]; then
-    echo "OK: $image (direct docker.io)"
-    return 0
-  fi
-
   echo "ERROR: could not pull $image" >&2
   return 1
 }
 
 docker_pull_front_base_images() {
-  docker_pull_with_fallback "${DOCKER_NODE_IMAGE:-node:20-alpine}"
+  docker_pull_with_fallback "${DOCKER_NODE_IMAGE:-node:22-alpine}"
 }
 
 DOTNET_SDK_IMAGE="${DOTNET_SDK_IMAGE:-mcr.microsoft.com/dotnet/sdk:8.0}"
@@ -76,9 +32,6 @@ docker_pull_api_base_images() {
     return 0
   fi
 
-  echo "NOTE: mcr.microsoft.com از ایران معمولاً block است — اگر pull fail شد از Mac:"
-  echo "      SERVER=root@185.116.162.233 bash devops/scripts/deploy-api-upload-image.sh"
-
   set +e
   docker pull "$DOTNET_SDK_IMAGE"
   local sdk_rc=$?
@@ -91,6 +44,7 @@ docker_pull_api_base_images() {
     return 0
   fi
 
-  echo "WARN: could not pull dotnet base images from mcr" >&2
+  echo "WARN: could not pull dotnet base images from mcr — fallback: Mac upload" >&2
+  echo "      SERVER=vapp-prod bash devops/scripts/deploy-api-upload-image.sh" >&2
   return 1
 }

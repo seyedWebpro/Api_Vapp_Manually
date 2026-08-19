@@ -1,6 +1,6 @@
 ================================================================================
   DevOps cheat sheet — Vapp (reuse: README.md در همین پوشه)
-  IP: 185.116.162.233
+  IP: 195.24.237.132
 ================================================================================
 
 
@@ -41,20 +41,20 @@
 
 
 ================================================================================
-  ★ Mac → سرور (SSH پورت 3031 — نه 22)
+  ★ Mac → سرور (SSH پورت 22 — بدون فیلترشکن)
 ================================================================================
 
   راهنمای کامل: devops/MAC-SERVER.md
 
   --- یک‌بار: SSH config روی Mac ---
-  SSH_PORT=3031 bash devops/scripts/setup-local-ssh-to-server.sh
-  ssh-copy-id -p 3031 -i ~/.ssh/id_ed25519_vapp_server.pub root@185.116.162.233
+  bash devops/scripts/setup-local-ssh-to-server.sh --force
+  ssh-copy-id -p 22 -i ~/.ssh/id_ed25519_vapp_server.pub root@195.24.237.132
 
   --- تست ---
   ssh vapp-prod 'echo SSH_OK'
-  nc -zv -w 5 185.116.162.233 3031
+  nc -zv -w 5 195.24.237.132 22
 
-  --- Deploy API از Mac (پیشنهادی — سرور ایران) ---
+  --- Deploy API از Mac ---
   cd ~/path/to/Api_Vapp_Manually && git pull origin main
   SERVER=vapp-prod bash devops/scripts/deploy-api-upload-image.sh
 
@@ -62,8 +62,8 @@
   SERVER=vapp-prod bash devops/scripts/sync-to-server.sh
 
   --- عیب‌یابی Mac ---
-  port 22 refused → از vapp-prod یا -p 3031 استفاده کنید
-  grep ^Port /etc/ssh/sshd_config   # روی سرور → 3031
+  Operation timed out → فیلترشکن را خاموش کنید
+  grep ^Port /etc/ssh/sshd_config   # روی سرور → 22
 
 
 ================================================================================
@@ -73,8 +73,8 @@
   راهنمای کامل: devops/GITHUB_SSH.md · devops/MAC-SERVER.md
 
   --- Mac → سرور (ورود SSH) — روی Mac ---
-  SSH_PORT=3031 bash devops/scripts/setup-local-ssh-to-server.sh
-  ssh-copy-id -p 3031 -i ~/.ssh/id_ed25519_vapp_server.pub root@185.116.162.233
+  bash devops/scripts/setup-local-ssh-to-server.sh --force
+  ssh-copy-id -p 22 -i ~/.ssh/id_ed25519_vapp_server.pub root@195.24.237.132
   ssh vapp-prod
 
   --- سرور → GitHub (git pull) — روی سرور ---
@@ -122,7 +122,7 @@
 ================================================================================
 
   cd /path/to/Api_Vapp_Manually
-  SERVER=root@185.116.162.233 bash devops/scripts/sync-to-server.sh
+  SERVER=root@195.24.237.132 bash devops/scripts/sync-to-server.sh
 
 
 ================================================================================
@@ -198,7 +198,7 @@
   # سوئیچ nginx + .env به دامنه (HTTP — قبل از SSL)
   ssh vapp-prod 'cd ~/Api_Vapp_Manually && bash devops/scripts/switch-to-domain.sh --http-only'
 
-  # بعد از DNS درست (A → 185.116.162.233) + SSL
+  # بعد از DNS درست (A → 195.24.237.132) + SSL
   ssh vapp-prod 'cd ~/Api_Vapp_Manually && bash devops/scripts/switch-to-domain.sh --certbot'
 
   # برگشت به IP
@@ -206,7 +206,7 @@
 
   راهنما: devops/domain/README.md · devops/domain/CLOUDFLARE.md
 
-  dig ok-sms.ir +short   # باید: 185.116.162.233
+  dig ok-sms.ir +short   # باید: 195.24.237.132
 
 
 ================================================================================
@@ -214,7 +214,7 @@
 ================================================================================
 
   Nginx:   :80 / :443  → https://ok-sms.ir (یا IP موقت)
-  SSH:     :3031  (Mac: ssh vapp-prod)
+  SSH:     :22  (Mac: ssh vapp-prod — بدون فیلترشکن)
   Scraper API:  8000 (phonescraper_api_prod) — داخلی؛ Nginx باز نکنید
   Scraper SQL:  127.0.0.1:1437  (phonescraper_sqlserver_prod) — اختیاری
   API:     127.0.0.1:8080  (vapp_api_prod)
@@ -239,27 +239,19 @@
   docker compose -f ~/Api_Vapp_Manually/docker/docker-compose.production.yml logs api --tail 50
 
   API:000 → ۳۰–۶۰ ثانیه صبر (migration SQL Server)
-  SSH refused on port 22 → SSH روی 3031 است: ssh vapp-prod یا ssh -p 3031 root@185.116.162.233
+  SSH timed out → فیلترشکن را خاموش کنید: ssh vapp-prod یا ssh -p 22 root@195.24.237.132
 
   npm ci گیر کرده؟ → معمولاً گیر نکرده؛ روی سرور ایران ۱۵–۳۰ دقیقه طول می‌کشد
     ps aux | grep npm          # اگر npm هنوز running است صبر کنید
     npm ci --loglevel=info     # با لاگ بیشتر دوباره
     SKIP_NPM_CI=1 bash devops/scripts/deploy-front-host.sh   # اگر node_modules آماده است
 
-  Docker mirror (ایران‌سرور) فعال است → می‌توانید فرانت را با Docker هم deploy کنید:
-    FRONT_DEPLOY_MODE=docker bash devops/scripts/deploy-front.sh --foreground
-    bash devops/scripts/apply-nginx.sh   # proxy → :3005
-
-  ★ سرور ایران — یک دستور:
-    cd ~/Api_Vapp_Manually && git pull origin main && bash vapp-iran-update.sh
-    bash vapp-iran-update.sh --test      # تست mirrorها
+  این دیتاسنتر به Docker Hub / npm / MCR وصل است — میرور ایران‌سرور استفاده نشود.
+    bash vapp-iran-update.sh --test      # تست registry رسمی
     bash vapp-iran-update.sh --fast      # API + Admin
+    sudo bash devops/scripts/clear-iranserver-mirrors.sh   # اگر leftover بود
 
-  ★ سرور ایران — mirror NPM (مثل microless):
-    sudo bash devops/scripts/apply-build-mirrors-iranserver.sh
-    bash devops/scripts/deploy-front-on-iran.sh --foreground
-
-  Docker Hub timeout → فرانت با host deploy (بدون pull image):
+  Docker Hub timeout → فرانت با host deploy:
     bash devops/scripts/deploy-front-host.sh
 
   build سریع API از Mac:

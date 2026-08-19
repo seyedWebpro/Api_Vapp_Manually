@@ -5,7 +5,7 @@
 ## معماری
 
 ```
-کاربر → DNS (ok-sms.ir) → 185.116.162.233
+کاربر → DNS (ok-sms.ir) → 195.24.237.132
                         → Nginx :80 / :443 (Certbot)
                         → /api, /swagger, /health → API :8080
                         → /form, /wheel → Public_Vapp (static)
@@ -14,7 +14,7 @@
 
 | لایه | جزئیات |
 |------|--------|
-| DNS | A record `@` و `www` → `185.116.162.233` — [CLOUDFLARE.md](CLOUDFLARE.md) |
+| DNS | A record `@` و `www` → `195.24.237.132` — [CLOUDFLARE.md](CLOUDFLARE.md) |
 | TLS | Certbot روی سرور (پس از DNS) |
 | API | `127.0.0.1:8080` — `vapp_api_prod` |
 | لینک SMS | `https://ok-sms.ir/form/{slug}` و `/wheel/{slug}` |
@@ -45,7 +45,7 @@ cd ~/Documents/javad_project/vapp/Api_Vapp_Manually && SERVER=vapp-prod bash dev
 
 ### ۱) DNS
 
-→ [CLOUDFLARE.md](CLOUDFLARE.md) — `dig ok-sms.ir +short` باید `185.116.162.233` باشد.
+→ [CLOUDFLARE.md](CLOUDFLARE.md) — `dig ok-sms.ir +short` باید `195.24.237.132` باشد.
 
 ### ۲) `.env` API
 
@@ -109,7 +109,7 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://ok-sms.ir/form/test
 
 ## نکات
 
-- **IP همچنان کار می‌کند:** در حالت دامنه، `server_name` شامل `185.116.162.233` هم هست (دسترسی موقت).
+- **IP همچنان کار می‌کند:** در حالت دامنه، `server_name` شامل `195.24.237.132` هم هست (دسترسی موقت).
 - **لینک‌های SMS قدیمی** با IP همچنان باز می‌شوند تا زمانی که IP را از nginx حذف کنید.
 - **برگشت:** [ROLLBACK.md](ROLLBACK.md) یا `switch-to-domain.sh --ip-only`
 - **Forwarded headers:** API از پشت Nginx+HTTPS برای callback پرداخت/SMS درست عمل می‌کند.

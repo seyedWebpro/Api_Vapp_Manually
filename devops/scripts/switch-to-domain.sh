@@ -9,13 +9,15 @@
 #
 # Env:
 #   DOMAIN_HOST (پیش‌فرض ok-sms.ir)
-#   SERVER_IP (پیش‌فرض 185.116.162.233)
+#   SERVER_IP (پیش‌فرض از server.conf)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/load-server-conf.sh
+source "$SCRIPT_DIR/lib/load-server-conf.sh"
 API_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
-DOMAIN_HOST="${DOMAIN_HOST:-ok-sms.ir}"
-SERVER_IP="${SERVER_IP:-185.116.162.233}"
+DOMAIN_HOST="${DOMAIN_HOST:-${DOMAIN:-ok-sms.ir}}"
+SERVER_IP="${SERVER_IP:-195.24.237.132}"
 ENV_FILE="${ENV_FILE:-$API_DIR/docker/.env}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker/docker-compose.production.yml}"
 SECRETS_FILE="${SECRETS_FILE:-$HOME/vapp-secrets.txt}"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Docker registry mirror ایران‌سرور
+# Docker registry mirror ایران‌سرور — فقط VPS قدیمی. روی 195.24.237.x استفاده نشود.
 # Usage: sudo bash apply-docker-mirror-iranserver.sh
 set -euo pipefail
 

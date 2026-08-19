@@ -34,11 +34,11 @@ API از همان سرور (`/api/FormPublic` و `/api/LuckyWheelPublic`) سرو
 **لینک‌های SMS** در `appsettings` ساخته می‌شوند:
 
 ```json
-"FormBuilder": { "PublicBaseUrl": "http://185.116.162.233/form" }
-"LuckyWheel":  { "PublicBaseUrl": "http://185.116.162.233/wheel" }
+"FormBuilder": { "PublicBaseUrl": "http://195.24.237.132/form" }
+"LuckyWheel":  { "PublicBaseUrl": "http://195.24.237.132/wheel" }
 ```
 
-مثال لینک نهایی: `http://185.116.162.233/form/contact-form`
+مثال لینک نهایی: `http://195.24.237.132/form/contact-form`
 
 ---
 
@@ -161,9 +161,9 @@ bash ~/Api_Vapp_Manually/devops/scripts/health-check.sh
 
 | چه می‌بینید | آدرس |
 |-------------|------|
-| صفحه فرم | `http://185.116.162.233/form/{slug}` |
-| صفحه گردونه | `http://185.116.162.233/wheel/{slug}` |
-| پنل ادمین | `http://185.116.162.233/` |
+| صفحه فرم | `http://195.24.237.132/form/{slug}` |
+| صفحه گردونه | `http://195.24.237.132/wheel/{slug}` |
+| پنل ادمین | `http://195.24.237.132/` |
 
 `{slug}` را از پنل ادمین بگیرید — فرم/گردونه باید **منتشر (Published)** شده باشد.
 
@@ -174,8 +174,8 @@ bash ~/Api_Vapp_Manually/devops/scripts/health-check.sh
 
 بعد از publish در پنل، فیلد `publicUrl` باید شبیه این باشد:
 
-- فرم: `http://185.116.162.233/form/my-slug`
-- گردونه: `http://185.116.162.233/wheel/my-slug`
+- فرم: `http://195.24.237.132/form/my-slug`
+- گردونه: `http://195.24.237.132/wheel/my-slug`
 
 روی سرور چک env:
 
@@ -195,7 +195,7 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1/form/your-slug
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1/wheel/your-slug
 ```
 
-Swagger: `http://185.116.162.233/swagger` → بخش‌های `FormPublic` و `LuckyWheelPublic`
+Swagger: `http://195.24.237.132/swagger` → بخش‌های `FormPublic` و `LuckyWheelPublic`
 
 از مرورگر: نام و موبایل را وارد کنید → فرم ارسال یا گردونه بچرخد.
 
@@ -209,7 +209,7 @@ Swagger: `http://185.116.162.233/swagger` → بخش‌های `FormPublic` و `L
 | Public:000 در health | `deploy-public-front-host.sh` را اجرا کنید |
 | API خطا در صفحه عمومی | `curl http://127.0.0.1:8080/health` — API بالا باشد |
 | asset لود نمی‌شود | مسیر `/public-assets/` در nginx و build با `assetsDir: public-assets` |
-| لینک SMS اشتباه | `docker exec vapp_api_prod printenv \| grep PublicBaseUrl` — باید `185.116.162.233/form` و `/wheel` باشد |
+| لینک SMS اشتباه | `docker exec vapp_api_prod printenv \| grep PublicBaseUrl` — باید `195.24.237.132/form` و `/wheel` باشد |
 | `docker/.env` پاک شد | بعد از `sync-to-server` دوباره از `~/vapp-secrets.txt` بسازید؛ sync دیگر `.env` را حذف نمی‌کند |
 
 ---

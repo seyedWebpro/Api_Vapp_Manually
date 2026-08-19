@@ -5,7 +5,7 @@
 #   SERVER=vapp-prod bash devops/scripts/sync-to-server.sh
 #
 # Env:
-#   SERVER (default vapp-prod — Port 3031 in ~/.ssh/config), REMOTE_* , LOCAL_*
+#   SERVER (default vapp-prod — Port 22 in ~/.ssh/config), REMOTE_* , LOCAL_*
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

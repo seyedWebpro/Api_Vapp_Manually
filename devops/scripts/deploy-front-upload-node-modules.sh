@@ -3,7 +3,7 @@
 # وقتی npm registry روی سرور کار نمی‌کند (ETIMEDOUT / ECONNREFUSED)
 #
 # Usage (روی Mac):
-#   SERVER=root@185.116.162.233 bash devops/scripts/deploy-front-upload-node-modules.sh
+#   SERVER=vapp-prod bash devops/scripts/deploy-front-upload-node-modules.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -11,7 +11,7 @@ LOCAL_API_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 LOCAL_FRONT_DIR="${LOCAL_FRONT_DIR:-$(cd "$LOCAL_API_DIR/../Admin_Vapp" && pwd)}"
 REMOTE_FRONT_DIR="${REMOTE_FRONT_DIR:-/root/Admin_Vapp}"
 REMOTE_API_DIR="${REMOTE_API_DIR:-/root/Api_Vapp_Manually}"
-SERVER="${SERVER:-root@185.116.162.233}"
+SERVER="${SERVER:-vapp-prod}"
 VITE_API_URL="${VITE_API_URL:-}"
 TARBALL="${TARBALL:-/tmp/vapp-admin-node_modules.tgz}"
 

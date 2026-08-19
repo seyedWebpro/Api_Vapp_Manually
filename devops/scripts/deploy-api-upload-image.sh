@@ -21,7 +21,7 @@
 #   brew install zstd rsync pv pigz
 #   (zstd and rsync are usually present; pv/pigz are optional)
 #
-# Prerequisites: ~/.ssh/config with Host vapp-prod (Port 3031) — see devops/MAC-SERVER.md
+# Prerequisites: ~/.ssh/config with Host vapp-prod (Port 22) — see devops/MAC-SERVER.md
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

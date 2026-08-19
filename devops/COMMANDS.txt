@@ -1,8 +1,9 @@
 # Vapp — Deploy & Operations Commands
-# Last updated: 2026-07-20
+# Last updated: 2026-08-19
 #
 # Run all commands from: ~/Documents/javad_project/vapp/Api_Vapp_Manually
-# SSH alias used below: vapp-prod (Port 3031, see MAC-SERVER.md)
+# SSH alias: vapp-prod (IP 195.24.237.132, Port 22 — see MAC-SERVER.md)
+# بدون فیلترشکن. میرور ایران‌سرور استفاده نشود.
 #
 # ============================================================
 # 1. MAC — ONE-SHOT DEPLOY (recommended)
@@ -105,7 +106,7 @@ ssh vapp-prod 'cd ~/Api_Vapp_Manually && git pull --rebase --autostash origin ma
 # ============================================================
 
 bash ~/Api_Vapp_Manually/devops/scripts/apply-nginx.sh
-FRONT_STATIC_ROOT=/var/www/vapp-admin PUBLIC_STATIC_ROOT=/var/www/vapp-public SERVER_IP=185.116.162.233 bash ~/Api_Vapp_Manually/devops/scripts/apply-nginx.sh
+FRONT_STATIC_ROOT=/var/www/vapp-admin PUBLIC_STATIC_ROOT=/var/www/vapp-public SERVER_IP=195.24.237.132 bash ~/Api_Vapp_Manually/devops/scripts/apply-nginx.sh
 
 # Test nginx config:
 ssh vapp-prod 'sudo nginx -t && sudo nginx -s reload'

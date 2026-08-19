@@ -1,0 +1,52 @@
+================================================================================
+  Vapp — نصب سرور جدید (دیتاسنتر CaspianEdu)
+  IP: 195.24.237.132 | SSH: 22 | بدون میرور ایران‌سرور
+================================================================================
+
+فیلترشکن را خاموش کنید. با VPN به این IP وصل نمی‌شوید.
+
+--- ۰) روی سرور (کنسول وب) — کلید SSH مک ---
+
+mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMuwk6yqx9tMBRJSlSmW/yH5w69LrG1ffSZg4uSnxpNp vapp-mac@apple-20260620' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && echo KEY_ADDED
+
+--- ۱) روی سرور — پکیج‌ها + Docker ---
+
+export DEBIAN_FRONTEND=noninteractive; apt-get update && apt-get install -y ca-certificates curl gnupg git nginx ufw docker.io docker-compose && systemctl enable --now docker && ufw allow 22/tcp && ufw allow 80/tcp && ufw allow 443/tcp && ufw --force enable && echo BOOTSTRAP_PKGS_OK
+
+--- ۲) روی سرور — کلید GitHub ---
+
+ssh-keygen -t ed25519 -C 'vapp-server' -f ~/.ssh/id_ed25519_vapp_github -N '' && mkdir -p ~/.ssh && printf '\nHost github.com\n  HostName github.com\n  User git\n  IdentityFile ~/.ssh/id_ed25519_vapp_github\n  IdentitiesOnly yes\n' >> ~/.ssh/config && chmod 600 ~/.ssh/config && cat ~/.ssh/id_ed25519_vapp_github.pub
+
+خروجی را در GitHub → Settings → SSH and GPG keys → New SSH key بگذارید.
+Title: vapp-server-195.24.237.132
+
+تست:
+
+ssh -o StrictHostKeyChecking=accept-new -T git@github.com
+
+--- ۳) روی سرور — clone ---
+
+cd /root && git clone git@github.com:seyedWebpro/Api_Vapp_Manually.git ~/Api_Vapp_Manually && git clone git@github.com:seyedWebpro/Admin_Pannel_Vapp.git ~/Admin_Vapp && git clone git@github.com:seyedWebpro/PublicWeb_Vapp.git ~/Public_Vapp && echo CLONE_OK
+
+--- ۴) از Mac (بدون فیلترشکن) ---
+
+  bash devops/scripts/setup-local-ssh-to-server.sh --force
+  ssh vapp-prod 'echo SSH_OK'
+  SERVER=vapp-prod bash devops/scripts/sync-to-server.sh
+
+  سپس scp کردن .env و firebase:
+  scp docker/.env vapp-prod:/root/Api_Vapp_Manually/docker/.env
+  scp secrets/firebase-service-account.json vapp-prod:/root/Api_Vapp_Manually/secrets/firebase-service-account.json
+
+--- ۵) روی سرور — اولین بالا آمدن ---
+
+SERVER_IP=195.24.237.132 bash ~/Api_Vapp_Manually/devops/scripts/bootstrap-first-run.sh
+bash ~/Api_Vapp_Manually/vapp-iran-update.sh --test
+
+Admin:  http://195.24.237.132/admin
+Health: http://195.24.237.132/health
+Swagger: http://195.24.237.132/swagger
+
+میرور ایران‌سرور استفاده نشود. اگر leftover دیدید:
+  sudo bash ~/Api_Vapp_Manually/devops/scripts/clear-iranserver-mirrors.sh
+================================================================================

@@ -129,15 +129,15 @@ deploy_run_npm_install_once() {
 
 deploy_run_npm_deps() {
   local start=$SECONDS total rc=0 stall_file="${NPM_STALL_FILE:-/tmp/vapp-npm-stall-$$}"
-  local iranserver="https://npm.iranserver.com/repository/npm/"
-  local primary="${NPM_REGISTRY:-$iranserver}"
-  local fallback="${NPM_REGISTRY_FALLBACK:-https://registry.npmjs.org}"
-  local last_resort="${NPM_REGISTRY_LAST:-https://registry.npmmirror.com}"
+  local npmjs="https://registry.npmjs.org/"
+  local primary="${NPM_REGISTRY:-$npmjs}"
+  local fallback="${NPM_REGISTRY_FALLBACK:-https://registry.npmmirror.com}"
+  local last_resort="${NPM_REGISTRY_LAST:-https://npm.iranserver.com/repository/npm/}"
   rm -f "$stall_file"
   total="$(deploy_npm_lockfile_packages package-lock.json)"
 
   deploy_log "npm install — lockfile packages: ${total}"
-  deploy_log "registries: iranserver → npmjs → npmmirror (npmmirror روی بعضی VPS ایران block است)"
+  deploy_log "registries: ${primary} → npmmirror → iranserver (last resort only)"
   deploy_log "node_modules باید به ~200MB+ برسد — اگر 2 دقیقه روی 1.4M ماند = گیر کرده"
 
   npm cache clean --force 2>/dev/null || true

@@ -14,6 +14,8 @@ services:
       - MSSQL_SA_PASSWORD=${SA_PASSWORD:-Vapp@Secure2025!}
       - MSSQL_PID=Developer
       - SA_PASSWORD=${SA_PASSWORD:-Vapp@Secure2025!}
+      # Host has ~1.9GiB RAM — SQL must not grab the whole box (OOM freezes SSH).
+      - MSSQL_MEMORY_LIMIT_MB=768
     ports:
       - "127.0.0.1:1433:1433"
     volumes:
@@ -28,12 +30,14 @@ services:
       retries: 10
       start_period: 60s
     restart: unless-stopped
+    mem_limit: 900m
+    mem_reservation: 400m
     deploy:
       resources:
         limits:
-          memory: 2G
+          memory: 900M
         reservations:
-          memory: 1G
+          memory: 400M
 
   api:
     build:
@@ -86,12 +90,14 @@ services:
     networks:
       - vapp_network_prod
     restart: unless-stopped
+    mem_limit: 512m
+    mem_reservation: 256m
     deploy:
       resources:
         limits:
-          memory: 1G
-        reservations:
           memory: 512M
+        reservations:
+          memory: 256M
 
 volumes:
   sqlserver_data_prod:

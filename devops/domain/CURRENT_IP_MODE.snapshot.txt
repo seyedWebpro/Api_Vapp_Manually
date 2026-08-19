@@ -1,11 +1,11 @@
 # اسنپ‌شات — حالت IP (قبل از دامنه کامل)
 # تاریخ مرجع: 2026-07-07
 
-server_name:     185.116.162.233
-PUBLIC_API:      http://185.116.162.233
-PUBLIC_FRONTEND: http://185.116.162.233
-FORM_PUBLIC:     http://185.116.162.233/form
-WHEEL_PUBLIC:    http://185.116.162.233/wheel
+server_name:     195.24.237.132
+PUBLIC_API:      http://195.24.237.132
+PUBLIC_FRONTEND: http://195.24.237.132
+FORM_PUBLIC:     http://195.24.237.132/form
+WHEEL_PUBLIC:    http://195.24.237.132/wheel
 nginx:           /etc/nginx/sites-available/vapp
 API container:   vapp_api_prod :8080
 Admin:           docker :3005 یا static /var/www/vapp-admin

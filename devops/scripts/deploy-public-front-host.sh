@@ -12,14 +12,16 @@ export NEEDRESTART_MODE=a
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/deploy-progress.sh
 source "$SCRIPT_DIR/lib/deploy-progress.sh"
+# shellcheck source=lib/load-server-conf.sh
+source "$SCRIPT_DIR/lib/load-server-conf.sh"
 
 PUBLIC_DIR="${PUBLIC_DIR:-$HOME/Public_Vapp}"
 PUBLIC_BRANCH="${PUBLIC_BRANCH:-main}"
 PUBLIC_STATIC_ROOT="${PUBLIC_STATIC_ROOT:-/var/www/vapp-public}"
 FRONT_STATIC_ROOT="${FRONT_STATIC_ROOT:-/var/www/vapp-admin}"
-SERVER_IP="${SERVER_IP:-185.116.162.233}"
+SERVER_IP="${SERVER_IP:-195.24.237.132}"
 VITE_API_URL="${VITE_API_URL:-}"
-NPM_REGISTRY="${NPM_REGISTRY:-https://npm.iranserver.com/repository/npm/}"
+NPM_REGISTRY="${NPM_REGISTRY:-https://registry.npmjs.org}"
 DEPLOY_STEP_TOTAL=6
 
 apply_nginx_all() {

@@ -45,7 +45,7 @@ BUILD_PULL="${API_BUILD_PULL:-auto}"
 if [[ "$BUILD_PULL" == "auto" ]]; then
   if docker_api_base_images_cached; then
     BUILD_PULL="false"
-    deploy_log "NOTE: dotnet base images cached — build with --pull=false (mcr is blocked from Iran)"
+    deploy_log "NOTE: dotnet base images cached — build with --pull=false"
   else
     BUILD_PULL="always"
     docker_pull_api_base_images || true
@@ -53,7 +53,7 @@ if [[ "$BUILD_PULL" == "auto" ]]; then
       BUILD_PULL="false"
     else
       deploy_log "ERROR: dotnet base images not on server — build from Mac:" >&2
-      deploy_log "  SERVER=root@185.116.162.233 bash devops/scripts/deploy-api-upload-image.sh" >&2
+      deploy_log "  SERVER=vapp-prod bash devops/scripts/deploy-api-upload-image.sh" >&2
       exit 1
     fi
   fi

@@ -12,6 +12,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/load-server-conf.sh
+source "$SCRIPT_DIR/lib/load-server-conf.sh"
 # shellcheck source=deploy-progress-lib.sh
 source "$SCRIPT_DIR/deploy-progress-lib.sh"
 
@@ -116,7 +118,7 @@ apply_nginx_front() {
   if [[ "${FRONT_DEPLOY_MODE:-docker}" == "host" ]]; then
     env_args=(FRONT_STATIC_ROOT="${FRONT_STATIC_ROOT:-/var/www/vapp-admin}")
   fi
-  env "${env_args[@]}" SERVER_IP="${SERVER_IP:-185.116.162.233}" \
+  env "${env_args[@]}" SERVER_IP="${SERVER_IP:-195.24.237.132}" \
     bash "$SCRIPT_DIR/apply-nginx.sh" 2>&1 | tee -a "$DEPLOY_LOG" || true
 }
 
@@ -235,7 +237,7 @@ log "=== deploy-server-visible finished $(date '+%Y-%m-%dT%H:%M:%S') ==="
 log ""
 render_progress_bar 100 | tee -a "$DEPLOY_LOG"
 log ""
-log "✓ 100% — Admin: http://185.116.162.233/auth"
+log "✓ 100% — Admin: http://195.24.237.132/auth"
 log "  Log: $DEPLOY_LOG"
 
 stop_watcher

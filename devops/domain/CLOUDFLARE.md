@@ -5,8 +5,8 @@
 | مورد | مقدار |
 |------|--------|
 | دامنه | `ok-sms.ir` + `www.ok-sms.ir` |
-| IP سرور Vapp | `185.116.162.233` |
-| SSH | پورت `3031` (نه 22) |
+| IP سرور Vapp | `195.24.237.132` |
+| SSH | پورت `22` |
 | Proxy Cloudflare | **DNS only (Grey Cloud)** توصیه می‌شود |
 | HTTPS | Certbot روی سرور (Let's Encrypt) |
 
@@ -16,15 +16,15 @@
 
 | Type | Name | Content | Proxy |
 |------|------|---------|-------|
-| A | `@` | `185.116.162.233` | DNS only |
-| A | `www` | `185.116.162.233` | DNS only |
+| A | `@` | `195.24.237.132` | DNS only |
+| A | `www` | `195.24.237.132` | DNS only |
 
 تست از Mac:
 
 ```bash
 dig ok-sms.ir +short
 dig www.ok-sms.ir +short
-# هر دو باید: 185.116.162.233
+# هر دو باید: 195.24.237.132
 ```
 
 > **توجه:** اگر دامنه به IP دیگری اشاره کند (مثلاً `193.141.65.146`)، ابتدا A record را اصلاح کنید.
@@ -46,7 +46,7 @@ sudo certbot --nginx -d ok-sms.ir -d www.ok-sms.ir \
 ## ۴) فایروال
 
 ```bash
-sudo ufw allow 3031/tcp   # SSH
+sudo ufw allow 22/tcp     # SSH
 sudo ufw allow 80/tcp
 sudo ufw allow 443/tcp
 ```

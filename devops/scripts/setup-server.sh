@@ -5,8 +5,10 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/load-server-conf.sh
+source "$SCRIPT_DIR/lib/load-server-conf.sh"
 API_REPO_DIR="${API_REPO_DIR:-$HOME/Api_Vapp_Manually}"
-SERVER_IP="${SERVER_IP:-185.116.162.233}"
+SERVER_IP="${SERVER_IP:-195.24.237.132}"
 
 if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
   echo "Run with sudo: sudo bash $0" >&2

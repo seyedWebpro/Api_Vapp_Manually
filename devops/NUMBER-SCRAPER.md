@@ -12,8 +12,8 @@
 
 | مورد | مقدار |
 |------|--------|
-| IP سرور | `185.116.162.233` |
-| SSH | `ssh vapp-prod` (پورت **3031**) |
+| IP سرور | `195.24.237.132` |
+| SSH | `ssh vapp-prod` (پورت **22**) |
 | Repo Vapp | `~/Api_Vapp_Manually` |
 | Mac (لوکال) | `~/Documents/javad_project/vapp/scraping_Number_Vapp` |
 | سرور | `~/scraping_Number_Vapp` |

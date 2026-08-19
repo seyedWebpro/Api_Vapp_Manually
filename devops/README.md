@@ -86,4 +86,4 @@ Mobile → Vapp .NET API → Number Scraper (:8000 internally)
 - [`AUDIT_RUNBOOK.md`](AUDIT_RUNBOOK.md) — audit search scenarios
 - [`PUBLIC-VAPP.md`](PUBLIC-VAPP.md) — public form/wheel deploy
 - [`NUMBER-SCRAPER.md`](NUMBER-SCRAPER.md) — scraper deploy, env, test
-- [`MAC-SERVER.md`](MAC-SERVER.md) — SSH port 3031 and first setup
+- [`MAC-SERVER.md`](MAC-SERVER.md) — SSH port 22 and first setup

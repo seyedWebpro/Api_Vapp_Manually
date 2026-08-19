@@ -4,7 +4,7 @@
 #
 # Usage:
 #   bash deploy-front-host.sh
-#   SERVER_IP=185.116.162.233 bash deploy-front-host.sh
+#   SERVER_IP=195.24.237.132 bash deploy-front-host.sh
 #   SKIP_NPM_CI=1 bash deploy-front-host.sh   # اگر node_modules از قبل نصب است
 #   NPM_LOGLEVEL=info bash deploy-front-host.sh   # خروجی کمتر
 set -euo pipefail
@@ -15,24 +15,21 @@ export NEEDRESTART_MODE=a
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/deploy-progress.sh
 source "$SCRIPT_DIR/lib/deploy-progress.sh"
+# shellcheck source=lib/load-server-conf.sh
+source "$SCRIPT_DIR/lib/load-server-conf.sh"
 
 FRONT_DIR="${FRONT_DIR:-$HOME/Admin_Vapp}"
 FRONT_BRANCH="${FRONT_BRANCH:-main}"
 FRONT_STATIC_ROOT="${FRONT_STATIC_ROOT:-/var/www/vapp-admin}"
-SERVER_IP="${SERVER_IP:-185.116.162.233}"
+SERVER_IP="${SERVER_IP:-195.24.237.132}"
 VITE_API_URL="${VITE_API_URL:-}"
-NPM_REGISTRY="${NPM_REGISTRY:-https://npm.iranserver.com/repository/npm/}"
-NPM_REGISTRY_FALLBACK="${NPM_REGISTRY_FALLBACK:-https://registry.npmjs.org}"
+NPM_REGISTRY="${NPM_REGISTRY:-https://registry.npmjs.org}"
+NPM_REGISTRY_FALLBACK="${NPM_REGISTRY_FALLBACK:-https://registry.npmmirror.com}"
 DEPLOY_STEP_TOTAL=6
 
 apply_iran_build_mirrors() {
-  if [[ -x "$SCRIPT_DIR/apply-build-mirrors-iranserver.sh" ]]; then
-    if [[ "$(id -u)" -eq 0 ]]; then
-      bash "$SCRIPT_DIR/apply-build-mirrors-iranserver.sh"
-    else
-      sudo bash "$SCRIPT_DIR/apply-build-mirrors-iranserver.sh" 2>/dev/null || true
-    fi
-  fi
+  # دیتاسنتر جدید: میرور ایران‌سرور اعمال نشود
+  return 0
 }
 
 ensure_node() {
@@ -77,7 +74,7 @@ if [[ "${SKIP_NPM_CI:-}" == "1" ]] && [[ -d node_modules ]]; then
   deploy_step "npm install (skipped — SKIP_NPM_CI=1)"
   deploy_log "Using existing node_modules ($(du -sh node_modules | cut -f1))"
 else
-  deploy_step "npm install (dependencies — iranserver npm + fallback)"
+  deploy_step "npm install (dependencies — npmjs + fallback)"
   rm -rf node_modules
   deploy_run_npm_deps
 fi
