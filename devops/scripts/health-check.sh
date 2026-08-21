@@ -10,10 +10,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/deploy-fail.sh
 source "$SCRIPT_DIR/lib/deploy-fail.sh" 2>/dev/null || true
+# shellcheck source=lib/load-server-conf.sh
+source "$SCRIPT_DIR/lib/load-server-conf.sh" 2>/dev/null || true
 
 WITH_DOMAIN=0
 [[ "${1:-}" == "--with-domain" ]] && WITH_DOMAIN=1
 DOMAIN_HOST="${DOMAIN_HOST:-ok-sms.ir}"
+SERVER_IP="${SERVER_IP:-195.24.237.132}"
 HEALTH_ATTEMPTS="${HEALTH_ATTEMPTS:-1}"
 HEALTH_SLEEP="${HEALTH_SLEEP:-8}"
 
@@ -22,21 +25,18 @@ check_once() {
   appver="$(curl -sS -m 15 -o /dev/null -w '%{http_code}' 'http://127.0.0.1:8080/api/AppVersion/check?platform=android&currentVersion=1.0.0' 2>/dev/null || echo "000")"
   swagger="$(curl -sS -m 30 -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/swagger/index.html 2>/dev/null || echo "000")"
 
+  # Always set Host so nginx server_name matches (fixes false 502 on 127.0.0.1)
+  local host_hdr="$SERVER_IP"
   if [[ "$WITH_DOMAIN" == "1" ]]; then
-    nginx_root="$(curl -sS -m 15 -o /dev/null -w '%{http_code}' -H "Host: $DOMAIN_HOST" http://127.0.0.1/ 2>/dev/null || echo "000")"
-    public="$(curl -sS -m 15 -o /dev/null -w '%{http_code}' -H "Host: $DOMAIN_HOST" http://127.0.0.1/form/ 2>/dev/null || echo "000")"
-    card="$(curl -sS -m 15 -o /dev/null -w '%{http_code}' -H "Host: $DOMAIN_HOST" http://127.0.0.1/card/ 2>/dev/null || echo "000")"
-    wheel="$(curl -sS -m 15 -o /dev/null -w '%{http_code}' -H "Host: $DOMAIN_HOST" http://127.0.0.1/wheel/ 2>/dev/null || echo "000")"
-    book="$(curl -sS -m 15 -o /dev/null -w '%{http_code}' -H "Host: $DOMAIN_HOST" http://127.0.0.1/book/ 2>/dev/null || echo "000")"
-    domain_note="host:$DOMAIN_HOST"
-  else
-    nginx_root="$(curl -sS -m 15 -o /dev/null -w '%{http_code}' http://127.0.0.1/ 2>/dev/null || echo "000")"
-    public="$(curl -sS -m 15 -o /dev/null -w '%{http_code}' http://127.0.0.1/form/ 2>/dev/null || echo "000")"
-    card="$(curl -sS -m 15 -o /dev/null -w '%{http_code}' http://127.0.0.1/card/ 2>/dev/null || echo "000")"
-    wheel="$(curl -sS -m 15 -o /dev/null -w '%{http_code}' http://127.0.0.1/wheel/ 2>/dev/null || echo "000")"
-    book="$(curl -sS -m 15 -o /dev/null -w '%{http_code}' http://127.0.0.1/book/ 2>/dev/null || echo "000")"
-    domain_note="ip-default"
+    host_hdr="$DOMAIN_HOST"
   fi
+
+  nginx_root="$(curl -sS -m 15 -o /dev/null -w '%{http_code}' -H "Host: $host_hdr" http://127.0.0.1/ 2>/dev/null || echo "000")"
+  public="$(curl -sS -m 15 -o /dev/null -w '%{http_code}' -H "Host: $host_hdr" http://127.0.0.1/form/x 2>/dev/null || echo "000")"
+  card="$(curl -sS -m 15 -o /dev/null -w '%{http_code}' -H "Host: $host_hdr" http://127.0.0.1/card/x 2>/dev/null || echo "000")"
+  wheel="$(curl -sS -m 15 -o /dev/null -w '%{http_code}' -H "Host: $host_hdr" http://127.0.0.1/wheel/x 2>/dev/null || echo "000")"
+  book="$(curl -sS -m 15 -o /dev/null -w '%{http_code}' -H "Host: $host_hdr" http://127.0.0.1/book/x 2>/dev/null || echo "000")"
+  domain_note="host:$host_hdr"
 
   if [[ -f /var/www/vapp-admin/index.html ]]; then
     admin="$nginx_root"

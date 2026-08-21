@@ -82,10 +82,33 @@ chmod -R a+rX "$PUBLIC_STATIC_ROOT"
 deploy_step "nginx reload"
 apply_nginx_all
 
-public_code="$(curl -sS -m 15 -o /dev/null -w '%{http_code}' "http://127.0.0.1/form/test-slug" 2>/dev/null || echo "000")"
-deploy_log "PUBLIC (nginx /form): HTTP $public_code"
+# Must send Host: SERVER_IP — bare curl to 127.0.0.1 used to miss server_name → 502
+check_public() {
+  local path="$1"
+  curl -sS -m 15 -o /dev/null -w '%{http_code}' -H "Host: ${SERVER_IP}" "http://127.0.0.1${path}" 2>/dev/null || echo "000"
+}
+
+form_code="$(check_public /form/test-slug)"
+wheel_code="$(check_public /wheel/test-slug)"
+card_code="$(check_public /card/test-slug)"
+book_code="$(check_public /book/test-slug)"
+idx_ok=0
+[[ -f "${PUBLIC_STATIC_ROOT}/index.html" ]] && idx_ok=1
+
+deploy_log "PUBLIC index.html present=$idx_ok"
+deploy_log "PUBLIC HTTP form=$form_code wheel=$wheel_code card=$card_code book=$book_code (Host: $SERVER_IP)"
 deploy_log "Form:  http://${SERVER_IP}/form/{slug}"
 deploy_log "Wheel: http://${SERVER_IP}/wheel/{slug}"
 deploy_log "=== deploy-public-front-host done ==="
 
-[[ "$public_code" == "200" ]] || exit 1
+if [[ "$idx_ok" != "1" ]]; then
+  echo "ERROR: ${PUBLIC_STATIC_ROOT}/index.html missing after copy" >&2
+  exit 1
+fi
+if [[ "$form_code" != "200" || "$wheel_code" != "200" || "$card_code" != "200" || "$book_code" != "200" ]]; then
+  echo "ERROR: public routes not 200" >&2
+  echo "  curl -v -H 'Host: ${SERVER_IP}' http://127.0.0.1/form/test-slug" >&2
+  echo "  grep -nE 'form|server_name|vapp-public|3006' /etc/nginx/sites-available/vapp | head -40" >&2
+  exit 1
+fi
+echo "OK: Public static live"

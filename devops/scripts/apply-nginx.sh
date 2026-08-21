@@ -19,10 +19,12 @@ PUBLIC_STATIC_ROOT="${PUBLIC_STATIC_ROOT:-}"
 PUBLIC_PORT="${PUBLIC_PORT:-3006}"
 DEST="/etc/nginx/sites-available/vapp"
 
+# Always accept localhost health-checks + public IP (and domain when set).
+# Without 127.0.0.1/localhost, curl http://127.0.0.1/... misses this vhost → default site → 502.
 if [[ -n "$DOMAIN_HOST" ]]; then
-  SERVER_NAMES="${DOMAIN_HOST} www.${DOMAIN_HOST} ${SERVER_IP}"
+  SERVER_NAMES="${DOMAIN_HOST} www.${DOMAIN_HOST} ${SERVER_IP} 127.0.0.1 localhost"
 else
-  SERVER_NAMES="${SERVER_IP}"
+  SERVER_NAMES="${SERVER_IP} 127.0.0.1 localhost"
 fi
 
 if [[ -z "$FRONT_STATIC_ROOT" && "${FRONT_DEPLOY_MODE:-host}" == "host" && -f /var/www/vapp-admin/index.html ]]; then
@@ -34,8 +36,13 @@ if [[ -n "$FRONT_STATIC_ROOT" && ! -f "${FRONT_STATIC_ROOT}/index.html" ]]; then
   FRONT_STATIC_ROOT=""
 fi
 
+# Prefer static public whenever index.html exists (even if env forgot PUBLIC_STATIC_ROOT)
 if [[ -z "$PUBLIC_STATIC_ROOT" && -f /var/www/vapp-public/index.html ]]; then
   PUBLIC_STATIC_ROOT=/var/www/vapp-public
+fi
+if [[ -n "$PUBLIC_STATIC_ROOT" && ! -f "${PUBLIC_STATIC_ROOT}/index.html" ]]; then
+  echo "WARN: ${PUBLIC_STATIC_ROOT}/index.html missing — public will proxy :${PUBLIC_PORT} (often 502)" >&2
+  PUBLIC_STATIC_ROOT=""
 fi
 
 if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
@@ -79,22 +86,19 @@ if [[ -n "$PUBLIC_STATIC_ROOT" ]]; then
 
     location ~ ^/(form|wheel|card|book)(/.*)?$ {
         root ${PUBLIC_STATIC_ROOT};
-        # بدون \$uri/ تا پوشه خالی هم‌نام مسیر SPA باعث 403 نشود
-        try_files \$uri @public_vapp;
-    }
-
-    location @public_vapp {
-        root ${PUBLIC_STATIC_ROOT};
-        rewrite ^ /index.html break;
+        # SPA: always index.html (assets live under /public-assets/)
+        try_files /index.html =404;
     }"
 else
-  PUBLIC_BLOCK="    # Public_Vapp — docker :${PUBLIC_PORT}
+  PUBLIC_BLOCK="    # Public_Vapp — docker :${PUBLIC_PORT} (prefer static — proxy only if no dist)
     location /public-assets/ {
         proxy_pass http://127.0.0.1:${PUBLIC_PORT};
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
         proxy_set_header X-Forwarded-Host \$host;
         proxy_set_header X-Forwarded-Proto \$forwarded_proto;
+        proxy_connect_timeout 2s;
+        proxy_read_timeout 10s;
     }
 
     location ~* ^/(vapp-logo\\.png|form-bg\\.jpg|gift-icon(-gold)?\\.svg|user(-circle)?-icon\\.svg|phone-icon\\.svg|arrow-icon\\.svg|wheel\\.svg)\$ {
@@ -103,6 +107,7 @@ else
         proxy_set_header Host \$host;
         proxy_set_header X-Forwarded-Host \$host;
         proxy_set_header X-Forwarded-Proto \$forwarded_proto;
+        proxy_connect_timeout 2s;
     }
 
     # توجه: wheel اینجا نباشد — مسیر SPA است (/wheel/:slug)، نه پوشه استاتیک
@@ -112,6 +117,7 @@ else
         proxy_set_header Host \$host;
         proxy_set_header X-Forwarded-Host \$host;
         proxy_set_header X-Forwarded-Proto \$forwarded_proto;
+        proxy_connect_timeout 2s;
     }
 
     location ~ ^/(form|wheel|card|book)(/|\$) {
@@ -120,6 +126,8 @@ else
         proxy_set_header Host \$host;
         proxy_set_header X-Forwarded-Host \$host;
         proxy_set_header X-Forwarded-Proto \$forwarded_proto;
+        proxy_connect_timeout 2s;
+        proxy_read_timeout 10s;
     }"
 fi
 
@@ -180,8 +188,8 @@ map \$http_x_forwarded_proto \$forwarded_proto {
 }
 
 ${CF_REAL_IP}server {
-    listen 80;
-    listen [::]:80;
+    listen 80 default_server;
+    listen [::]:80 default_server;
     server_name ${SERVER_NAMES};
 
     client_max_body_size 2048M;

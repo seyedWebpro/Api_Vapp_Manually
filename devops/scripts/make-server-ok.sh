@@ -64,8 +64,16 @@ cat /tmp/vapp-http-body.json 2>/dev/null | head -c 200; echo
 log "5/6 verify Zohal config"
 bash "$SCRIPT_DIR/verify-zohal.sh" || log "WARN: verify-zohal reported issues (token/IP/wallet)"
 
+log "5b/6 deploy Public front (form/wheel/card/book)"
+if [[ -d "${PUBLIC_DIR:-$HOME/Public_Vapp}" ]]; then
+  SERVER_IP="$SERVER_IP" bash "$SCRIPT_DIR/deploy-public-front-host.sh" \
+    || die "Public front deploy failed"
+else
+  log "WARN: Public_Vapp missing at ~/Public_Vapp — skip"
+fi
+
 log "6/6 smoke"
-bash "$SCRIPT_DIR/health-check.sh" || log "WARN: public/admin front may still need deploy"
+bash "$SCRIPT_DIR/health-check.sh" || die "health-check failed after full update"
 
 elapsed=$((SECONDS - START))
 echo ""
