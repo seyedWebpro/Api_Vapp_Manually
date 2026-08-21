@@ -78,6 +78,11 @@ END
 SELECT name, state_desc FROM sys.databases WHERE name = N'$DB_NAME';
 "
 
+# Prevent Migrate crash-loop: table exists but EF history missing
+if [[ -f "$SCRIPT_DIR/repair-zohal-migration-history.sh" ]]; then
+  bash "$SCRIPT_DIR/repair-zohal-migration-history.sh" || log "WARN: zohal history repair skipped"
+fi
+
 if [[ "$RESTART_API" == "1" ]]; then
   log "Restarting API so EF Migrate/Seed runs..."
   cd "$API_DIR"

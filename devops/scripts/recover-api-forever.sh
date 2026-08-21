@@ -26,6 +26,7 @@ docker ps -a --filter name=vapp_api_prod --format 'table {{.Names}}\t{{.Status}}
 docker logs --tail 40 vapp_api_prod 2>&1 | tail -40 || true
 
 bash "$SCRIPT_DIR/ensure-dbvapp.sh" || true
+bash "$SCRIPT_DIR/repair-zohal-migration-history.sh" || true
 
 echo "── rebuild API image (listen-first Program.cs) ──"
 cd "$API_DIR"

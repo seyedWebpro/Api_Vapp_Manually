@@ -39,8 +39,13 @@ echo "Zohal__BaseUrl=${base}"
 echo ""
 
 echo "── container env ──"
-docker exec "$API_CONTAINER" printenv Zohal__ApiToken Zohal__Enabled Zohal__BaseUrl 2>/dev/null \
-  | sed -E 's/^(Zohal__ApiToken=).*/\1***/' || echo "WARN: cannot read container env"
+docker exec "$API_CONTAINER" printenv Zohal__Enabled Zohal__BaseUrl 2>/dev/null || echo "WARN: cannot read container env"
+tok_in="$(docker exec "$API_CONTAINER" printenv Zohal__ApiToken 2>/dev/null || true)"
+if [[ -n "$tok_in" ]]; then
+  echo "Zohal__ApiToken=*** (len=${#tok_in})"
+else
+  echo "Zohal__ApiToken=(empty in container)"
+fi
 echo ""
 
 echo "── outbound to Zohal ──"

@@ -1,77 +1,55 @@
-﻿using System;
-using Microsoft.EntityFrameworkCore.Migrations;
+﻿using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
 namespace Api_Vapp.Migrations
 {
     /// <inheritdoc />
+    /// <remarks>
+    /// Historically this migration duplicated AddZohalInquiryLogs (same CreateTable).
+    /// Up is now a no-op so existing DBs with the table already present do not crash Migrate().
+    /// </remarks>
     public partial class SyncAppVersionModel : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.CreateTable(
-                name: "ZohalInquiryLogs",
-                columns: table => new
-                {
-                    Id = table.Column<long>(type: "bigint", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    InquiryType = table.Column<string>(type: "nvarchar(40)", maxLength: 40, nullable: false),
-                    Source = table.Column<string>(type: "nvarchar(40)", maxLength: 40, nullable: false),
-                    MobileMasked = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: false),
-                    NationalCodeMasked = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: false),
-                    Matched = table.Column<bool>(type: "bit", nullable: true),
-                    HttpStatusCode = table.Column<int>(type: "int", nullable: true),
-                    ZohalResultCode = table.Column<int>(type: "int", nullable: true),
-                    ProviderErrorCode = table.Column<string>(type: "nvarchar(120)", maxLength: 120, nullable: true),
-                    ProviderMessage = table.Column<string>(type: "nvarchar(1000)", maxLength: 1000, nullable: true),
-                    OutcomeStatus = table.Column<string>(type: "nvarchar(40)", maxLength: 40, nullable: false),
-                    UserFacingErrorCode = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: true),
-                    RequestJson = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    ResponseJson = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    DurationMs = table.Column<int>(type: "int", nullable: false),
-                    Succeeded = table.Column<bool>(type: "bit", nullable: false),
-                    TraceId = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: true),
-                    IpAddress = table.Column<string>(type: "nvarchar(45)", maxLength: 45, nullable: true),
-                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false, defaultValueSql: "GETUTCDATE()")
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_ZohalInquiryLogs", x => x.Id);
-                });
-
-            migrationBuilder.CreateIndex(
-                name: "IX_ZohalInquiryLogs_CreatedAt",
-                table: "ZohalInquiryLogs",
-                column: "CreatedAt");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_ZohalInquiryLogs_InquiryType_CreatedAt",
-                table: "ZohalInquiryLogs",
-                columns: new[] { "InquiryType", "CreatedAt" });
-
-            migrationBuilder.CreateIndex(
-                name: "IX_ZohalInquiryLogs_MobileMasked",
-                table: "ZohalInquiryLogs",
-                column: "MobileMasked");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_ZohalInquiryLogs_OutcomeStatus_CreatedAt",
-                table: "ZohalInquiryLogs",
-                columns: new[] { "OutcomeStatus", "CreatedAt" });
-
-            migrationBuilder.CreateIndex(
-                name: "IX_ZohalInquiryLogs_TraceId",
-                table: "ZohalInquiryLogs",
-                column: "TraceId");
+            // Intentionally empty / idempotent: ZohalInquiryLogs is owned by
+            // 20260816133000_AddZohalInquiryLogs. Keep history row for this migration id.
+            migrationBuilder.Sql("""
+                IF OBJECT_ID(N'dbo.ZohalInquiryLogs', N'U') IS NULL
+                BEGIN
+                    -- Safety net if AddZohalInquiryLogs was skipped in history
+                    CREATE TABLE [dbo].[ZohalInquiryLogs] (
+                        [Id] bigint NOT NULL IDENTITY(1,1),
+                        [InquiryType] nvarchar(40) NOT NULL,
+                        [Source] nvarchar(40) NOT NULL,
+                        [MobileMasked] nvarchar(20) NOT NULL,
+                        [NationalCodeMasked] nvarchar(20) NOT NULL,
+                        [Matched] bit NULL,
+                        [HttpStatusCode] int NULL,
+                        [ZohalResultCode] int NULL,
+                        [ProviderErrorCode] nvarchar(120) NULL,
+                        [ProviderMessage] nvarchar(1000) NULL,
+                        [OutcomeStatus] nvarchar(40) NOT NULL,
+                        [UserFacingErrorCode] nvarchar(64) NULL,
+                        [RequestJson] nvarchar(max) NULL,
+                        [ResponseJson] nvarchar(max) NULL,
+                        [DurationMs] int NOT NULL,
+                        [Succeeded] bit NOT NULL,
+                        [TraceId] nvarchar(128) NULL,
+                        [IpAddress] nvarchar(45) NULL,
+                        [CreatedAt] datetime2 NOT NULL CONSTRAINT [DF_ZohalInquiryLogs_CreatedAt_Sync] DEFAULT (GETUTCDATE()),
+                        CONSTRAINT [PK_ZohalInquiryLogs] PRIMARY KEY ([Id])
+                    );
+                END
+                """);
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropTable(
-                name: "ZohalInquiryLogs");
+            // Do not drop — shared with AddZohalInquiryLogs
         }
     }
 }
