@@ -9,6 +9,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 API_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 ENV_FILE="$API_DIR/docker/.env"
 COMPOSE="$API_DIR/docker/docker-compose.production.yml"
+SERVER_IP="${SERVER_IP:-195.24.237.132}"
 START=$SECONDS
 
 log() { echo "[$(date -Is)] $*"; }

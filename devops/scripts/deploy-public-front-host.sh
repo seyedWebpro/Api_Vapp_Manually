@@ -48,9 +48,13 @@ deploy_log "PUBLIC_DIR=$PUBLIC_DIR  STATIC=$PUBLIC_STATIC_ROOT"
 
 cd "$PUBLIC_DIR"
 
-deploy_step "git pull ($PUBLIC_BRANCH)"
+deploy_step "git sync ($PUBLIC_BRANCH)"
 if [[ -d .git ]]; then
-  git pull origin "$PUBLIC_BRANCH"
+  # Avoid dirty-tree pull failures (same pattern as sync-api-repo-safe)
+  git fetch origin "$PUBLIC_BRANCH"
+  git checkout -B "$PUBLIC_BRANCH" "origin/$PUBLIC_BRANCH"
+  git reset --hard "origin/$PUBLIC_BRANCH"
+  git clean -fd -e node_modules -e dist -e .env -e .env.* || true
 fi
 
 deploy_step "Node.js check"

@@ -19,6 +19,8 @@ DB_NAME="${DB_NAME:-DbVapp}"
 SERVER_IP="${SERVER_IP:-195.24.237.132}"
 
 code() { curl -sS -m 12 -o /dev/null -w '%{http_code}' "$1" 2>/dev/null || echo 000; }
+# nginx probes must send Host: SERVER_IP (otherwise default vhost → 502)
+ngx() { curl -sS -m 12 -o /dev/null -w '%{http_code}' -H "Host: $SERVER_IP" "$1" 2>/dev/null || echo 000; }
 
 echo "=== Vapp diagnose $(date -Is) ==="
 echo "Host: $(hostname) | SERVER_IP=$SERVER_IP"
@@ -41,11 +43,11 @@ echo "── HTTP ──"
 H="$(code http://127.0.0.1:8080/health)"
 A="$(code 'http://127.0.0.1:8080/api/AppVersion/check?platform=android&currentVersion=1.0.0')"
 S="$(code http://127.0.0.1:8080/swagger/index.html)"
-N="$(code http://127.0.0.1/)"
-F="$(code http://127.0.0.1/form/)"
-W="$(code http://127.0.0.1/wheel/)"
-C="$(code http://127.0.0.1/card/)"
-B="$(code http://127.0.0.1/book/)"
+N="$(ngx http://127.0.0.1/)"
+F="$(ngx http://127.0.0.1/form/x)"
+W="$(ngx http://127.0.0.1/wheel/x)"
+C="$(ngx http://127.0.0.1/card/x)"
+B="$(ngx http://127.0.0.1/book/x)"
 printf 'health=%s appver=%s swagger=%s nginx_root=%s form=%s wheel=%s card=%s book=%s\n' "$H" "$A" "$S" "$N" "$F" "$W" "$C" "$B"
 echo ""
 
