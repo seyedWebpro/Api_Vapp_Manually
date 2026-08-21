@@ -11,6 +11,13 @@
 #
 #   bash ~/Api_Vapp_Manually/devops/scripts/sync-api-repo-safe.sh && bash ~/Api_Vapp_Manually/devops/scripts/make-server-ok.sh
 #
+# فقط Public (form/wheel/card/book) اگر 502 بود — بدون rebuild API:
+#   bash ~/Api_Vapp_Manually/devops/scripts/sync-api-repo-safe.sh && \
+#     SERVER_IP=195.24.237.132 bash ~/Api_Vapp_Manually/devops/scripts/deploy-public-front-host.sh && \
+#     bash ~/Api_Vapp_Manually/devops/scripts/health-check.sh
+#
+# نکته: curl به 127.0.0.1 بدون Host اشتباهی 502 می‌داد؛ اسکریپت‌ها Host می‌فرستند.
+# از بیرون مرورگر با IP واقعی 195.24.237.132 تست کنید.
 # بعد از آن، آپدیت عادی بدون rebuild:
 #   bash ~/Api_Vapp_Manually/devops/scripts/server-update.sh --api-only
 #
