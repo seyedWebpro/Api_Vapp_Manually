@@ -99,34 +99,55 @@ else
   fi
 fi
 
-git_pull_repo() {
-  local dir="$1" branch="$2" name="$3"
-  if [[ ! -d "$dir/.git" ]]; then
-    deploy_log "WARN: $name missing git at $dir — skip pull"
+# Safe sync: never use raw `git pull` (dirty Program.cs aborts merge).
+# SKIP_GIT_PULL=1 when caller already ran sync-api-repo-safe / server-update.
+git_sync_api() {
+  if [[ "${SKIP_GIT_PULL:-0}" == "1" ]]; then
+    deploy_log "skip API git sync (SKIP_GIT_PULL=1)"
     return 0
   fi
-  deploy_log "git pull $name ($branch) @ $dir"
-  if ! (cd "$dir" && git pull origin "$branch"); then
-    fail "git pull failed for $name" \
+  deploy_log "safe sync API → origin/${API_BRANCH:-main}"
+  API_REPO_DIR="$API_DIR" API_BRANCH="${API_BRANCH:-main}" \
+    bash "$DEVOPS/sync-api-repo-safe.sh" \
+    || fail "API sync failed" "bash $DEVOPS/sync-api-repo-safe.sh"
+}
+
+git_sync_other() {
+  local dir="$1" branch="$2" name="$3"
+  if [[ "${SKIP_GIT_PULL:-0}" == "1" ]]; then
+    deploy_log "skip $name git sync (SKIP_GIT_PULL=1)"
+    return 0
+  fi
+  if [[ ! -d "$dir/.git" ]]; then
+    deploy_log "WARN: $name missing git at $dir — skip sync"
+    return 0
+  fi
+  deploy_log "safe sync $name → origin/$branch"
+  if ! (
+    cd "$dir"
+    git fetch origin "$branch"
+    git reset --hard "origin/$branch"
+    git clean -fd
+  ); then
+    fail "git sync failed for $name" \
       "cd $dir && git status" \
-      "bash $DEVOPS/sync-api-repo-safe.sh   # فقط برای API" \
-      "یا: cd $dir && git fetch origin && git reset --hard origin/$branch"
+      "cd $dir && git fetch origin && git reset --hard origin/$branch"
   fi
 }
 
 if [[ "$MODE" == "--pull-only" ]]; then
-  git_pull_repo "$API_DIR" "${API_BRANCH:-main}" "API"
-  git_pull_repo "$FRONT_DIR" "${FRONT_GIT_BRANCH:-main}" "Admin"
-  git_pull_repo "$PUBLIC_DIR" "${PUBLIC_GIT_BRANCH:-main}" "Public"
-  deploy_ok_box "git pull done ($(_deploy_elapsed "$START"))"
+  git_sync_api
+  git_sync_other "$FRONT_DIR" "${FRONT_GIT_BRANCH:-main}" "Admin"
+  git_sync_other "$PUBLIC_DIR" "${PUBLIC_GIT_BRANCH:-main}" "Public"
+  deploy_ok_box "git sync done ($(_deploy_elapsed "$START"))"
   exit 0
 fi
 
-# همیشه قبل از build/deploy، آخرین کد را بکش
-git_pull_repo "$API_DIR" "${API_BRANCH:-main}" "API"
-[[ "$MODE" != "--api-only" ]] && git_pull_repo "$FRONT_DIR" "${FRONT_GIT_BRANCH:-main}" "Admin"
+# همیشه قبل از build/deploy، آخرین کد را بکش (امن)
+git_sync_api
+[[ "$MODE" != "--api-only" ]] && git_sync_other "$FRONT_DIR" "${FRONT_GIT_BRANCH:-main}" "Admin"
 [[ "$MODE" == "--public-only" || "$MODE" == "--fast" || "$MODE" == "--full" ]] && \
-  git_pull_repo "$PUBLIC_DIR" "${PUBLIC_GIT_BRANCH:-main}" "Public"
+  git_sync_other "$PUBLIC_DIR" "${PUBLIC_GIT_BRANCH:-main}" "Public"
 
 export FRONT_DEPLOY_MODE="${DEPLOY_STYLE:-host}"
 export PUBLIC_DEPLOY_MODE="${PUBLIC_DEPLOY_MODE:-host}"

@@ -54,9 +54,12 @@ check_sql_migrated() {
 log "=== wait-db-ready max=${MAX_ATTEMPTS} interval=${INTERVAL_SECS}s ==="
 
 for i in $(seq 1 "$MAX_ATTEMPTS"); do
-  health="$(curl -sS -m 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/health 2>/dev/null || echo 000)"
+  # مهم: از `curl || echo 000` استفاده نکن — اگر curl خودش 000 بنویسد، می‌شود 000000
+  health="$(curl -sS -m 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/health 2>/dev/null)" || health="000"
   appver="$(curl -sS -m 20 -o /tmp/vapp-appver.json -w '%{http_code}' \
-    'http://127.0.0.1:8080/api/AppVersion/check?platform=android&currentVersion=1.0.0' 2>/dev/null || echo 000)"
+    'http://127.0.0.1:8080/api/AppVersion/check?platform=android&currentVersion=1.0.0' 2>/dev/null)" || appver="000"
+  [[ "$health" =~ ^[0-9]{3}$ ]] || health="000"
+  [[ "$appver" =~ ^[0-9]{3}$ ]] || appver="000"
 
   sql_info=""
   sql_ok=0

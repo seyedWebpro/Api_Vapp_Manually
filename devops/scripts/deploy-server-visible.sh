@@ -192,16 +192,18 @@ progress_mark 0 "start"
 
 start_watcher "=== deploy-server-visible finished" "Deploy Vapp"
 
-phase_banner 1 "$total_phases" "Git pull (API + Admin + Public)" 5
-cd "$API_REPO_DIR"
-git pull origin "${API_BRANCH:-main}" 2>&1 | tee -a "$DEPLOY_LOG"
-if [[ -d "$FRONT_DIR/.git" ]]; then
-  cd "$FRONT_DIR"
-  git pull origin "${FRONT_BRANCH:-main}" 2>&1 | tee -a "$DEPLOY_LOG"
-fi
-if [[ -d "$PUBLIC_DIR/.git" ]]; then
-  cd "$PUBLIC_DIR"
-  git pull origin "${PUBLIC_BRANCH:-main}" 2>&1 | tee -a "$DEPLOY_LOG"
+phase_banner 1 "$total_phases" "Safe git sync (API + Admin + Public)" 5
+if [[ "${SKIP_GIT_PULL:-0}" != "1" ]]; then
+  API_REPO_DIR="$API_REPO_DIR" API_BRANCH="${API_BRANCH:-main}" \
+    bash "$SCRIPT_DIR/sync-api-repo-safe.sh" 2>&1 | tee -a "$DEPLOY_LOG"
+  if [[ -d "$FRONT_DIR/.git" ]]; then
+    (cd "$FRONT_DIR" && git fetch origin "${FRONT_BRANCH:-main}" && git reset --hard "origin/${FRONT_BRANCH:-main}" && git clean -fd) 2>&1 | tee -a "$DEPLOY_LOG"
+  fi
+  if [[ -d "$PUBLIC_DIR/.git" ]]; then
+    (cd "$PUBLIC_DIR" && git fetch origin "${PUBLIC_BRANCH:-main}" && git reset --hard "origin/${PUBLIC_BRANCH:-main}" && git clean -fd) 2>&1 | tee -a "$DEPLOY_LOG"
+  fi
+else
+  log "skip git sync (SKIP_GIT_PULL=1)"
 fi
 printf 'VITE_API_URL=\n' > "$FRONT_DIR/.env.production" 2>/dev/null || true
 progress_mark 5 "git-pull-done"

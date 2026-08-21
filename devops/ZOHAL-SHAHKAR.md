@@ -13,7 +13,14 @@
 
 ## توکن روی سرور
 
-در `/root/Api_Vapp_Manually/docker/.env`:
+`docker/.env` روی سرور (در git نیست). یک‌بار ست کنید:
+
+```bash
+bash ~/Api_Vapp_Manually/devops/scripts/ensure-zohal-token.sh --set 'TOKEN_FROM_DASHBOARD' --restart
+bash ~/Api_Vapp_Manually/devops/scripts/verify-zohal.sh
+```
+
+معادل دستی در `/root/Api_Vapp_Manually/docker/.env`:
 
 ```env
 ZOHAL_API_TOKEN=your-token
@@ -22,13 +29,7 @@ Zohal__BaseUrl=https://service.zohal.io/api/v0
 Zohal__TimeoutSeconds=30
 ```
 
-بعد از تغییر:
-
-```bash
-ssh vapp-prod
-cd /root/Api_Vapp_Manually/docker
-docker compose -f docker-compose.production.yml up -d api
-```
+بدون توکن، `POST /api/Auth/register` → `503 IDENTITY_VERIFICATION_UNAVAILABLE` می‌دهد (فرانت سالم است).
 
 ---
 

@@ -106,15 +106,17 @@ apply_nginx_all() {
 
 case "$MODE" in
   --pull-only)
-    deploy_step "git pull API"
-    cd "$API_REPO_DIR" && git pull origin "${API_BRANCH:-main}"
-    deploy_step "git pull Admin"
-    [[ -d "$FRONT_DIR/.git" ]] && cd "$FRONT_DIR" && git pull origin "${FRONT_BRANCH:-main}"
-    if [[ -d "$PUBLIC_DIR/.git" ]]; then
-      deploy_step "git pull Public"
-      cd "$PUBLIC_DIR" && git pull origin "${PUBLIC_BRANCH:-main}"
+    deploy_step "safe sync API"
+    API_REPO_DIR="$API_REPO_DIR" API_BRANCH="${API_BRANCH:-main}" bash "$SCRIPT_DIR/sync-api-repo-safe.sh"
+    deploy_step "safe sync Admin"
+    if [[ -d "$FRONT_DIR/.git" ]]; then
+      (cd "$FRONT_DIR" && git fetch origin "${FRONT_BRANCH:-main}" && git reset --hard "origin/${FRONT_BRANCH:-main}" && git clean -fd)
     fi
-    deploy_log "OK: git pull done for API + Admin + Public"
+    if [[ -d "$PUBLIC_DIR/.git" ]]; then
+      deploy_step "safe sync Public"
+      (cd "$PUBLIC_DIR" && git fetch origin "${PUBLIC_BRANCH:-main}" && git reset --hard "origin/${PUBLIC_BRANCH:-main}" && git clean -fd)
+    fi
+    deploy_log "OK: safe sync done for API + Admin + Public"
     ;;
   --api-only) run_api 0 0 ;;
   --front-only) run_front ;;

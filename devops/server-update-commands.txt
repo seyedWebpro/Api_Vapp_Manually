@@ -5,17 +5,24 @@
 
 
 ================================================================================
-  ★ آپدیت معمولی (بعد از push لوکال)
+  ★ آپدیت معمولی (بعد از push لوکال) — امن، بدون خطای git pull
 ================================================================================
 
-  cd ~/Api_Vapp_Manually && git pull origin main && bash devops/scripts/deploy-server-visible.sh --fast
+  # هرگز خام: git pull origin main  ← با Program.cs محلی fail می‌شود
+  # به‌جایش:
 
-  • API + Admin با نوار پیشرفت 0–100% (مثل vamyab)
-  • فقط Admin: bash devops/scripts/deploy-server-visible.sh --front-only
-  • فقط Public (فرم/گردونه): bash devops/scripts/deploy-server.sh --public-only
+  bash ~/Api_Vapp_Manually/devops/scripts/sync-api-repo-safe.sh && bash ~/Api_Vapp_Manually/devops/scripts/server-update.sh --api-only
+
+  # همه (API + Admin + Public):
+  bash ~/Api_Vapp_Manually/devops/scripts/server-update.sh --full
+
+  # توکن شاهکار/زحل (یک‌بار، برای رفع 503 ثبت‌نام):
+  bash ~/Api_Vapp_Manually/devops/scripts/ensure-zohal-token.sh --set 'TOKEN' --restart
+  bash ~/Api_Vapp_Manually/devops/scripts/verify-zohal.sh
+
+  • جایگزین قدیمی با progress: bash devops/scripts/deploy-server-visible.sh --fast
+  • فقط Public: bash devops/scripts/server-update.sh --public-only
   • راهنمای Public: devops/PUBLIC-VAPP.md
-  • SSH وسط build قطع شود OK — بعد:
-      tail -f $(cat ~/.vapp-last-front-deploy.log)
 
   فقط health:
     bash ~/Api_Vapp_Manually/devops/scripts/health-check.sh

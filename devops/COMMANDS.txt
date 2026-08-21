@@ -6,15 +6,32 @@
 # بدون فیلترشکن. میرور ایران‌سرور استفاده نشود.
 #
 # ============================================================
-# 0. QUICK MAP — چه تغییری → چه بزنید
+# 0. ★ سرور — یک‌خطی امن (هرگز خام git pull نزنید)
 # ============================================================
 #
-# روی سرور (یک دستور اصلی):
-#   bash ~/Api_Vapp_Manually/vapp-iran-update.sh --api-only      # بک‌اند + Migrate
-#   bash ~/Api_Vapp_Manually/vapp-iran-update.sh --front-only    # Admin
-#   bash ~/Api_Vapp_Manually/vapp-iran-update.sh --public-only   # Form/Wheel
-#   bash ~/Api_Vapp_Manually/vapp-iran-update.sh --full          # همه
-#   bash ~/Api_Vapp_Manually/vapp-iran-update.sh --diagnose      # چرا خراب است؟
+# روی کنسول سرور:
+#   bash ~/Api_Vapp_Manually/devops/scripts/sync-api-repo-safe.sh && bash ~/Api_Vapp_Manually/devops/scripts/server-update.sh --api-only
+#
+# همه چیز (API+Admin+Public):
+#   bash ~/Api_Vapp_Manually/devops/scripts/server-update.sh --full
+#
+# توکن زحل (ثبت‌نام شاهکار) — یک‌بار:
+#   bash ~/Api_Vapp_Manually/devops/scripts/ensure-zohal-token.sh --set 'TOKEN_FROM_DASHBOARD' --restart
+#   bash ~/Api_Vapp_Manually/devops/scripts/verify-zohal.sh
+#
+# علت ممنوع بودن git pull خام: تغییر محلی Program.cs → "would be overwritten by merge"
+# server-update / sync-api-repo-safe با reset --hard امن، .env و secrets را نگه می‌دارند.
+#
+# ============================================================
+# 0b. QUICK MAP — چه تغییری → چه بزنید
+# ============================================================
+#
+# روی سرور:
+#   bash ~/Api_Vapp_Manually/devops/scripts/server-update.sh --api-only
+#   bash ~/Api_Vapp_Manually/devops/scripts/server-update.sh --front-only
+#   bash ~/Api_Vapp_Manually/devops/scripts/server-update.sh --public-only
+#   bash ~/Api_Vapp_Manually/devops/scripts/server-update.sh --full
+#   bash ~/Api_Vapp_Manually/vapp-iran-update.sh --diagnose
 #
 # از Mac:
 #   bash devops/scripts/deploy-from-mac.sh api|admin|public|all|health|diagnose|db-fix
