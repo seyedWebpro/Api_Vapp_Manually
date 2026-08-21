@@ -59,3 +59,8 @@ fi
 
 echo "OK: $(git rev-parse --short HEAD) $(git log -1 --pretty=%s)"
 git status -sb
+
+# Always sanitize runtime files after sync (firebase dir / empty Jwt)
+if [[ -f "$API_REPO_DIR/devops/scripts/ensure-runtime-files.sh" ]]; then
+  bash "$API_REPO_DIR/devops/scripts/ensure-runtime-files.sh" || true
+fi

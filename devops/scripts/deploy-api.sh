@@ -51,12 +51,7 @@ deploy_log "Repo: $API_REPO_DIR branch=$API_BRANCH"
 cd "$API_REPO_DIR"
 
 # Firebase mount must be a file (not a directory Docker creates if missing)
-mkdir -p "$API_REPO_DIR/secrets" "$API_REPO_DIR/backups" "$API_REPO_DIR/log"
-if [[ ! -f "$API_REPO_DIR/secrets/firebase-service-account.json" ]]; then
-  printf '%s\n' '{"type":"service_account","project_id":"placeholder","private_key_id":"x","private_key":"-----BEGIN PRIVATE KEY-----\nMIIEowIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7\n-----END PRIVATE KEY-----\n","client_email":"placeholder@placeholder.iam.gserviceaccount.com","client_id":"0","token_uri":"https://oauth2.googleapis.com/token"}' \
-    > "$API_REPO_DIR/secrets/firebase-service-account.json"
-  deploy_log "WARN: created placeholder secrets/firebase-service-account.json (Push disabled until real file)"
-fi
+bash "$SCRIPT_DIR/ensure-runtime-files.sh"
 
 deploy_step "Ensure env file"
 if [[ ! -f "$ENV_FILE" ]]; then

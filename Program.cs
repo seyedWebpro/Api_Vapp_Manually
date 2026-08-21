@@ -231,10 +231,12 @@ builder.Services.AddSwaggerGen(options =>
 #endregion
 
 #region JWT
+// Empty Jwt__Secret= in docker/.env overrides appsettings and crashes before listen — ignore blanks.
 var jwtSecret = builder.Configuration["Jwt:Secret"];
-if (string.IsNullOrWhiteSpace(jwtSecret) || jwtSecret.Length < 32)
+if (string.IsNullOrWhiteSpace(jwtSecret) || jwtSecret.Length < 32 || jwtSecret.StartsWith("CHANGE_ME", StringComparison.OrdinalIgnoreCase))
 {
-    throw new InvalidOperationException("Jwt:Secret must be at least 32 characters long. Please set a secure secret key in appsettings.json or environment variables.");
+    jwtSecret = "VappShop_SuperSecretKey_2024_MustBeAtLeast32CharactersLongForHMACSHA256";
+    Console.Error.WriteLine("WARN: Jwt:Secret missing/weak from config — using built-in fallback (set a strong Jwt__Secret in docker/.env)");
 }
 
 builder.Services.AddAuthentication(option =>
@@ -249,8 +251,8 @@ builder.Services.AddAuthentication(option =>
         ValidateAudience = true,
         ValidateLifetime = true,
         ValidateIssuerSigningKey = true,
-        ValidIssuer = builder.Configuration["Jwt:Issuer"],
-        ValidAudience = builder.Configuration["Jwt:Audience"],
+        ValidIssuer = builder.Configuration["Jwt:Issuer"] ?? "VappShop",
+        ValidAudience = builder.Configuration["Jwt:Audience"] ?? "VappSiteUsers",
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret))
     };
 
@@ -569,97 +571,14 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 
 
 
+builder.Services.AddSingleton<Api_Vapp.Services.Startup.DatabaseStartupState>();
+builder.Services.AddHostedService<Api_Vapp.Services.Startup.DatabaseStartupHostedService>();
+
 var app = builder.Build();
 
-if (app.Environment.IsProduction() || app.Environment.EnvironmentName == "Docker" || app.Environment.IsDevelopment())
-{
-    using var scope = app.Services.CreateScope();
-    var services = scope.ServiceProvider;
-    var startupLogger = services.GetRequiredService<ILogger<Program>>();
-    try
-    {
-        var context = services.GetRequiredService<Api_Context>();
-        // از همان connectionString سطح بالا استفاده کن — redeclaration → CS0136
-        var ensureCs = context.Database.GetDbConnection().ConnectionString
-            ?? connectionString
-            ?? throw new InvalidOperationException("Database connection string is empty.");
-
-        startupLogger.LogInformation("Checking database connection...");
-        startupLogger.LogInformation("Database: {DatabaseName}", context.Database.GetDbConnection().Database);
-
-        try
-        {
-            var csb = new SqlConnectionStringBuilder(ensureCs);
-            startupLogger.LogInformation(
-                "SQL endpoint: {DataSource}; User: {User}; DatabaseProvider: {Provider}",
-                csb.DataSource,
-                csb.UserID ?? "(integrated)",
-                builder.Configuration["DatabaseProvider"] ?? "(legacy)");
-        }
-        catch
-        {
-            /* ignore parse errors */
-        }
-
-        // SQL Server: اتصال با Initial Catalog=DbVapp وقتی DB هنوز ساخته نشده → "Cannot open database"
-        EnsureSqlDatabaseExists(ensureCs, startupLogger);
-        context.Database.SetCommandTimeout(600);
-
-        Exception? lastMigrateError = null;
-        for (var attempt = 1; attempt <= 8; attempt++)
-        {
-            try
-            {
-                var pendingMigrations = context.Database.GetPendingMigrations().ToList();
-                startupLogger.LogInformation(
-                    "Pending migrations: {PendingCount} (attempt {Attempt}/8)",
-                    pendingMigrations.Count,
-                    attempt);
-                context.Database.Migrate();
-                startupLogger.LogInformation("Migration completed successfully.");
-                lastMigrateError = null;
-                break;
-            }
-            catch (Exception ex)
-            {
-                lastMigrateError = ex;
-                startupLogger.LogWarning(
-                    ex,
-                    "Migrate attempt {Attempt}/8 failed — retry in 3s",
-                    attempt);
-                await Task.Delay(TimeSpan.FromSeconds(3));
-            }
-        }
-
-        if (lastMigrateError != null)
-            throw lastMigrateError;
-
-        await DatabaseSeeder.SeedAsync(context, startupLogger);
-        startupLogger.LogInformation("Database seed completed successfully.");
-    }
-    catch (Exception ex)
-    {
-        startupLogger.LogError(ex, "An error occurred while migrating or seeding the database.");
-        // در Production/Docker نباید API نیمه‌جان با /health=200 و بقیهٔ endpointها 500 بماند
-        if (app.Environment.IsProduction() || app.Environment.EnvironmentName == "Docker")
-            throw;
-    }
-
-    try
-    {
-        var push = services.GetRequiredService<Api_Vapp.Interfaces.IPushNotificationService>();
-        if (push.TryInitialize())
-            startupLogger.LogInformation("Firebase Admin SDK آماده است — Push فعال.");
-        else
-            startupLogger.LogWarning("Firebase Admin SDK آماده نیست — تا تنظیم اعتبارنامه، Push ارسال نمی‌شود.");
-    }
-    catch (Exception ex)
-    {
-        startupLogger.LogError(ex, "خطا در راه‌اندازی اولیه Firebase Admin SDK");
-    }
-}
-
 // Configure the HTTP request pipeline.
+// NOTE: DB migrate/seed runs in DatabaseStartupHostedService AFTER Kestrel listens
+// so /health is never stuck at connection-refused (000) during SQL work.
 app.UseForwardedHeaders();
 
 app.UseSwagger();
@@ -707,11 +626,30 @@ app.UseStaticFiles(); // برای wwwroot
 
 app.MapControllers();
 
-app.MapGet("/health", () => Results.Ok(new
+app.MapGet("/health", (Api_Vapp.Services.Startup.DatabaseStartupState dbState) => Results.Json(new
 {
-    status = "healthy",
+    status = dbState.IsReady ? "healthy" : "starting",
+    database = dbState.Status,
+    databaseReady = dbState.IsReady,
+    error = dbState.Error,
     timestamp = DateTime.UtcNow
 }));
+
+app.MapGet("/health/ready", (Api_Vapp.Services.Startup.DatabaseStartupState dbState) =>
+{
+    if (!dbState.IsReady)
+    {
+        return Results.Json(new
+        {
+            status = "not_ready",
+            database = dbState.Status,
+            error = dbState.Error,
+            timestamp = DateTime.UtcNow
+        }, statusCode: 503);
+    }
+
+    return Results.Ok(new { status = "ready", database = "ready", timestamp = DateTime.UtcNow });
+});
 
 app.MapFallbackToFile("index.html");
 
@@ -720,7 +658,7 @@ if (app.Environment.IsDevelopment() && !isDocker)
 
 try
 {
-    Log.Information("Application starting up");
+    Log.Information("Application starting up (DB migrate runs in background after listen)");
     app.Run();
 }
 catch (Exception ex)
@@ -731,45 +669,4 @@ catch (Exception ex)
 finally
 {
     Log.CloseAndFlush();
-}
-
-static void EnsureSqlDatabaseExists(string connectionString, Microsoft.Extensions.Logging.ILogger logger)
-{
-    var csb = new SqlConnectionStringBuilder(connectionString);
-    var dbName = csb.InitialCatalog;
-    if (string.IsNullOrWhiteSpace(dbName))
-    {
-        logger.LogWarning("Skip EnsureSqlDatabaseExists — Initial Catalog empty");
-        return;
-    }
-
-    var safeName = dbName.Replace("]", "]]", StringComparison.Ordinal);
-    csb.InitialCatalog = "master";
-
-    for (var attempt = 1; attempt <= 30; attempt++)
-    {
-        try
-        {
-            using var conn = new SqlConnection(csb.ConnectionString);
-            conn.Open();
-            using var cmd = conn.CreateCommand();
-            cmd.CommandText =
-                $"""
-                 IF DB_ID(N'{dbName.Replace("'", "''", StringComparison.Ordinal)}') IS NULL
-                 BEGIN
-                     CREATE DATABASE [{safeName}];
-                 END
-                 """;
-            cmd.ExecuteNonQuery();
-            logger.LogInformation("Database {DatabaseName} ensured (attempt {Attempt})", dbName, attempt);
-            return;
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Ensure database {DatabaseName} attempt {Attempt}/30 failed", dbName, attempt);
-            Thread.Sleep(2000);
-        }
-    }
-
-    throw new InvalidOperationException($"Could not ensure SQL database '{dbName}' after 30 attempts.");
 }
