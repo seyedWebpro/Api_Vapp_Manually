@@ -12,12 +12,14 @@
 # روی کنسول سرور:
 #   bash ~/Api_Vapp_Manually/devops/scripts/sync-api-repo-safe.sh && bash ~/Api_Vapp_Manually/devops/scripts/server-update.sh --api-only
 #
-# همه چیز (API+Admin+Public):
+# بعد از تغییر C# (نیاز به docker build):
+#   bash ~/Api_Vapp_Manually/devops/scripts/server-update.sh --api-only --rebuild
+#
+# همه چیز (API+Admin+Public) با rebuild:
 #   bash ~/Api_Vapp_Manually/devops/scripts/server-update.sh --full
 #
-# توکن زحل (ثبت‌نام شاهکار) — یک‌بار:
-#   bash ~/Api_Vapp_Manually/devops/scripts/ensure-zohal-token.sh --set 'TOKEN_FROM_DASHBOARD' --restart
-#   bash ~/Api_Vapp_Manually/devops/scripts/verify-zohal.sh
+# توکن زحل (ثبت‌نام شاهکار) — یک‌بار، بدون rebuild:
+#   bash ~/Api_Vapp_Manually/devops/scripts/server-update.sh --api-only --set-zohal-token 'TOKEN' --verify-zohal
 #
 # علت ممنوع بودن git pull خام: تغییر محلی Program.cs → "would be overwritten by merge"
 # server-update / sync-api-repo-safe با reset --hard امن، .env و secrets را نگه می‌دارند.

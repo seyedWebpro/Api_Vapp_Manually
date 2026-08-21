@@ -156,11 +156,13 @@ export API_DIR FRONT_DIR PUBLIC_DIR
 
 run_api() {
   local reload="${1:-0}" slow="${2:-0}"
-  deploy_log "── API: ensure DbVapp + deploy + wait migrate ──"
+  deploy_log "── API: ensure DbVapp + deploy + wait migrate (SKIP_BUILD=${SKIP_BUILD:-0}) ──"
   bash "$DEVOPS/ensure-dbvapp.sh" || deploy_log "WARN: ensure-dbvapp non-fatal — Program.cs will retry"
-  if ! ALLOW_SLOW_START="$slow" RELOAD_NGINX="$reload" bash "$DEVOPS/deploy-api.sh"; then
+  if ! ALLOW_SLOW_START="$slow" RELOAD_NGINX="$reload" SKIP_GIT_PULL="${SKIP_GIT_PULL:-0}" SKIP_BUILD="${SKIP_BUILD:-0}" \
+    bash "$DEVOPS/deploy-api.sh"; then
     fail "API deploy / Migrate failed" \
       "bash $DEVOPS/ensure-dbvapp.sh --restart-api --wait" \
+      "SKIP_BUILD=1 bash $DEVOPS/deploy-api.sh" \
       "bash $DEVOPS/diagnose-deploy.sh" \
       "docker logs --tail 100 vapp_api_prod"
   fi

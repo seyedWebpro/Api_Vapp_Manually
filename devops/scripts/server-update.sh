@@ -3,16 +3,15 @@
 #
 # Usage (روی سرور):
 #   bash ~/Api_Vapp_Manually/devops/scripts/server-update.sh
-#   bash ~/Api_Vapp_Manually/devops/scripts/server-update.sh --api-only
+#   bash ~/Api_Vapp_Manually/devops/scripts/server-update.sh --api-only          # پیش‌فرض: بدون rebuild
+#   bash ~/Api_Vapp_Manually/devops/scripts/server-update.sh --api-only --rebuild # تغییر C# → docker build
 #   bash ~/Api_Vapp_Manually/devops/scripts/server-update.sh --full
 #   bash ~/Api_Vapp_Manually/devops/scripts/server-update.sh --front-only
 #   bash ~/Api_Vapp_Manually/devops/scripts/server-update.sh --public-only
-#   bash ~/Api_Vapp_Manually/devops/scripts/server-update.sh --api-only --set-zohal-token 'TOKEN'
+#   bash ~/Api_Vapp_Manually/devops/scripts/server-update.sh --api-only --set-zohal-token 'TOKEN' --verify-zohal
 #   bash ~/Api_Vapp_Manually/devops/scripts/server-update.sh --pull-only
-#   bash ~/Api_Vapp_Manually/devops/scripts/server-update.sh --verify-zohal
 #
-# هرگز خام «git pull» نزنید — این اسکریپت با sync-api-repo-safe تغییرات محلی
-# Program.cs و غیره را دور می‌اندازد و docker/.env + secrets + uploads را نگه می‌دارد.
+# هرگز خام «git pull» نزنید.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -27,10 +26,11 @@ source "$SCRIPT_DIR/lib/deploy-progress.sh"
 MODE="--api-only"
 SET_ZOHAL_TOKEN=""
 DO_VERIFY_ZOHAL=0
+DO_REBUILD=0
 START=$SECONDS
 
 usage() {
-  sed -n '3,18p' "$0" | sed 's/^# \?//'
+  sed -n '3,16p' "$0" | sed 's/^# \?//'
   exit "${1:-0}"
 }
 
@@ -44,6 +44,8 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --api-only|--front-only|--public-only|--fast|--full|--pull-only) MODE="$1" ;;
     --verify-zohal) DO_VERIFY_ZOHAL=1 ;;
+    --rebuild|--build) DO_REBUILD=1 ;;
+    --no-build) DO_REBUILD=0 ;;
     --set-zohal-token)
       shift
       SET_ZOHAL_TOKEN="${1:-}"
@@ -59,11 +61,15 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
-deploy_log "=== server-update mode=$MODE ==="
+# --fast/--full imply rebuild (code deploy). --api-only defaults to no-build.
+if [[ "$MODE" == "--fast" || "$MODE" == "--full" ]]; then
+  DO_REBUILD=1
+fi
+
+deploy_log "=== server-update mode=$MODE rebuild=$DO_REBUILD ==="
 deploy_log "API_DIR=$API_DIR SERVER_IP=$SERVER_IP"
 
-# 1) Safe sync — never fail on dirty Program.cs
-deploy_log "── safe git sync (keeps docker/.env secrets uploads log) ──"
+deploy_log "── safe git sync (keeps docker/.env secrets uploads log backups) ──"
 API_REPO_DIR="$API_DIR" API_BRANCH="${API_BRANCH:-main}" \
   bash "$SCRIPT_DIR/sync-api-repo-safe.sh" \
   || fail "API sync failed" "cd $API_DIR && git status" "bash $SCRIPT_DIR/sync-api-repo-safe.sh"
@@ -95,25 +101,39 @@ if [[ "$MODE" == "--pull-only" ]]; then
   exit 0
 fi
 
-# 2) Optional Zohal token write
+# Zohal token: فقط بنویس؛ restart را deploy-api یک‌بار انجام می‌دهد (نه دوبار)
 if [[ -n "$SET_ZOHAL_TOKEN" ]]; then
-  bash "$SCRIPT_DIR/ensure-zohal-token.sh" --set "$SET_ZOHAL_TOKEN" --restart
+  bash "$SCRIPT_DIR/ensure-zohal-token.sh" --set "$SET_ZOHAL_TOKEN"
 elif [[ "${ZOHAL_API_TOKEN:-}" != "" ]]; then
-  bash "$SCRIPT_DIR/ensure-zohal-token.sh" --set "$ZOHAL_API_TOKEN" --restart
+  bash "$SCRIPT_DIR/ensure-zohal-token.sh" --set "$ZOHAL_API_TOKEN"
 else
   bash "$SCRIPT_DIR/ensure-zohal-token.sh" --check || true
 fi
 
-# 3) Deploy via stable orchestrator (already synced — skip re-pull conflicts)
 export FRONT_DEPLOY_MODE="${FRONT_DEPLOY_MODE:-host}"
 export PUBLIC_DEPLOY_MODE="${PUBLIC_DEPLOY_MODE:-host}"
 export SERVER_IP
 export API_DIR
 export SKIP_GIT_PULL=1
+export SKIP_BUILD=1
+[[ "$DO_REBUILD" == "1" ]] && export SKIP_BUILD=0
+
+run_api_safe() {
+  local reload="${1:-0}"
+  deploy_log "── API deploy SKIP_BUILD=$SKIP_BUILD ──"
+  bash "$SCRIPT_DIR/ensure-dbvapp.sh" || true
+  if ! ALLOW_SLOW_START=0 RELOAD_NGINX="$reload" SKIP_GIT_PULL=1 SKIP_BUILD="$SKIP_BUILD" \
+    bash "$SCRIPT_DIR/deploy-api.sh"; then
+    fail "API deploy failed" \
+      "docker logs --tail 200 vapp_api_prod" \
+      "SKIP_BUILD=1 bash $SCRIPT_DIR/deploy-api.sh" \
+      "bash $SCRIPT_DIR/diagnose-deploy.sh"
+  fi
+}
 
 case "$MODE" in
   --api-only)
-    bash "$API_DIR/vapp-iran-update.sh" --api-only
+    run_api_safe 0
     ;;
   --front-only)
     bash "$API_DIR/vapp-iran-update.sh" --front-only
@@ -122,10 +142,14 @@ case "$MODE" in
     bash "$API_DIR/vapp-iran-update.sh" --public-only
     ;;
   --fast)
-    bash "$API_DIR/vapp-iran-update.sh" --fast
+    run_api_safe 0
+    bash "$API_DIR/vapp-iran-update.sh" --front-only
+    bash "$API_DIR/vapp-iran-update.sh" --public-only
     ;;
   --full)
-    bash "$API_DIR/vapp-iran-update.sh" --full
+    run_api_safe 1
+    bash "$API_DIR/vapp-iran-update.sh" --front-only
+    bash "$API_DIR/vapp-iran-update.sh" --public-only
     ;;
 esac
 
@@ -136,5 +160,5 @@ if [[ "$DO_VERIFY_ZOHAL" == "1" ]]; then
 fi
 
 deploy_ok_box "server-update $MODE finished in $(_deploy_elapsed "$START")"
-echo "One-liner next time:"
-echo "  bash ~/Api_Vapp_Manually/devops/scripts/server-update.sh --api-only"
+echo "Next time (no rebuild):  bash ~/Api_Vapp_Manually/devops/scripts/server-update.sh --api-only"
+echo "After C# change:         bash ~/Api_Vapp_Manually/devops/scripts/server-update.sh --api-only --rebuild"

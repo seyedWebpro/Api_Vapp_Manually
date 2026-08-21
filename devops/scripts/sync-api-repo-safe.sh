@@ -38,7 +38,7 @@ if [[ -f "$ENV_FILE" ]]; then
   cp -a "$ENV_FILE" "$KEEP_ENV"
 fi
 
-echo "Sync API repo → origin/$API_BRANCH (preserving .env, secrets, uploads, log)"
+echo "Sync API repo → origin/$API_BRANCH (preserving .env, secrets, uploads, log, backups)"
 git fetch origin "$API_BRANCH"
 git reset --hard "origin/$API_BRANCH"
 git clean -fd \
@@ -46,7 +46,9 @@ git clean -fd \
   --exclude='docker/.env.bak-*' \
   --exclude=secrets \
   --exclude=wwwroot/uploads \
-  --exclude=log
+  --exclude=log \
+  --exclude=backups \
+  --exclude='backups/**'
 
 if [[ ! -f "$ENV_FILE" && -n "$KEEP_ENV" && -f "$KEEP_ENV" ]]; then
   mkdir -p "$(dirname "$ENV_FILE")"
