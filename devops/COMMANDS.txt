@@ -1,31 +1,29 @@
 # Vapp — Deploy & Operations Commands
-# Last updated: 2026-08-21
+# Last updated: 2026-08-22
 #
 # Run all commands from: ~/Documents/javad_project/vapp/Api_Vapp_Manually
 # SSH alias: vapp-prod (IP 195.24.237.132, Port 22 — see MAC-SERVER.md)
 # بدون فیلترشکن. میرور ایران‌سرور استفاده نشود.
 #
 # ============================================================
-# 0. ★ سرور — یک‌بار برای همیشه (OK کامل)
+# 0. ★ مسیرهای استاندارد (دیگر git pull خام نزنید)
 # ============================================================
 #
-#   bash ~/Api_Vapp_Manually/devops/scripts/sync-api-repo-safe.sh && bash ~/Api_Vapp_Manually/devops/scripts/make-server-ok.sh
-#
-# فقط Public (form/wheel/card/book) اگر 502 بود — بدون rebuild API:
+# یک‌بار کامل (API rebuild + Admin + Public + nginx + health):
 #   bash ~/Api_Vapp_Manually/devops/scripts/sync-api-repo-safe.sh && \
-#     SERVER_IP=195.24.237.132 bash ~/Api_Vapp_Manually/devops/scripts/deploy-public-front-host.sh && \
-#     bash ~/Api_Vapp_Manually/devops/scripts/health-check.sh
+#     bash ~/Api_Vapp_Manually/devops/scripts/make-server-ok.sh
 #
-# نکته: curl به 127.0.0.1 بدون Host اشتباهی 502 می‌داد؛ اسکریپت‌ها Host می‌فرستند.
-# از بیرون مرورگر با IP واقعی 195.24.237.132 تست کنید.
-# بعد از آن، آپدیت عادی بدون rebuild:
+# آپدیت عادی API (بدون rebuild):
 #   bash ~/Api_Vapp_Manually/devops/scripts/server-update.sh --api-only
 #
-# روی کنسول سرور:
-#   bash ~/Api_Vapp_Manually/devops/scripts/sync-api-repo-safe.sh && bash ~/Api_Vapp_Manually/devops/scripts/server-update.sh --api-only
-#
-# بعد از تغییر C# (نیاز به docker build):
+# بعد از تغییر C#:
 #   bash ~/Api_Vapp_Manually/devops/scripts/server-update.sh --api-only --rebuild
+#
+# فقط Public (form/wheel/card/book):
+#   bash ~/Api_Vapp_Manually/devops/scripts/server-update.sh --public-only
+#
+# Public 502 ولی index.html هست (فقط nginx):
+#   bash ~/Api_Vapp_Manually/devops/scripts/ensure-nginx-ok.sh
 #
 # همه چیز (API+Admin+Public) با rebuild:
 #   bash ~/Api_Vapp_Manually/devops/scripts/server-update.sh --full
@@ -33,8 +31,11 @@
 # توکن زحل (ثبت‌نام شاهکار) — یک‌بار، بدون rebuild:
 #   bash ~/Api_Vapp_Manually/devops/scripts/server-update.sh --api-only --set-zohal-token 'TOKEN' --verify-zohal
 #
-# علت ممنوع بودن git pull خام: تغییر محلی Program.cs → "would be overwritten by merge"
-# server-update / sync-api-repo-safe با reset --hard امن، .env و secrets را نگه می‌دارند.
+# نکات ثابت‌شده:
+# - هرگز خام git pull نزنید (dirty tree → overwrite error)
+# - health-check همیشه Host: SERVER_IP می‌فرستد (جلوگیری از 502 کاذب)
+# - nginx: default_server + 127.0.0.1/localhost در server_name
+# - server-update در پایان همیشه health-check می‌زند
 #
 # ============================================================
 # 0b. QUICK MAP — چه تغییری → چه بزنید
@@ -45,6 +46,7 @@
 #   bash ~/Api_Vapp_Manually/devops/scripts/server-update.sh --front-only
 #   bash ~/Api_Vapp_Manually/devops/scripts/server-update.sh --public-only
 #   bash ~/Api_Vapp_Manually/devops/scripts/server-update.sh --full
+#   bash ~/Api_Vapp_Manually/devops/scripts/ensure-nginx-ok.sh
 #   bash ~/Api_Vapp_Manually/vapp-iran-update.sh --diagnose
 #
 # از Mac:

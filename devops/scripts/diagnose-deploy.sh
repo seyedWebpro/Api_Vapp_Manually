@@ -18,9 +18,11 @@ API_CONTAINER="${API_CONTAINER:-vapp_api_prod}"
 DB_NAME="${DB_NAME:-DbVapp}"
 SERVER_IP="${SERVER_IP:-195.24.237.132}"
 
-code() { curl -sS -m 12 -o /dev/null -w '%{http_code}' "$1" 2>/dev/null || echo 000; }
-# nginx probes must send Host: SERVER_IP (otherwise default vhost → 502)
-ngx() { curl -sS -m 12 -o /dev/null -w '%{http_code}' -H "Host: $SERVER_IP" "$1" 2>/dev/null || echo 000; }
+# shellcheck source=lib/nginx-http.sh
+source "$SCRIPT_DIR/lib/nginx-http.sh"
+
+code() { api_http_code "$1"; }
+ngx() { nginx_http_code "$1" "$SERVER_IP"; }
 
 echo "=== Vapp diagnose $(date -Is) ==="
 echo "Host: $(hostname) | SERVER_IP=$SERVER_IP"
@@ -49,6 +51,14 @@ W="$(ngx http://127.0.0.1/wheel/x)"
 C="$(ngx http://127.0.0.1/card/x)"
 B="$(ngx http://127.0.0.1/book/x)"
 printf 'health=%s appver=%s swagger=%s nginx_root=%s form=%s wheel=%s card=%s book=%s\n' "$H" "$A" "$S" "$N" "$F" "$W" "$C" "$B"
+echo ""
+
+echo "── nginx site ──"
+if [[ -f /etc/nginx/sites-available/vapp ]]; then
+  grep -E 'server_name|default_server|vapp-public|3006|try_files /index' /etc/nginx/sites-available/vapp | head -20 || true
+else
+  echo "MISS: /etc/nginx/sites-available/vapp"
+fi
 echo ""
 
 echo "── Static files ──"
@@ -105,7 +115,7 @@ if [[ "$N" != "200" ]]; then
 fi
 if [[ "$F" != "200" || "$W" != "200" || "$C" != "200" || "$B" != "200" ]]; then
   problems=1
-  echo "• Public form/wheel/card/book != 200 → bash devops/scripts/deploy-public-front-host.sh"
+  echo "• Public form/wheel/card/book != 200 → bash devops/scripts/ensure-nginx-ok.sh  یا  bash devops/scripts/deploy-public-front-host.sh"
 fi
 
 if [[ "$problems" -eq 0 ]]; then

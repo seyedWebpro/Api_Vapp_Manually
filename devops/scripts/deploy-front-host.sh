@@ -54,9 +54,12 @@ deploy_log "FRONT_DIR=$FRONT_DIR  STATIC=$FRONT_STATIC_ROOT  VITE_API_URL=${VITE
 
 cd "$FRONT_DIR"
 
-deploy_step "git pull ($FRONT_BRANCH)"
+deploy_step "git sync ($FRONT_BRANCH)"
 if [[ -d .git ]]; then
-  git pull origin "$FRONT_BRANCH"
+  git fetch origin "$FRONT_BRANCH"
+  git checkout -B "$FRONT_BRANCH" "origin/$FRONT_BRANCH"
+  git reset --hard "origin/$FRONT_BRANCH"
+  git clean -fd -e node_modules -e dist -e .env -e .env.* || true
 fi
 
 deploy_step "Node.js check"
@@ -92,11 +95,20 @@ cp -a dist/. "$FRONT_STATIC_ROOT/"
 chmod -R a+rX "$FRONT_STATIC_ROOT"
 
 deploy_step "nginx reload"
-apply_nginx_static
+# Prefer keeping Public static if already built
+PUBLIC_STATIC_ROOT=""
+[[ -f /var/www/vapp-public/index.html ]] && PUBLIC_STATIC_ROOT=/var/www/vapp-public
+FRONT_STATIC_ROOT="$FRONT_STATIC_ROOT" \
+  PUBLIC_STATIC_ROOT="$PUBLIC_STATIC_ROOT" \
+  SERVER_IP="$SERVER_IP" \
+  bash "$SCRIPT_DIR/apply-nginx.sh"
 
-front_code="$(curl -sS -m 15 -o /dev/null -w '%{http_code}' "http://127.0.0.1/" 2>/dev/null || echo "000")"
-deploy_log "FRONT (nginx static): HTTP $front_code"
+# shellcheck source=lib/nginx-http.sh
+source "$SCRIPT_DIR/lib/nginx-http.sh"
+front_code="$(nginx_http_code http://127.0.0.1/ "$SERVER_IP")"
+deploy_log "FRONT (nginx static): HTTP $front_code (Host: $SERVER_IP)"
 deploy_log "Admin: http://${SERVER_IP}/auth"
 deploy_log "=== deploy-front-host done ==="
 
 [[ "$front_code" == "200" ]] || exit 1
+echo "OK: Admin static live"

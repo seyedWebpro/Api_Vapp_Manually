@@ -84,8 +84,10 @@ sync_other_repo() {
   (
     cd "$dir"
     git fetch origin "$branch"
+    git checkout -B "$branch" "origin/$branch" 2>/dev/null || git checkout "$branch"
     git reset --hard "origin/$branch"
-    git clean -fd
+    # Keep build caches; deploy scripts refresh when needed
+    git clean -fd -e node_modules -e dist -e .env -e .env.* || true
   ) || fail "$name sync failed" "cd $dir && git status"
 }
 
@@ -122,6 +124,7 @@ run_api_safe() {
   local reload="${1:-0}"
   deploy_log "── API deploy SKIP_BUILD=$SKIP_BUILD ──"
   bash "$SCRIPT_DIR/ensure-dbvapp.sh" || true
+  bash "$SCRIPT_DIR/repair-zohal-migration-history.sh" || true
   if ! ALLOW_SLOW_START=0 RELOAD_NGINX="$reload" SKIP_GIT_PULL=1 SKIP_BUILD="$SKIP_BUILD" \
     bash "$SCRIPT_DIR/deploy-api.sh"; then
     fail "API deploy failed" \
@@ -131,25 +134,47 @@ run_api_safe() {
   fi
 }
 
+run_front() {
+  deploy_log "── Admin front (host static) ──"
+  if [[ -d "${REMOTE_FRONT_REPO:-$HOME/Admin_Vapp}" ]]; then
+    SERVER_IP="$SERVER_IP" bash "$SCRIPT_DIR/deploy-front-host.sh" \
+      || fail "Admin front deploy failed" "bash $SCRIPT_DIR/deploy-front-host.sh"
+  else
+    deploy_log "WARN: Admin_Vapp missing — skip"
+  fi
+}
+
+run_public() {
+  deploy_log "── Public front (host static) ──"
+  if [[ -d "${REMOTE_PUBLIC_REPO:-$HOME/Public_Vapp}" ]]; then
+    SERVER_IP="$SERVER_IP" bash "$SCRIPT_DIR/deploy-public-front-host.sh" \
+      || fail "Public front deploy failed" \
+        "bash $SCRIPT_DIR/ensure-nginx-ok.sh" \
+        "SERVER_IP=$SERVER_IP bash $SCRIPT_DIR/deploy-public-front-host.sh"
+  else
+    fail "Public_Vapp missing at ${REMOTE_PUBLIC_REPO:-$HOME/Public_Vapp}"
+  fi
+}
+
 case "$MODE" in
   --api-only)
     run_api_safe 0
     ;;
   --front-only)
-    bash "$API_DIR/vapp-iran-update.sh" --front-only
+    run_front
     ;;
   --public-only)
-    bash "$API_DIR/vapp-iran-update.sh" --public-only
+    run_public
     ;;
   --fast)
     run_api_safe 0
-    bash "$API_DIR/vapp-iran-update.sh" --front-only
-    bash "$API_DIR/vapp-iran-update.sh" --public-only
+    run_front
+    run_public
     ;;
   --full)
     run_api_safe 1
-    bash "$API_DIR/vapp-iran-update.sh" --front-only
-    bash "$API_DIR/vapp-iran-update.sh" --public-only
+    run_front
+    run_public
     ;;
 esac
 
@@ -159,6 +184,25 @@ if [[ "$DO_VERIFY_ZOHAL" == "1" ]]; then
     "Confirm IP $SERVER_IP is allowlisted at dashboard.zohal.io"
 fi
 
+# Always smoke-test so false "done" never happens again
+deploy_log "── health-check ──"
+if [[ "$MODE" == "--api-only" ]]; then
+  HEALTH_ATTEMPTS=3 HEALTH_SLEEP=5 bash "$SCRIPT_DIR/health-check.sh" --api-only \
+    || fail "API health-check failed" "bash $SCRIPT_DIR/diagnose-deploy.sh"
+  # If Public static already live, keep nginx OK (cheap)
+  if [[ -f /var/www/vapp-public/index.html ]]; then
+    bash "$SCRIPT_DIR/ensure-nginx-ok.sh" || true
+  fi
+else
+  HEALTH_ATTEMPTS=3 HEALTH_SLEEP=5 bash "$SCRIPT_DIR/health-check.sh" \
+    || fail "health-check failed" \
+      "bash $SCRIPT_DIR/ensure-nginx-ok.sh" \
+      "SERVER_IP=$SERVER_IP bash $SCRIPT_DIR/deploy-public-front-host.sh" \
+      "bash $SCRIPT_DIR/diagnose-deploy.sh"
+fi
+
 deploy_ok_box "server-update $MODE finished in $(_deploy_elapsed "$START")"
 echo "Next time (no rebuild):  bash ~/Api_Vapp_Manually/devops/scripts/server-update.sh --api-only"
 echo "After C# change:         bash ~/Api_Vapp_Manually/devops/scripts/server-update.sh --api-only --rebuild"
+echo "Public only:             bash ~/Api_Vapp_Manually/devops/scripts/server-update.sh --public-only"
+echo "Nginx 502 quick fix:     bash ~/Api_Vapp_Manually/devops/scripts/ensure-nginx-ok.sh"

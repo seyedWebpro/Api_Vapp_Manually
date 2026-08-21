@@ -263,6 +263,16 @@ else
 fi
 if [[ -n "$PUBLIC_STATIC_ROOT" ]]; then
   echo "OK: nginx public static → $PUBLIC_STATIC_ROOT (/form, /wheel, /card, /book)"
+  # Self-check (Host-aware) so a bad vhost never looks "OK"
+  # shellcheck source=lib/nginx-http.sh
+  source "$SCRIPT_DIR/lib/nginx-http.sh"
+  if ! verify_public_routes "$SERVER_IP"; then
+    echo "ERROR: Public static configured but routes not 200 — fix nginx or rebuild Public" >&2
+    exit 1
+  fi
+  echo "OK: Public routes verified 200"
 else
   echo "OK: nginx public docker → 127.0.0.1:${PUBLIC_PORT} (/form, /wheel)"
+  echo "WARN: no /var/www/vapp-public/index.html — docker :${PUBLIC_PORT} often 502; prefer:" >&2
+  echo "  bash $SCRIPT_DIR/deploy-public-front-host.sh" >&2
 fi
