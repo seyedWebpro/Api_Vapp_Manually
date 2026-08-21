@@ -6,8 +6,13 @@
 # بدون فیلترشکن. میرور ایران‌سرور استفاده نشود.
 #
 # ============================================================
-# 0. ★ سرور — یک‌خطی امن (هرگز خام git pull نزنید)
+# 0. ★ سرور — یک‌بار برای همیشه (OK کامل)
 # ============================================================
+#
+#   bash ~/Api_Vapp_Manually/devops/scripts/sync-api-repo-safe.sh && bash ~/Api_Vapp_Manually/devops/scripts/make-server-ok.sh
+#
+# بعد از آن، آپدیت عادی بدون rebuild:
+#   bash ~/Api_Vapp_Manually/devops/scripts/server-update.sh --api-only
 #
 # روی کنسول سرور:
 #   bash ~/Api_Vapp_Manually/devops/scripts/sync-api-repo-safe.sh && bash ~/Api_Vapp_Manually/devops/scripts/server-update.sh --api-only
