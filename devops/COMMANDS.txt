@@ -1,24 +1,40 @@
 # Vapp — Deploy & Operations Commands
-# Last updated: 2026-08-19
+# Last updated: 2026-08-21
 #
 # Run all commands from: ~/Documents/javad_project/vapp/Api_Vapp_Manually
 # SSH alias: vapp-prod (IP 195.24.237.132, Port 22 — see MAC-SERVER.md)
 # بدون فیلترشکن. میرور ایران‌سرور استفاده نشود.
 #
 # ============================================================
+# 0. QUICK MAP — چه تغییری → چه بزنید
+# ============================================================
+#
+# روی سرور (یک دستور اصلی):
+#   bash ~/Api_Vapp_Manually/vapp-iran-update.sh --api-only      # بک‌اند + Migrate
+#   bash ~/Api_Vapp_Manually/vapp-iran-update.sh --front-only    # Admin
+#   bash ~/Api_Vapp_Manually/vapp-iran-update.sh --public-only   # Form/Wheel
+#   bash ~/Api_Vapp_Manually/vapp-iran-update.sh --full          # همه
+#   bash ~/Api_Vapp_Manually/vapp-iran-update.sh --diagnose      # چرا خراب است؟
+#
+# از Mac:
+#   bash devops/scripts/deploy-from-mac.sh api|admin|public|all|health|diagnose|db-fix
+#
+# ============================================================
 # 1. MAC — ONE-SHOT DEPLOY (recommended)
 # ============================================================
 
-bash devops/scripts/deploy-from-mac.sh api            # .NET API: build Docker on Mac + upload + restart (~3-7 min)
-bash devops/scripts/deploy-from-mac.sh api-restart    # API: restart container only, image already on server (~1 min)
-bash devops/scripts/deploy-from-mac.sh admin          # Admin_Vapp: build + upload dist (~2-4 min)
-bash devops/scripts/deploy-from-mac.sh admin-fast     # Admin_Vapp: upload existing dist only (~30 sec)
-bash devops/scripts/deploy-from-mac.sh public         # Public_Vapp: build + upload dist (~2-4 min)
-bash devops/scripts/deploy-from-mac.sh public-fast    # Public_Vapp: upload existing dist only (~30 sec)
+bash devops/scripts/deploy-from-mac.sh api            # .NET API: build Docker on Mac + upload + wait DB
+bash devops/scripts/deploy-from-mac.sh api-restart    # API: restart + wait Migrate
+bash devops/scripts/deploy-from-mac.sh admin          # Admin_Vapp: build + upload dist
+bash devops/scripts/deploy-from-mac.sh admin-fast     # Admin_Vapp: upload existing dist only
+bash devops/scripts/deploy-from-mac.sh public         # Public_Vapp: build + upload dist
+bash devops/scripts/deploy-from-mac.sh public-fast    # Public_Vapp: upload existing dist only
 bash devops/scripts/deploy-from-mac.sh all-fronts     # Admin + Public together
 bash devops/scripts/deploy-from-mac.sh both           # API + Admin
 bash devops/scripts/deploy-from-mac.sh all            # API + Admin + Public
-bash devops/scripts/deploy-from-mac.sh health         # Run health check on server
+bash devops/scripts/deploy-from-mac.sh health         # Health (AppVersion + Public)
+bash devops/scripts/deploy-from-mac.sh diagnose       # Full diagnose + next steps
+bash devops/scripts/deploy-from-mac.sh db-fix        # Ensure DbVapp + restart + wait migrate
 
 # ============================================================
 # 2. MAC — LOW-LEVEL SCRIPTS
@@ -34,18 +50,24 @@ SKIP_BUILD=1 SERVER=vapp-prod bash devops/scripts/deploy-front-upload-dist.sh
 SKIP_BUILD=1 SERVER=vapp-prod bash devops/scripts/deploy-public-front-upload-dist.sh
 
 # ============================================================
-# 3. SERVER — ORCHESTRATED DEPLOY
+# 3. SERVER — ORCHESTRATED DEPLOY (ترجیح: vapp-iran-update.sh)
 # ============================================================
 
-# Run these after SSH to vapp-prod:
 ssh vapp-prod
 
-bash ~/Api_Vapp_Manually/devops/scripts/deploy-server.sh --fast        # API + Admin + Public (fast, allows slow API start)
-bash ~/Api_Vapp_Manually/devops/scripts/deploy-server.sh --full        # API + Admin + Public + reload nginx
-bash ~/Api_Vapp_Manually/devops/scripts/deploy-server.sh --api-only    # API only
-bash ~/Api_Vapp_Manually/devops/scripts/deploy-server.sh --front-only  # Admin only
-bash ~/Api_Vapp_Manually/devops/scripts/deploy-server.sh --public-only # Public only
-bash ~/Api_Vapp_Manually/devops/scripts/deploy-server.sh --pull-only   # git pull API + Admin + Public
+bash ~/Api_Vapp_Manually/vapp-iran-update.sh --diagnose      # اول اگر چیزی خراب است
+bash ~/Api_Vapp_Manually/vapp-iran-update.sh --api-only
+bash ~/Api_Vapp_Manually/vapp-iran-update.sh --front-only
+bash ~/Api_Vapp_Manually/vapp-iran-update.sh --public-only
+bash ~/Api_Vapp_Manually/vapp-iran-update.sh --fast          # API + Admin + Public
+bash ~/Api_Vapp_Manually/vapp-iran-update.sh --full
+
+# سطح پایین‌تر (همان منطق، بدون wrapper):
+bash ~/Api_Vapp_Manually/devops/scripts/deploy-server.sh --fast
+bash ~/Api_Vapp_Manually/devops/scripts/deploy-server.sh --api-only
+bash ~/Api_Vapp_Manually/devops/scripts/deploy-server.sh --front-only --foreground
+bash ~/Api_Vapp_Manually/devops/scripts/deploy-server.sh --public-only
+bash ~/Api_Vapp_Manually/devops/scripts/deploy-server.sh --pull-only
 
 # Wait for background front build to finish:
 bash ~/Api_Vapp_Manually/devops/scripts/wait-front-deploy.sh
@@ -75,18 +97,28 @@ SKIP_NPM_CI=1 bash ~/Api_Vapp_Manually/devops/scripts/deploy-public-front-host.s
 bash ~/Api_Vapp_Manually/devops/scripts/deploy-public-front.sh --foreground
 
 # ============================================================
-# 5. HEALTH CHECKS
+# 5. HEALTH CHECKS + DATABASE / MIGRATIONS
 # ============================================================
 
 bash ~/Api_Vapp_Manually/devops/scripts/health-check.sh
 bash ~/Api_Vapp_Manually/devops/scripts/health-check.sh --with-domain
 
+# /health alone is NOT enough — AppVersion proves DbVapp + EF Migrate:
+bash ~/Api_Vapp_Manually/devops/scripts/wait-db-ready.sh
+bash ~/Api_Vapp_Manually/devops/scripts/ensure-dbvapp.sh --restart-api --wait
+bash ~/Api_Vapp_Manually/devops/scripts/diagnose-deploy.sh
+
+# Fresh VPS / after SQL volume wipe:
+#   bash devops/scripts/fix-fresh-db-and-rebuild-api.sh
+#   bash devops/scripts/fix-fresh-db-and-rebuild-api.sh --rebuild
+
 # Manual checks:
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/health
+curl -s -o /dev/null -w '%{http_code}\n' 'http://127.0.0.1:8080/api/AppVersion/check?platform=android&currentVersion=1.0.0'
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/swagger/index.html
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1/
-curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1/form/test-slug
-curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1/wheel/test-slug
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1/form/
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1/wheel/
 
 # ============================================================
 # 6. GIT — FIX CONFLICTS ON SERVER

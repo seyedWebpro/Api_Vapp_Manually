@@ -12,6 +12,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/docker-pull-fallback.sh"
 # shellcheck source=lib/deploy-progress.sh
 source "$SCRIPT_DIR/lib/deploy-progress.sh"
+# shellcheck source=lib/deploy-fail.sh
+source "$SCRIPT_DIR/lib/deploy-fail.sh"
 
 API_REPO_DIR="${API_REPO_DIR:-$HOME/Api_Vapp_Manually}"
 API_BRANCH="${API_BRANCH:-main}"
@@ -62,6 +64,9 @@ fi
 deploy_step "Docker build API"
 docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" build --pull="$BUILD_PULL" api
 
+deploy_step "Ensure DbVapp exists"
+bash "$SCRIPT_DIR/ensure-dbvapp.sh" || deploy_log "WARN: ensure-dbvapp failed (API will retry on start)"
+
 deploy_step "Restart API container"
 docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d --no-deps --force-recreate --no-build api
 
@@ -69,23 +74,30 @@ if [[ "${RELOAD_NGINX:-0}" == "1" ]]; then
   bash "$SCRIPT_DIR/apply-nginx.sh"
 fi
 
-deploy_step "Health check"
+deploy_step "Wait DB migrate + AppVersion (not just /health)"
 api_code="000"
-for attempt in 1 2 3 4 5 6; do
-  sleep 10
-  api_code="$(curl -sS -m 15 -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/health 2>/dev/null || echo "000")"
-  deploy_log "API health attempt $attempt/6: $api_code"
-  [[ "$api_code" == "200" ]] && break
-done
+appver_code="000"
+if MAX_ATTEMPTS="${DB_READY_ATTEMPTS:-36}" INTERVAL_SECS="${DB_READY_INTERVAL:-10}" \
+  bash "$SCRIPT_DIR/wait-db-ready.sh"; then
+  api_code="200"
+  appver_code="200"
+else
+  api_code="$(curl -sS -m 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/health 2>/dev/null || echo 000)"
+  appver_code="$(curl -sS -m 15 -o /dev/null -w '%{http_code}' 'http://127.0.0.1:8080/api/AppVersion/check?platform=android&currentVersion=1.0.0' 2>/dev/null || echo 000)"
+fi
 
-deploy_log "API:$api_code"
+deploy_log "API:$api_code APPVER:$appver_code"
 docker ps --filter name=vapp_api_prod --format 'table {{.Names}}\t{{.Status}}'
 deploy_log "=== deploy-api done ==="
 
-if [[ "$api_code" != "200" ]]; then
-  deploy_log "WARN: API health returned $api_code (migration/startup may still be running — retry health-check.sh)" >&2
+if [[ "$api_code" != "200" || "$appver_code" != "200" ]]; then
   if [[ "${ALLOW_SLOW_START:-0}" == "1" ]]; then
+    deploy_log "WARN: health=$api_code appver=$appver_code (ALLOW_SLOW_START=1 — not failing yet)" >&2
     exit 0
   fi
+  deploy_fail "API health=$api_code AppVersion=$appver_code (Migrate/DbVapp?)" \
+    "bash $SCRIPT_DIR/ensure-dbvapp.sh --restart-api --wait" \
+    "bash $SCRIPT_DIR/diagnose-deploy.sh" \
+    "docker logs --tail 120 vapp_api_prod" || true
   exit 1
 fi

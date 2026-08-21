@@ -497,7 +497,9 @@ var connectionString = SqlServerConnectionConfiguration.GetConnectionString(buil
 // الگوی صحیح: فقط Factory + Scoped wrapper برای Api_Context.
 builder.Services.AddDbContextFactory<Api_Context>(options =>
 {
-    options.UseSqlServer(connectionString);
+    options.UseSqlServer(connectionString, sql => sql.CommandTimeout(600));
+    // EF Core 8/9: اگر مدل با آخرین migration اختلاف جزئی داشته باشد، Migrate() روی سرور تازه هم fail می‌شود
+    options.ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
 });
 builder.Services.AddScoped<Api_Context>(sp =>
     sp.GetRequiredService<IDbContextFactory<Api_Context>>().CreateDbContext());
@@ -573,18 +575,22 @@ if (app.Environment.IsProduction() || app.Environment.EnvironmentName == "Docker
 {
     using var scope = app.Services.CreateScope();
     var services = scope.ServiceProvider;
+    var startupLogger = services.GetRequiredService<ILogger<Program>>();
     try
     {
         var context = services.GetRequiredService<Api_Context>();
-        var logger = services.GetRequiredService<ILogger<Program>>();
+        // از همان connectionString سطح بالا استفاده کن — redeclaration → CS0136
+        var ensureCs = context.Database.GetDbConnection().ConnectionString
+            ?? connectionString
+            ?? throw new InvalidOperationException("Database connection string is empty.");
 
-        logger.LogInformation("Checking database connection...");
-        logger.LogInformation("Database: {DatabaseName}", context.Database.GetDbConnection().Database);
+        startupLogger.LogInformation("Checking database connection...");
+        startupLogger.LogInformation("Database: {DatabaseName}", context.Database.GetDbConnection().Database);
 
         try
         {
-            var csb = new SqlConnectionStringBuilder(context.Database.GetDbConnection().ConnectionString);
-            logger.LogInformation(
+            var csb = new SqlConnectionStringBuilder(ensureCs);
+            startupLogger.LogInformation(
                 "SQL endpoint: {DataSource}; User: {User}; DatabaseProvider: {Provider}",
                 csb.DataSource,
                 csb.UserID ?? "(integrated)",
@@ -595,33 +601,61 @@ if (app.Environment.IsProduction() || app.Environment.EnvironmentName == "Docker
             /* ignore parse errors */
         }
 
-        var pendingMigrations = context.Database.GetPendingMigrations().ToList();
-        logger.LogInformation("Pending migrations: {PendingCount}", pendingMigrations.Count);
-        context.Database.Migrate();
-        logger.LogInformation("Migration completed successfully.");
+        // SQL Server: اتصال با Initial Catalog=DbVapp وقتی DB هنوز ساخته نشده → "Cannot open database"
+        EnsureSqlDatabaseExists(ensureCs, startupLogger);
+        context.Database.SetCommandTimeout(600);
 
-        await DatabaseSeeder.SeedAsync(context, logger);
-        logger.LogInformation("Database seed completed successfully.");
+        Exception? lastMigrateError = null;
+        for (var attempt = 1; attempt <= 8; attempt++)
+        {
+            try
+            {
+                var pendingMigrations = context.Database.GetPendingMigrations().ToList();
+                startupLogger.LogInformation(
+                    "Pending migrations: {PendingCount} (attempt {Attempt}/8)",
+                    pendingMigrations.Count,
+                    attempt);
+                context.Database.Migrate();
+                startupLogger.LogInformation("Migration completed successfully.");
+                lastMigrateError = null;
+                break;
+            }
+            catch (Exception ex)
+            {
+                lastMigrateError = ex;
+                startupLogger.LogWarning(
+                    ex,
+                    "Migrate attempt {Attempt}/8 failed — retry in 3s",
+                    attempt);
+                await Task.Delay(TimeSpan.FromSeconds(3));
+            }
+        }
+
+        if (lastMigrateError != null)
+            throw lastMigrateError;
+
+        await DatabaseSeeder.SeedAsync(context, startupLogger);
+        startupLogger.LogInformation("Database seed completed successfully.");
     }
     catch (Exception ex)
     {
-        var logger = services.GetRequiredService<ILogger<Program>>();
-        logger.LogError(ex, "An error occurred while migrating or seeding the database.");
+        startupLogger.LogError(ex, "An error occurred while migrating or seeding the database.");
+        // در Production/Docker نباید API نیمه‌جان با /health=200 و بقیهٔ endpointها 500 بماند
+        if (app.Environment.IsProduction() || app.Environment.EnvironmentName == "Docker")
+            throw;
     }
 
     try
     {
-        var logger = services.GetRequiredService<ILogger<Program>>();
         var push = services.GetRequiredService<Api_Vapp.Interfaces.IPushNotificationService>();
         if (push.TryInitialize())
-            logger.LogInformation("Firebase Admin SDK آماده است — Push فعال.");
+            startupLogger.LogInformation("Firebase Admin SDK آماده است — Push فعال.");
         else
-            logger.LogWarning("Firebase Admin SDK آماده نیست — تا تنظیم اعتبارنامه، Push ارسال نمی‌شود.");
+            startupLogger.LogWarning("Firebase Admin SDK آماده نیست — تا تنظیم اعتبارنامه، Push ارسال نمی‌شود.");
     }
     catch (Exception ex)
     {
-        var logger = services.GetRequiredService<ILogger<Program>>();
-        logger.LogError(ex, "خطا در راه‌اندازی اولیه Firebase Admin SDK");
+        startupLogger.LogError(ex, "خطا در راه‌اندازی اولیه Firebase Admin SDK");
     }
 }
 
@@ -697,4 +731,45 @@ catch (Exception ex)
 finally
 {
     Log.CloseAndFlush();
+}
+
+static void EnsureSqlDatabaseExists(string connectionString, Microsoft.Extensions.Logging.ILogger logger)
+{
+    var csb = new SqlConnectionStringBuilder(connectionString);
+    var dbName = csb.InitialCatalog;
+    if (string.IsNullOrWhiteSpace(dbName))
+    {
+        logger.LogWarning("Skip EnsureSqlDatabaseExists — Initial Catalog empty");
+        return;
+    }
+
+    var safeName = dbName.Replace("]", "]]", StringComparison.Ordinal);
+    csb.InitialCatalog = "master";
+
+    for (var attempt = 1; attempt <= 30; attempt++)
+    {
+        try
+        {
+            using var conn = new SqlConnection(csb.ConnectionString);
+            conn.Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText =
+                $"""
+                 IF DB_ID(N'{dbName.Replace("'", "''", StringComparison.Ordinal)}') IS NULL
+                 BEGIN
+                     CREATE DATABASE [{safeName}];
+                 END
+                 """;
+            cmd.ExecuteNonQuery();
+            logger.LogInformation("Database {DatabaseName} ensured (attempt {Attempt})", dbName, attempt);
+            return;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Ensure database {DatabaseName} attempt {Attempt}/30 failed", dbName, attempt);
+            Thread.Sleep(2000);
+        }
+    }
+
+    throw new InvalidOperationException($"Could not ensure SQL database '{dbName}' after 30 attempts.");
 }

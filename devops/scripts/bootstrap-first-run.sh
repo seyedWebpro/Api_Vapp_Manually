@@ -199,14 +199,22 @@ log "Starting API stack (first build ~5-10 min)..."
 cd "$API_DIR"
 docker compose -f docker/docker-compose.production.yml --env-file docker/.env up -d --build
 
-log "Waiting for API health..."
+log "Ensuring DbVapp exists (fresh SQL has only system DBs)..."
+bash "$SCRIPT_DIR/ensure-dbvapp.sh" || log "WARN: ensure-dbvapp failed — API EnsureSqlDatabaseExists will retry"
+
+log "Waiting for API health + AppVersion + EF migrations..."
 api_code="000"
-for i in $(seq 1 24); do
-  sleep 10
-  api_code="$(curl -sS -m 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/health 2>/dev/null || echo "000")"
-  log "API health $i/24: $api_code"
-  [[ "$api_code" == "200" ]] && break
-done
+appver_code="000"
+if MAX_ATTEMPTS=48 INTERVAL_SECS=10 bash "$SCRIPT_DIR/wait-db-ready.sh"; then
+  api_code="200"
+  appver_code="200"
+else
+  # یک‌بار ترمیم اجباری
+  log "DB not ready — ensure-dbvapp --restart-api --wait"
+  bash "$SCRIPT_DIR/ensure-dbvapp.sh" --restart-api --wait || true
+  api_code="$(curl -sS -m 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/health 2>/dev/null || echo 000)"
+  appver_code="$(curl -sS -m 15 -o /dev/null -w '%{http_code}' 'http://127.0.0.1:8080/api/AppVersion/check?platform=android&currentVersion=1.0.0' 2>/dev/null || echo 000)"
+fi
 
 # --- 7) Admin front ---
 FRONT_DEPLOY_MODE="${FRONT_DEPLOY_MODE:-host}"
@@ -250,6 +258,7 @@ echo "==========================================================================
 echo "  Vapp bootstrap finished"
 echo "================================================================================"
 echo "  API:     $api_code   http://${SERVER_IP}/health"
+echo "  AppVer:  ${appver_code:-?}   /api/AppVersion/check"
 echo "  Admin:   $front_code   http://${SERVER_IP}/admin"
 echo "  Swagger: http://${SERVER_IP}/swagger"
 echo "  Nginx:   $public_code"
@@ -260,9 +269,10 @@ echo "  docker ps:"
 docker ps --format 'table {{.Names}}\t{{.Status}}'
 echo "================================================================================"
 
-if [[ "$api_code" != "200" || "$front_code" != "200" ]]; then
+if [[ "$api_code" != "200" || "$front_code" != "200" || "${appver_code:-000}" != "200" ]]; then
   echo "WARN: some checks failed — wait 60s and run:"
-  echo "  curl http://127.0.0.1:8080/health"
-  echo "  docker logs --tail 50 vapp_api_prod"
+  echo "  bash $SCRIPT_DIR/ensure-dbvapp.sh --restart-api"
+  echo "  curl -sS 'http://127.0.0.1:8080/api/AppVersion/check?platform=android&currentVersion=1.0.0'"
+  echo "  docker logs --tail 80 vapp_api_prod"
   exit 1
 fi

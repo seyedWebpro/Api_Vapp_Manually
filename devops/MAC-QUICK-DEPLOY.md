@@ -16,7 +16,9 @@ bash devops/scripts/deploy-from-mac.sh <mode>
 | تغییر | دستور | زمان تقریبی |
 |--------|--------|-------------|
 | چند خط C# / سرویس / DTO | `deploy-from-mac.sh api` | ۳–۷ دقیقه (با cache) |
-| image از Mac قبلاً upload شده، فقط restart | `deploy-from-mac.sh api-restart` | ~۱ دقیقه |
+| image از Mac قبلاً upload شده، فقط restart | `deploy-from-mac.sh api-restart` | ~۱–۳ دقیقه (+ wait Migrate) |
+| DbVapp / AppVersion 500 | `deploy-from-mac.sh db-fix` یا روی سرور `ensure-dbvapp.sh --restart-api --wait` | ۱–۵ دقیقه |
+| تشخیص کامل خطا | `deploy-from-mac.sh diagnose` | چند ثانیه |
 | کامپوننت / استایل / ترجمه ادمین | `deploy-from-mac.sh admin` | ۲–۴ دقیقه |
 | `npm run build` زدید، فقط بفرستید | `deploy-from-mac.sh admin-fast` | ~۳۰ ثانیه |
 | تغییر Public_Vapp (فرم/گردونه SMS) | `deploy-from-mac.sh public` | ۲–۴ دقیقه |
@@ -25,6 +27,18 @@ bash devops/scripts/deploy-from-mac.sh <mode>
 | API + Admin هر دو | `deploy-from-mac.sh both` | ۵–۱۰ دقیقه |
 | API + Admin + Public | `deploy-from-mac.sh all` | ۷–۱۲ دقیقه |
 | فقط چک سلامت | `deploy-from-mac.sh health` | چند ثانیه |
+
+### روی خود سرور (بدون Mac)
+
+```bash
+bash ~/Api_Vapp_Manually/vapp-iran-update.sh --diagnose
+bash ~/Api_Vapp_Manually/vapp-iran-update.sh --api-only
+bash ~/Api_Vapp_Manually/vapp-iran-update.sh --front-only
+bash ~/Api_Vapp_Manually/vapp-iran-update.sh --public-only
+bash ~/Api_Vapp_Manually/vapp-iran-update.sh --full
+```
+
+اگر fail شد، خروجی `REASON:` و `NEXT:` را دنبال کنید یا `diagnose` بزنید.
 
 ### ربات شماره‌جو (repo جدا — `scraping_Number_Vapp`)
 

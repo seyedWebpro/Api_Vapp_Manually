@@ -18,11 +18,13 @@ if [ -f "/run/secrets/mssql_sa_password" ]; then
 fi
 
 echo "Waiting for SQL Server port..."
-MAX_RETRIES=60
+MAX_RETRIES=90
 RETRY_COUNT=0
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
     if (echo > /dev/tcp/sqlserver/1433) 2>/dev/null; then
         echo "SQL Server port is open."
+        # بعد از open شدن پورت، SQL هنوز ممکن است recovering باشد
+        sleep 5
         break
     fi
     RETRY_COUNT=$((RETRY_COUNT + 1))
@@ -30,9 +32,10 @@ while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
 done
 
 if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
-    echo "WARN: SQL Server port timeout — starting app anyway (EF will retry)."
+    echo "WARN: SQL Server port timeout — starting app anyway (EF will retry / ensure DbVapp)."
 fi
 
 echo "Starting application..."
 echo "Environment: ${ASPNETCORE_ENVIRONMENT:-Production}"
+echo "NOTE: Program.cs ensures DbVapp exists before EF Migrate"
 exec dotnet /app/Api_Vapp.dll

@@ -40,12 +40,23 @@ cd /root && git clone git@github.com:seyedWebpro/Api_Vapp_Manually.git ~/Api_Vap
 
 --- ۵) روی سرور — اولین بالا آمدن ---
 
+# Docker رسمی (compose v2): اگر فقط docker.io دارید، docker-compose-plugin را از repo رسمی نصب کنید.
 SERVER_IP=195.24.237.132 bash ~/Api_Vapp_Manually/devops/scripts/bootstrap-first-run.sh
+
+# بعد از bootstrap — DbVapp + Migrate را صریح چک کنید (/health کافی نیست):
+bash ~/Api_Vapp_Manually/devops/scripts/ensure-dbvapp.sh --restart-api --wait
+bash ~/Api_Vapp_Manually/devops/scripts/wait-db-ready.sh
+bash ~/Api_Vapp_Manually/devops/scripts/health-check.sh
 bash ~/Api_Vapp_Manually/vapp-iran-update.sh --test
 
-Admin:  http://195.24.237.132/admin
-Health: http://195.24.237.132/health
+Admin:   http://195.24.237.132/
+AppVer:  http://195.24.237.132/api/AppVersion/check?platform=android&currentVersion=1.0.0
+Health:  http://195.24.237.132/health
 Swagger: http://195.24.237.132/swagger
+Form:    http://195.24.237.132/form/
+
+اگر AppVersion=500 بود:
+  bash ~/Api_Vapp_Manually/devops/scripts/fix-fresh-db-and-rebuild-api.sh
 
 میرور ایران‌سرور استفاده نشود. اگر leftover دیدید:
   sudo bash ~/Api_Vapp_Manually/devops/scripts/clear-iranserver-mirrors.sh

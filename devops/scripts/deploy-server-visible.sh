@@ -19,9 +19,11 @@ source "$SCRIPT_DIR/deploy-progress-lib.sh"
 
 API_REPO_DIR="${API_REPO_DIR:-$HOME/Api_Vapp_Manually}"
 FRONT_DIR="${FRONT_DIR:-$HOME/Admin_Vapp}"
+PUBLIC_DIR="${PUBLIC_DIR:-$HOME/Public_Vapp}"
 LAST_FRONT_LOG="${LAST_FRONT_DEPLOY_LOG:-$HOME/.vapp-last-front-deploy.log}"
 DEPLOY_LOG="${DEPLOY_LOG:-/root/vapp-deploy-visible-$(date +%F_%H%M%S).log}"
 PROGRESS_WATCH="$SCRIPT_DIR/deploy-progress-watch.sh"
+FRONT_DEPLOY_MODE="${FRONT_DEPLOY_MODE:-host}"
 
 MODE="--fast"
 WATCHER_PID=""
@@ -30,11 +32,11 @@ usage() {
   cat <<'EOF'
 Deploy Vapp با درصد پیشرفت 0–100
 
-  bash deploy-server-visible.sh [--fast|--api-only|--front-only|--full] [--pull-only]
+  bash deploy-server-visible.sh [--fast|--api-only|--front-only|--public-only|--full|--pull-only]
 
   • نوار پیشرفت هر ۸ ثانیه
-  • 100% = API + Admin + health OK
-  • فقط فرانت: --front-only
+  • 100% = API + Admin + Public + AppVersion OK
+  • فقط Admin: --front-only | فقط Public: --public-only
 
 EOF
   exit "${1:-0}"
@@ -42,7 +44,7 @@ EOF
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --fast|--api-only|--front-only|--full|--pull-only) MODE="$1" ;;
+    --fast|--api-only|--front-only|--public-only|--full|--pull-only) MODE="$1" ;;
     -h|--help) usage 0 ;;
     *)
       echo "ERROR: unknown option: $1" >&2
@@ -108,16 +110,26 @@ run_api_visible() {
 
 run_front_foreground() {
   progress_mark 58 "front-start"
-  FRONT_DEPLOY_MODE="${FRONT_DEPLOY_MODE:-docker}" \
-    bash "$SCRIPT_DIR/deploy-front.sh" --foreground 2>&1 | tee -a "$DEPLOY_LOG"
+  if [[ "${FRONT_DEPLOY_MODE:-host}" == "host" ]]; then
+    SERVER_IP="${SERVER_IP:-195.24.237.132}" bash "$SCRIPT_DIR/deploy-front-host.sh" 2>&1 | tee -a "$DEPLOY_LOG"
+  else
+    FRONT_DEPLOY_MODE=docker bash "$SCRIPT_DIR/deploy-front.sh" --foreground 2>&1 | tee -a "$DEPLOY_LOG"
+  fi
   progress_mark 90 "front-done"
+}
+
+run_public_foreground() {
+  progress_mark 70 "public-start"
+  SERVER_IP="${SERVER_IP:-195.24.237.132}" bash "$SCRIPT_DIR/deploy-public-front-host.sh" 2>&1 | tee -a "$DEPLOY_LOG"
+  progress_mark 88 "public-done"
 }
 
 apply_nginx_front() {
   local env_args=()
-  if [[ "${FRONT_DEPLOY_MODE:-docker}" == "host" ]]; then
-    env_args=(FRONT_STATIC_ROOT="${FRONT_STATIC_ROOT:-/var/www/vapp-admin}")
+  if [[ "${FRONT_DEPLOY_MODE:-host}" == "host" ]]; then
+    env_args+=(FRONT_STATIC_ROOT="${FRONT_STATIC_ROOT:-/var/www/vapp-admin}")
   fi
+  env_args+=(PUBLIC_STATIC_ROOT="${PUBLIC_STATIC_ROOT:-/var/www/vapp-public}")
   env "${env_args[@]}" SERVER_IP="${SERVER_IP:-195.24.237.132}" \
     bash "$SCRIPT_DIR/apply-nginx.sh" 2>&1 | tee -a "$DEPLOY_LOG" || true
 }
@@ -167,25 +179,29 @@ run_front_background_and_wait() {
 total_phases=5
 case "$MODE" in
   --api-only) total_phases=3 ;;
-  --front-only) total_phases=3 ;;
+  --front-only|--public-only) total_phases=3 ;;
   --pull-only) total_phases=2 ;;
-  --full) total_phases=6 ;;
+  --fast|--full) total_phases=6 ;;
 esac
 
 : >"$DEPLOY_LOG"
 log "=== deploy-server-visible mode=$MODE $(date '+%Y-%m-%dT%H:%M:%S') ==="
-log "FRONT_DEPLOY_MODE=${FRONT_DEPLOY_MODE:-docker}"
+log "FRONT_DEPLOY_MODE=${FRONT_DEPLOY_MODE:-host}"
 log "Log file: $DEPLOY_LOG"
 progress_mark 0 "start"
 
 start_watcher "=== deploy-server-visible finished" "Deploy Vapp"
 
-phase_banner 1 "$total_phases" "Git pull (API + Admin)" 5
+phase_banner 1 "$total_phases" "Git pull (API + Admin + Public)" 5
 cd "$API_REPO_DIR"
 git pull origin "${API_BRANCH:-main}" 2>&1 | tee -a "$DEPLOY_LOG"
 if [[ -d "$FRONT_DIR/.git" ]]; then
   cd "$FRONT_DIR"
   git pull origin "${FRONT_BRANCH:-main}" 2>&1 | tee -a "$DEPLOY_LOG"
+fi
+if [[ -d "$PUBLIC_DIR/.git" ]]; then
+  cd "$PUBLIC_DIR"
+  git pull origin "${PUBLIC_BRANCH:-main}" 2>&1 | tee -a "$DEPLOY_LOG"
 fi
 printf 'VITE_API_URL=\n' > "$FRONT_DIR/.env.production" 2>/dev/null || true
 progress_mark 5 "git-pull-done"
@@ -204,31 +220,44 @@ case "$MODE" in
     run_front_foreground
     apply_nginx_front
     ;;
+  --public-only)
+    phase_banner 2 "$total_phases" "Deploy Public (form/wheel)" 58
+    run_public_foreground
+    apply_nginx_front
+    ;;
   --fast)
     phase_banner 2 "$total_phases" "Deploy API" 8
     run_api_visible 0 1
     phase_banner 3 "$total_phases" "Deploy Admin (React)" 58
-    run_front_background_and_wait
+    run_front_foreground
+    phase_banner 4 "$total_phases" "Deploy Public" 70
+    run_public_foreground
     apply_nginx_front
     ;;
   --full)
     phase_banner 2 "$total_phases" "Deploy API + Nginx" 8
     run_api_visible 1 1
     phase_banner 3 "$total_phases" "Deploy Admin (React)" 58
-    run_front_background_and_wait
+    run_front_foreground
+    phase_banner 4 "$total_phases" "Deploy Public" 70
+    run_public_foreground
     apply_nginx_front
     ;;
 esac
 
 if [[ "$MODE" != "--pull-only" ]]; then
-  phase_banner "$((total_phases - 1))" "$total_phases" "Health check" 93
+  phase_banner "$((total_phases - 1))" "$total_phases" "DB migrate + Health check" 93
   progress_mark 93 "health-start"
-  if bash "$SCRIPT_DIR/health-check.sh" 2>&1 | tee -a "$DEPLOY_LOG"; then
+  if bash "$SCRIPT_DIR/wait-db-ready.sh" 2>&1 | tee -a "$DEPLOY_LOG" \
+    && HEALTH_ATTEMPTS=3 HEALTH_SLEEP=5 bash "$SCRIPT_DIR/health-check.sh" 2>&1 | tee -a "$DEPLOY_LOG"; then
     progress_mark 100 "health-ok"
-    log "OK: all services healthy"
+    log "OK: all services healthy (AppVersion/DB included)"
   else
     progress_mark 98 "health-warn"
-    log "WARN: health-check failed — ممکن است هنوز بالا بیاید"
+    log "FAIL: health incomplete — run: bash $SCRIPT_DIR/diagnose-deploy.sh"
+    bash "$SCRIPT_DIR/diagnose-deploy.sh" 2>&1 | tee -a "$DEPLOY_LOG" || true
+    stop_watcher
+    exit 1
   fi
 fi
 
@@ -237,7 +266,7 @@ log "=== deploy-server-visible finished $(date '+%Y-%m-%dT%H:%M:%S') ==="
 log ""
 render_progress_bar 100 | tee -a "$DEPLOY_LOG"
 log ""
-log "✓ 100% — Admin: http://195.24.237.132/auth"
+log "✓ 100% — Admin: http://${SERVER_IP:-195.24.237.132}/"
 log "  Log: $DEPLOY_LOG"
 
 stop_watcher
