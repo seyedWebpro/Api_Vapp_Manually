@@ -1,3 +1,4 @@
+using Api_Vapp.Constants;
 using Api_Vapp.Data;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.DTOs.LuckyWheel;
@@ -17,6 +18,7 @@ namespace Api_Vapp.Services
         private readonly PublicPhonebookService _phonebookService;
         private readonly IPublicParticipantSessionService _sessionService;
         private readonly IPublicParticipantOtpService _otpService;
+        private readonly IUserSmsBillingService _userSmsBilling;
         private readonly IHostEnvironment _environment;
         private readonly ILogger<LuckyWheelPublicService> _logger;
 
@@ -26,6 +28,7 @@ namespace Api_Vapp.Services
             PublicPhonebookService phonebookService,
             IPublicParticipantSessionService sessionService,
             IPublicParticipantOtpService otpService,
+            IUserSmsBillingService userSmsBilling,
             IHostEnvironment environment,
             ILogger<LuckyWheelPublicService> logger)
         {
@@ -34,6 +37,7 @@ namespace Api_Vapp.Services
             _phonebookService = phonebookService;
             _sessionService = sessionService;
             _otpService = otpService;
+            _userSmsBilling = userSmsBilling;
             _environment = environment;
             _logger = logger;
         }
@@ -390,8 +394,14 @@ namespace Api_Vapp.Services
 
                 await transaction.CommitAsync();
 
+                var smsSent = await TrySendPrizeSmsAsync(
+                    wheel,
+                    participant,
+                    wonItem.Name,
+                    prizeCode);
+
                 _logger.LogInformation(
-                    "Public wheel spin completed — participant {ParticipantId}, wheel {WheelId}, slug {Slug}, session {SessionId}, mobile {Mobile}, name {FullName}, wonItem {ItemId} {ItemName}, prizeCode {PrizeCode}",
+                    "Public wheel spin completed — participant {ParticipantId}, wheel {WheelId}, slug {Slug}, session {SessionId}, mobile {Mobile}, name {FullName}, wonItem {ItemId} {ItemName}, prizeCode {PrizeCode}, smsSent {SmsSent}",
                     participant.Id,
                     wheel.Id,
                     normalizedSlug,
@@ -400,7 +410,8 @@ namespace Api_Vapp.Services
                     session.ParticipantFullName,
                     wonItem.Id,
                     wonItem.Name,
-                    prizeCode);
+                    prizeCode,
+                    smsSent);
 
                 return ApiResponse<SpinLuckyWheelPublicResponseDto>.CreateSuccess(
                     new SpinLuckyWheelPublicResponseDto
@@ -408,7 +419,8 @@ namespace Api_Vapp.Services
                         ParticipantId = participant.Id,
                         WonItemId = wonItem.Id,
                         WonItemName = wonItem.Name,
-                        PrizeCode = prizeCode
+                        PrizeCode = prizeCode,
+                        SmsSent = smsSent
                     },
                     "چرخش با موفقیت ثبت شد",
                     201);
@@ -424,6 +436,75 @@ namespace Api_Vapp.Services
             {
                 _logger.LogError(ex, "Error spinning public lucky wheel for slug {Slug}", slug);
                 return ApiResponse<SpinLuckyWheelPublicResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
+        /// <summary>
+        /// پیامک جایزه بعد از commit — کمبود موجودی یا خطای پنل، چرخش را fail نمی‌کند.
+        /// </summary>
+        private async Task<bool> TrySendPrizeSmsAsync(
+            LuckyWheel wheel,
+            LuckyWheelParticipant participant,
+            string wonItemName,
+            string prizeCode)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(participant.ParticipantMobile))
+                {
+                    return false;
+                }
+
+                var message =
+                    $"تبریک! شما برنده شدید\n" +
+                    $"گردونه: {wheel.Title}\n" +
+                    $"جایزه: {wonItemName}\n" +
+                    $"کد جایزه: {prizeCode}";
+
+                var sendResult = await _userSmsBilling.TrySendAsync(
+                    wheel.UserId,
+                    participant.ParticipantMobile,
+                    message,
+                    SmsSourceModules.LuckyWheelWin,
+                    "جایزه گردونه شانس",
+                    $"هزینه پیامک جایزه گردونه #{wheel.Id}",
+                    participant.Id,
+                    wheel.Title);
+
+                if (sendResult.SkippedInsufficientBalance)
+                {
+                    _logger.LogInformation(
+                        "Lucky wheel prize SMS skipped (insufficient wallet) — participant {ParticipantId}, wheel {WheelId}, owner {OwnerUserId}",
+                        participant.Id,
+                        wheel.Id,
+                        wheel.UserId);
+                    return false;
+                }
+
+                if (!sendResult.Sent)
+                {
+                    _logger.LogWarning(
+                        "Lucky wheel prize SMS failed — participant {ParticipantId}, wheel {WheelId}: {Message}",
+                        participant.Id,
+                        wheel.Id,
+                        sendResult.Message);
+                    return false;
+                }
+
+                _logger.LogInformation(
+                    "Lucky wheel prize SMS sent — participant {ParticipantId}, wheel {WheelId}",
+                    participant.Id,
+                    wheel.Id);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "Failed to send lucky wheel prize SMS — participant {ParticipantId}, wheel {WheelId}",
+                    participant.Id,
+                    wheel.Id);
+                return false;
             }
         }
 

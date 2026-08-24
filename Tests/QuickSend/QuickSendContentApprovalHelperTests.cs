@@ -134,6 +134,8 @@ namespace Api_Vapp.Tests.QuickSend
         [InlineData("Foo", false)]
         [InlineData("BusinessCard", true)]
         [InlineData("businesscard", true)]
+        [InlineData("BankAccount", true)]
+        [InlineData("bankaccount", true)]
         public void QuickSendItemTypes_IsValid(string? itemType, bool expected)
         {
             Assert.Equal(expected, QuickSendItemTypes.IsValid(itemType));

@@ -36,5 +36,10 @@ namespace Api_Vapp.DTOs.LuckyWheel
         public string WonItemName { get; set; } = string.Empty;
 
         public string PrizeCode { get; set; } = string.Empty;
+
+        /// <summary>
+        /// اگر موجودی کیف پول مالک کافی نباشد false است؛ خودِ چرخش همچنان موفق است.
+        /// </summary>
+        public bool SmsSent { get; set; }
     }
 }

@@ -18,6 +18,11 @@ namespace Api_Vapp.Models
         // آدرس لینک (URL)
         public string LinkUrl { get; set; } = string.Empty;
 
+        /// <summary>
+        /// عنوان اختیاری ارسال سریع SMS — قبل از لینک در متن پیام قرار می‌گیرد.
+        /// </summary>
+        public string? SmsCaption { get; set; }
+
         // آیا پیش‌فرض است
         public bool IsDefault { get; set; } = false;
 

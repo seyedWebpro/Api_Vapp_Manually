@@ -22,6 +22,9 @@ namespace Api_Vapp.DTOs.LuckyWheel
 
         public string? PublicUrl { get; set; }
 
+        /// <summary>عنوان اختیاری ارسال سریع SMS</summary>
+        public string? SmsCaption { get; set; }
+
         /// <summary>
         /// تعداد شرکت‌کنندگان — فاز ۲ (چرخش عمومی) پر می‌شود؛ فعلاً ۰
         /// </summary>

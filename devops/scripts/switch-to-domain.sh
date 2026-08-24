@@ -8,8 +8,9 @@
 #   bash devops/scripts/switch-to-domain.sh --ip-only   # برگشت به IP
 #
 # Env:
-#   DOMAIN_HOST (پیش‌فرض ok-sms.ir)
+#   DOMAIN_HOST (پیش‌فرض ok-sms.ir) — برای ساب‌دامین: DOMAIN_HOST=api.v-application.ir
 #   SERVER_IP (پیش‌فرض از server.conf)
+#   DOMAIN_SKIP_WWW=1 — اجباری برای رد کردن www (برای ساب‌دامین خودکار است)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -60,35 +61,58 @@ ensure_secrets() {
 
 write_env_ip() {
   ensure_secrets
-  cat >"$ENV_FILE" <<EOF
-SA_PASSWORD=${SEC_SA}
-API_PORT_MAPPING=127.0.0.1:8080:8080
-PUBLIC_API_BASE_URL=http://${SERVER_IP}
-PUBLIC_FRONTEND_URL=http://${SERVER_IP}
-FORM_PUBLIC_BASE_URL=http://${SERVER_IP}/form
-WHEEL_PUBLIC_BASE_URL=http://${SERVER_IP}/wheel
-CARD_PUBLIC_BASE_URL=http://${SERVER_IP}/card
-BOOKING_PUBLIC_BASE_URL=http://${SERVER_IP}/book
-Jwt__Secret=${SEC_JWT}
-EOF
+  upsert_env SA_PASSWORD "$SEC_SA"
+  upsert_env API_PORT_MAPPING "127.0.0.1:8080:8080"
+  upsert_env PUBLIC_API_BASE_URL "http://${SERVER_IP}"
+  upsert_env PUBLIC_FRONTEND_URL "http://${SERVER_IP}"
+  upsert_env FORM_PUBLIC_BASE_URL "http://${SERVER_IP}/form"
+  upsert_env WHEEL_PUBLIC_BASE_URL "http://${SERVER_IP}/wheel"
+  upsert_env CARD_PUBLIC_BASE_URL "http://${SERVER_IP}/card"
+  upsert_env BOOKING_PUBLIC_BASE_URL "http://${SERVER_IP}/book"
+  upsert_env Jwt__Secret "$SEC_JWT"
   chmod 600 "$ENV_FILE"
 }
 
 write_env_domain() {
   local scheme="$1"
   ensure_secrets
-  cat >"$ENV_FILE" <<EOF
-SA_PASSWORD=${SEC_SA}
-API_PORT_MAPPING=127.0.0.1:8080:8080
-PUBLIC_API_BASE_URL=${scheme}://${DOMAIN_HOST}
-PUBLIC_FRONTEND_URL=${scheme}://${DOMAIN_HOST}
-FORM_PUBLIC_BASE_URL=${scheme}://${DOMAIN_HOST}/form
-WHEEL_PUBLIC_BASE_URL=${scheme}://${DOMAIN_HOST}/wheel
-CARD_PUBLIC_BASE_URL=${scheme}://${DOMAIN_HOST}/card
-BOOKING_PUBLIC_BASE_URL=${scheme}://${DOMAIN_HOST}/book
-Jwt__Secret=${SEC_JWT}
-EOF
+  upsert_env SA_PASSWORD "$SEC_SA"
+  upsert_env API_PORT_MAPPING "127.0.0.1:8080:8080"
+  upsert_env PUBLIC_API_BASE_URL "${scheme}://${DOMAIN_HOST}"
+  upsert_env PUBLIC_FRONTEND_URL "${scheme}://${DOMAIN_HOST}"
+  upsert_env FORM_PUBLIC_BASE_URL "${scheme}://${DOMAIN_HOST}/form"
+  upsert_env WHEEL_PUBLIC_BASE_URL "${scheme}://${DOMAIN_HOST}/wheel"
+  upsert_env CARD_PUBLIC_BASE_URL "${scheme}://${DOMAIN_HOST}/card"
+  upsert_env BOOKING_PUBLIC_BASE_URL "${scheme}://${DOMAIN_HOST}/book"
+  upsert_env Jwt__Secret "$SEC_JWT"
+  # زرین‌پال — callback روی همین دامنه/ساب‌دامین
+  upsert_env Payment__UseSimulation "false"
+  upsert_env ZarinPal__CallbackUrl "${scheme}://${DOMAIN_HOST}/api/Payment/callback/zarinpal"
+  upsert_env ZarinPal__Sandbox "false"
+  upsert_env ZarinPal__AllowSandboxAutoVerify "false"
+  upsert_env ZarinPal__Currency "IRT"
+  upsert_env ZarinPal__AppReturnUrl "vapp://payment/result"
   chmod 600 "$ENV_FILE"
+}
+
+upsert_env() {
+  local key="$1" value="$2"
+  [[ -f "$ENV_FILE" ]] || touch "$ENV_FILE"
+  python3 -c '
+import sys
+from pathlib import Path
+path = Path(sys.argv[1]); key = sys.argv[2]; value = sys.argv[3]
+lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+out=[]; found=False
+for line in lines:
+    if line.startswith(key + "="):
+        out.append(f"{key}={value}"); found=True
+    else:
+        out.append(line)
+if not found:
+    out.append(f"{key}={value}")
+path.write_text("\n".join(out) + "\n", encoding="utf-8")
+' "$ENV_FILE" "$key" "$value"
 }
 
 restart_api() {
@@ -109,14 +133,23 @@ run_certbot() {
     apt-get update -qq && apt-get install -y -qq certbot python3-certbot-nginx
   fi
   local resolved
-  resolved=$(dig +short "$DOMAIN_HOST" 2>/dev/null | head -1 || true)
+  resolved=$(dig +short "$DOMAIN_HOST" A @8.8.8.8 2>/dev/null | head -1 || true)
+  if [[ -z "$resolved" ]]; then
+    resolved=$(getent ahostsv4 "$DOMAIN_HOST" 2>/dev/null | awk "{print \$1; exit}" || true)
+  fi
   if [[ "$resolved" != "$SERVER_IP" ]]; then
     echo "WARN: DNS $DOMAIN_HOST → '$resolved' (expected $SERVER_IP). Certbot skipped." >&2
-    echo "      Fix DNS then: sudo certbot --nginx -d $DOMAIN_HOST -d www.$DOMAIN_HOST --redirect" >&2
+    echo "      Fix DNS then: sudo certbot --nginx -d $DOMAIN_HOST --redirect" >&2
     return 1
   fi
-  certbot --nginx -d "$DOMAIN_HOST" -d "www.$DOMAIN_HOST" \
-    --non-interactive --agree-tos --register-unsafely-without-email --redirect
+  # ساب‌دامین (api.example.ir) یا DOMAIN_SKIP_WWW=1 → فقط خود دامنه
+  if [[ "${DOMAIN_SKIP_WWW:-0}" == "1" ]] || [[ "$DOMAIN_HOST" == *.*.* ]]; then
+    certbot --nginx -d "$DOMAIN_HOST" \
+      --non-interactive --agree-tos --register-unsafely-without-email --redirect
+  else
+    certbot --nginx -d "$DOMAIN_HOST" -d "www.$DOMAIN_HOST" \
+      --non-interactive --agree-tos --register-unsafely-without-email --redirect
+  fi
 }
 
 case "$MODE" in

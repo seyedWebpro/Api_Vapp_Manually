@@ -206,6 +206,19 @@ if [[ -z "$SYSTEM_ID" || "$SYSTEM_ID" == "0" ]]; then
 fi
 echo "      systemId=$SYSTEM_ID"
 
+# 1.1) تأیید ادمین برای دسترسی اسلات عمومی (و سازگاری با محیط واقعی)
+APPROVE_OUT="$TMP_DIR/approve.json"
+code="$(http_json POST "/api/Admin/QuickSendApproval/BookingSystem/$SYSTEM_ID/approve" "" "$APPROVE_OUT")"
+APPROVE_MSG="$(json_get "$APPROVE_OUT" message)"
+APPROVE_OK=0
+if http_ok "$code"; then
+  APPROVE_OK=1
+elif [[ "$code" == "400" && "$APPROVE_MSG" == *"قبلاً بررسی"* ]]; then
+  APPROVE_OK=1
+fi
+check "admin approve BookingSystem (or already approved)" "$([[ "$APPROVE_OK" == "1" ]] && echo 1 || echo 0)"
+echo "      approval HTTP=$code msg=$APPROVE_MSG"
+
 # 2) services + set reminder offset
 SERVICES_OUT="$TMP_DIR/services.json"
 code="$(http_json GET "/api/BookingSystem/$SYSTEM_ID/services" "" "$SERVICES_OUT")"
@@ -252,64 +265,116 @@ check "update reminderOffsetsMinutes=$REMINDER_OFFSETS_CSV" \
   "$(http_ok "$code" && [[ -n "$OFFSETS_SAVED" ]] && echo 1 || echo 0)"
 echo "      serviceId=$SERVICE_ID offsets=$OFFSETS_SAVED"
 
-# 3) pick a free public slot that is already due for reminder (StartUtc - offset <= now < StartUtc)
+# 2.1) reminder-preview — قبل از ثبت نوبت
+PAST_UTC="$(python3 - <<'PY'
+from datetime import datetime,timedelta,timezone
+print((datetime.now(timezone.utc)-timedelta(minutes=30)).strftime('%Y-%m-%dT%H:%M:%SZ'))
+PY
+)"
+PREV_PAST="$TMP_DIR/prev_past.json"
+code="$(http_json GET "/api/BookingSystem/$SYSTEM_ID/appointments/reminder-preview?serviceId=$SERVICE_ID&startUtc=$PAST_UTC&remindersEnabled=true" "" "$PREV_PAST")"
+PAST_WILL="$(json_get "$PREV_PAST" data.willSend)"
+PAST_SKIP="$(json_get "$PREV_PAST" data.skipReasonCode)"
+check "GET reminder-preview past → 200" "$([[ "$code" == "200" ]] && echo 1 || echo 0)"
+check "preview past willSend=false" "$([[ "$PAST_WILL" == "false" ]] && echo 1 || echo 0)"
+check "preview past skipReasonCode=PAST" "$([[ "$PAST_SKIP" == "PAST" ]] && echo 1 || echo 0)"
+
+FUTURE_UTC="$(python3 - <<'PY'
+from datetime import datetime,timedelta,timezone
+print((datetime.now(timezone.utc)+timedelta(hours=3)).strftime('%Y-%m-%dT%H:%M:%SZ'))
+PY
+)"
+PREV_OK="$TMP_DIR/prev_ok.json"
+code="$(http_json GET "/api/BookingSystem/$SYSTEM_ID/appointments/reminder-preview?serviceId=$SERVICE_ID&startUtc=$FUTURE_UTC&remindersEnabled=true" "" "$PREV_OK")"
+OK_WILL="$(json_get "$PREV_OK" data.willSend)"
+OK_OFFSETS="$(python3 - "$PREV_OK" <<'PY'
+import json,sys
+d=json.load(open(sys.argv[1],encoding='utf-8'))
+print(','.join(str(x) for x in ((d.get('data') or {}).get('offsetsMinutes') or [])))
+PY
+)"
+check "GET reminder-preview future → 200" "$([[ "$code" == "200" ]] && echo 1 || echo 0)"
+check "preview future willSend=true" "$([[ "$OK_WILL" == "true" ]] && echo 1 || echo 0)"
+check "preview future offsets not empty" "$([[ -n "$OK_OFFSETS" ]] && echo 1 || echo 0)"
+
+PREV_OFF="$TMP_DIR/prev_off.json"
+code="$(http_json GET "/api/BookingSystem/$SYSTEM_ID/appointments/reminder-preview?serviceId=$SERVICE_ID&startUtc=$FUTURE_UTC&remindersEnabled=false" "" "$PREV_OFF")"
+OFF_WILL="$(json_get "$PREV_OFF" data.willSend)"
+OFF_SKIP="$(json_get "$PREV_OFF" data.skipReasonCode)"
+check "preview disabled willSend=false" "$([[ "$OFF_WILL" == "false" ]] && echo 1 || echo 0)"
+check "preview disabled skipReasonCode=DISABLED" "$([[ "$OFF_SKIP" == "DISABLED" ]] && echo 1 || echo 0)"
+
+PREV_BAD="$TMP_DIR/prev_bad.json"
+code="$(http_json GET "/api/BookingSystem/$SYSTEM_ID/appointments/reminder-preview?serviceId=0&startUtc=$FUTURE_UTC" "" "$PREV_BAD")"
+check "preview serviceId=0 → 400" "$([[ "$code" == "400" ]] && echo 1 || echo 0)"
+
+PREV_404="$TMP_DIR/prev_404.json"
+code="$(http_json GET "/api/BookingSystem/$SYSTEM_ID/appointments/reminder-preview?serviceId=99999999&startUtc=$FUTURE_UTC" "" "$PREV_404")"
+check "preview unknown service → 404" "$([[ "$code" == "404" ]] && echo 1 || echo 0)"
+
+# 3) pick a free owner-managed Empty slot that is already due for reminder
+#    (availability مالک نیاز به تأیید عمومی ندارد؛ public slots ممکن است CONTENT_PENDING باشد)
 GET_SYS="$TMP_DIR/sys.json"
 http_json GET "/api/BookingSystem/$SYSTEM_ID" "" "$GET_SYS" >/dev/null || true
 SLUG="$(json_get "$GET_SYS" data.slug)"
 echo "      slug=$SLUG"
 
-START_UTC="$(python3 - "$BASE_URL" "$SLUG" "$SERVICE_ID" "$REMINDER_OFFSETS_CSV" <<'PY'
+START_UTC="$(python3 - "$BASE_URL" "$SYSTEM_ID" "$SERVICE_ID" "$REMINDER_OFFSETS_CSV" <<'PY'
 import json,sys,urllib.request
 from datetime import datetime,timedelta,timezone
-base,slug,svc=sys.argv[1],sys.argv[2],sys.argv[3]
+base,system_id,svc=sys.argv[1],sys.argv[2],sys.argv[3]
 offsets=[int(x) for x in sys.argv[4].split(',') if x.strip()] or [60]
-max_offset=max(offsets)
 now=datetime.now(timezone.utc)
+min_lead=timedelta(minutes=8)  # فرصت برای tick جاب ۱ دقیقه‌ای + startup
 picked=""
-for day in range(0,3):
-  date=(now+timedelta(days=day)).strftime('%Y-%m-%d')
-  url=f"{base}/api/BookingPublic/{slug}/services/{svc}/slots?date={date}"
+
+def load_slots(date_str):
+  url=f"{base}/api/BookingSystem/{system_id}/availability?date={date_str}&serviceId={svc}"
   try:
     with urllib.request.urlopen(url, timeout=20) as r:
       d=json.load(r)
   except Exception:
-    continue
-  slots=((d.get('data') or {}).get('slots') or [])
-  for s in slots:
+    return []
+  return ((d.get('data') or {}).get('slots') or [])
+
+def parse_start(raw):
+  start=datetime.fromisoformat(raw.replace('Z','+00:00'))
+  if start.tzinfo is None:
+    start=start.replace(tzinfo=timezone.utc)
+  return start
+
+# اسلات due که هنوز حداقل min_lead تا شروع فاصله دارد
+for day in range(0,3):
+  date=(now+timedelta(days=day)).strftime('%Y-%m-%d')
+  for s in load_slots(date):
+    if (s.get('status') or '') != 'Empty' or not s.get('isEnabled', True):
+      continue
     raw=s.get('startUtc') or ''
     try:
-      start=datetime.fromisoformat(raw.replace('Z','+00:00'))
+      start=parse_start(raw)
     except Exception:
       continue
-    if start.tzinfo is None:
-      start=start.replace(tzinfo=timezone.utc)
-    if start <= now:
+    if start <= now + min_lead:
       continue
-    # due for at least one configured offset
     if any(start - timedelta(minutes=o) <= now for o in offsets):
       picked=start.strftime('%Y-%m-%dT%H:%M:%SZ')
       break
   if picked:
     break
+
+# fallback: نزدیک‌ترین Empty با فاصله امن
 if not picked:
   for day in range(0,3):
     date=(now+timedelta(days=day)).strftime('%Y-%m-%d')
-    url=f"{base}/api/BookingPublic/{slug}/services/{svc}/slots?date={date}"
-    try:
-      with urllib.request.urlopen(url, timeout=20) as r:
-        d=json.load(r)
-    except Exception:
-      continue
-    slots=((d.get('data') or {}).get('slots') or [])
-    for s in slots:
+    for s in load_slots(date):
+      if (s.get('status') or '') != 'Empty' or not s.get('isEnabled', True):
+        continue
       raw=s.get('startUtc') or ''
       try:
-        start=datetime.fromisoformat(raw.replace('Z','+00:00'))
+        start=parse_start(raw)
       except Exception:
         continue
-      if start.tzinfo is None:
-        start=start.replace(tzinfo=timezone.utc)
-      if start > now:
+      if start > now + min_lead:
         picked=start.strftime('%Y-%m-%dT%H:%M:%SZ')
         break
     if picked:
@@ -317,12 +382,19 @@ if not picked:
 print(picked)
 PY
 )"
-echo "      target StartUtc=$START_UTC (aligned public slot)"
+echo "      target StartUtc=$START_UTC (owner Empty slot)"
 if [[ -z "$START_UTC" ]]; then
-  echo "FAIL  no available slot found"
+  echo "FAIL  no available Empty slot found"
   echo "Summary: PASS=$PASS FAIL=$((FAIL+1))"
   exit 1
 fi
+
+# preview برای همان اسلات انتخابی باید willSend=true باشد اگر due/آینده است
+PREV_SLOT="$TMP_DIR/prev_slot.json"
+code="$(http_json GET "/api/BookingSystem/$SYSTEM_ID/appointments/reminder-preview?serviceId=$SERVICE_ID&startUtc=$START_UTC&remindersEnabled=true" "" "$PREV_SLOT")"
+SLOT_WILL="$(json_get "$PREV_SLOT" data.willSend)"
+check "preview for chosen slot → 200" "$([[ "$code" == "200" ]] && echo 1 || echo 0)"
+check "preview for chosen slot willSend=true" "$([[ "$SLOT_WILL" == "true" ]] && echo 1 || echo 0)"
 
 MANUAL="$TMP_DIR/manual.json"
 code="$(http_json POST "/api/BookingSystem/$SYSTEM_ID/appointments/manual" \
@@ -336,6 +408,17 @@ check "POST manual appointment → 201/200" "$(http_ok "$code" && echo 1 || echo
 check "appointment Confirmed" "$([[ "$STATUS" == "Confirmed" ]] && echo 1 || echo 0)"
 check "remindersEnabled=true" "$([[ "$REMINDERS_ON" == "true" ]] && echo 1 || echo 0)"
 check "reminderSentAt initially null" "$([[ -z "$REMINDER_BEFORE" ]] && echo 1 || echo 0)"
+WILL_SEND="$(json_get "$MANUAL" data.reminder.willSend)"
+SKIP_CODE="$(json_get "$MANUAL" data.reminder.skipReasonCode)"
+OFFSETS_PREVIEW="$(python3 - "$MANUAL" <<'PY'
+import json,sys
+d=json.load(open(sys.argv[1],encoding='utf-8'))
+print(','.join(str(x) for x in (((d.get('data') or {}).get('reminder') or {}).get('offsetsMinutes') or [])))
+PY
+)"
+check "manual response reminder.willSend=true" "$([[ "$WILL_SEND" == "true" ]] && echo 1 || echo 0)"
+check "manual response reminder.offsetsMinutes not empty" "$([[ -n "$OFFSETS_PREVIEW" ]] && echo 1 || echo 0)"
+check "manual response reminder.skipReasonCode empty" "$([[ -z "$SKIP_CODE" ]] && echo 1 || echo 0)"
 if [[ -z "$APPOINTMENT_ID" || "$APPOINTMENT_ID" == "0" ]]; then
   echo "FAIL  could not create appointment — body:"
   cat "$MANUAL"
@@ -347,20 +430,22 @@ echo "      appointmentId=$APPOINTMENT_ID status=$STATUS"
 
 # 3.1) opt-out appointment should NOT get reminder
 if [[ "$TEST_OPT_OUT" == "1" ]]; then
-  START2="$(python3 - "$BASE_URL" "$SLUG" "$SERVICE_ID" <<'PY'
+  START2="$(python3 - "$BASE_URL" "$SYSTEM_ID" "$SERVICE_ID" "$START_UTC" <<'PY'
 import json,sys,urllib.request
 from datetime import datetime,timedelta,timezone
-base,slug,svc=sys.argv[1],sys.argv[2],sys.argv[3]
+base,system_id,svc,exclude=sys.argv[1],sys.argv[2],sys.argv[3],sys.argv[4]
 now=datetime.now(timezone.utc)
 for day in range(0,3):
   date=(now+timedelta(days=day)).strftime('%Y-%m-%d')
-  url=f"{base}/api/BookingPublic/{slug}/services/{svc}/slots?date={date}"
+  url=f"{base}/api/BookingSystem/{system_id}/availability?date={date}&serviceId={svc}"
   try:
     with urllib.request.urlopen(url, timeout=20) as r:
       d=json.load(r)
   except Exception:
     continue
   for s in ((d.get('data') or {}).get('slots') or []):
+    if (s.get('status') or '') != 'Empty' or not s.get('isEnabled', True):
+      continue
     raw=s.get('startUtc') or ''
     try:
       start=datetime.fromisoformat(raw.replace('Z','+00:00'))
@@ -368,8 +453,9 @@ for day in range(0,3):
       continue
     if start.tzinfo is None:
       start=start.replace(tzinfo=timezone.utc)
-    if start > now:
-      print(start.strftime('%Y-%m-%dT%H:%M:%SZ'))
+    fmt=start.strftime('%Y-%m-%dT%H:%M:%SZ')
+    if start > now and fmt != exclude:
+      print(fmt)
       raise SystemExit
 print('')
 PY
@@ -381,8 +467,12 @@ PY
       "$OPT")"
     OPT_OUT_APPOINTMENT_ID="$(json_get "$OPT" data.id)"
     OPT_FLAG="$(json_get "$OPT" data.remindersEnabled)"
+    OPT_WILL="$(json_get "$OPT" data.reminder.willSend)"
+    OPT_SKIP="$(json_get "$OPT" data.reminder.skipReasonCode)"
     check "opt-out appointment created" "$(http_ok "$code" && [[ -n "$OPT_OUT_APPOINTMENT_ID" ]] && echo 1 || echo 0)"
     check "opt-out remindersEnabled=false" "$([[ "$OPT_FLAG" == "false" ]] && echo 1 || echo 0)"
+    check "opt-out reminder.willSend=false" "$([[ "$OPT_WILL" == "false" ]] && echo 1 || echo 0)"
+    check "opt-out skipReasonCode=DISABLED" "$([[ "$OPT_SKIP" == "DISABLED" ]] && echo 1 || echo 0)"
     echo "      optOutAppointmentId=$OPT_OUT_APPOINTMENT_ID start2=$START2"
   else
     echo "WARN  no second slot for opt-out test"

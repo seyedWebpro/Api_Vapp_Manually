@@ -68,6 +68,7 @@ namespace Api_Vapp.Services
                     Title = createDto.Title?.Trim() ?? string.Empty,
                     Description = NormalizeOptionalText(createDto.Description),
                     Slug = UserFormSlugHelper.Normalize(createDto.Slug),
+                    SmsCaption = QuickSendLinkSmsHelper.NormalizeCaption(createDto.SmsCaption),
                     Status = LuckyWheelStatus.Draft,
                     SaveToPhonebook = createDto.SaveToPhonebook,
                     IsActive = true,
@@ -139,6 +140,16 @@ namespace Api_Vapp.Services
                         errorCode: ErrorCodes.ValidationFailed);
                 }
 
+                var originalTitle = wheel.Title;
+                var originalSlug = wheel.Slug;
+                var originalSmsCaption = wheel.SmsCaption;
+                var originalDescription = wheel.Description;
+                var originalSaveToPhonebook = wheel.SaveToPhonebook;
+                var originalNotebookIds = wheel.Notebooks
+                    .Select(n => n.ContactNotebookId)
+                    .OrderBy(x => x)
+                    .ToList();
+
                 if (!string.IsNullOrWhiteSpace(updateDto.Slug))
                 {
                     var slugValidation = await ValidateSlugAsync(updateDto.Slug, id);
@@ -148,6 +159,11 @@ namespace Api_Vapp.Services
                     }
 
                     wheel.Slug = slugValidation.NormalizedSlug;
+                }
+
+                if (updateDto.SmsCaption != null)
+                {
+                    wheel.SmsCaption = QuickSendLinkSmsHelper.NormalizeCaption(updateDto.SmsCaption);
                 }
 
                 if (updateDto.Title != null)
@@ -211,8 +227,20 @@ namespace Api_Vapp.Services
                     }
                 }
 
+                var currentNotebookIds = wheel.Notebooks
+                    .Select(n => n.ContactNotebookId)
+                    .OrderBy(x => x)
+                    .ToList();
+                var contentChanged =
+                    !string.Equals(originalTitle, wheel.Title, StringComparison.Ordinal) ||
+                    !string.Equals(originalSlug, wheel.Slug, StringComparison.Ordinal) ||
+                    !string.Equals(originalSmsCaption, wheel.SmsCaption, StringComparison.Ordinal) ||
+                    !string.Equals(originalDescription, wheel.Description, StringComparison.Ordinal) ||
+                    originalSaveToPhonebook != wheel.SaveToPhonebook ||
+                    !originalNotebookIds.SequenceEqual(currentNotebookIds);
+
                 wheel.UpdatedAt = DateTime.UtcNow;
-                QuickSendContentApprovalHelper.ResetToPending(wheel);
+                QuickSendContentApprovalHelper.ResetToPendingIfNeeded(wheel, contentChanged);
                 await _context.SaveChangesAsync();
 
                 await _audit.WriteAsync(new AuditEntry
@@ -551,6 +579,7 @@ namespace Api_Vapp.Services
                         Status = wheel.Status.ToString(),
                         IsActive = wheel.IsActive,
                         PublicUrl = BuildPublicUrl(wheel.Slug),
+                        SmsCaption = wheel.SmsCaption,
                         ParticipantCount = await _luckyWheelRepository.GetParticipantCountAsync(wheel.Id),
                         CreatedAt = EnsureUtc(wheel.CreatedAt),
                         PublishedAt = EnsureUtc(wheel.PublishedAt),
@@ -910,9 +939,11 @@ namespace Api_Vapp.Services
                         errorCode: ErrorCodes.InvalidInput);
                 }
 
+                var smsContent = QuickSendLinkSmsHelper.BuildSmsContent(wheel.SmsCaption, publicUrl);
+
                 var createMessageResult = await _messageService.CreateMessageAsync(userId, new CreateMessageDto
                 {
-                    Content = publicUrl
+                    Content = smsContent
                 });
 
                 if (!createMessageResult.Success || createMessageResult.Data == null)
@@ -1051,6 +1082,7 @@ namespace Api_Vapp.Services
             return updateDto.Title != null
                 || updateDto.Description != null
                 || !string.IsNullOrWhiteSpace(updateDto.Slug)
+                || updateDto.SmsCaption != null
                 || updateDto.SaveToPhonebook.HasValue
                 || updateDto.NotebookIds != null;
         }
@@ -1078,6 +1110,7 @@ namespace Api_Vapp.Services
                 Title = wheel.Title,
                 Description = wheel.Description,
                 Slug = wheel.Slug,
+                SmsCaption = wheel.SmsCaption,
                 Status = wheel.Status.ToString(),
                 SaveToPhonebook = wheel.SaveToPhonebook,
                 IsActive = wheel.IsActive,

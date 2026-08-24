@@ -37,6 +37,11 @@ namespace Api_Vapp.Interfaces
 
         Task<ApiResponse<ConfirmReferralProgramResponseDto>> ConfirmAsync(int userId, ConfirmReferralProgramDto request);
 
+        /// <summary>
+        /// ارسال پیامک دعوت پس از تأیید ادمین (یا ارسال فوری متن پیش‌فرض از مسیر به‌روزرسانی)
+        /// </summary>
+        Task<ApiResponse<ReferralInviteSendResultDto>> SendQueuedInviteSmsAsync(int programId);
+
         Task<ApiResponse<InquireReferralCodeResponseDto>> InquireCodeAsync(int userId, InquireReferralCodeDto request);
 
         Task<ApiResponse<RedeemReferralCodeResponseDto>> RedeemCodeAsync(int userId, RedeemReferralCodeDto request);

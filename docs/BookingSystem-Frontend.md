@@ -51,6 +51,7 @@ Content:   application/json
 | لیست/جدول نوبت‌ها | `GET /{id}/appointments?searchName=&status=&fromUtc=&toUtc=` |
 | جزئیات نوبت | `GET /{id}/appointments/{appointmentId}` |
 | فیش واریز نوبت | `GET /{id}/appointments/{appointmentId}/payment-receipt` |
+| پیش‌نمایش یادآوری | `GET /{id}/appointments/reminder-preview?serviceId=&startUtc=&remindersEnabled=` |
 | رزرو دستی | `POST /{id}/appointments/manual` |
 | ویرایش نوبت | `POST /{id}/appointments/{appointmentId}/update` |
 | تأیید نوبت | `POST /{id}/appointments/{appointmentId}/confirm` |
@@ -83,6 +84,7 @@ confirm         →  draftId  →  سیستم + publicUrl
   "description": "توضیحات اختیاری",
   "location": "تهران، سعادت‌آباد",
   "customSlug": "beauty-salon",
+  "smsCaption": "رزرو نوبت سالن زیبایی",
   "saveToPhonebook": true,
   "notebookIds": [12, 15]
 }
@@ -90,10 +92,21 @@ confirm         →  draftId  →  سیستم + publicUrl
 
 - `location` اختیاری — مکان نمایشی در لیست
 - `customSlug` اختیاری — فقط `a-z0-9-`
+- `smsCaption` اختیاری — عنوان ارسال سریع SMS (حداکثر ۱۰۰ کاراکتر)؛ در متن پیام قبل از لینک می‌آید
 - اگر `saveToPhonebook=true` → `notebookIds` الزامی
 - `activityType` از `GET /activity-types`
 
 پاسخ: `data.draftId`, `data.draftExpiresAt`
+
+---
+
+## ویرایش — `POST /{id}/update`
+
+فیلد اختیاری `smsCaption` (حداکثر ۱۰۰ کاراکتر): عنوان ارسال سریع. رشته خالی → حذف عنوان. تغییر آن تأیید ادمین ارسال سریع را به `Pending` برمی‌گرداند.
+
+## ارسال سریع — `POST /quick-send`
+
+متن SMS = `smsCaption` + خط جدید + `publicUrl` (اگر caption خالی باشد فقط URL).
 
 ---
 
@@ -223,6 +236,7 @@ confirm         →  draftId  →  سیستم + publicUrl
       "title": "سالن زیبایی",
       "slug": "beauty-salon",
       "publicUrl": "https://app.com/book/beauty-salon",
+      "smsCaption": "رزرو نوبت سالن زیبایی",
       "isActive": true,
       "services": [ ... ]
     }
@@ -379,6 +393,7 @@ Base: `/api/BookingPublic` — **AllowAnonymous**
 | لیست/جدول نوبت‌ها | `GET /{id}/appointments?pageNumber=1&status=&searchName=&fromUtc=&toUtc=&serviceId=` |
 | جزئیات نوبت | `GET /{id}/appointments/{appointmentId}` |
 | فیش واریز نوبت | `GET /{id}/appointments/{appointmentId}/payment-receipt` |
+| پیش‌نمایش یادآوری رزرو دستی | `GET /{id}/appointments/reminder-preview?serviceId=&startUtc=&remindersEnabled=` |
 | رزرو دستی | `POST /{id}/appointments/manual` |
 | ویرایش نوبت | `POST /{id}/appointments/{appointmentId}/update` |
 | تأیید نوبت Pending | `POST /{id}/appointments/{appointmentId}/confirm` |
@@ -446,9 +461,20 @@ Auth: Bearer JWT (مالک سیستم)
   "customerMobile": "09131234567",
   "customerNote": "توضیحات اختیاری",
   "serviceId": 5,
-  "startUtc": "2026-07-01T05:30:00Z"
+  "startUtc": "2026-07-01T05:30:00Z",
+  "remindersEnabled": true
 }
 ```
+
+- `remindersEnabled` اختیاری — پیش‌فرض `true`. اگر `false` باشد جاب پیامک یادآوری این نوبت را رد می‌کند.
+- پاسخ شامل `reminder` است: آفست‌های خدمت، `willSend`، و در صورت عدم ارسال `skipReason` فارسی + `skipReasonCode`.
+- اگر زمان نوبت گذشته باشد نوبت ثبت می‌شود ولی `willSend=false` و `skipReasonCode=PAST`.
+
+### پیش‌نمایش یادآوری — `GET /{id}/appointments/reminder-preview?serviceId=&startUtc=&remindersEnabled=`
+
+قبل از ثبت رزرو دستی صدا بزن تا UI سوییچ و هشدار را نشان دهد (بدون ساخت نوبت). فرض وضعیت **Confirmed** است.
+
+نمونه: `willSend=false` + `skipReasonCode=PAST` یعنی برای این ساعت پیامک یادآوری نمی‌رود.
 
 ### مدیریت وقت خالی
 
@@ -481,3 +507,4 @@ Auth: Bearer JWT (مالک سیستم)
 - متن پیام ثابت است و **نیاز به تأیید ادمین ندارد** — `GET /api/BookingSystem/reminder-info`
 - ماژول گزارش SMS: `BookingReminder`
 - مشتری می‌تواند با `remindersEnabled: false` در رزرو عمومی/دستی opt-out کند
+- با جابه‌جایی زمان/خدمت نوبت، وضعیت ارسال یادآوری ریست می‌شود تا برای ساعت جدید دوباره SMS برود

@@ -433,11 +433,19 @@ namespace Api_Vapp.Services
                     }
 
                     // به‌روزرسانی اطلاعات پرداخت
-                    if (!isZarinPal)
+                    if (isZarinPal)
+                    {
+                        // Authority در RefId می‌ماند؛ ref_id زرین‌پال در ReferenceNumber/TransactionId
+                        // هرگز با مقادیر کلاینت overwrite نکن
+                        payment.ReferenceNumber = saleReferenceId ?? payment.ReferenceNumber;
+                    }
+                    else
+                    {
                         payment.RefId = verifyDto.RefId ?? payment.RefId;
-                    payment.TransactionId = verifyDto.TransactionId ?? payment.TransactionId;
-                    payment.CardNumber = verifyDto.CardNumber ?? payment.CardNumber;
-                    payment.ReferenceNumber = saleReferenceId ?? payment.ReferenceNumber;
+                        payment.TransactionId = verifyDto.TransactionId ?? payment.TransactionId;
+                        payment.CardNumber = verifyDto.CardNumber ?? payment.CardNumber;
+                        payment.ReferenceNumber = saleReferenceId ?? payment.ReferenceNumber;
+                    }
 
                     if (isSuccessful)
                     {
@@ -1117,7 +1125,8 @@ namespace Api_Vapp.Services
 
         private static int ToZarinPalAmount(decimal amountToman)
         {
-            // مبالغ سیستم به تومان است؛ currency=IRT به زرین‌پال همان تومان را می‌فرستد
+            // مبالغ سیستم به تومان است؛ با currency=IRT همان تومان به زرین‌پال می‌رود
+            // (مستندات: واحد با پارامتر currency در request مشخص می‌شود؛ verify همان مبلغ)
             return (int)decimal.Round(amountToman, 0, MidpointRounding.AwayFromZero);
         }
 

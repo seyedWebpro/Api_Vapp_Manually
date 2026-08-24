@@ -11,6 +11,7 @@ namespace Api_Vapp.Constants
         public const string LuckyWheel = "LuckyWheel";
         public const string SocialMediaLink = "SocialMediaLink";
         public const string QuickAction = "QuickAction";
+        public const string BankAccount = "BankAccount";
 
         public static readonly string[] All =
         [
@@ -19,7 +20,8 @@ namespace Api_Vapp.Constants
             UserForm,
             LuckyWheel,
             SocialMediaLink,
-            QuickAction
+            QuickAction,
+            BankAccount
         ];
 
         public static bool IsValid(string? itemType)
@@ -41,6 +43,7 @@ namespace Api_Vapp.Constants
             LuckyWheel => "گردونه شانس",
             SocialMediaLink => "لینک شبکه اجتماعی",
             QuickAction => "اقدام سریع",
+            BankAccount => "شماره حساب",
             _ => "ارسال سریع"
         };
 
@@ -52,6 +55,7 @@ namespace Api_Vapp.Constants
             LuckyWheel => "/lucky-wheel",
             SocialMediaLink => "/social-links",
             QuickAction => "/quick-actions",
+            BankAccount => "/bank-accounts",
             _ => "/"
         };
     }

@@ -187,7 +187,15 @@ internal sealed class BookingSystemTestContext : IDisposable
             throw new InvalidOperationException($"Confirm failed: {confirmResult.StatusCode} {confirmResult.Message}");
         }
 
-        return (confirmResult.Data.System.Id, confirmResult.Data.System.PublicUrl);
+        // تست‌ها به اسلات عمومی نیاز دارند؛ بدون تأیید ادمین → CONTENT_PENDING_APPROVAL
+        var systemId = confirmResult.Data.System.Id;
+        var systemRow = await _context.BookingSystems.FirstAsync(b => b.Id == systemId);
+        systemRow.ApprovalStatus = AdminApprovalStatuses.Approved;
+        systemRow.ApprovedAt = DateTime.UtcNow;
+        systemRow.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+
+        return (systemId, confirmResult.Data.System.PublicUrl);
     }
 
     public async Task<(string DraftId, string ServiceTempId)> RunWizardThroughStep4Async(

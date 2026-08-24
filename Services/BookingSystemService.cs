@@ -187,10 +187,11 @@ namespace Api_Vapp.Services
                 }
 
                 var publicUrl = BuildPublicUrl(system.Slug);
+                var smsContent = QuickSendLinkSmsHelper.BuildSmsContent(system.SmsCaption, publicUrl);
 
                 var createMessageResult = await _messageService.CreateMessageAsync(userId, new CreateMessageDto
                 {
-                    Content = publicUrl
+                    Content = smsContent
                 });
 
                 if (!createMessageResult.Success || createMessageResult.Data == null)
@@ -288,6 +289,7 @@ namespace Api_Vapp.Services
             var originalLocation = system.Location;
             var originalActivityType = system.ActivityType;
             var originalSlug = system.Slug;
+            var originalSmsCaption = system.SmsCaption;
 
             if (updateDto.Title != null)
             {
@@ -334,6 +336,11 @@ namespace Api_Vapp.Services
                 }
 
                 system.Slug = slugValidation.NormalizedSlug!;
+            }
+
+            if (updateDto.SmsCaption != null)
+            {
+                system.SmsCaption = QuickSendLinkSmsHelper.NormalizeCaption(updateDto.SmsCaption);
             }
 
             if (updateDto.IsActive.HasValue)
@@ -391,7 +398,8 @@ namespace Api_Vapp.Services
                 !string.Equals(originalDescription, system.Description, StringComparison.Ordinal) ||
                 !string.Equals(originalLocation, system.Location, StringComparison.Ordinal) ||
                 !string.Equals(originalActivityType, system.ActivityType, StringComparison.Ordinal) ||
-                !string.Equals(originalSlug, system.Slug, StringComparison.Ordinal);
+                !string.Equals(originalSlug, system.Slug, StringComparison.Ordinal) ||
+                !string.Equals(originalSmsCaption, system.SmsCaption, StringComparison.Ordinal);
             if (contentChanged)
             {
                 QuickSendContentApprovalHelper.ResetToPending(system);
@@ -628,6 +636,7 @@ namespace Api_Vapp.Services
                     Description = NormalizeOptionalText(step1.Description),
                     Location = NormalizeOptionalText(step1.Location),
                     Slug = slug,
+                    SmsCaption = QuickSendLinkSmsHelper.NormalizeCaption(step1.SmsCaption),
                     Status = BookingSystemStatus.Published,
                     SaveToPhonebook = step1.SaveToPhonebook,
                     IsActive = true,
@@ -1007,6 +1016,7 @@ namespace Api_Vapp.Services
             dto.NotebookIds != null ||
             dto.IsActive.HasValue ||
             dto.Slug != null ||
+            dto.SmsCaption != null ||
             dto.BookingWindowDays.HasValue ||
             dto.UseDefaultBookingWindow == true;
 
@@ -1061,6 +1071,7 @@ namespace Api_Vapp.Services
                 Location = system.Location,
                 Slug = system.Slug,
                 PublicUrl = BuildPublicUrl(system.Slug),
+                SmsCaption = system.SmsCaption,
                 Status = system.Status.ToString(),
                 SaveToPhonebook = system.SaveToPhonebook,
                 IsActive = system.IsActive,

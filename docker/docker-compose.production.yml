@@ -58,14 +58,22 @@ services:
       - DOTNET_RUNNING_IN_CONTAINER=true
       - DatabaseProvider=Docker
       # Only set Jwt__Secret when defined in docker/.env — empty env var overrides appsettings.json
-      - PaymentCallback__GatewayCallbackPublicBaseUrl=${PUBLIC_API_BASE_URL:-https://ok-sms.ir}
-      - PaymentCallback__SuccessUrl=${PUBLIC_FRONTEND_URL:-https://ok-sms.ir}/payment/success
-      - PaymentCallback__FailureUrl=${PUBLIC_FRONTEND_URL:-https://ok-sms.ir}/payment/failed
-      - Frontend__PublicBaseUrl=${PUBLIC_FRONTEND_URL:-https://ok-sms.ir}
-      - FormBuilder__PublicBaseUrl=${FORM_PUBLIC_BASE_URL:-https://ok-sms.ir/form}
-      - LuckyWheel__PublicBaseUrl=${WHEEL_PUBLIC_BASE_URL:-https://ok-sms.ir/wheel}
-      - BusinessCard__PublicBaseUrl=${CARD_PUBLIC_BASE_URL:-https://ok-sms.ir/card}
-      - BookingSystem__PublicBaseUrl=${BOOKING_PUBLIC_BASE_URL:-https://ok-sms.ir/book}
+      - PaymentCallback__GatewayCallbackPublicBaseUrl=${PUBLIC_API_BASE_URL:-https://api.v-application.ir}
+      - PaymentCallback__SuccessUrl=${PUBLIC_FRONTEND_URL:-https://api.v-application.ir}/payment/success
+      - PaymentCallback__FailureUrl=${PUBLIC_FRONTEND_URL:-https://api.v-application.ir}/payment/failed
+      - Frontend__PublicBaseUrl=${PUBLIC_FRONTEND_URL:-https://api.v-application.ir}
+      - FormBuilder__PublicBaseUrl=${FORM_PUBLIC_BASE_URL:-https://api.v-application.ir/form}
+      - LuckyWheel__PublicBaseUrl=${WHEEL_PUBLIC_BASE_URL:-https://api.v-application.ir/wheel}
+      - BusinessCard__PublicBaseUrl=${CARD_PUBLIC_BASE_URL:-https://api.v-application.ir/card}
+      - BookingSystem__PublicBaseUrl=${BOOKING_PUBLIC_BASE_URL:-https://api.v-application.ir/book}
+      # ZarinPal — MerchantId از appsettings.json؛ بقیه از env (خالی نفرست — override می‌کند)
+      - Payment__UseSimulation=${Payment__UseSimulation:-false}
+      - Payment__ApiBaseUrl=${PUBLIC_API_BASE_URL:-https://api.v-application.ir}
+      - ZarinPal__CallbackUrl=${ZarinPal__CallbackUrl:-https://api.v-application.ir/api/Payment/callback/zarinpal}
+      - ZarinPal__Sandbox=${ZarinPal__Sandbox:-false}
+      - ZarinPal__AllowSandboxAutoVerify=${ZarinPal__AllowSandboxAutoVerify:-false}
+      - ZarinPal__Currency=${ZarinPal__Currency:-IRT}
+      - ZarinPal__AppReturnUrl=${ZarinPal__AppReturnUrl:-vapp://payment/result}
       # Sms__ApiKey / Sms__SenderNumber: only set in docker/.env when overriding appsettings.json.
       # Do NOT pass empty defaults — ASP.NET Core env vars override appsettings and break OTP/SMS.
       - ConnectionStrings__DockerConnection=Server=sqlserver;Database=DbVapp;User Id=sa;Password=${SA_PASSWORD:-Vapp@Secure2025!};TrustServerCertificate=True;Encrypt=False;MultipleActiveResultSets=true;Max Pool Size=100;Min Pool Size=5;Connection Timeout=30;Pooling=true

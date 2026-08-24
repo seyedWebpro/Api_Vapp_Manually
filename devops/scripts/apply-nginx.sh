@@ -22,7 +22,12 @@ DEST="/etc/nginx/sites-available/vapp"
 # Always accept localhost health-checks + public IP (and domain when set).
 # Without 127.0.0.1/localhost, curl http://127.0.0.1/... misses this vhost → default site → 502.
 if [[ -n "$DOMAIN_HOST" ]]; then
-  SERVER_NAMES="${DOMAIN_HOST} www.${DOMAIN_HOST} ${SERVER_IP} 127.0.0.1 localhost"
+  if [[ "${DOMAIN_SKIP_WWW:-0}" == "1" ]] || [[ "$DOMAIN_HOST" == *.*.* ]]; then
+    # ساب‌دامین (مثل api.v-application.ir) — www لازم نیست و Certbot را می‌شکند
+    SERVER_NAMES="${DOMAIN_HOST} ${SERVER_IP} 127.0.0.1 localhost"
+  else
+    SERVER_NAMES="${DOMAIN_HOST} www.${DOMAIN_HOST} ${SERVER_IP} 127.0.0.1 localhost"
+  fi
 else
   SERVER_NAMES="${SERVER_IP} 127.0.0.1 localhost"
 fi

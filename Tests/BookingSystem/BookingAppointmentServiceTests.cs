@@ -1,6 +1,8 @@
+using Api_Vapp.Constants;
 using Api_Vapp.DTOs.BookingSystem;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.Models;
+using Microsoft.EntityFrameworkCore;
 using Xunit;
 
 namespace Api_Vapp.Tests.BookingSystem;
@@ -328,6 +330,111 @@ public class BookingAppointmentServiceTests : IAsyncLifetime
         BookingApiAssertions.AssertSuccess(result, 201);
         Assert.Equal(BookingAppointmentStatuses.Confirmed, result.Data!.Status);
         Assert.Equal("توضیح", result.Data.CustomerNote);
+        Assert.True(result.Data.RemindersEnabled);
+        Assert.True(result.Data.Reminder.WillSend);
+        Assert.NotEmpty(result.Data.Reminder.OffsetsMinutes);
+    }
+
+    [Fact]
+    public async Task CreateManualBooking_RemindersDisabled_DoesNotWillSend()
+    {
+        var (systemId, _) = await _ctx.CreateConfirmedSystemAsync();
+        var system = await _ctx.SystemService.GetByIdAsync(systemId, _ctx.OwnerUserId);
+        var serviceId = system.Data!.Services.First().Id;
+        var date = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(8));
+        var slug = system.Data.Slug;
+        var startUtc = (await _ctx.AppointmentService.GetAvailableSlotsAsync(slug, serviceId, date)).Data!.Slots.First().StartUtc;
+
+        var result = await _ctx.AppointmentService.CreateManualBookingAsync(systemId, _ctx.OwnerUserId, new CreateManualBookingDto
+        {
+            ServiceId = serviceId,
+            StartUtc = startUtc,
+            CustomerFullName = "بدون یادآوری",
+            CustomerMobile = "09124444445",
+            RemindersEnabled = false
+        });
+
+        BookingApiAssertions.AssertSuccess(result, 201);
+        Assert.False(result.Data!.RemindersEnabled);
+        Assert.False(result.Data.Reminder.WillSend);
+        Assert.Equal(BookingReminderSkipReasons.Disabled, result.Data.Reminder.SkipReasonCode);
+    }
+
+    [Fact]
+    public async Task GetReminderPreview_PastStart_ReturnsWillSendFalse()
+    {
+        var (systemId, _) = await _ctx.CreateConfirmedSystemAsync();
+        var system = await _ctx.SystemService.GetByIdAsync(systemId, _ctx.OwnerUserId);
+        var serviceId = system.Data!.Services.First().Id;
+
+        var result = await _ctx.AppointmentService.GetReminderPreviewAsync(
+            systemId,
+            _ctx.OwnerUserId,
+            serviceId,
+            DateTime.UtcNow.AddMinutes(-30),
+            remindersEnabled: true);
+
+        BookingApiAssertions.AssertSuccess(result);
+        Assert.False(result.Data!.WillSend);
+        Assert.Equal(BookingReminderSkipReasons.Past, result.Data.SkipReasonCode);
+        Assert.NotEmpty(result.Data.OffsetsMinutes);
+    }
+
+    [Fact]
+    public async Task GetReminderPreview_OtherUser_Returns404()
+    {
+        var (systemId, _) = await _ctx.CreateConfirmedSystemAsync();
+        var system = await _ctx.SystemService.GetByIdAsync(systemId, _ctx.OwnerUserId);
+        var serviceId = system.Data!.Services.First().Id;
+
+        var result = await _ctx.AppointmentService.GetReminderPreviewAsync(
+            systemId,
+            _ctx.OtherUserId,
+            serviceId,
+            DateTime.UtcNow.AddDays(2),
+            remindersEnabled: true);
+
+        BookingApiAssertions.AssertFailure(result, 404);
+    }
+
+    [Fact]
+    public async Task UpdateAppointment_Reschedule_ResetsReminderSendState()
+    {
+        var (systemId, _) = await _ctx.CreateConfirmedSystemAsync();
+        var system = await _ctx.SystemService.GetByIdAsync(systemId, _ctx.OwnerUserId);
+        var serviceId = system.Data!.Services.First().Id;
+        var slug = system.Data.Slug;
+        var date = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(8));
+        var slots = (await _ctx.AppointmentService.GetAvailableSlotsAsync(slug, serviceId, date)).Data!.Slots;
+        Assert.True(slots.Count >= 2);
+
+        var created = await _ctx.AppointmentService.CreateManualBookingAsync(
+            systemId,
+            _ctx.OwnerUserId,
+            new CreateManualBookingDto
+            {
+                ServiceId = serviceId,
+                StartUtc = slots[0].StartUtc,
+                CustomerFullName = "جابجایی",
+                CustomerMobile = "09124444446"
+            });
+        BookingApiAssertions.AssertSuccess(created, 201);
+
+        var entity = await _ctx.Context.BookingAppointments.FirstAsync(a => a.Id == created.Data!.Id);
+        entity.ReminderSentAt = DateTime.UtcNow;
+        entity.ReminderSentOffsetsCsv = "60";
+        await _ctx.Context.SaveChangesAsync();
+
+        var update = await _ctx.AppointmentService.UpdateAppointmentAsync(
+            systemId,
+            created.Data!.Id,
+            _ctx.OwnerUserId,
+            new UpdateBookingAppointmentDto { StartUtc = slots[1].StartUtc });
+
+        BookingApiAssertions.AssertSuccess(update);
+        Assert.Null(update.Data!.ReminderSentAt);
+        Assert.Empty(update.Data.ReminderOffsetsSent);
+        Assert.True(update.Data.Reminder.WillSend);
     }
 
     [Fact]

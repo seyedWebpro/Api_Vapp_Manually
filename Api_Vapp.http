@@ -122,6 +122,7 @@ Content-Type: application/json
   "title": "گردونه جشن تابستانه",
   "description": "توضیح جدید",
   "slug": "summer-festival",
+  "smsCaption": "گردونه شانس جشن تابستانه",
   "saveToPhonebook": true,
   "notebookIds": [1]
 }
@@ -339,6 +340,23 @@ Content-Type: application/json
   "customerMobile": "09121234567"
 }
 
+### پیش‌نمایش یادآوری رزرو دستی
+GET {{Api_Vapp_HostAddress}}/api/BookingSystem/1/appointments/reminder-preview?serviceId=1&startUtc=2026-07-15T05:30:00Z&remindersEnabled=true
+Authorization: Bearer {{token}}
+
+### رزرو دستی (با یادآوری)
+POST {{Api_Vapp_HostAddress}}/api/BookingSystem/1/appointments/manual
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "customerFullName": "سمیه کریمی",
+  "customerMobile": "09131234567",
+  "serviceId": 1,
+  "startUtc": "2026-07-15T05:30:00Z",
+  "remindersEnabled": true
+}
+
 ### ویزارد — مرحله ۱ (نیاز به JWT + online_booking)
 POST {{Api_Vapp_HostAddress}}/api/BookingSystem/validate-step1
 Content-Type: application/json
@@ -360,6 +378,7 @@ GET {{Api_Vapp_HostAddress}}/api/NumberSeeker/tasks?limit=20
 Authorization: Bearer {{token}}
 
 ### متادیتای فرم جستجوی جدید (پلتفرم+شهر+دسته+حد تعداد)
+### allowCustomCategory=true → فیلد دسته Combobox (پیشنهاد + تایپ آزاد)
 GET {{Api_Vapp_HostAddress}}/api/NumberSeeker/form-meta
 Authorization: Bearer {{token}}
 
@@ -371,11 +390,11 @@ Authorization: Bearer {{token}}
 GET {{Api_Vapp_HostAddress}}/api/NumberSeeker/cities
 Authorization: Bearer {{token}}
 
-### دسته‌ها
+### دسته‌ها (پیشنهادها؛ allowCustomCategory=true)
 GET {{Api_Vapp_HostAddress}}/api/NumberSeeker/categories
 Authorization: Bearer {{token}}
 
-### شروع اسکرپ
+### شروع اسکرپ — دسته از لیست پیشنهاد
 POST {{Api_Vapp_HostAddress}}/api/NumberSeeker/scrape
 Content-Type: application/json
 Authorization: Bearer {{token}}
@@ -385,6 +404,18 @@ Authorization: Bearer {{token}}
   "city": "تهران",
   "category": "رستوران",
   "maxPhones": 50
+}
+
+### شروع اسکرپ — دستهٔ دلخواه (متن آزاد)
+POST {{Api_Vapp_HostAddress}}/api/NumberSeeker/scrape
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "source": "divar",
+  "city": "تهران",
+  "category": "دندانپزشکی",
+  "maxPhones": 30
 }
 
 ### Poll وضعیت — صفحه در حال جستجو / نتایج
@@ -652,6 +683,7 @@ Content-Type: application/json
   "templateKey": "business",
   "title": "سالن زیبایی زهرا",
   "slug": "zahra-salon-test",
+  "smsCaption": "کارت ویزیت سالن زیبایی زهرا",
   "sliderEnabled": true,
   "descriptionEnabled": true,
   "servicesEnabled": true,
@@ -691,7 +723,8 @@ Content-Type: application/json
 
 {
   "title": "سالن زیبایی زهرا",
-  "slug": "zahra-salon-test"
+  "slug": "zahra-salon-test",
+  "smsCaption": "کارت ویزیت سالن زیبایی زهرا"
 }
 
 ### به‌روزرسانی بخش‌ها
@@ -1262,7 +1295,7 @@ Content-Type: application/json
 
 ###
 
-# --- تأیید یک‌باره ارسال سریع (کارت / رزرو / فرم / گردونه / لینک / اقدام) ---
+# --- تأیید یک‌باره ارسال سریع (کارت / رزرو / فرم / گردونه / لینک / اقدام / شماره حساب) ---
 
 ### لیست در انتظار تأیید
 GET {{Api_Vapp_HostAddress}}/api/Admin/QuickSendApproval/pending?page=1&pageSize=20
@@ -1270,6 +1303,10 @@ Authorization: Bearer {{adminToken}}
 
 ### فیلتر نوع آیتم
 GET {{Api_Vapp_HostAddress}}/api/Admin/QuickSendApproval/pending?itemType=BusinessCard
+Authorization: Bearer {{adminToken}}
+
+### فیلتر شماره حساب
+GET {{Api_Vapp_HostAddress}}/api/Admin/QuickSendApproval?status=Pending&itemType=BankAccount&page=1&pageSize=20
 Authorization: Bearer {{adminToken}}
 
 ### همه وضعیت‌ها
@@ -1292,6 +1329,107 @@ Content-Type: application/json
 {
   "reason": "محتوای لینک عمومی قابل تأیید نیست"
 }
+
+### تأیید شماره حساب
+POST {{Api_Vapp_HostAddress}}/api/Admin/QuickSendApproval/BankAccount/1/approve
+Authorization: Bearer {{adminToken}}
+
+### رد شماره حساب
+POST {{Api_Vapp_HostAddress}}/api/Admin/QuickSendApproval/BankAccount/1/reject
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "reason": "اطلاعات بانکی نیاز به اصلاح دارد"
+}
+
+###
+
+# --- BankAccount — شماره حساب ارسال سریع ---
+
+### لیست شماره حساب‌ها
+GET {{Api_Vapp_HostAddress}}/api/BankAccount?pageNumber=1&pageSize=10
+Authorization: Bearer {{token}}
+
+### ایجاد شماره حساب
+POST {{Api_Vapp_HostAddress}}/api/BankAccount
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "title": "حساب ملت",
+  "accountNumber": "1234567890",
+  "cardNumber": "6037991234567890",
+  "shebaNumber": "IR120170000000123456789001",
+  "isDefault": true
+}
+
+### جزئیات
+GET {{Api_Vapp_HostAddress}}/api/BankAccount/1
+Authorization: Bearer {{token}}
+
+### به‌روزرسانی
+POST {{Api_Vapp_HostAddress}}/api/BankAccount/1/update
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "title": "حساب ملت - به‌روز"
+}
+
+### پیش‌فرض
+POST {{Api_Vapp_HostAddress}}/api/BankAccount/1/set-default
+Authorization: Bearer {{token}}
+
+### ارسال سریع (پس از تأیید ادمین)
+POST {{Api_Vapp_HostAddress}}/api/BankAccount/quick-send
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "contactId": 1,
+  "bankAccountId": 1
+}
+
+### حذف
+POST {{Api_Vapp_HostAddress}}/api/BankAccount/1/delete
+
+# --- SocialMediaLink — لینک سوشیال + عنوان ارسال سریع ---
+
+### لیست
+GET {{Api_Vapp_HostAddress}}/api/SocialMediaLink?pageNumber=1&pageSize=10
+
+### ایجاد
+POST {{Api_Vapp_HostAddress}}/api/SocialMediaLink
+Content-Type: application/json
+
+{
+  "platform": "Instagram",
+  "linkUrl": "https://instagram.com/yourpage",
+  "smsCaption": "پیج اینستاگرام ما",
+  "isDefault": true
+}
+
+### جزئیات
+GET {{Api_Vapp_HostAddress}}/api/SocialMediaLink/1
+
+### ویرایش (عنوان ارسال سریع)
+POST {{Api_Vapp_HostAddress}}/api/SocialMediaLink/1/update
+Content-Type: application/json
+
+{
+  "smsCaption": "کانال اینستاگرام فروشگاه"
+}
+
+### ارسال سریع
+POST {{Api_Vapp_HostAddress}}/api/SocialMediaLink/quick-send
+Content-Type: application/json
+
+{
+  "contactId": 1,
+  "linkId": 1
+}
+Authorization: Bearer {{token}}
 
 ###
 
@@ -1333,7 +1471,7 @@ Content-Type: application/json
   "targetTagIds": null
 }
 
-### مرحله ۳ — تاریخ
+### مرحله ۳ — تاریخ + متن پایانی پیامک
 POST {{Api_Vapp_HostAddress}}/api/ReferralProgram/settings/save
 Authorization: Bearer {{token}}
 Content-Type: application/json
@@ -1342,7 +1480,22 @@ Content-Type: application/json
   "draftId": "REPLACE_DRAFT_ID",
   "settings": {
     "startDate": "2026-08-11T00:00:00Z",
-    "endDate": "2026-09-11T00:00:00Z"
+    "endDate": "2026-09-11T00:00:00Z",
+    "inviteSmsClosingText": "کد را به دوستانتان بدهید تا با استفاده از آن پاداش فعال شود."
+  }
+}
+
+### مرحله ۳ — متن سفارشی (نیاز به تأیید ادمین)
+POST {{Api_Vapp_HostAddress}}/api/ReferralProgram/settings/save
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "draftId": "REPLACE_DRAFT_ID",
+  "settings": {
+    "startDate": "2026-08-11T00:00:00Z",
+    "endDate": "2026-09-11T00:00:00Z",
+    "inviteSmsClosingText": "کد را بدهید تا با خرید از کلینیک زیبایی آوا پاداش فعال شود."
   }
 }
 

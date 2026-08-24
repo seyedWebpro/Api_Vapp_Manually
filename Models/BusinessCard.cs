@@ -25,6 +25,11 @@ namespace Api_Vapp.Models
         public string? Slug { get; set; }
 
         /// <summary>
+        /// عنوان اختیاری ارسال سریع SMS — قبل از لینک عمومی در متن پیام قرار می‌گیرد.
+        /// </summary>
+        public string? SmsCaption { get; set; }
+
+        /// <summary>
         /// کلید قالب از سمت کلاینت (مثلاً business / classic)
         /// </summary>
         public string? TemplateKey { get; set; }

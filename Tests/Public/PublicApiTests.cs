@@ -1,4 +1,5 @@
 using Api_Vapp.Configuration;
+using Api_Vapp.Constants;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.DTOs.LuckyWheel;
 using Api_Vapp.DTOs.Public;
@@ -24,6 +25,7 @@ public class PublicApiTests : IAsyncLifetime
     private LuckyWheelTestContext _wheelCtx = null!;
     private IUserFormPublicService _formPublicService = null!;
     private ILuckyWheelPublicService _wheelPublicService = null!;
+    private RecordingUserSmsBillingService _wheelSmsBilling = null!;
     private FakeSmsService _sms = null!;
 
     public async Task InitializeAsync()
@@ -68,11 +70,12 @@ public class PublicApiTests : IAsyncLifetime
             options,
             configuration,
             NullLogger<PublicParticipantSessionService>.Instance);
+        _wheelSmsBilling = new RecordingUserSmsBillingService();
         var wheelOtpService = new PublicParticipantOtpService(
             _wheelCtx.Context,
             cache,
             _sms,
-            new PublicApiFakeUserSmsBillingService(),
+            _wheelSmsBilling,
             new FakeHostEnvironment(),
             NullLogger<PublicParticipantOtpService>.Instance);
 
@@ -82,6 +85,7 @@ public class PublicApiTests : IAsyncLifetime
             new PublicPhonebookService(_wheelCtx.Context),
             wheelSessionService,
             wheelOtpService,
+            _wheelSmsBilling,
             new FakeHostEnvironment(),
             NullLogger<LuckyWheelPublicService>.Instance);
     }
@@ -316,6 +320,58 @@ public class PublicApiTests : IAsyncLifetime
         Assert.False(string.IsNullOrWhiteSpace(result.Data!.WonItemName));
         Assert.False(string.IsNullOrWhiteSpace(result.Data.PrizeCode));
         Assert.StartsWith("LW-", result.Data.PrizeCode);
+        Assert.True(result.Data.SmsSent);
+
+        var prizeSms = Assert.Single(
+            _wheelSmsBilling.Sent,
+            x => x.SourceModule == SmsSourceModules.LuckyWheelWin);
+        Assert.Equal(_wheelCtx.OwnerUserId, prizeSms.UserId);
+        Assert.Equal("09123334455", prizeSms.Mobile);
+        Assert.Equal(result.Data.ParticipantId, prizeSms.EntityId);
+        Assert.Contains(result.Data.PrizeCode, prizeSms.Message, StringComparison.Ordinal);
+        Assert.Contains(result.Data.WonItemName, prizeSms.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SpinPublicWheel_InsufficientWallet_Returns201WithoutSms()
+    {
+        var slug = $"nowallet-{Guid.NewGuid():N}"[..20];
+        var wheelId = await _wheelCtx.CreateWheelWithItemsAsync();
+        await _wheelCtx.Service.PublishAsync(wheelId, _wheelCtx.OwnerUserId, new PublishLuckyWheelDto
+        {
+            Slug = slug
+        });
+        await _wheelCtx.ApproveWheelAsync(wheelId);
+
+        _wheelSmsBilling.ForceInsufficientBalance = true;
+
+        var register = await _wheelPublicService.RegisterAsync(slug, new RegisterPublicParticipantDto
+        {
+            FirstName = "سارا",
+            LastName = "محمدی",
+            ParticipantMobile = "09125556677"
+        });
+        Assert.True(register.Success, $"Register failed: status={register.StatusCode}, code={register.ErrorCode}, message={register.Message}");
+        Assert.False(string.IsNullOrWhiteSpace(register.Data!.OtpCode));
+
+        var verify = await _wheelPublicService.VerifyOtpAsync(slug, new VerifyPublicParticipantOtpDto
+        {
+            AccessToken = register.Data.AccessToken,
+            OtpCode = register.Data.OtpCode!
+        });
+        Assert.True(verify.Success);
+        Assert.True(verify.Data!.IsPhoneVerified);
+
+        var result = await _wheelPublicService.SpinAsync(slug, new SpinLuckyWheelPublicDto
+        {
+            AccessToken = register.Data.AccessToken
+        });
+
+        Assert.True(result.Success);
+        Assert.Equal(201, result.StatusCode);
+        Assert.False(string.IsNullOrWhiteSpace(result.Data!.PrizeCode));
+        Assert.False(result.Data.SmsSent);
+        Assert.DoesNotContain(_wheelSmsBilling.Sent, x => x.SourceModule == SmsSourceModules.LuckyWheelWin);
     }
 
     [Fact]
@@ -425,6 +481,53 @@ public class PublicApiTests : IAsyncLifetime
             string? sourceEntityLabel = null,
             CancellationToken cancellationToken = default) =>
             Task.FromResult(UserSmsSendResult.Success(1, 160m, 1, 0));
+    }
+
+    private sealed class RecordingUserSmsBillingService : IUserSmsBillingService
+    {
+        public List<(int UserId, string Mobile, string Message, string SourceModule, int? EntityId)> Sent { get; } = new();
+
+        public bool ForceInsufficientBalance { get; set; }
+
+        public Task<(decimal Cost, int PartsCount)> EstimateCostAsync(
+            string message,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult((160m, 1));
+
+        public Task<UserSmsSendResult> TrySendAsync(
+            int userId,
+            string mobile,
+            string message,
+            string sourceModule,
+            string walletTitle,
+            string? walletDescription = null,
+            int? sourceEntityId = null,
+            string? sourceEntityLabel = null,
+            CancellationToken cancellationToken = default)
+        {
+            if (ForceInsufficientBalance)
+            {
+                return Task.FromResult(UserSmsSendResult.Skipped(160m, 1));
+            }
+
+            Sent.Add((userId, mobile, message, sourceModule, sourceEntityId));
+            return Task.FromResult(UserSmsSendResult.Success(1, 160m, 1, 0));
+        }
+
+        public Task<UserSmsSendResult> TrySendOtpAsync(
+            int userId,
+            string mobile,
+            string otpCode,
+            string templateType,
+            string sourceModule,
+            string walletTitle,
+            string? walletDescription = null,
+            int? sourceEntityId = null,
+            string? sourceEntityLabel = null,
+            CancellationToken cancellationToken = default) =>
+            TrySendAsync(
+                userId, mobile, otpCode, sourceModule, walletTitle,
+                walletDescription, sourceEntityId, sourceEntityLabel, cancellationToken);
     }
 
     private sealed class FakeSmsService : ISmsService

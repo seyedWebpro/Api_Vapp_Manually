@@ -166,6 +166,7 @@ namespace Api_Vapp.Services.Admin
                 await _context.SaveChangesAsync();
 
                 InvalidatePublicCacheIfNeeded(normalized, entity);
+                InvalidateOwnerModuleCaches(normalized, entity.UserId);
 
                 await _audit.WriteAsync(new AuditEntry
                 {
@@ -201,7 +202,7 @@ namespace Api_Vapp.Services.Admin
                         title = before.Title
                     }));
 
-                return ApiResponse<bool>.CreateSuccess(true, $"{persian} تأیید و منتشر شد");
+                return ApiResponse<bool>.CreateSuccess(true, BuildApproveSuccessMessage(normalized, persian));
             }
             catch (Exception ex)
             {
@@ -247,6 +248,7 @@ namespace Api_Vapp.Services.Admin
                 await _context.SaveChangesAsync();
 
                 InvalidatePublicCacheIfNeeded(normalized, entity);
+                InvalidateOwnerModuleCaches(normalized, entity.UserId);
 
                 await _audit.WriteAsync(new AuditEntry
                 {
@@ -284,7 +286,7 @@ namespace Api_Vapp.Services.Admin
                         rejectionReason = reason
                     }));
 
-                return ApiResponse<bool>.CreateSuccess(true, $"{persian} رد شد و لینک عمومی غیرفعال ماند");
+                return ApiResponse<bool>.CreateSuccess(true, BuildRejectSuccessMessage(normalized, persian));
             }
             catch (Exception ex)
             {
@@ -321,7 +323,10 @@ namespace Api_Vapp.Services.Admin
             var actions = await _context.QuickActions.AsNoTracking()
                 .CountAsync(a => !a.IsDeleted && a.ApprovalStatus == AdminApprovalStatuses.Pending);
 
-            return cards + bookings + forms + wheels + links + actions;
+            var bankAccounts = await _context.BankAccounts.AsNoTracking()
+                .CountAsync(b => !b.IsDeleted && b.ApprovalStatus == AdminApprovalStatuses.Pending);
+
+            return cards + bookings + forms + wheels + links + actions + bankAccounts;
         }
 
         private IQueryable<QuickSendApprovalResponseDto> BuildUnifiedQuery(string? status, string? itemType)
@@ -349,7 +354,7 @@ namespace Api_Vapp.Services.Admin
                         UserPhoneNumber = u.PhoneNumber,
                         UserFullName = u.FullName,
                         Title = c.Title,
-                        ContentPreview = c.Slug,
+                        ContentPreview = c.SmsCaption,
                         PublicUrl = c.Slug,
                         IsActive = c.IsActive,
                         ApprovalStatus = c.ApprovalStatus,
@@ -377,7 +382,7 @@ namespace Api_Vapp.Services.Admin
                         UserPhoneNumber = u.PhoneNumber,
                         UserFullName = u.FullName,
                         Title = b.Title,
-                        ContentPreview = b.Slug,
+                        ContentPreview = b.SmsCaption,
                         PublicUrl = b.Slug,
                         IsActive = b.IsActive,
                         ApprovalStatus = b.ApprovalStatus,
@@ -405,7 +410,7 @@ namespace Api_Vapp.Services.Admin
                         UserPhoneNumber = u.PhoneNumber,
                         UserFullName = u.FullName,
                         Title = f.Title,
-                        ContentPreview = f.Slug,
+                        ContentPreview = f.SmsCaption,
                         PublicUrl = f.Slug,
                         IsActive = f.IsActive,
                         ApprovalStatus = f.ApprovalStatus,
@@ -433,7 +438,7 @@ namespace Api_Vapp.Services.Admin
                         UserPhoneNumber = u.PhoneNumber,
                         UserFullName = u.FullName,
                         Title = w.Title,
-                        ContentPreview = w.Slug,
+                        ContentPreview = w.SmsCaption,
                         PublicUrl = w.Slug,
                         IsActive = w.IsActive,
                         ApprovalStatus = w.ApprovalStatus,
@@ -461,7 +466,7 @@ namespace Api_Vapp.Services.Admin
                         UserPhoneNumber = u.PhoneNumber,
                         UserFullName = u.FullName,
                         Title = l.Platform,
-                        ContentPreview = l.LinkUrl,
+                        ContentPreview = l.SmsCaption,
                         PublicUrl = l.LinkUrl,
                         IsActive = l.IsActive,
                         ApprovalStatus = l.ApprovalStatus,
@@ -501,8 +506,59 @@ namespace Api_Vapp.Services.Admin
                     });
             }
 
+            if (itemType == null || itemType == QuickSendItemTypes.BankAccount)
+            {
+                Append(
+                    from b in _context.BankAccounts.AsNoTracking()
+                    join u in _context.Users.AsNoTracking() on b.UserId equals u.Id
+                    where !b.IsDeleted
+                        && (status == null || b.ApprovalStatus == status)
+                    select new QuickSendApprovalResponseDto
+                    {
+                        ItemType = QuickSendItemTypes.BankAccount,
+                        ItemTypeTitle = "شماره حساب",
+                        Id = b.Id,
+                        UserId = b.UserId,
+                        UserPhoneNumber = u.PhoneNumber,
+                        UserFullName = u.FullName,
+                        Title = b.Title,
+                        ContentPreview =
+                            (b.AccountNumber != null ? "حساب:" + b.AccountNumber + " | " : "")
+                            + (b.CardNumber != null ? "کارت:" + b.CardNumber + " | " : "")
+                            + (b.ShebaNumber != null ? "شبا:" + b.ShebaNumber : ""),
+                        PublicUrl = null,
+                        IsActive = b.IsActive,
+                        ApprovalStatus = b.ApprovalStatus,
+                        RejectionReason = b.RejectionReason,
+                        CreatedAt = b.CreatedAt,
+                        ApprovedAt = b.ApprovedAt,
+                        UpdatedAt = b.UpdatedAt,
+                        SkipsMessageApprovalQueue = b.ApprovalStatus == AdminApprovalStatuses.Approved && b.IsActive
+                    });
+            }
+
             return query ?? Enumerable.Empty<QuickSendApprovalResponseDto>().AsQueryable();
         }
+
+        /// <summary>
+        /// آیتم‌هایی که پس از تأیید، لینک عمومی فعال می‌شود.
+        /// شماره حساب / لینک سوشیال / اقدام سریع فقط برای ارسال SMS تأیید می‌شوند.
+        /// </summary>
+        private static bool HasPublicPublishSurface(string itemType) =>
+            itemType is QuickSendItemTypes.BusinessCard
+                or QuickSendItemTypes.BookingSystem
+                or QuickSendItemTypes.UserForm
+                or QuickSendItemTypes.LuckyWheel;
+
+        private static string BuildApproveSuccessMessage(string itemType, string persian) =>
+            HasPublicPublishSurface(itemType)
+                ? $"{persian} تأیید و منتشر شد"
+                : $"{persian} تأیید شد";
+
+        private static string BuildRejectSuccessMessage(string itemType, string persian) =>
+            HasPublicPublishSurface(itemType)
+                ? $"{persian} رد شد و لینک عمومی غیرفعال ماند"
+                : $"{persian} رد شد";
 
         private void InvalidatePublicCacheIfNeeded(string itemType, TrackedQuickSendEntity entity)
         {
@@ -517,6 +573,15 @@ namespace Api_Vapp.Services.Admin
             }
         }
 
+        /// <summary>
+        /// بعد از تأیید/رد ادمین، کش لیست مالک ماژول را پاک می‌کند تا approvalStatus کهنه نماند.
+        /// </summary>
+        private void InvalidateOwnerModuleCaches(string itemType, int ownerUserId)
+        {
+            if (itemType == QuickSendItemTypes.SocialMediaLink)
+                SocialMediaLinkService.InvalidateListCache(_cache, ownerUserId);
+        }
+
         private void EnrichPublicUrl(QuickSendApprovalResponseDto item)
         {
             static string? JoinBase(string? baseUrl, string? slug)
@@ -528,16 +593,38 @@ namespace Api_Vapp.Services.Admin
                 return $"{baseUrl.TrimEnd('/')}/{slug.TrimStart('/')}";
             }
 
+            var isLinkQuickSend = item.ItemType is QuickSendItemTypes.BusinessCard
+                or QuickSendItemTypes.BookingSystem
+                or QuickSendItemTypes.UserForm
+                or QuickSendItemTypes.LuckyWheel
+                or QuickSendItemTypes.SocialMediaLink;
+
+            if (isLinkQuickSend)
+            {
+                var slugOrUrl = item.PublicUrl;
+                var caption = item.ContentPreview;
+                item.PublicUrl = item.ItemType switch
+                {
+                    QuickSendItemTypes.BusinessCard => JoinBase(_businessCardOptions.PublicBaseUrl, slugOrUrl),
+                    QuickSendItemTypes.BookingSystem => JoinBase(_bookingOptions.PublicBaseUrl, slugOrUrl),
+                    QuickSendItemTypes.UserForm => JoinBase(_formOptions.PublicBaseUrl, slugOrUrl),
+                    QuickSendItemTypes.LuckyWheel => JoinBase(_luckyWheelOptions.PublicBaseUrl, slugOrUrl),
+                    QuickSendItemTypes.SocialMediaLink => slugOrUrl,
+                    _ => item.PublicUrl
+                };
+                item.ContentPreview = QuickSendLinkSmsHelper.BuildSmsContent(caption, item.PublicUrl ?? string.Empty);
+                return;
+            }
+
             item.PublicUrl = item.ItemType switch
             {
-                QuickSendItemTypes.BusinessCard => JoinBase(_businessCardOptions.PublicBaseUrl, item.ContentPreview),
-                QuickSendItemTypes.BookingSystem => JoinBase(_bookingOptions.PublicBaseUrl, item.ContentPreview),
-                QuickSendItemTypes.UserForm => JoinBase(_formOptions.PublicBaseUrl, item.ContentPreview),
-                QuickSendItemTypes.LuckyWheel => JoinBase(_luckyWheelOptions.PublicBaseUrl, item.ContentPreview),
-                QuickSendItemTypes.SocialMediaLink => item.ContentPreview,
                 QuickSendItemTypes.QuickAction => item.ContentPreview,
+                QuickSendItemTypes.BankAccount => null,
                 _ => item.PublicUrl
             };
+
+            if (item.ItemType == QuickSendItemTypes.BankAccount && !string.IsNullOrWhiteSpace(item.ContentPreview))
+                item.ContentPreview = item.ContentPreview.Trim().TrimEnd('|', ' ').Trim();
         }
 
         private async Task<TrackedQuickSendEntity?> LoadTrackedEntityAsync(string itemType, int id)
@@ -579,6 +666,14 @@ namespace Api_Vapp.Services.Admin
                     var action = await _context.QuickActions
                         .FirstOrDefaultAsync(a => a.Id == id && !a.IsDeleted);
                     return action == null ? null : new TrackedQuickSendEntity(action.Id, action.UserId, action.Name, action);
+                }
+                case QuickSendItemTypes.BankAccount:
+                {
+                    var bankAccount = await _context.BankAccounts
+                        .FirstOrDefaultAsync(b => b.Id == id && !b.IsDeleted);
+                    return bankAccount == null
+                        ? null
+                        : new TrackedQuickSendEntity(bankAccount.Id, bankAccount.UserId, bankAccount.Title, bankAccount);
                 }
                 default:
                     return null;

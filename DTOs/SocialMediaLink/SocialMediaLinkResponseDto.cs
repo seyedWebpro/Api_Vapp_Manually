@@ -8,6 +8,10 @@ namespace Api_Vapp.DTOs.SocialMediaLink
         public int Id { get; set; }
         public string Platform { get; set; } = string.Empty;
         public string LinkUrl { get; set; } = string.Empty;
+
+        /// <summary>عنوان اختیاری ارسال سریع SMS (قبل از لینک)</summary>
+        public string? SmsCaption { get; set; }
+
         public bool IsActive { get; set; }
         public bool IsDefault { get; set; }
         public DateTime CreatedAt { get; set; }

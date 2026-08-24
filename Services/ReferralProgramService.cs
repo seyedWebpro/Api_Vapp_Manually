@@ -150,6 +150,18 @@ namespace Api_Vapp.Services
 
             program.IsDeleted = true;
             program.UpdatedAt = DateTime.UtcNow;
+
+            var pendingApprovals = await _context.SmsApprovalRequests
+                .Where(r => r.ReferralProgramId == id
+                    && !r.IsDeleted
+                    && r.Status != AdminApprovalStatuses.Approved)
+                .ToListAsync();
+            foreach (var approval in pendingApprovals)
+            {
+                approval.IsDeleted = true;
+                approval.UpdatedAt = DateTime.UtcNow;
+            }
+
             await _context.SaveChangesAsync();
             await _contactCodeRepository.SoftDeleteByProgramIdAsync(id, userId);
 
@@ -494,6 +506,16 @@ namespace Api_Vapp.Services
                 }
             }
 
+            if (!ReferralInviteSmsHelper.TryValidateClosingText(step3.InviteSmsClosingText, out var closingError))
+            {
+                return ApiResponse<ConfirmReferralProgramResponseDto>.BadRequest(
+                    closingError!,
+                    errorCode: ErrorCodes.ValidationFailed);
+            }
+
+            var closingText = ReferralInviteSmsHelper.NormalizeClosingText(step3.InviteSmsClosingText);
+            var isCustomClosing = ReferralInviteSmsHelper.IsCustomClosingText(closingText);
+
             var isReferrerRewardActive = step1.IsReferrerRewardActive && step1.ReferrerRewardValue > 0;
             var program = new ReferralProgram
             {
@@ -515,6 +537,8 @@ namespace Api_Vapp.Services
                     : null,
                 StartDate = startDate,
                 EndDate = endDate,
+                InviteSmsClosingText = closingText,
+                InviteSmsApprovalStatus = AdminApprovalStatuses.Pending,
                 CreatedAt = DateTime.UtcNow
             };
 
@@ -522,8 +546,27 @@ namespace Api_Vapp.Services
             await _context.SaveChangesAsync();
 
             var personalCodes = await CreatePersonalCodesAsync(program, contactIds);
-            var smsResult = await SendReferralInviteSmsAsync(program, personalCodes);
-            program.NotifiedContactsCount = smsResult.SentCount;
+            var smsSentCount = 0;
+            var smsFailedCount = 0;
+            var smsQueuedForApproval = false;
+
+            if (isCustomClosing)
+            {
+                await UpsertReferralInviteApprovalRequestAsync(program, personalCodes);
+                smsQueuedForApproval = true;
+            }
+            else
+            {
+                var smsResult = await SendReferralInviteSmsAsync(program, personalCodes);
+                smsSentCount = smsResult.SentCount;
+                smsFailedCount = smsResult.FailedCount;
+                program.NotifiedContactsCount = smsResult.SentCount;
+                if (smsResult.SentCount > 0)
+                {
+                    program.InviteSmsApprovalStatus = AdminApprovalStatuses.Approved;
+                }
+            }
+
             program.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 
@@ -541,23 +584,101 @@ namespace Api_Vapp.Services
                     title = program.Title,
                     publicCode = program.PublicCode,
                     personalCodesCount = personalCodes.Count,
-                    isActive = program.IsActive
+                    isActive = program.IsActive,
+                    inviteSmsApprovalStatus = program.InviteSmsApprovalStatus,
+                    inviteSmsIsCustom = isCustomClosing,
+                    smsQueuedForApproval
                 }
             });
 
             _logger.LogInformation(
-                "برنامه پاداش {ProgramId} با {CodesCount} کد شخصی برای کاربر {UserId} ایجاد شد",
-                program.Id, personalCodes.Count, userId);
+                "برنامه پاداش {ProgramId} با {CodesCount} کد شخصی برای کاربر {UserId} ایجاد شد — SmsQueued={Queued}",
+                program.Id, personalCodes.Count, userId, smsQueuedForApproval);
+
+            var confirmMessage = smsQueuedForApproval
+                ? "برنامه پاداش ثبت شد. متن پیامک پس از تأیید ادمین ارسال می‌شود."
+                : "برنامه پاداش با موفقیت ثبت شد";
 
             return ApiResponse<ConfirmReferralProgramResponseDto>.CreateSuccess(
                 new ConfirmReferralProgramResponseDto
                 {
                     Program = MapToDto(program, personalCodes.Count),
-                    SmsSentCount = smsResult.SentCount,
-                    SmsFailedCount = smsResult.FailedCount
+                    SmsSentCount = smsSentCount,
+                    SmsFailedCount = smsFailedCount,
+                    SmsQueuedForApproval = smsQueuedForApproval,
+                    InviteSmsApprovalStatus = program.InviteSmsApprovalStatus
                 },
-                "برنامه پاداش با موفقیت ثبت شد",
+                confirmMessage,
                 201);
+        }
+
+        public async Task<ApiResponse<ReferralInviteSendResultDto>> SendQueuedInviteSmsAsync(int programId)
+        {
+            try
+            {
+                var program = await _context.ReferralPrograms
+                    .FirstOrDefaultAsync(p => p.Id == programId && !p.IsDeleted);
+
+                if (program == null)
+                {
+                    return ApiResponse<ReferralInviteSendResultDto>.NotFound("برنامه پاداش یافت نشد");
+                }
+
+                if (program.NotifiedContactsCount > 0
+                    && string.Equals(program.InviteSmsApprovalStatus, AdminApprovalStatuses.Approved, StringComparison.Ordinal))
+                {
+                    return ApiResponse<ReferralInviteSendResultDto>.CreateSuccess(
+                        new ReferralInviteSendResultDto
+                        {
+                            SentCount = program.NotifiedContactsCount,
+                            FailedCount = 0
+                        },
+                        "پیامک دعوت قبلاً ارسال شده است");
+                }
+
+                if (!string.Equals(program.InviteSmsApprovalStatus, AdminApprovalStatuses.Pending, StringComparison.Ordinal))
+                {
+                    return ApiResponse<ReferralInviteSendResultDto>.BadRequest(
+                        "وضعیت تأیید متن پیامک برای ارسال مناسب نیست");
+                }
+
+                var personalCodes = await _context.ReferralContactCodes
+                    .Where(c => c.ReferralProgramId == programId && !c.IsDeleted)
+                    .ToListAsync();
+
+                if (!personalCodes.Any())
+                {
+                    return ApiResponse<ReferralInviteSendResultDto>.BadRequest("کد شخصی برای ارسال یافت نشد");
+                }
+
+                var smsResult = await SendReferralInviteSmsAsync(program, personalCodes);
+                if (smsResult.SentCount == 0)
+                {
+                    return ApiResponse<ReferralInviteSendResultDto>.BadRequest(
+                        smsResult.FailedCount > 0
+                            ? "هیچ پیامکی ارسال نشد"
+                            : "گیرنده‌ای برای ارسال یافت نشد");
+                }
+
+                program.NotifiedContactsCount = smsResult.SentCount;
+                program.InviteSmsApprovalStatus = AdminApprovalStatuses.Approved;
+                program.InviteSmsRejectionReason = null;
+                program.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+
+                return ApiResponse<ReferralInviteSendResultDto>.CreateSuccess(
+                    new ReferralInviteSendResultDto
+                    {
+                        SentCount = smsResult.SentCount,
+                        FailedCount = smsResult.FailedCount
+                    },
+                    "پیامک دعوت ارسال شد");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "خطا در ارسال پیامک دعوت صف‌شده برنامه {ProgramId}", programId);
+                return ApiResponse<ReferralInviteSendResultDto>.InternalServerError(ControlledErrorHelper.SmsFailed);
+            }
         }
 
         public async Task<ApiResponse<InquireReferralCodeResponseDto>> InquireCodeAsync(int userId, InquireReferralCodeDto request)
@@ -1196,8 +1317,54 @@ namespace Api_Vapp.Services
                     program.EndDate = endDate;
                 }
 
+                InviteSmsClosingUpdateAction inviteSmsAction = InviteSmsClosingUpdateAction.None;
+                if (updateDto.InviteSmsClosingText != null)
+                {
+                    var closingResult = ApplyInviteSmsClosingTextUpdate(program, updateDto.InviteSmsClosingText);
+                    if (!closingResult.Success)
+                    {
+                        return ApiResponse<ReferralProgramDto>.BadRequest(
+                            closingResult.ErrorMessage!,
+                            errorCode: ErrorCodes.ValidationFailed);
+                    }
+
+                    inviteSmsAction = closingResult.Action;
+                }
+
                 program.UpdatedAt = DateTime.UtcNow;
                 await _context.SaveChangesAsync();
+
+                if (inviteSmsAction == InviteSmsClosingUpdateAction.SendNow)
+                {
+                    await SoftDeleteOpenReferralInviteApprovalsAsync(program.Id);
+                    var personalCodes = await _context.ReferralContactCodes
+                        .Where(c => c.ReferralProgramId == program.Id && !c.IsDeleted)
+                        .ToListAsync();
+                    var smsResult = await SendReferralInviteSmsAsync(program, personalCodes);
+                    if (smsResult.SentCount > 0)
+                    {
+                        program.NotifiedContactsCount = smsResult.SentCount;
+                        program.InviteSmsApprovalStatus = AdminApprovalStatuses.Approved;
+                        program.InviteSmsRejectionReason = null;
+                    }
+                    else
+                    {
+                        // متن پیش‌فرض است ولی ارسال نشد — Pending می‌ماند تا با ذخیره مجدد قابل تلاش باشد
+                        program.InviteSmsApprovalStatus = AdminApprovalStatuses.Pending;
+                    }
+
+                    program.UpdatedAt = DateTime.UtcNow;
+                    await _context.SaveChangesAsync();
+                }
+                else if (inviteSmsAction == InviteSmsClosingUpdateAction.QueueApproval)
+                {
+                    var personalCodes = await _context.ReferralContactCodes
+                        .Where(c => c.ReferralProgramId == program.Id && !c.IsDeleted)
+                        .ToListAsync();
+                    await SoftDeleteOpenReferralInviteApprovalsExceptLatestPendingAsync(program.Id);
+                    await UpsertReferralInviteApprovalRequestAsync(program, personalCodes);
+                    await _context.SaveChangesAsync();
+                }
 
                 await _audit.WriteAsync(new AuditEntry
                 {
@@ -1206,7 +1373,12 @@ namespace Api_Vapp.Services
                     EntityType = AuditEntityTypes.ReferralProgram,
                     EntityId = program.Id.ToString(),
                     ActorUserId = userId,
-                    After = new { title = program.Title, isActive = program.IsActive }
+                    After = new
+                    {
+                        title = program.Title,
+                        isActive = program.IsActive,
+                        inviteSmsApprovalStatus = program.InviteSmsApprovalStatus
+                    }
                 });
 
                 var codesCount = await _contactCodeRepository.GetCountByProgramIdAsync(id, userId);
@@ -1236,7 +1408,8 @@ namespace Api_Vapp.Services
                 || updateDto.ReferrerRewardValue.HasValue
                 || updateDto.IsCustomerRewardActive.HasValue
                 || updateDto.CustomerRewardValue.HasValue
-                || updateDto.EndDate.HasValue;
+                || updateDto.EndDate.HasValue
+                || updateDto.InviteSmsClosingText != null;
         }
 
         private static string BuildRedeemSuccessMessage(
@@ -1398,6 +1571,12 @@ namespace Api_Vapp.Services
                 {
                     errors.Add("تاریخ پایان باید بعد از تاریخ شروع باشد");
                 }
+            }
+
+            if (!ReferralInviteSmsHelper.TryValidateClosingText(settings.InviteSmsClosingText, out var closingError)
+                && !string.IsNullOrWhiteSpace(closingError))
+            {
+                errors.Add(closingError);
             }
 
             return errors;
@@ -1576,6 +1755,17 @@ namespace Api_Vapp.Services
                 audience += $" + {step2.TargetTagIds.Count} تگ";
             }
 
+            var closingText = ReferralInviteSmsHelper.NormalizeClosingText(step3?.InviteSmsClosingText);
+            var preview = ReferralInviteSmsHelper.BuildInviteMessage(
+                step1.Title.Trim(),
+                ReferralInviteSmsHelper.SamplePersonalCode,
+                step1.RewardType,
+                step1.IsCustomerRewardActive,
+                step1.CustomerRewardValue,
+                step1.IsReferrerRewardActive && step1.ReferrerRewardValue > 0,
+                step1.ReferrerRewardValue,
+                closingText);
+
             return new ReferralSummaryDto
             {
                 ProgramTitle = step1.Title,
@@ -1587,7 +1777,12 @@ namespace Api_Vapp.Services
                     ? FormatPersianDate(NormalizeIncomingUtc(step3.EndDate.Value))
                     : "بدون پایان",
                 Audience = audience,
-                ContactsCount = contactIds.Count
+                ContactsCount = contactIds.Count,
+                InviteSmsClosingText = closingText,
+                InviteSmsDefaultClosingText = ReferralInviteSmsHelper.DefaultClosingText,
+                InviteSmsIsCustom = ReferralInviteSmsHelper.IsCustomClosingText(closingText),
+                InviteSmsPreview = preview,
+                InviteSmsClosingTextMaxLength = ReferralInviteSmsHelper.ClosingTextMaxLength
             };
         }
 
@@ -1669,7 +1864,15 @@ namespace Api_Vapp.Services
                     continue;
                 }
 
-                var message = BuildReferralInviteSmsMessage(program, personalCode.Code);
+                var message = ReferralInviteSmsHelper.BuildInviteMessage(
+                    program.Title ?? string.Empty,
+                    personalCode.Code,
+                    program.RewardType,
+                    program.IsCustomerRewardActive,
+                    program.CustomerRewardValue,
+                    program.IsReferrerRewardActive,
+                    program.ReferrerRewardValue,
+                    program.InviteSmsClosingText);
 
                 try
                 {
@@ -1733,10 +1936,7 @@ namespace Api_Vapp.Services
                 return false;
             }
 
-            var message =
-                $"شما {rewardAmount:N0} تومان پاداش گرفتید چون کسی با کد معرف شما خرید کرده است.\n" +
-                $"برنامه: «{program.Title}»\n" +
-                "برای دریافت پاداش به فروشگاه مراجعه کنید.";
+            var message = ReferralInviteSmsHelper.BuildReferrerRewardMessage(program.Title, rewardAmount);
 
             try
             {
@@ -1766,26 +1966,161 @@ namespace Api_Vapp.Services
             }
         }
 
-        private static string BuildReferralInviteSmsMessage(ReferralProgram program, string personalCode)
+        private async Task UpsertReferralInviteApprovalRequestAsync(
+            ReferralProgram program,
+            IReadOnlyList<ReferralContactCode> personalCodes)
         {
-            var parts = new List<string>
-            {
-                $"برنامه پاداش «{program.Title}»",
-                $"کد معرف شما: {personalCode}"
-            };
+            var sampleCode = personalCodes.FirstOrDefault()?.Code ?? ReferralInviteSmsHelper.SamplePersonalCode;
+            var preview = ReferralInviteSmsHelper.BuildInviteMessage(
+                program.Title,
+                sampleCode,
+                program.RewardType,
+                program.IsCustomerRewardActive,
+                program.CustomerRewardValue,
+                program.IsReferrerRewardActive,
+                program.ReferrerRewardValue,
+                program.InviteSmsClosingText);
 
-            if (program.IsCustomerRewardActive && program.CustomerRewardValue.HasValue)
+            var titlePreview = program.Title.Length > 300
+                ? program.Title[..300]
+                : program.Title;
+
+            var existing = await _context.SmsApprovalRequests
+                .Where(r => r.ReferralProgramId == program.Id
+                    && r.RequestType == SmsApprovalRequestTypes.ReferralInvite
+                    && r.Status == AdminApprovalStatuses.Pending
+                    && !r.IsDeleted)
+                .OrderByDescending(r => r.Id)
+                .FirstOrDefaultAsync();
+
+            if (existing != null)
             {
-                parts.Add($"تخفیف مشتری: {FormatRewardValue(program.RewardType, program.CustomerRewardValue.Value)}");
+                existing.ContentPreview = preview;
+                existing.TitlePreview = titlePreview;
+                existing.RecipientsCount = personalCodes.Count;
+                existing.UpdatedAt = DateTime.UtcNow;
+                return;
             }
 
-            if (program.IsReferrerRewardActive && program.ReferrerRewardValue > 0)
+            await _context.SmsApprovalRequests.AddAsync(new SmsApprovalRequest
             {
-                parts.Add($"پاداش معرف: {FormatRewardValue(program.RewardType, program.ReferrerRewardValue)}");
+                UserId = program.UserId,
+                RequestType = SmsApprovalRequestTypes.ReferralInvite,
+                ReferralProgramId = program.Id,
+                MessageId = null,
+                ContentPreview = preview,
+                TitlePreview = titlePreview,
+                RecipientsCount = personalCodes.Count,
+                Status = AdminApprovalStatuses.Pending,
+                CreatedAt = DateTime.UtcNow
+            });
+        }
+
+        private (bool Success, string? ErrorMessage, InviteSmsClosingUpdateAction Action) ApplyInviteSmsClosingTextUpdate(
+            ReferralProgram program,
+            string? rawText)
+        {
+            if (!ReferralInviteSmsHelper.TryValidateClosingText(rawText, out var closingError))
+            {
+                return (false, closingError, InviteSmsClosingUpdateAction.None);
             }
 
-            parts.Add("کد را به دوستانتان بدهید تا با خرید از فروشگاه، پاداش فعال شود.");
-            return string.Join("\n", parts);
+            var normalized = ReferralInviteSmsHelper.NormalizeClosingText(rawText);
+            var current = ReferralInviteSmsHelper.NormalizeClosingText(program.InviteSmsClosingText);
+            if (string.Equals(normalized, current, StringComparison.Ordinal))
+            {
+                // تلاش مجدد ارسال متن پیش‌فرض وقتی هنوز Pending است و هیچ پیامکی نرفته
+                if (program.NotifiedContactsCount == 0
+                    && !ReferralInviteSmsHelper.IsCustomClosingText(normalized)
+                    && (string.Equals(program.InviteSmsApprovalStatus, AdminApprovalStatuses.Pending, StringComparison.Ordinal)
+                        || string.Equals(program.InviteSmsApprovalStatus, AdminApprovalStatuses.Rejected, StringComparison.Ordinal)))
+                {
+                    program.InviteSmsApprovalStatus = AdminApprovalStatuses.Pending;
+                    program.InviteSmsRejectionReason = null;
+                    return (true, null, InviteSmsClosingUpdateAction.SendNow);
+                }
+
+                // تلاش مجدد صف تأیید برای متن سفارشی پس از رد ادمین (همان متن)
+                if (program.NotifiedContactsCount == 0
+                    && ReferralInviteSmsHelper.IsCustomClosingText(normalized)
+                    && string.Equals(program.InviteSmsApprovalStatus, AdminApprovalStatuses.Rejected, StringComparison.Ordinal))
+                {
+                    program.InviteSmsApprovalStatus = AdminApprovalStatuses.Pending;
+                    program.InviteSmsRejectionReason = null;
+                    return (true, null, InviteSmsClosingUpdateAction.QueueApproval);
+                }
+
+                return (true, null, InviteSmsClosingUpdateAction.None);
+            }
+
+            var canEdit =
+                string.Equals(program.InviteSmsApprovalStatus, AdminApprovalStatuses.Pending, StringComparison.Ordinal)
+                || string.Equals(program.InviteSmsApprovalStatus, AdminApprovalStatuses.Rejected, StringComparison.Ordinal);
+
+            if (!canEdit || program.NotifiedContactsCount > 0)
+            {
+                return (false, "متن پیامک پس از ارسال قابل تغییر نیست", InviteSmsClosingUpdateAction.None);
+            }
+
+            program.InviteSmsClosingText = normalized;
+            program.InviteSmsRejectionReason = null;
+
+            if (ReferralInviteSmsHelper.IsCustomClosingText(normalized))
+            {
+                program.InviteSmsApprovalStatus = AdminApprovalStatuses.Pending;
+                return (true, null, InviteSmsClosingUpdateAction.QueueApproval);
+            }
+
+            program.InviteSmsApprovalStatus = AdminApprovalStatuses.Pending;
+            return (true, null, InviteSmsClosingUpdateAction.SendNow);
+        }
+
+        private async Task SoftDeleteOpenReferralInviteApprovalsAsync(int programId)
+        {
+            var openRequests = await _context.SmsApprovalRequests
+                .Where(r => r.ReferralProgramId == programId
+                    && r.RequestType == SmsApprovalRequestTypes.ReferralInvite
+                    && r.Status != AdminApprovalStatuses.Approved
+                    && !r.IsDeleted)
+                .ToListAsync();
+
+            foreach (var request in openRequests)
+            {
+                request.IsDeleted = true;
+                request.UpdatedAt = DateTime.UtcNow;
+            }
+        }
+
+        /// <summary>
+        /// درخواست‌های Rejected/Processing را پاک می‌کند تا Upsert فقط روی Pending کار کند.
+        /// </summary>
+        private async Task SoftDeleteOpenReferralInviteApprovalsExceptLatestPendingAsync(int programId)
+        {
+            var openRequests = await _context.SmsApprovalRequests
+                .Where(r => r.ReferralProgramId == programId
+                    && r.RequestType == SmsApprovalRequestTypes.ReferralInvite
+                    && r.Status != AdminApprovalStatuses.Approved
+                    && r.Status != AdminApprovalStatuses.Pending
+                    && !r.IsDeleted)
+                .ToListAsync();
+
+            foreach (var request in openRequests)
+            {
+                request.IsDeleted = true;
+                request.UpdatedAt = DateTime.UtcNow;
+            }
+        }
+
+        private enum InviteSmsClosingUpdateAction
+        {
+            None,
+            SendNow,
+            QueueApproval
+        }
+
+        private static string FormatRewardValue(string rewardType, decimal value)
+        {
+            return ReferralInviteSmsHelper.FormatRewardValue(rewardType, value);
         }
 
         private async Task<string> GenerateUniquePersonalCodeAsync(int userId)
@@ -2090,13 +2425,6 @@ namespace Api_Vapp.Services
             };
         }
 
-        private static string FormatRewardValue(string rewardType, decimal value)
-        {
-            return rewardType == ReferralRewardTypes.Percentage
-                ? $"{value:N0}%"
-                : $"{value:N0} تومان";
-        }
-
         private static string FormatRewardAmount(string rewardType, decimal amount)
         {
             return rewardType == ReferralRewardTypes.Percentage
@@ -2137,6 +2465,15 @@ namespace Api_Vapp.Services
                 TargetContactIds = contactIds
             };
 
+            var closingText = ReferralInviteSmsHelper.NormalizeClosingText(program.InviteSmsClosingText);
+            var inviteStatus = string.IsNullOrWhiteSpace(program.InviteSmsApprovalStatus)
+                ? AdminApprovalStatuses.Approved
+                : program.InviteSmsApprovalStatus;
+            var canEditInviteSms =
+                program.NotifiedContactsCount == 0
+                && (string.Equals(inviteStatus, AdminApprovalStatuses.Pending, StringComparison.Ordinal)
+                    || string.Equals(inviteStatus, AdminApprovalStatuses.Rejected, StringComparison.Ordinal));
+
             return new ReferralProgramDto
             {
                 Id = program.Id,
@@ -2165,6 +2502,20 @@ namespace Api_Vapp.Services
                 EndDate = EnsureUtc(program.EndDate),
                 NotifiedContactsCount = program.NotifiedContactsCount,
                 IsCurrentlyValid = ReferralProgramValidity.Evaluate(program).IsValid,
+                InviteSmsClosingText = closingText,
+                InviteSmsApprovalStatus = inviteStatus,
+                InviteSmsRejectionReason = program.InviteSmsRejectionReason,
+                InviteSmsIsCustom = ReferralInviteSmsHelper.IsCustomClosingText(closingText),
+                CanEditInviteSmsClosingText = canEditInviteSms,
+                InviteSmsPreview = ReferralInviteSmsHelper.BuildInviteMessage(
+                    program.Title,
+                    ReferralInviteSmsHelper.SamplePersonalCode,
+                    program.RewardType,
+                    program.IsCustomerRewardActive,
+                    program.CustomerRewardValue,
+                    program.IsReferrerRewardActive,
+                    program.ReferrerRewardValue,
+                    closingText),
                 CreatedAt = EnsureUtc(program.CreatedAt),
                 UpdatedAt = EnsureUtc(program.UpdatedAt)
             };

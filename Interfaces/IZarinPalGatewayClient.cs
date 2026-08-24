@@ -36,6 +36,8 @@ namespace Api_Vapp.Interfaces
         public string? Authority { get; init; }
         public string? PaymentUrl { get; init; }
         public string? ErrorMessage { get; init; }
+        public int? Fee { get; init; }
+        public string? FeeType { get; init; }
     }
 
     public sealed class ZarinPalVerifyResult
@@ -48,5 +50,7 @@ namespace Api_Vapp.Interfaces
         public string? CardPan { get; init; }
         public string? CardHash { get; init; }
         public string? ErrorMessage { get; init; }
+        public int? Fee { get; init; }
+        public string? FeeType { get; init; }
     }
 }

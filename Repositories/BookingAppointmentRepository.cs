@@ -56,6 +56,27 @@ namespace Api_Vapp.Repositories
                 .FirstOrDefaultAsync();
         }
 
+        public async Task<(string ReminderOffsetsJson, int ReminderOffsetMinutes)?> GetServiceReminderOffsetsAsync(
+            int systemId, int serviceId)
+        {
+            var row = await _context.BookingServiceItems
+                .AsNoTracking()
+                .Where(s =>
+                    s.Id == serviceId &&
+                    s.BookingSystemId == systemId &&
+                    !s.IsDeleted &&
+                    !s.BookingSystem.IsDeleted)
+                .Select(s => new { s.ReminderOffsetsJson, s.ReminderOffsetMinutes })
+                .FirstOrDefaultAsync();
+
+            if (row == null)
+            {
+                return null;
+            }
+
+            return (row.ReminderOffsetsJson, row.ReminderOffsetMinutes);
+        }
+
         public async Task<List<BookingAppointment>> GetAppointmentsForServiceOnDateAsync(int serviceId, DateOnly dateUtc)
         {
             var dayStart = dateUtc.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
@@ -211,11 +232,18 @@ namespace Api_Vapp.Repositories
                     StartUtc = a.StartUtc,
                     EndUtc = a.EndUtc,
                     Status = a.Status,
+                    RemindersEnabled = a.RemindersEnabled,
                     ReminderSentAt = a.ReminderSentAt,
+                    ReminderSentOffsetsCsv = a.ReminderSentOffsetsCsv,
                     CancelledAt = a.CancelledAt,
                     CancellationReason = a.CancellationReason,
                     CreatedAt = a.CreatedAt,
-                    BookingServiceItem = new BookingServiceItem { Title = a.BookingServiceItem.Title }
+                    BookingServiceItem = new BookingServiceItem
+                    {
+                        Title = a.BookingServiceItem.Title,
+                        ReminderOffsetMinutes = a.BookingServiceItem.ReminderOffsetMinutes,
+                        ReminderOffsetsJson = a.BookingServiceItem.ReminderOffsetsJson
+                    }
                 })
                 .ToListAsync();
 

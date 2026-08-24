@@ -24,6 +24,7 @@ namespace Api_Vapp.Data
         public DbSet<SpecialOccasion> SpecialOccasions { get; set; }
         public DbSet<QuickAction> QuickActions { get; set; }
         public DbSet<SocialMediaLink> SocialMediaLinks { get; set; }
+        public DbSet<BankAccount> BankAccounts { get; set; }
         public DbSet<MessageTag> MessageTags { get; set; }
         public DbSet<ContactTag> ContactTags { get; set; }
 
@@ -696,6 +697,7 @@ namespace Api_Vapp.Data
                 entity.Property(sml => sml.UserId).IsRequired();
                 entity.Property(sml => sml.Platform).IsRequired().HasMaxLength(50);
                 entity.Property(sml => sml.LinkUrl).IsRequired().HasMaxLength(500);
+                entity.Property(sml => sml.SmsCaption).HasMaxLength(100);
                 entity.Property(sml => sml.IsActive).HasDefaultValue(true);
                 entity.Property(sml => sml.IsDefault).HasDefaultValue(false);
                 entity.Property(sml => sml.IsDeleted).HasDefaultValue(false);
@@ -711,6 +713,34 @@ namespace Api_Vapp.Data
                 entity.HasIndex(sml => sml.IsActive);
                 entity.HasIndex(sml => sml.IsDeleted);
                 entity.HasIndex(sml => sml.IsDefault);
+            });
+
+            // تنظیمات BankAccount (ارسال سریع شماره حساب / کارت / شبا)
+            modelBuilder.Entity<BankAccount>(entity =>
+            {
+                entity.HasKey(b => b.Id);
+                entity.Property(b => b.Id).ValueGeneratedOnAdd();
+
+                entity.Property(b => b.UserId).IsRequired();
+                entity.Property(b => b.Title).IsRequired().HasMaxLength(100);
+                entity.Property(b => b.AccountNumber).HasMaxLength(30);
+                entity.Property(b => b.CardNumber).HasMaxLength(16);
+                entity.Property(b => b.ShebaNumber).HasMaxLength(26);
+                entity.Property(b => b.IsActive).HasDefaultValue(true);
+                entity.Property(b => b.IsDefault).HasDefaultValue(false);
+                entity.Property(b => b.IsDeleted).HasDefaultValue(false);
+                entity.Property(b => b.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+                entity.HasOne(b => b.User)
+                    .WithMany()
+                    .HasForeignKey(b => b.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasIndex(b => b.UserId);
+                entity.HasIndex(b => b.IsActive);
+                entity.HasIndex(b => b.IsDeleted);
+                entity.HasIndex(b => b.IsDefault);
+                entity.HasIndex(b => new { b.UserId, b.IsDeleted, b.IsDefault });
             });
 
             // تنظیمات MessageTag
@@ -1372,12 +1402,14 @@ namespace Api_Vapp.Data
                 entity.Property(r => r.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
                 entity.HasOne(r => r.User).WithMany().HasForeignKey(r => r.UserId).OnDelete(DeleteBehavior.NoAction);
                 entity.HasOne(r => r.MessageCampaign).WithMany().HasForeignKey(r => r.MessageCampaignId).OnDelete(DeleteBehavior.NoAction);
-                entity.HasOne(r => r.Message).WithMany().HasForeignKey(r => r.MessageId).OnDelete(DeleteBehavior.NoAction);
+                entity.HasOne(r => r.Message).WithMany().HasForeignKey(r => r.MessageId).IsRequired(false).OnDelete(DeleteBehavior.NoAction);
                 entity.HasOne(r => r.MessageSession).WithMany().HasForeignKey(r => r.MessageSessionId).OnDelete(DeleteBehavior.NoAction);
+                entity.HasOne(r => r.ReferralProgram).WithMany().HasForeignKey(r => r.ReferralProgramId).IsRequired(false).OnDelete(DeleteBehavior.NoAction);
                 entity.HasOne(r => r.ReviewedByUser).WithMany().HasForeignKey(r => r.ReviewedByUserId).OnDelete(DeleteBehavior.NoAction);
                 entity.HasIndex(r => r.Status);
                 entity.HasIndex(r => r.UserId);
                 entity.HasIndex(r => r.MessageCampaignId);
+                entity.HasIndex(r => r.ReferralProgramId);
             });
 
             // فیلدهای تأیید ادمین روی MessageTemplate
@@ -1406,6 +1438,7 @@ namespace Api_Vapp.Data
                 entity.Property(f => f.Title).IsRequired().HasMaxLength(200);
                 entity.Property(f => f.Description).HasMaxLength(2000);
                 entity.Property(f => f.Slug).HasMaxLength(100);
+                entity.Property(f => f.SmsCaption).HasMaxLength(100);
                 entity.Property(f => f.TemplateKey).HasMaxLength(100);
                 entity.Property(f => f.Status).IsRequired();
                 entity.Property(f => f.SaveToPhonebook).HasDefaultValue(false);
@@ -1474,6 +1507,7 @@ namespace Api_Vapp.Data
                 entity.Property(w => w.Title).IsRequired().HasMaxLength(200);
                 entity.Property(w => w.Description).HasMaxLength(2000);
                 entity.Property(w => w.Slug).HasMaxLength(100);
+                entity.Property(w => w.SmsCaption).HasMaxLength(100);
                 entity.Property(w => w.Status).IsRequired();
                 entity.Property(w => w.SaveToPhonebook).HasDefaultValue(false);
                 entity.Property(w => w.IsActive).HasDefaultValue(true);
@@ -1641,6 +1675,9 @@ namespace Api_Vapp.Data
                 entity.Property(r => r.ReferrerRewardValue).HasPrecision(18, 2);
                 entity.Property(r => r.CustomerRewardValue).HasPrecision(18, 2);
                 entity.Property(r => r.IsReferrerRewardActive).HasDefaultValue(true);
+                entity.Property(r => r.InviteSmsClosingText).HasMaxLength(200);
+                entity.Property(r => r.InviteSmsApprovalStatus).HasMaxLength(50).HasDefaultValue("Approved");
+                entity.Property(r => r.InviteSmsRejectionReason).HasMaxLength(1000);
 
                 entity.HasOne(r => r.User)
                     .WithMany()
@@ -1770,6 +1807,7 @@ namespace Api_Vapp.Data
                 entity.Property(b => b.Description).HasMaxLength(2000);
                 entity.Property(b => b.Location).HasMaxLength(200);
                 entity.Property(b => b.Slug).IsRequired().HasMaxLength(100);
+                entity.Property(b => b.SmsCaption).HasMaxLength(100);
                 entity.Property(b => b.Status).IsRequired();
                 entity.Property(b => b.SaveToPhonebook).HasDefaultValue(false);
                 entity.Property(b => b.IsActive).HasDefaultValue(true);
@@ -1945,6 +1983,7 @@ namespace Api_Vapp.Data
                 entity.Property(c => c.Title).IsRequired().HasMaxLength(200);
                 entity.Property(c => c.LogoUrl).HasMaxLength(500);
                 entity.Property(c => c.Slug).HasMaxLength(100);
+                entity.Property(c => c.SmsCaption).HasMaxLength(100);
                 entity.Property(c => c.TemplateKey).HasMaxLength(100);
                 entity.Property(c => c.Status).IsRequired();
                 entity.Property(c => c.IsActive).HasDefaultValue(true);
@@ -2247,6 +2286,7 @@ namespace Api_Vapp.Data
             ConfigureQuickSendApprovalFields<LuckyWheel>(modelBuilder);
             ConfigureQuickSendApprovalFields<SocialMediaLink>(modelBuilder);
             ConfigureQuickSendApprovalFields<QuickAction>(modelBuilder);
+            ConfigureQuickSendApprovalFields<BankAccount>(modelBuilder);
         }
 
         private static void ConfigureQuickSendApprovalFields<TEntity>(ModelBuilder modelBuilder)

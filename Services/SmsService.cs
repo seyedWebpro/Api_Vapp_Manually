@@ -153,6 +153,12 @@ namespace Api_Vapp.Services
         private static bool IsSmsSendSuccessful(long sid, int status) => sid > 0 || status > 0;
 
         /// <summary>
+        /// فقط Development — بدون تماس با provider واقعی (DNS/شبکه).
+        /// </summary>
+        private bool IsSmsSimulationEnabled() =>
+            _configuration.GetValue<bool>("Development:SimulateSms", false);
+
+        /// <summary>
         /// افزودن متن الزامی «لغو11» در انتهای پیامک (مطابق الزامات API)
         /// </summary>
         private static string EnsureCancelSuffix(string message)
@@ -220,6 +226,22 @@ namespace Api_Vapp.Services
 
                 var normalizedMobile = NormalizePhoneNumber(request.Mobile);
                 var finalSenderNumber = string.IsNullOrWhiteSpace(request.SenderNumber) ? _senderNumber : request.SenderNumber;
+
+                // شبیه‌سازی لوکال — وقتی provider در دسترس نیست (مثل آفلاین بودن DNS)
+                if (IsSmsSimulationEnabled())
+                {
+                    var simulated = new SendSmsResponseDto
+                    {
+                        Sid = Math.Abs(HashCode.Combine(normalizedMobile, DateTime.UtcNow.Ticks)) + 1L,
+                        Status = 1,
+                        Message = "simulated"
+                    };
+                    _logger.LogInformation(
+                        "SMS simulated (Development:SimulateSms) — Mobile: {Mobile}, Sid: {Sid}",
+                        normalizedMobile,
+                        simulated.Sid);
+                    return ApiResponse<SendSmsResponseDto>.CreateSuccess(simulated, "پیامک با موفقیت ارسال شد");
+                }
 
                 var sendRequest = new SendSmsRequestDto
                 {

@@ -16,6 +16,12 @@ namespace Api_Vapp.DTOs.UserForm
         [MaxLength(100, ErrorMessage = "slug نمی‌تواند بیشتر از 100 کاراکتر باشد")]
         public string? Slug { get; set; }
 
+        /// <summary>
+        /// عنوان اختیاری ارسال سریع SMS — حداکثر ۱۰۰ کاراکتر
+        /// </summary>
+        [MaxLength(100, ErrorMessage = "عنوان ارسال سریع نمی‌تواند بیشتر از ۱۰۰ کاراکتر باشد")]
+        public string? SmsCaption { get; set; }
+
         public bool SaveToPhonebook { get; set; }
 
         public List<int> NotebookIds { get; set; } = new();

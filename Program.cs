@@ -348,6 +348,7 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.IMessageTemplateRepository, Api_V
 builder.Services.AddScoped<Api_Vapp.Interfaces.IMessageSessionRepository, Api_Vapp.Repositories.MessageSessionRepository>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IQuickActionRepository, Api_Vapp.Repositories.QuickActionRepository>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.ISocialMediaLinkRepository, Api_Vapp.Repositories.SocialMediaLinkRepository>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IBankAccountRepository, Api_Vapp.Repositories.BankAccountRepository>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IUserFormRepository, Api_Vapp.Repositories.UserFormRepository>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.ILuckyWheelRepository, Api_Vapp.Repositories.LuckyWheelRepository>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IBusinessCardRepository, Api_Vapp.Repositories.BusinessCardRepository>();
@@ -395,6 +396,7 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.IContactNotebookService, Api_Vapp
 builder.Services.AddScoped<Api_Vapp.Interfaces.IContactService, Api_Vapp.Services.ContactService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IQuickActionService, Api_Vapp.Services.QuickActionService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.ISocialMediaLinkService, Api_Vapp.Services.SocialMediaLinkService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IBankAccountService, Api_Vapp.Services.BankAccountService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IUserFormService, Api_Vapp.Services.UserFormService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.ILuckyWheelService, Api_Vapp.Services.LuckyWheelService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IBusinessCardService, Api_Vapp.Services.BusinessCardService>();

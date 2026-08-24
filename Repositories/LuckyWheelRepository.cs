@@ -107,10 +107,14 @@ namespace Api_Vapp.Repositories
                     Id = w.Id,
                     Title = w.Title,
                     Slug = w.Slug,
+                    SmsCaption = w.SmsCaption,
                     Status = w.Status,
                     IsActive = w.IsActive,
                     CreatedAt = w.CreatedAt,
-                    PublishedAt = w.PublishedAt
+                    PublishedAt = w.PublishedAt,
+                    ApprovalStatus = w.ApprovalStatus,
+                    RejectionReason = w.RejectionReason,
+                    ApprovedAt = w.ApprovedAt
                 })
                 .ToListAsync();
 

@@ -40,7 +40,10 @@ namespace Api_Vapp.Controller
             return StatusCode(result.StatusCode, result);
         }
 
-        /// <summary>متادیتای فرم جستجوی جدید (پلتفرم + شهر + دسته + محدودیت تعداد)</summary>
+        /// <summary>
+        /// متادیتای فرم جستجوی جدید (پلتفرم + شهر + دسته + محدودیت تعداد).
+        /// allowCustomCategory=true یعنی فیلد دسته Combobox است (پیشنهاد + تایپ آزاد).
+        /// </summary>
         [HttpGet("form-meta")]
         [ProducesResponseType(typeof(ApiResponse<NumberSeekerFormMetaDto>), StatusCodes.Status200OK)]
         public async Task<ActionResult<ApiResponse<NumberSeekerFormMetaDto>>> GetFormMeta()
@@ -68,7 +71,10 @@ namespace Api_Vapp.Controller
             return StatusCode(result.StatusCode, result);
         }
 
-        /// <summary>پیشنهاد دسته‌ها / نوع کسب‌وکار</summary>
+        /// <summary>
+        /// پیشنهاد دسته‌ها / نوع کسب‌وکار.
+        /// اگر allowCustomCategory=true باشد، لیست فقط suggestion است و کاربر می‌تواند متن دلخواه بفرستد.
+        /// </summary>
         [HttpGet("categories")]
         [ProducesResponseType(typeof(ApiResponse<NumberSeekerCategoriesDto>), StatusCodes.Status200OK)]
         public ActionResult<ApiResponse<NumberSeekerCategoriesDto>> GetCategories()
@@ -77,7 +83,10 @@ namespace Api_Vapp.Controller
             return StatusCode(result.StatusCode, result);
         }
 
-        /// <summary>شروع اسکرپ — صفحه جستجوی جدید</summary>
+        /// <summary>
+        /// شروع اسکرپ — صفحه جستجوی جدید.
+        /// category کلمهٔ جستجو است (انتخاب از پیشنهادها یا تایپ آزاد، حداکثر ۲۰۰ کاراکتر).
+        /// </summary>
         [HttpPost("scrape")]
         [ProducesResponseType(typeof(ApiResponse<NumberSeekerTaskCreatedDto>), StatusCodes.Status201Created)]
         [ProducesResponseType(typeof(ApiResponse<NumberSeekerTaskCreatedDto>), StatusCodes.Status400BadRequest)]

@@ -564,7 +564,12 @@ public class BookingModuleEndpointTests : IAsyncLifetime
             Cast(await _ctx.Service.GetServicesAsync(systemId, _ctx.OwnerUserId)),
             Cast(await _ctx.Service.GetServiceScheduleAsync(systemId, serviceId, _ctx.OwnerUserId)),
             Cast(await _ctx.AppointmentService.GetPublicSystemAsync(slug)),
-            Cast(await _ctx.AppointmentService.GetAvailableSlotsAsync(slug, serviceId, date))
+            Cast(await _ctx.AppointmentService.GetAvailableSlotsAsync(slug, serviceId, date)),
+            Cast(await _ctx.AppointmentService.GetReminderPreviewAsync(
+                systemId,
+                _ctx.OwnerUserId,
+                serviceId,
+                DateTime.UtcNow.AddDays(2)))
         };
 
         foreach (var response in checks)

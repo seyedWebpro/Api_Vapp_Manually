@@ -69,6 +69,7 @@ namespace Api_Vapp.Services
                     Title = createDto.Title?.Trim() ?? string.Empty,
                     Description = NormalizeOptionalText(createDto.Description),
                     Slug = UserFormSlugHelper.Normalize(createDto.Slug),
+                    SmsCaption = QuickSendLinkSmsHelper.NormalizeCaption(createDto.SmsCaption),
                     TemplateKey = NormalizeOptionalText(createDto.TemplateKey),
                     Status = UserFormStatus.Draft,
                     SaveToPhonebook = createDto.SaveToPhonebook,
@@ -132,6 +133,15 @@ namespace Api_Vapp.Services
                 }
 
                 var form = formResult.Form!;
+                var originalTitle = form.Title;
+                var originalSlug = form.Slug;
+                var originalSmsCaption = form.SmsCaption;
+                var originalDescription = form.Description;
+                var originalSaveToPhonebook = form.SaveToPhonebook;
+                var originalNotebookIds = form.Notebooks
+                    .Select(n => n.ContactNotebookId)
+                    .OrderBy(x => x)
+                    .ToList();
 
                 if (!string.IsNullOrWhiteSpace(updateDto.Slug))
                 {
@@ -142,6 +152,11 @@ namespace Api_Vapp.Services
                     }
 
                     form.Slug = slugValidation.NormalizedSlug;
+                }
+
+                if (updateDto.SmsCaption != null)
+                {
+                    form.SmsCaption = QuickSendLinkSmsHelper.NormalizeCaption(updateDto.SmsCaption);
                 }
 
                 if (updateDto.Title != null)
@@ -197,10 +212,23 @@ namespace Api_Vapp.Services
                     }
                 }
 
+                var currentNotebookIds = form.Notebooks
+                    .Select(n => n.ContactNotebookId)
+                    .OrderBy(x => x)
+                    .ToList();
+                var contentChanged =
+                    !string.Equals(originalTitle, form.Title, StringComparison.Ordinal) ||
+                    !string.Equals(originalSlug, form.Slug, StringComparison.Ordinal) ||
+                    !string.Equals(originalSmsCaption, form.SmsCaption, StringComparison.Ordinal) ||
+                    !string.Equals(originalDescription, form.Description, StringComparison.Ordinal) ||
+                    originalSaveToPhonebook != form.SaveToPhonebook ||
+                    !originalNotebookIds.SequenceEqual(currentNotebookIds);
+
                 return await SaveFormWithPhonebookValidationAsync(
                     form,
                     notebookIdsForValidation,
-                    "فرم با موفقیت به‌روزرسانی شد");
+                    "فرم با موفقیت به‌روزرسانی شد",
+                    contentChanged: contentChanged);
             }
             catch (DbUpdateException dbEx)
             {
@@ -257,7 +285,8 @@ namespace Api_Vapp.Services
                     form,
                     notebookIdsOverride: null,
                     "فیلدهای فرم با موفقیت به‌روزرسانی شد",
-                    mergedFieldDtos);
+                    mergedFieldDtos,
+                    contentChanged: true);
             }
             catch (DbUpdateException dbEx)
             {
@@ -360,6 +389,7 @@ namespace Api_Vapp.Services
                     Status = form.Status.ToString(),
                     IsActive = GetEffectiveIsActive(form),
                     PublicUrl = BuildPublicUrl(form.Slug),
+                    SmsCaption = form.SmsCaption,
                     CreatedAt = EnsureUtc(form.CreatedAt),
                     PublishedAt = EnsureUtc(form.PublishedAt),
                     ApprovalStatus = form.ApprovalStatus,
@@ -574,6 +604,7 @@ namespace Api_Vapp.Services
                     userId,
                     contact,
                     publicUrl,
+                    form.SmsCaption,
                     form.ApprovalStatus,
                     form.RejectionReason,
                     "فرم",
@@ -595,6 +626,7 @@ namespace Api_Vapp.Services
             int userId,
             Contact contact,
             string publicUrl,
+            string? smsCaption,
             string? approvalStatus,
             string? rejectionReason,
             string entityLabel,
@@ -608,9 +640,11 @@ namespace Api_Vapp.Services
             if (blocked != null)
                 return blocked;
 
+            var smsContent = QuickSendLinkSmsHelper.BuildSmsContent(smsCaption, publicUrl);
+
             var createMessageResult = await _messageService.CreateMessageAsync(userId, new CreateMessageDto
             {
-                Content = publicUrl
+                Content = smsContent
             });
 
             if (!createMessageResult.Success || createMessageResult.Data == null)
@@ -1019,6 +1053,7 @@ namespace Api_Vapp.Services
             return updateDto.Title != null
                 || updateDto.Description != null
                 || !string.IsNullOrWhiteSpace(updateDto.Slug)
+                || updateDto.SmsCaption != null
                 || updateDto.SaveToPhonebook.HasValue
                 || updateDto.NotebookIds != null;
         }
@@ -1046,7 +1081,8 @@ namespace Api_Vapp.Services
             UserForm form,
             List<int>? notebookIdsOverride,
             string successMessage,
-            List<UserFormFieldDto>? fieldsForValidation = null)
+            List<UserFormFieldDto>? fieldsForValidation = null,
+            bool contentChanged = true)
         {
             fieldsForValidation ??= form.Fields.Select(MapFieldToDto).ToList();
             var notebookIdsForValidation = notebookIdsOverride
@@ -1069,7 +1105,7 @@ namespace Api_Vapp.Services
             }
 
             form.UpdatedAt = DateTime.UtcNow;
-            QuickSendContentApprovalHelper.ResetToPending(form);
+            QuickSendContentApprovalHelper.ResetToPendingIfNeeded(form, contentChanged);
             await _context.SaveChangesAsync();
 
             return ApiResponse<UserFormResponseDto>.CreateSuccess(
@@ -1185,6 +1221,7 @@ namespace Api_Vapp.Services
                 Title = form.Title,
                 Description = form.Description,
                 Slug = form.Slug,
+                SmsCaption = form.SmsCaption,
                 TemplateKey = form.TemplateKey,
                 TemplateId = form.TemplateId,
                 Status = form.Status.ToString(),

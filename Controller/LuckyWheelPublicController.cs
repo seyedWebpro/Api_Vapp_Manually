@@ -100,7 +100,8 @@ namespace Api_Vapp.Controller
         }
 
         /// <summary>
-        /// چرخش گردونه توسط بازدیدکننده (نیازمند توکن و تأیید موبایل)
+        /// چرخش گردونه توسط بازدیدکننده (نیازمند توکن و تأیید موبایل).
+        /// پس از برد، پیامک جایزه از کیف پول مالک ارسال می‌شود؛ کمبود موجودی چرخش را fail نمی‌کند.
         /// </summary>
         [HttpPost("{slug}/spin")]
         [ProducesResponseType(typeof(ApiResponse<SpinLuckyWheelPublicResponseDto>), StatusCodes.Status201Created)]

@@ -25,6 +25,10 @@ namespace Api_Vapp.DTOs.BookingSystem
         public string? Location { get; set; }
         public string Slug { get; set; } = string.Empty;
         public string PublicUrl { get; set; } = string.Empty;
+
+        /// <summary>عنوان اختیاری ارسال سریع SMS (قبل از لینک)</summary>
+        public string? SmsCaption { get; set; }
+
         public string Status { get; set; } = string.Empty;
         public bool SaveToPhonebook { get; set; }
         public bool IsActive { get; set; }
@@ -106,6 +110,12 @@ namespace Api_Vapp.DTOs.BookingSystem
         /// slug سفارشی — اختیاری؛ در صورت خالی بودن در confirm خودکار ساخته می‌شود
         /// </summary>
         public string? CustomSlug { get; set; }
+
+        /// <summary>
+        /// عنوان اختیاری ارسال سریع SMS — حداکثر ۱۰۰ کاراکتر
+        /// </summary>
+        [MaxLength(100, ErrorMessage = "عنوان ارسال سریع نمی‌تواند بیشتر از ۱۰۰ کاراکتر باشد")]
+        public string? SmsCaption { get; set; }
 
         public bool SaveToPhonebook { get; set; }
 
@@ -321,6 +331,12 @@ namespace Api_Vapp.DTOs.BookingSystem
         public List<int>? NotebookIds { get; set; }
         public bool? IsActive { get; set; }
         public string? Slug { get; set; }
+
+        /// <summary>
+        /// عنوان اختیاری ارسال سریع — ارسال رشته خالی برای حذف
+        /// </summary>
+        [MaxLength(100, ErrorMessage = "عنوان ارسال سریع نمی‌تواند بیشتر از ۱۰۰ کاراکتر باشد")]
+        public string? SmsCaption { get; set; }
 
         /// <summary>بازه رزرو عمومی به روز — اختیاری.</summary>
         [Range(1, 365, ErrorMessage = "بازه رزرو باید بین ۱ تا ۳۶۵ روز باشد")]

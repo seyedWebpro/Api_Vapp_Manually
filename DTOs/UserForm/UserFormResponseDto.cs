@@ -10,6 +10,9 @@ namespace Api_Vapp.DTOs.UserForm
 
         public string? Slug { get; set; }
 
+        /// <summary>عنوان اختیاری ارسال سریع SMS (قبل از لینک)</summary>
+        public string? SmsCaption { get; set; }
+
         public string? TemplateKey { get; set; }
 
         public int? TemplateId { get; set; }

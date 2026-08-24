@@ -122,9 +122,13 @@ Public URL مثال: `https://ok-sms.ir/card/{slug}` (از `BusinessCard:PublicB
   "title": "سالن زیبایی زهرا",
   "logoUrl": "/uploads/...",
   "clearLogo": false,
-  "slug": "zahra-salon"
+  "slug": "zahra-salon",
+  "smsCaption": "کارت ویزیت سالن زیبایی زهرا"
 }
 ```
+
+- `smsCaption` اختیاری (حداکثر ۱۰۰ کاراکتر) — عنوان ارسال سریع SMS قبل از لینک؛ `""` برای حذف
+- تغییر `smsCaption` مثل بقیه محتوای کارت، تأیید ادمین ارسال سریع را به `Pending` برمی‌گرداند
 
 ---
 
@@ -208,7 +212,11 @@ Public URL مثال: `https://ok-sms.ir/card/{slug}` (از `BusinessCard:PublicB
 
 ## `POST /quick-send` — ارسال سریع به مخاطب
 
-پس از ذخیره مخاطب در مودال «ارسال سریع»، کاربر کارت را انتخاب می‌کند و لینک عمومی کارت با SMS ارسال می‌شود.
+پس از ذخیره مخاطب در مودال «ارسال سریع»، کاربر کارت را انتخاب می‌کند و SMS ارسال می‌شود.
+
+متن پیام:
+- اگر `smsCaption` تنظیم شده باشد: `{smsCaption}\n{publicUrl}`
+- در غیر این صورت: فقط `publicUrl` (سازگار با قبل)
 
 ```json
 {

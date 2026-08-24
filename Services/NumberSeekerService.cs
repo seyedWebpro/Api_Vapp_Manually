@@ -91,6 +91,25 @@ namespace Api_Vapp.Services
                     errorCode: "SCRAPER_DISABLED");
             }
 
+            if (!NumberSeekerCategoryHelper.TryNormalize(request.Category, out var category, out var categoryError))
+            {
+                var message = categoryError ?? NumberSeekerUserMessages.InvalidInput;
+                return ApiResponse<NumberSeekerTaskCreatedDto>.BadRequest(
+                    message,
+                    new List<string> { message },
+                    ErrorCodes.ValidationFailed);
+            }
+
+            request.Category = category;
+            request.City = (request.City ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(request.City))
+            {
+                return ApiResponse<NumberSeekerTaskCreatedDto>.BadRequest(
+                    "شهر الزامی است",
+                    new List<string> { "شهر الزامی است" },
+                    ErrorCodes.ValidationFailed);
+            }
+
             var (allowed, retryAfter) = await _rateLimiter.CheckScrapeAsync(userId);
             if (!allowed)
             {
@@ -109,8 +128,8 @@ namespace Api_Vapp.Services
                     UserId = userId,
                     ScraperTaskId = created.TaskId,
                     Source = created.Source,
-                    City = request.City.Trim(),
-                    Category = request.Category.Trim(),
+                    City = request.City,
+                    Category = category,
                     TargetCount = request.MaxPhones,
                     Status = created.Status,
                     CurrentCount = 0,
@@ -655,7 +674,9 @@ namespace Api_Vapp.Services
             return ApiResponse<NumberSeekerCategoriesDto>.CreateSuccess(new NumberSeekerCategoriesDto
             {
                 Categories = categories,
-                Placeholder = "مثال : کافه - رستوران و ..."
+                Placeholder = NumberSeekerCategoryHelper.Placeholder,
+                AllowCustomCategory = true,
+                CustomCategoryHint = NumberSeekerCategoryHelper.CustomAllowedHint
             });
         }
 
@@ -671,7 +692,9 @@ namespace Api_Vapp.Services
                     .Select((name, index) => new NumberSeekerCategoryDto { Name = name, SortOrder = index + 1 })
                     .ToList(),
                 DefaultCity = "تهران",
-                CategoryPlaceholder = "مثال : کافه - رستوران و ...",
+                CategoryPlaceholder = NumberSeekerCategoryHelper.Placeholder,
+                AllowCustomCategory = true,
+                CustomCategoryHint = NumberSeekerCategoryHelper.CustomAllowedHint,
                 MinPhones = 1,
                 MaxPhones = 1000,
                 DefaultPhones = 50

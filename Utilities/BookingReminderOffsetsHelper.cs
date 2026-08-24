@@ -1,4 +1,6 @@
 using System.Text.Json;
+using Api_Vapp.Constants;
+using Api_Vapp.Models;
 
 namespace Api_Vapp.Utilities
 {
@@ -102,5 +104,137 @@ namespace Api_Vapp.Utilities
 
         public static string BuildMessageTemplate() =>
             "یادآوری نوبت\n{businessTitle}\nخدمت: {serviceTitle}\nزمان: {startLocal}\nلغو11";
+
+        public static HashSet<int> ResolveSentOffsets(
+            string? csv,
+            DateTime? reminderSentAt,
+            IReadOnlyList<int> offsets)
+        {
+            var sent = ParseSentOffsets(csv);
+            if (sent.Count == 0 &&
+                reminderSentAt.HasValue &&
+                string.IsNullOrWhiteSpace(csv))
+            {
+                foreach (var offset in offsets)
+                {
+                    sent.Add(offset);
+                }
+            }
+
+            return sent;
+        }
+
+        /// <summary>
+        /// محاسبه می‌کند آیا جاب یادآوری هنوز برای این نوبت SMS می‌فرستد (همان قوانین ProcessReminders).
+        /// </summary>
+        public static BookingReminderSchedule BuildSchedule(
+            DateTime startUtc,
+            DateTime nowUtc,
+            bool remindersEnabled,
+            string? status,
+            IReadOnlyList<int> offsets,
+            IReadOnlySet<int> alreadySent)
+        {
+            var offsetList = offsets.Count == 0 ? Normalize(null) : offsets.ToList();
+            var pending = offsetList.Where(o => !alreadySent.Contains(o)).OrderBy(o => o).ToList();
+
+            if (!remindersEnabled)
+            {
+                return Skip(
+                    remindersEnabled: false,
+                    offsetList,
+                    pending,
+                    BookingReminderSkipReasons.Disabled,
+                    "ارسال پیامک یادآوری برای این نوبت غیرفعال است");
+            }
+
+            if (string.Equals(status, BookingAppointmentStatuses.Cancelled, StringComparison.Ordinal))
+            {
+                return Skip(
+                    remindersEnabled: true,
+                    offsetList,
+                    pending,
+                    BookingReminderSkipReasons.Cancelled,
+                    "نوبت لغو شده است و پیامک یادآوری ارسال نمی‌شود");
+            }
+
+            if (startUtc <= nowUtc)
+            {
+                return Skip(
+                    remindersEnabled: true,
+                    offsetList,
+                    pending,
+                    BookingReminderSkipReasons.Past,
+                    "زمان نوبت گذشته است و پیامک یادآوری ارسال نمی‌شود");
+            }
+
+            if (!string.Equals(status, BookingAppointmentStatuses.Confirmed, StringComparison.Ordinal))
+            {
+                return Skip(
+                    remindersEnabled: true,
+                    offsetList,
+                    pending,
+                    BookingReminderSkipReasons.NotConfirmed,
+                    "تا تأیید نوبت، پیامک یادآوری ارسال نمی‌شود");
+            }
+
+            if (pending.Count == 0)
+            {
+                return Skip(
+                    remindersEnabled: true,
+                    offsetList,
+                    pending,
+                    BookingReminderSkipReasons.AlreadySent,
+                    "پیامک یادآوری این نوبت قبلاً ارسال شده است");
+            }
+
+            DateTime? nextAt = null;
+            foreach (var offset in pending)
+            {
+                var sendAt = startUtc.AddMinutes(-offset);
+                if (sendAt < nowUtc)
+                {
+                    sendAt = nowUtc;
+                }
+
+                if (!nextAt.HasValue || sendAt < nextAt.Value)
+                {
+                    nextAt = sendAt;
+                }
+            }
+
+            return new BookingReminderSchedule(
+                RemindersEnabled: true,
+                WillSend: true,
+                OffsetsMinutes: offsetList,
+                PendingOffsetsMinutes: pending,
+                NextReminderAtUtc: nextAt,
+                SkipReasonCode: null,
+                SkipReason: null);
+        }
+
+        private static BookingReminderSchedule Skip(
+            bool remindersEnabled,
+            IReadOnlyList<int> offsets,
+            IReadOnlyList<int> pending,
+            string code,
+            string message) =>
+            new(
+                remindersEnabled,
+                false,
+                offsets,
+                pending,
+                null,
+                code,
+                message);
     }
+
+    public sealed record BookingReminderSchedule(
+        bool RemindersEnabled,
+        bool WillSend,
+        IReadOnlyList<int> OffsetsMinutes,
+        IReadOnlyList<int> PendingOffsetsMinutes,
+        DateTime? NextReminderAtUtc,
+        string? SkipReasonCode,
+        string? SkipReason);
 }

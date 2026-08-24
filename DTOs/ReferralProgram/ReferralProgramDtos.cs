@@ -32,6 +32,21 @@ namespace Api_Vapp.DTOs.ReferralProgram
         public DateTime? EndDate { get; set; }
         public int NotifiedContactsCount { get; set; }
         public bool IsCurrentlyValid { get; set; }
+
+        /// <summary>جمله پایانی پیامک دعوت مخاطبین</summary>
+        public string InviteSmsClosingText { get; set; } = string.Empty;
+
+        /// <summary>Pending | Approved | Rejected</summary>
+        public string InviteSmsApprovalStatus { get; set; } = string.Empty;
+
+        public string? InviteSmsRejectionReason { get; set; }
+
+        public bool InviteSmsIsCustom { get; set; }
+
+        public bool CanEditInviteSmsClosingText { get; set; }
+
+        public string InviteSmsPreview { get; set; } = string.Empty;
+
         public DateTime CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
     }
@@ -117,6 +132,16 @@ namespace Api_Vapp.DTOs.ReferralProgram
         /// تعداد نهایی گیرنده SMS (با اعمال فیلتر تگ در مرحله ۲)
         /// </summary>
         public int ContactsCount { get; set; }
+
+        public string InviteSmsClosingText { get; set; } = string.Empty;
+
+        public string InviteSmsDefaultClosingText { get; set; } = string.Empty;
+
+        public bool InviteSmsIsCustom { get; set; }
+
+        public string InviteSmsPreview { get; set; } = string.Empty;
+
+        public int InviteSmsClosingTextMaxLength { get; set; }
     }
 
     public class ConfirmReferralProgramResponseDto
@@ -124,6 +149,14 @@ namespace Api_Vapp.DTOs.ReferralProgram
         public ReferralProgramDto Program { get; set; } = null!;
         public int SmsSentCount { get; set; }
         public int SmsFailedCount { get; set; }
+        public bool SmsQueuedForApproval { get; set; }
+        public string InviteSmsApprovalStatus { get; set; } = string.Empty;
+    }
+
+    public class ReferralInviteSendResultDto
+    {
+        public int SentCount { get; set; }
+        public int FailedCount { get; set; }
     }
 
     public class InquireReferralCodeResponseDto
@@ -278,6 +311,9 @@ namespace Api_Vapp.DTOs.ReferralProgram
         public DateTime StartDate { get; set; }
 
         public DateTime? EndDate { get; set; }
+
+        [MaxLength(200, ErrorMessage = "متن پایانی پیامک حداکثر ۲۰۰ کاراکتر است")]
+        public string? InviteSmsClosingText { get; set; }
     }
 
     public class SaveReferralStep3RequestDto
@@ -359,6 +395,9 @@ namespace Api_Vapp.DTOs.ReferralProgram
         public decimal? CustomerRewardValue { get; set; }
 
         public DateTime? EndDate { get; set; }
+
+        [MaxLength(200, ErrorMessage = "متن پایانی پیامک حداکثر ۲۰۰ کاراکتر است")]
+        public string? InviteSmsClosingText { get; set; }
     }
 
     #endregion

@@ -88,6 +88,7 @@ namespace Api_Vapp.Services
                         UserId = userId,
                         Platform = platform,
                         LinkUrl = linkUrl,
+                        SmsCaption = QuickSendLinkSmsHelper.NormalizeCaption(createDto.SmsCaption),
                         IsDefault = setAsDefault,
                         IsActive = true,
                         IsDeleted = false,
@@ -204,6 +205,7 @@ namespace Api_Vapp.Services
 
                 var originalPlatform = link.Platform;
                 var originalLinkUrl = link.LinkUrl;
+                var originalSmsCaption = link.SmsCaption;
 
                 if (updateDto.Platform != null)
                 {
@@ -224,6 +226,11 @@ namespace Api_Vapp.Services
                     link.LinkUrl = linkUrl;
                 }
 
+                if (updateDto.SmsCaption != null)
+                {
+                    link.SmsCaption = QuickSendLinkSmsHelper.NormalizeCaption(updateDto.SmsCaption);
+                }
+
                 if (updateDto.IsActive.HasValue)
                 {
                     if (!updateDto.IsActive.Value && link.IsDefault)
@@ -237,7 +244,8 @@ namespace Api_Vapp.Services
                 link.UpdatedAt = DateTime.UtcNow;
                 var contentChanged =
                     !string.Equals(originalPlatform, link.Platform, StringComparison.Ordinal) ||
-                    !string.Equals(originalLinkUrl, link.LinkUrl, StringComparison.Ordinal);
+                    !string.Equals(originalLinkUrl, link.LinkUrl, StringComparison.Ordinal) ||
+                    !string.Equals(originalSmsCaption, link.SmsCaption, StringComparison.Ordinal);
                 if (contentChanged)
                 {
                     QuickSendContentApprovalHelper.ResetToPending(link);
@@ -429,7 +437,7 @@ namespace Api_Vapp.Services
 
                 var createMessageResult = await _messageService.CreateMessageAsync(userId, new CreateMessageDto
                 {
-                    Content = link.LinkUrl.Trim()
+                    Content = QuickSendLinkSmsHelper.BuildSmsContent(link.SmsCaption, link.LinkUrl.Trim())
                 });
 
                 if (!createMessageResult.Success || createMessageResult.Data == null)
@@ -518,13 +526,18 @@ namespace Api_Vapp.Services
             }
         }
 
-        private void InvalidateUserCache(int userId)
+        private void InvalidateUserCache(int userId) =>
+            InvalidateListCache(_cache, userId);
+
+        /// <summary>
+        /// پاک‌سازی کش لیست لینک سوشیال (مثلاً بعد از تأیید/رد ادمین).
+        /// </summary>
+        public static void InvalidateListCache(IMemoryCache cache, int userId)
         {
-            // کلیدهای صفحه‌بندی رایج را پاک می‌کنیم (حداکثر ۱۰۰ آیتم در هر صفحه طبق استاندارد)
             for (var page = 1; page <= 20; page++)
             {
                 foreach (var size in new[] { 10, 20, 50, 100 })
-                    _cache.Remove(BuildListCacheKey(userId, page, size));
+                    cache.Remove(BuildListCacheKey(userId, page, size));
             }
         }
 
@@ -636,6 +649,7 @@ namespace Api_Vapp.Services
                 Id = link.Id,
                 Platform = link.Platform,
                 LinkUrl = link.LinkUrl,
+                SmsCaption = link.SmsCaption,
                 IsActive = link.IsActive,
                 IsDefault = link.IsDefault,
                 CreatedAt = link.CreatedAt,

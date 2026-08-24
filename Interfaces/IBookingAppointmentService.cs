@@ -39,6 +39,13 @@ namespace Api_Vapp.Interfaces
         Task<ApiResponse<BookingPaymentReceiptDto>> GetPaymentReceiptAsync(
             int systemId, int appointmentId, int userId);
 
+        Task<ApiResponse<BookingReminderPreviewDto>> GetReminderPreviewAsync(
+            int systemId,
+            int userId,
+            int serviceId,
+            DateTime startUtc,
+            bool remindersEnabled = true);
+
         Task<ApiResponse<BookingAppointmentDto>> CreateManualBookingAsync(
             int systemId, int userId, CreateManualBookingDto dto);
 

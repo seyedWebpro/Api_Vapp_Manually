@@ -7,6 +7,10 @@ namespace Api_Vapp.Interfaces
         Task<BookingSystem?> GetActiveSystemBySlugAsync(string slug);
         Task<BookingServiceItem?> GetActiveServiceBySlugAsync(string slug, int serviceId);
         Task<BookingServiceItem?> GetServiceForBookingAsync(int systemId, int serviceId);
+
+        /// <summary>فقط ستون‌های آفست یادآوری — برای پیش‌نمایش رزرو دستی بدون Include برنامه هفتگی</summary>
+        Task<(string ReminderOffsetsJson, int ReminderOffsetMinutes)?> GetServiceReminderOffsetsAsync(
+            int systemId, int serviceId);
         Task<List<BookingAppointment>> GetAppointmentsForServiceOnDateAsync(int serviceId, DateOnly dateUtc);
         Task<List<BookingAppointment>> GetAppointmentsForSystemOnDateAsync(int systemId, DateOnly dateUtc);
         Task<List<DateTime>> GetBlockedStartsForSystemOnDateAsync(int systemId, DateOnly dateUtc);

@@ -53,6 +53,18 @@ namespace Api_Vapp.Models
 
         public int NotifiedContactsCount { get; set; }
 
+        /// <summary>
+        /// جمله پایانی پیامک دعوت مخاطبین. خالی یعنی متن پیش‌فرض سیستم.
+        /// </summary>
+        public string? InviteSmsClosingText { get; set; }
+
+        /// <summary>
+        /// Pending | Approved | Rejected — برای متن پیش‌فرض، Approved است و ارسال فوری انجام می‌شود.
+        /// </summary>
+        public string InviteSmsApprovalStatus { get; set; } = "Approved";
+
+        public string? InviteSmsRejectionReason { get; set; }
+
         public bool IsDeleted { get; set; }
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

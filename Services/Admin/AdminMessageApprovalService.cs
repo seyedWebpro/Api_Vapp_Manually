@@ -16,6 +16,7 @@ namespace Api_Vapp.Services.Admin
     {
         private readonly Api_Context _context;
         private readonly IMessageService _messageService;
+        private readonly IReferralProgramService _referralProgramService;
         private readonly IAuditService _audit;
         private readonly ILogger<AdminMessageApprovalService> _logger;
         private readonly IUserAppNotifier _appNotifier;
@@ -23,12 +24,14 @@ namespace Api_Vapp.Services.Admin
         public AdminMessageApprovalService(
             Api_Context context,
             IMessageService messageService,
+            IReferralProgramService referralProgramService,
             IAuditService audit,
             ILogger<AdminMessageApprovalService> logger,
             IUserAppNotifier appNotifier)
         {
             _context = context;
             _messageService = messageService;
+            _referralProgramService = referralProgramService;
             _audit = audit;
             _logger = logger;
             _appNotifier = appNotifier;
@@ -185,6 +188,12 @@ namespace Api_Vapp.Services.Admin
                         return ApiResponse<bool>.BadRequest("اطلاعات ارسال یافت نشد");
                     }
 
+                    if (!request.MessageId.HasValue)
+                    {
+                        await RevertToPendingAsync(request);
+                        return ApiResponse<bool>.BadRequest("شناسه پیام یافت نشد");
+                    }
+
                     MessageSession? session = null;
                     if (request.MessageSessionId.HasValue)
                     {
@@ -271,7 +280,7 @@ namespace Api_Vapp.Services.Admin
 
                     var sendResult = await _messageService.SendDirectMessageAsync(
                         request.UserId,
-                        request.MessageId,
+                        request.MessageId.Value,
                         sendDto,
                         session,
                         bypassAdminApproval: true);
@@ -288,6 +297,40 @@ namespace Api_Vapp.Services.Admin
                                 sendResult.Success ? "هیچ پیامکی ارسال نشد" : sendResult.Message,
                                 ControlledErrorHelper.SendFailed));
                     }
+                }
+                else if (request.RequestType == SmsApprovalRequestTypes.ReferralInvite)
+                {
+                    if (!request.ReferralProgramId.HasValue)
+                    {
+                        await RevertToPendingAsync(request);
+                        return ApiResponse<bool>.BadRequest("شناسه برنامه پاداش یافت نشد");
+                    }
+
+                    var inviteSend = await _referralProgramService.SendQueuedInviteSmsAsync(request.ReferralProgramId.Value);
+                    if (!inviteSend.Success || inviteSend.Data == null || inviteSend.Data.SentCount <= 0)
+                    {
+                        if (inviteSend.StatusCode == 404)
+                        {
+                            request.Status = AdminApprovalStatuses.Rejected;
+                            request.ReviewedByUserId = adminUserId;
+                            request.ReviewedAt = DateTime.UtcNow;
+                            request.RejectionReason = "برنامه پاداش حذف شده است";
+                            request.UpdatedAt = DateTime.UtcNow;
+                            await _context.SaveChangesAsync();
+                            return ApiResponse<bool>.BadRequest("برنامه پاداش حذف شده است");
+                        }
+
+                        await RevertToPendingAsync(request);
+                        return ApiResponse<bool>.BadRequest(
+                            ControlledErrorHelper.SanitizeArgumentMessage(
+                                inviteSend.Success ? "هیچ پیامکی ارسال نشد" : inviteSend.Message,
+                                ControlledErrorHelper.SendFailed));
+                    }
+                }
+                else
+                {
+                    await RevertToPendingAsync(request);
+                    return ApiResponse<bool>.BadRequest("نوع درخواست تأیید نامعتبر است");
                 }
 
                 request.Status = AdminApprovalStatuses.Approved;
@@ -399,6 +442,19 @@ namespace Api_Vapp.Services.Admin
                                 }
                             }
                         }
+                    }
+                }
+
+                if (request.RequestType == SmsApprovalRequestTypes.ReferralInvite
+                    && request.ReferralProgramId.HasValue)
+                {
+                    var program = await _context.ReferralPrograms
+                        .FirstOrDefaultAsync(p => p.Id == request.ReferralProgramId.Value && !p.IsDeleted);
+                    if (program != null)
+                    {
+                        program.InviteSmsApprovalStatus = AdminApprovalStatuses.Rejected;
+                        program.InviteSmsRejectionReason = dto.Reason.Trim();
+                        program.UpdatedAt = DateTime.UtcNow;
                     }
                 }
 
@@ -681,9 +737,11 @@ namespace Api_Vapp.Services.Admin
             UserPhoneNumber = request.User?.PhoneNumber,
             UserFullName = request.User?.FullName,
             RequestType = request.RequestType,
+            RequestTypeTitle = SmsApprovalRequestTypes.ToPersian(request.RequestType),
             MessageCampaignId = request.MessageCampaignId,
             MessageId = request.MessageId,
             MessageSessionId = request.MessageSessionId,
+            ReferralProgramId = request.ReferralProgramId,
             ContentPreview = request.ContentPreview,
             TitlePreview = request.TitlePreview,
             RecipientsCount = request.RecipientsCount,

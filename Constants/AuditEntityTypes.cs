@@ -34,6 +34,7 @@ namespace Api_Vapp.Constants
         public const string ContactNotebook = "ContactNotebook";
         public const string QuickAction = "QuickAction";
         public const string SocialMediaLink = "SocialMediaLink";
+        public const string BankAccount = "BankAccount";
         public const string SpecialOccasion = "SpecialOccasion";
         public const string AutomatedMessage = "AutomatedMessage";
         public const string AutomationType = "AutomationType";

@@ -5,6 +5,7 @@ using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
 using Api_Vapp.Repositories;
 using Api_Vapp.Services;
+using Api_Vapp.Utilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -94,7 +95,8 @@ internal sealed class ReferralProgramTestContext : IDisposable
         var dto = new SaveReferralStep3SettingsDto
         {
             StartDate = DateTime.UtcNow.AddDays(-1),
-            EndDate = DateTime.UtcNow.AddDays(30)
+            EndDate = DateTime.UtcNow.AddDays(30),
+            InviteSmsClosingText = ReferralInviteSmsHelper.DefaultClosingText
         };
 
         configure?.Invoke(dto);
@@ -102,7 +104,8 @@ internal sealed class ReferralProgramTestContext : IDisposable
     }
 
     public async Task<(int ProgramId, string PersonalCode, int ReferrerContactId)> CreateConfirmedProgramAsync(
-        Action<ReferralStep1Dto>? configureStep1 = null)
+        Action<ReferralStep1Dto>? configureStep1 = null,
+        Action<SaveReferralStep3SettingsDto>? configureStep3 = null)
     {
         var step1 = BuildStep1Dto(configureStep1);
         var step1Result = await Service.ValidateStep1Async(OwnerUserId, step1);
@@ -125,7 +128,7 @@ internal sealed class ReferralProgramTestContext : IDisposable
         var step3Result = await Service.SaveStep3SettingsAsync(OwnerUserId, new SaveReferralStep3RequestDto
         {
             DraftId = draftId,
-            Settings = BuildStep3Settings()
+            Settings = BuildStep3Settings(configureStep3)
         });
         if (!step3Result.Success)
         {
@@ -149,8 +152,11 @@ internal sealed class ReferralProgramTestContext : IDisposable
             .OrderBy(c => c.Id)
             .FirstAsync();
 
+        LastConfirmResult = confirmResult.Data;
         return (programId, personal.Code, personal.ContactId);
     }
+
+    public ConfirmReferralProgramResponseDto? LastConfirmResult { get; private set; }
 
     public void Dispose()
     {
@@ -255,6 +261,8 @@ internal sealed class ReferralProgramTestContext : IDisposable
 
         public void Clear() => SentMessages.Clear();
 
+        public bool FailNextSends { get; set; }
+
         public Task<(decimal Cost, int PartsCount)> EstimateCostAsync(
             string message,
             CancellationToken cancellationToken = default) =>
@@ -271,6 +279,11 @@ internal sealed class ReferralProgramTestContext : IDisposable
             string? sourceEntityLabel = null,
             CancellationToken cancellationToken = default)
         {
+            if (FailNextSends)
+            {
+                return Task.FromResult(UserSmsSendResult.Failed(0, 0, "fake fail"));
+            }
+
             SentMessages.Add((mobile, message, walletTitle));
             return Task.FromResult(UserSmsSendResult.Success(1, 160m, 1, 0));
         }

@@ -1,3 +1,4 @@
+using Api_Vapp.Constants;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.DTOs.ReferralProgram;
 using Api_Vapp.Models;
@@ -101,6 +102,221 @@ public class ReferralProgramServiceTests : IAsyncLifetime
         Assert.True(result.Success);
         Assert.Equal(3, result.Data!.ContactsCount);
         AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task Confirm_DefaultClosingText_SendsSmsWithoutStoreWord()
+    {
+        var (programId, _, _) = await _ctx.CreateConfirmedProgramAsync();
+
+        Assert.NotNull(_ctx.LastConfirmResult);
+        Assert.False(_ctx.LastConfirmResult!.SmsQueuedForApproval);
+        Assert.Equal(3, _ctx.LastConfirmResult.SmsSentCount);
+        Assert.Equal(AdminApprovalStatuses.Approved, _ctx.LastConfirmResult.InviteSmsApprovalStatus);
+        Assert.Equal(3, _ctx.FakeSms.SentMessages.Count);
+        Assert.All(_ctx.FakeSms.SentMessages, m =>
+        {
+            Assert.DoesNotContain("فروشگاه", m.Message);
+            Assert.Contains(ReferralInviteSmsHelper.DefaultClosingText, m.Message);
+        });
+
+        var program = await _ctx.Context.ReferralPrograms.AsNoTracking()
+            .FirstAsync(p => p.Id == programId);
+        Assert.Equal(AdminApprovalStatuses.Approved, program.InviteSmsApprovalStatus);
+        Assert.Equal(3, program.NotifiedContactsCount);
+    }
+
+    [Fact]
+    public async Task Confirm_CustomClosingText_QueuesForAdminApproval()
+    {
+        const string customClosing = "کد را بدهید تا با خرید از کلینیک زیبایی آوا پاداش فعال شود.";
+        var (programId, _, _) = await _ctx.CreateConfirmedProgramAsync(
+            configureStep3: s => s.InviteSmsClosingText = customClosing);
+
+        Assert.NotNull(_ctx.LastConfirmResult);
+        Assert.True(_ctx.LastConfirmResult!.SmsQueuedForApproval);
+        Assert.Equal(0, _ctx.LastConfirmResult.SmsSentCount);
+        Assert.Equal(AdminApprovalStatuses.Pending, _ctx.LastConfirmResult.InviteSmsApprovalStatus);
+        Assert.Empty(_ctx.FakeSms.SentMessages);
+
+        var approval = await _ctx.Context.SmsApprovalRequests.AsNoTracking()
+            .SingleAsync(r => r.ReferralProgramId == programId && !r.IsDeleted);
+        Assert.Equal(SmsApprovalRequestTypes.ReferralInvite, approval.RequestType);
+        Assert.Equal(AdminApprovalStatuses.Pending, approval.Status);
+        Assert.Contains(customClosing, approval.ContentPreview);
+        Assert.Null(approval.MessageId);
+
+        var sendResult = await _ctx.Service.SendQueuedInviteSmsAsync(programId);
+        Assert.True(sendResult.Success);
+        Assert.Equal(3, sendResult.Data!.SentCount);
+        Assert.Equal(3, _ctx.FakeSms.SentMessages.Count);
+        Assert.All(_ctx.FakeSms.SentMessages, m => Assert.Contains(customClosing, m.Message));
+    }
+
+    [Fact]
+    public async Task SaveStep3_ClosingTextTooLong_Returns400()
+    {
+        var step1Result = await _ctx.Service.ValidateStep1Async(_ctx.OwnerUserId, _ctx.BuildStep1Dto());
+        var draftId = step1Result.Data!.DraftId!;
+        await _ctx.Service.ValidateStep2Async(_ctx.OwnerUserId, new ReferralStep2Dto
+        {
+            DraftId = draftId,
+            TargetAudience = ReferralTargetAudience.All
+        });
+
+        var tooLong = new string('ا', ReferralInviteSmsHelper.ClosingTextMaxLength + 1);
+        var result = await _ctx.Service.SaveStep3SettingsAsync(_ctx.OwnerUserId, new SaveReferralStep3RequestDto
+        {
+            DraftId = draftId,
+            Settings = _ctx.BuildStep3Settings(s => s.InviteSmsClosingText = tooLong)
+        });
+
+        Assert.False(result.Success);
+        Assert.Equal(400, result.StatusCode);
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task Update_PendingCustomClosing_UpdatesApprovalPreview()
+    {
+        const string firstClosing = "کد را بدهید تا با خرید از کلینیک زیبایی پاداش فعال شود.";
+        const string secondClosing = "کد را بدهید تا با رزرو نوبت در سالن پاداش فعال شود.";
+        var (programId, _, _) = await _ctx.CreateConfirmedProgramAsync(
+            configureStep3: s => s.InviteSmsClosingText = firstClosing);
+
+        var result = await _ctx.Service.UpdateProgramAsync(
+            programId,
+            _ctx.OwnerUserId,
+            new UpdateReferralProgramDto { InviteSmsClosingText = secondClosing });
+
+        Assert.True(result.Success);
+        Assert.Equal(AdminApprovalStatuses.Pending, result.Data!.InviteSmsApprovalStatus);
+        Assert.True(result.Data.CanEditInviteSmsClosingText);
+        Assert.Contains(secondClosing, result.Data.InviteSmsPreview);
+
+        var approval = await _ctx.Context.SmsApprovalRequests.AsNoTracking()
+            .SingleAsync(r => r.ReferralProgramId == programId && !r.IsDeleted && r.Status == AdminApprovalStatuses.Pending);
+        Assert.Contains(secondClosing, approval.ContentPreview);
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task Update_CustomToDefault_SendsSmsAndClearsApproval()
+    {
+        const string customClosing = "کد را بدهید تا با خرید از کلینیک پاداش فعال شود.";
+        var (programId, _, _) = await _ctx.CreateConfirmedProgramAsync(
+            configureStep3: s => s.InviteSmsClosingText = customClosing);
+
+        Assert.Equal(0, _ctx.FakeSms.SentMessages.Count);
+
+        var result = await _ctx.Service.UpdateProgramAsync(
+            programId,
+            _ctx.OwnerUserId,
+            new UpdateReferralProgramDto { InviteSmsClosingText = ReferralInviteSmsHelper.DefaultClosingText });
+
+        Assert.True(result.Success);
+        Assert.Equal(AdminApprovalStatuses.Approved, result.Data!.InviteSmsApprovalStatus);
+        Assert.Equal(3, _ctx.FakeSms.SentMessages.Count);
+        Assert.False(await _ctx.Context.SmsApprovalRequests
+            .AnyAsync(r => r.ReferralProgramId == programId && !r.IsDeleted));
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task Update_DefaultSmsFailed_StaysPending_RetrySends()
+    {
+        _ctx.FakeSms.FailNextSends = true;
+        var (programId, _, _) = await _ctx.CreateConfirmedProgramAsync();
+
+        var program = await _ctx.Context.ReferralPrograms.AsNoTracking()
+            .FirstAsync(p => p.Id == programId);
+        Assert.Equal(AdminApprovalStatuses.Pending, program.InviteSmsApprovalStatus);
+        Assert.Equal(0, program.NotifiedContactsCount);
+
+        _ctx.FakeSms.FailNextSends = false;
+        var result = await _ctx.Service.UpdateProgramAsync(
+            programId,
+            _ctx.OwnerUserId,
+            new UpdateReferralProgramDto { InviteSmsClosingText = ReferralInviteSmsHelper.DefaultClosingText });
+
+        Assert.True(result.Success);
+        Assert.Equal(AdminApprovalStatuses.Approved, result.Data!.InviteSmsApprovalStatus);
+        Assert.Equal(3, _ctx.FakeSms.SentMessages.Count);
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task Update_RejectedSameCustomText_RequeuesApproval()
+    {
+        const string customClosing = "کد را بدهید تا با خرید از سالن پاداش فعال شود.";
+        var (programId, _, _) = await _ctx.CreateConfirmedProgramAsync(
+            configureStep3: s => s.InviteSmsClosingText = customClosing);
+
+        var program = await _ctx.Context.ReferralPrograms.FirstAsync(p => p.Id == programId);
+        program.InviteSmsApprovalStatus = AdminApprovalStatuses.Rejected;
+        program.InviteSmsRejectionReason = "متن نامناسب";
+        await _ctx.Context.SaveChangesAsync();
+
+        var approval = await _ctx.Context.SmsApprovalRequests
+            .FirstAsync(r => r.ReferralProgramId == programId && !r.IsDeleted);
+        approval.Status = AdminApprovalStatuses.Rejected;
+        approval.RejectionReason = "متن نامناسب";
+        await _ctx.Context.SaveChangesAsync();
+
+        var result = await _ctx.Service.UpdateProgramAsync(
+            programId,
+            _ctx.OwnerUserId,
+            new UpdateReferralProgramDto { InviteSmsClosingText = customClosing });
+
+        Assert.True(result.Success);
+        Assert.Equal(AdminApprovalStatuses.Pending, result.Data!.InviteSmsApprovalStatus);
+        Assert.Null(result.Data.InviteSmsRejectionReason);
+
+        var pending = await _ctx.Context.SmsApprovalRequests.AsNoTracking()
+            .Where(r => r.ReferralProgramId == programId && !r.IsDeleted)
+            .ToListAsync();
+        Assert.Single(pending);
+        Assert.Equal(AdminApprovalStatuses.Pending, pending[0].Status);
+        AssertNoServerError(result);
+    }
+
+    [Fact]
+    public async Task SendQueued_WhenRejected_Returns400()
+    {
+        const string customClosing = "کد را بدهید تا با خرید از کلینیک پاداش فعال شود.";
+        var (programId, _, _) = await _ctx.CreateConfirmedProgramAsync(
+            configureStep3: s => s.InviteSmsClosingText = customClosing);
+
+        var program = await _ctx.Context.ReferralPrograms.FirstAsync(p => p.Id == programId);
+        program.InviteSmsApprovalStatus = AdminApprovalStatuses.Rejected;
+        await _ctx.Context.SaveChangesAsync();
+
+        var sendResult = await _ctx.Service.SendQueuedInviteSmsAsync(programId);
+        Assert.False(sendResult.Success);
+        Assert.Equal(400, sendResult.StatusCode);
+        Assert.Empty(_ctx.FakeSms.SentMessages);
+        AssertNoServerError(sendResult);
+    }
+
+    [Fact]
+    public async Task Delete_SoftDeletesProcessingApprovalRequest()
+    {
+        const string customClosing = "کد را بدهید تا با خرید از کلینیک پاداش فعال شود.";
+        var (programId, _, _) = await _ctx.CreateConfirmedProgramAsync(
+            configureStep3: s => s.InviteSmsClosingText = customClosing);
+
+        var approval = await _ctx.Context.SmsApprovalRequests
+            .FirstAsync(r => r.ReferralProgramId == programId && !r.IsDeleted);
+        approval.Status = AdminApprovalStatuses.Processing;
+        await _ctx.Context.SaveChangesAsync();
+
+        var delete = await _ctx.Service.DeleteAsync(programId, _ctx.OwnerUserId);
+        Assert.True(delete.Success);
+
+        var stillOpen = await _ctx.Context.SmsApprovalRequests
+            .AnyAsync(r => r.ReferralProgramId == programId && !r.IsDeleted);
+        Assert.False(stillOpen);
+        AssertNoServerError(delete);
     }
 
     [Fact]
@@ -487,6 +703,7 @@ public class ReferralProgramServiceTests : IAsyncLifetime
         Assert.Equal(referrerContactId, result.Data.ReferrerContactId);
         Assert.True(result.Data.ReferrerRewardSmsSent);
         Assert.Contains(_ctx.FakeSms.SentMessages, m => m.WalletTitle == "پاداش معرف" && m.Message.Contains("پاداش گرفتید"));
+        Assert.DoesNotContain(_ctx.FakeSms.SentMessages, m => m.Message.Contains("فروشگاه"));
         AssertNoServerError(result);
     }
 

@@ -12,7 +12,8 @@ namespace Api_Vapp.Services.ZarinPal
 
         /// <summary>
         /// آدرس Callback سمت سرور که زرین‌پال بعد از پرداخت به آن برمی‌گردد.
-        /// مثال: https://v-application.ir/api/Payment/callback/zarinpal
+        /// باید دامنه اصلی یا ساب‌دامین دامنه تأییدشده درگاه باشد (HTTPS در Production).
+        /// مثال: https://api.v-application.ir/api/Payment/callback/zarinpal
         /// </summary>
         public string CallbackUrl { get; set; } = string.Empty;
 

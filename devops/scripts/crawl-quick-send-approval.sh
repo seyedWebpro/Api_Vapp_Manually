@@ -265,6 +265,45 @@ assert_eq "dashboard has pendingQuickSend field" "true" "$([[ -n "$PQ" ]] && ech
 HTTP=$(req GET "/api/Admin/QuickSendApproval/BusinessCard/999999" "$TMP_DIR/nf.json")
 assert_eq "not found 404" "404" "$(json_get "$TMP_DIR/nf.json" statusCode)"
 
+# 18) BankAccount create -> Pending, quick-send 202, approve, not queued
+HTTP=$(req POST "/api/BankAccount" "$TMP_DIR/ba.json" \
+  -d '{"title":"حساب تست QS","accountNumber":"1234567890","cardNumber":"6037991234567890","shebaNumber":"IR120170000000123456789001"}')
+BA_ID=$(json_get "$TMP_DIR/ba.json" data.id)
+AS=$(json_get "$TMP_DIR/ba.json" data.approvalStatus)
+echo "BA_ID=$BA_ID approval=$AS"
+assert_eq "bank account created" "true" "$([[ -n "$BA_ID" ]] && echo true || echo false)"
+assert_eq "new bank account Pending" "Pending" "$AS"
+
+HTTP=$(req GET "/api/Admin/QuickSendApproval/pending?itemType=BankAccount" "$TMP_DIR/pendba.json")
+FOUND=$(python3 - "$TMP_DIR/pendba.json" "$BA_ID" <<'PY'
+import json,sys
+d=json.load(open(sys.argv[1],encoding='utf-8'))
+lid=int(sys.argv[2])
+items=((d.get('data') or {}).get('items') or [])
+print('yes' if any(i.get('id')==lid for i in items) else 'no')
+PY
+)
+assert_eq "pending list contains bank account" "yes" "$FOUND"
+
+HTTP=$(req POST "/api/BankAccount/quick-send" "$TMP_DIR/ba_qs.json" \
+  -d "{\"contactId\":$CONTACT_ID,\"bankAccountId\":$BA_ID}")
+SC=$(json_get "$TMP_DIR/ba_qs.json" statusCode)
+assert_eq "bank pending quick-send 202" "202" "$SC"
+assert_contains "bank pending message" "صف تأیید" "$(json_get "$TMP_DIR/ba_qs.json" message)"
+
+HTTP=$(req POST "/api/Admin/QuickSendApproval/BankAccount/${BA_ID}/approve" "$TMP_DIR/ba_ap.json")
+assert_eq "bank approve" "200" "$(json_get "$TMP_DIR/ba_ap.json" statusCode)"
+
+HTTP=$(req POST "/api/BankAccount/quick-send" "$TMP_DIR/ba_qs2.json" \
+  -d "{\"contactId\":$CONTACT_ID,\"bankAccountId\":$BA_ID}")
+SC=$(json_get "$TMP_DIR/ba_qs2.json" statusCode)
+echo "bank approved quick-send status=$SC msg=$(json_get "$TMP_DIR/ba_qs2.json" message)"
+if [[ "$SC" == "202" ]]; then
+  assert_eq "bank approved not queued" "200" "202"
+else
+  assert_eq "bank approved not queued" "true" "true"
+fi
+
 echo ""
 echo "=== RESULT: PASS=$PASS FAIL=$FAIL ==="
 if [[ "$FAIL" -gt 0 ]]; then

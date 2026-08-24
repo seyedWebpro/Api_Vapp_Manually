@@ -71,7 +71,12 @@ http_json() {
 
 echo "=== Booking window crawl @ $BASE_URL ==="
 
-code="$(curl -sS -m 10 -o /dev/null -w '%{http_code}' "$BASE_URL/health" || echo 000)"
+code="000"
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  code="$(curl -sS -m 10 -o /dev/null -w '%{http_code}' "$BASE_URL/health" || echo 000)"
+  [[ "$code" == "200" ]] && break
+  sleep 2
+done
 check "GET /health → 200" "$([[ "$code" == "200" ]] && echo 1 || echo 0)"
 
 # 1) create system with bookingWindowDays=7 via wizard
@@ -119,6 +124,15 @@ BW_EFFECTIVE="$(json_get "$CONF" data.system.effectiveBookingWindowDays)"
 check "confirm system" "$(http_ok "$code" && [[ -n "$SYSTEM_ID" ]] && echo 1 || echo 0)"
 check "confirmed bookingWindowDays=7" "$([[ "$BW_CONFIGURED" == "7" && "$BW_EFFECTIVE" == "7" ]] && echo 1 || echo 0)"
 echo "      systemId=$SYSTEM_ID slug=$SLUG"
+
+# تأیید ادمین — بدون این، public → CONTENT_PENDING_APPROVAL
+APPROVE_OUT="$TMP_DIR/approve.json"
+code="$(http_json POST "/api/Admin/QuickSendApproval/BookingSystem/$SYSTEM_ID/approve" "" "$APPROVE_OUT")"
+APPROVE_MSG="$(json_get "$APPROVE_OUT" message)"
+APPROVE_OK=0
+if http_ok "$code"; then APPROVE_OK=1; fi
+if [[ "$code" == "400" && "$APPROVE_MSG" == *"قبلاً بررسی"* ]]; then APPROVE_OK=1; fi
+check "admin approve BookingSystem" "$([[ "$APPROVE_OK" == "1" ]] && echo 1 || echo 0)"
 
 # 2) invalid step1 window
 BAD1="$TMP_DIR/bad1.json"

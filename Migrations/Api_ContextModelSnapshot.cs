@@ -466,6 +466,91 @@ namespace Api_Vapp.Migrations
                     b.ToTable("AutomationTypes", (string)null);
                 });
 
+            modelBuilder.Entity("Api_Vapp.Models.BankAccount", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AccountNumber")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("ApprovalStatus")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasDefaultValue("Pending");
+
+                    b.Property<DateTime?>("ApprovedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("ApprovedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("CardNumber")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
+                    b.Property<bool>("IsDefault")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<string>("RejectionReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("ShebaNumber")
+                        .HasMaxLength(26)
+                        .HasColumnType("nvarchar(26)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ApprovalStatus");
+
+                    b.HasIndex("IsActive");
+
+                    b.HasIndex("IsDefault");
+
+                    b.HasIndex("IsDeleted");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("UserId", "IsDeleted", "IsDefault");
+
+                    b.ToTable("BankAccounts");
+                });
+
             modelBuilder.Entity("Api_Vapp.Models.BookingAppointment", b =>
                 {
                     b.Property<int>("Id")
@@ -801,6 +886,10 @@ namespace Api_Vapp.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
+                    b.Property<string>("SmsCaption")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
                     b.Property<int>("Status")
                         .HasColumnType("int");
 
@@ -1023,6 +1112,10 @@ namespace Api_Vapp.Migrations
                         .HasDefaultValue(false);
 
                     b.Property<string>("Slug")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("SmsCaption")
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
@@ -1869,6 +1962,10 @@ namespace Api_Vapp.Migrations
                         .HasDefaultValue(false);
 
                     b.Property<string>("Slug")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("SmsCaption")
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
@@ -2954,6 +3051,21 @@ namespace Api_Vapp.Migrations
                     b.Property<DateTime?>("EndDate")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("InviteSmsApprovalStatus")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasDefaultValue("Approved");
+
+                    b.Property<string>("InviteSmsClosingText")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("InviteSmsRejectionReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
                     b.Property<bool>("IsActive")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
@@ -3314,13 +3426,16 @@ namespace Api_Vapp.Migrations
                     b.Property<int?>("MessageCampaignId")
                         .HasColumnType("int");
 
-                    b.Property<int>("MessageId")
+                    b.Property<int?>("MessageId")
                         .HasColumnType("int");
 
                     b.Property<int?>("MessageSessionId")
                         .HasColumnType("int");
 
                     b.Property<int>("RecipientsCount")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("ReferralProgramId")
                         .HasColumnType("int");
 
                     b.Property<string>("RejectionReason")
@@ -3365,6 +3480,8 @@ namespace Api_Vapp.Migrations
                     b.HasIndex("MessageId");
 
                     b.HasIndex("MessageSessionId");
+
+                    b.HasIndex("ReferralProgramId");
 
                     b.HasIndex("ReviewedByUserId");
 
@@ -3616,6 +3733,10 @@ namespace Api_Vapp.Migrations
                     b.Property<string>("RejectionReason")
                         .HasMaxLength(1000)
                         .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("SmsCaption")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime2");
@@ -4338,6 +4459,10 @@ namespace Api_Vapp.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
+                    b.Property<string>("SmsCaption")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
                     b.Property<int>("Status")
                         .HasColumnType("int");
 
@@ -5051,6 +5176,17 @@ namespace Api_Vapp.Migrations
                     b.Navigation("Contact");
                 });
 
+            modelBuilder.Entity("Api_Vapp.Models.BankAccount", b =>
+                {
+                    b.HasOne("Api_Vapp.Models.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("Api_Vapp.Models.BookingAppointment", b =>
                 {
                     b.HasOne("Api_Vapp.Models.BookingServiceItem", "BookingServiceItem")
@@ -5672,12 +5808,16 @@ namespace Api_Vapp.Migrations
                     b.HasOne("Api_Vapp.Models.Message", "Message")
                         .WithMany()
                         .HasForeignKey("MessageId")
-                        .OnDelete(DeleteBehavior.NoAction)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.NoAction);
 
                     b.HasOne("Api_Vapp.Models.MessageSession", "MessageSession")
                         .WithMany()
                         .HasForeignKey("MessageSessionId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Api_Vapp.Models.ReferralProgram", "ReferralProgram")
+                        .WithMany()
+                        .HasForeignKey("ReferralProgramId")
                         .OnDelete(DeleteBehavior.NoAction);
 
                     b.HasOne("Api_Vapp.Models.User", "ReviewedByUser")
@@ -5696,6 +5836,8 @@ namespace Api_Vapp.Migrations
                     b.Navigation("MessageCampaign");
 
                     b.Navigation("MessageSession");
+
+                    b.Navigation("ReferralProgram");
 
                     b.Navigation("ReviewedByUser");
 

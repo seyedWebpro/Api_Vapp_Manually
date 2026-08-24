@@ -325,10 +325,17 @@ namespace Api_Vapp.Controller
         public async Task<ContentResult> ZarinPalCallbackPost(
             [FromQuery] string? Authority,
             [FromQuery] string? Status,
-            [FromForm] string? authority,
-            [FromForm] string? status)
+            [FromQuery] string? authority,
+            [FromQuery] string? status,
+            [FromForm(Name = "Authority")] string? FormAuthority,
+            [FromForm(Name = "Status")] string? FormStatus,
+            [FromForm(Name = "authority")] string? FormAuthorityLower,
+            [FromForm(Name = "status")] string? FormStatusLower)
         {
-            return await ZarinPalCallbackGet(Authority, Status, authority, status);
+            var auth = Authority ?? authority ?? FormAuthority ?? FormAuthorityLower;
+            var st = Status ?? status ?? FormStatus ?? FormStatusLower;
+            var (_, html, _) = await _paymentService.HandleZarinPalCallbackAsync(auth, st);
+            return Content(html, "text/html; charset=utf-8");
         }
 
         /// <summary>

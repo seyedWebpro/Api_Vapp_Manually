@@ -128,6 +128,9 @@ namespace Api_Vapp.DTOs.BookingSystem
         public bool RemindersEnabled { get; set; } = true;
         public DateTime? ReminderSentAt { get; set; }
         public List<int> ReminderOffsetsSent { get; set; } = new();
+
+        /// <summary>پیش‌نمایش ارسال یادآوری (آفست خدمت + آیا هنوز ارسال می‌شود)</summary>
+        public BookingReminderPreviewDto Reminder { get; set; } = new();
         public DateTime? CancelledAt { get; set; }
         public string? CancellationReason { get; set; }
         public DateTime CreatedAt { get; set; }
@@ -263,6 +266,20 @@ namespace Api_Vapp.DTOs.BookingSystem
 
         /// <summary>آیا پیامک یادآوری ارسال شود؟ پیش‌فرض true</summary>
         public bool? RemindersEnabled { get; set; }
+    }
+
+    /// <summary>
+    /// پیش‌نمایش یادآوری برای رزرو دستی / جزئیات نوبت — بدون کوئری اضافه در MapToDto.
+    /// </summary>
+    public class BookingReminderPreviewDto
+    {
+        public bool RemindersEnabled { get; set; } = true;
+        public bool WillSend { get; set; }
+        public List<int> OffsetsMinutes { get; set; } = new();
+        public List<int> PendingOffsetsMinutes { get; set; } = new();
+        public DateTime? NextReminderAtUtc { get; set; }
+        public string? SkipReasonCode { get; set; }
+        public string? SkipReason { get; set; }
     }
 
     public class UpdateBookingAppointmentDto

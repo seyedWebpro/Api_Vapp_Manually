@@ -364,6 +364,29 @@ namespace Api_Vapp.Controller
             return StatusCode(result.StatusCode, result);
         }
 
+        /// <summary>
+        /// پیش‌نمایش پیامک یادآوری برای رزرو دستی: آفست خدمت و اینکه برای این ساعت هنوز ارسال می‌شود یا نه.
+        /// </summary>
+        [HttpGet("{id}/appointments/reminder-preview")]
+        [ProducesResponseType(typeof(ApiResponse<BookingReminderPreviewDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<BookingReminderPreviewDto>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(ApiResponse<BookingReminderPreviewDto>), StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<ApiResponse<BookingReminderPreviewDto>>> GetReminderPreview(
+            int id,
+            [FromQuery] int serviceId,
+            [FromQuery] DateTime startUtc,
+            [FromQuery] bool remindersEnabled = true)
+        {
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _appointmentService.GetReminderPreviewAsync(
+                id,
+                userId,
+                serviceId,
+                startUtc,
+                remindersEnabled);
+            return StatusCode(result.StatusCode, result);
+        }
+
         [HttpPost("{id}/appointments/manual")]
         [ProducesResponseType(typeof(ApiResponse<BookingAppointmentDto>), StatusCodes.Status201Created)]
         public async Task<ActionResult<ApiResponse<BookingAppointmentDto>>> CreateManualAppointment(

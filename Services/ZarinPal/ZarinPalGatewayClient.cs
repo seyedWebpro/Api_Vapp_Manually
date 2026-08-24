@@ -9,11 +9,28 @@ using Microsoft.Extensions.Options;
 namespace Api_Vapp.Services.ZarinPal
 {
     /// <summary>
-    /// پیاده‌سازی کلاینت زرین‌پال بر اساس REST API v4
-    /// https://www.zarinpal.com/docs/paymentGateway/connectToGateway.html
+    /// کلاینت رسمی زرین‌پال — REST API v4
+    /// مرجع: https://www.zarinpal.com/docs/paymentGateway/connectToGateway.html
+    /// خطاها: https://www.zarinpal.com/docs/paymentGateway/errorList.html
+    ///
+    /// جریان:
+    /// 1) POST /pg/v4/payment/request.json → authority + code=100
+    /// 2) Redirect کاربر به https://payment.zarinpal.com/pg/StartPay/{authority}
+    /// 3) Callback با QueryString Authority و Status (OK|NOK)
+    /// 4) فقط اگر Status=OK → POST /pg/v4/payment/verify.json
+    ///    code 100 = اولین verify موفق | 101 = قبلاً verify شده (موفق idempotent)
     /// </summary>
     public sealed class ZarinPalGatewayClient : IZarinPalGatewayClient
     {
+        /// <summary>حداقل مبلغ مجاز (تومان) — مطابق محدودیت رایج درگاه</summary>
+        public const int MinAmountToman = 1000;
+
+        /// <summary>حداکثر مبلغ — خطای -41 زرین‌پال: ۱۰۰ میلیون تومان</summary>
+        public const int MaxAmountToman = 100_000_000;
+
+        /// <summary>حد description در request — خطای -9</summary>
+        public const int MaxDescriptionLength = 500;
+
         private static readonly JsonSerializerOptions JsonOptions = new()
         {
             PropertyNameCaseInsensitive = true,
@@ -43,26 +60,38 @@ namespace Api_Vapp.Services.ZarinPal
             string? orderId = null,
             CancellationToken cancellationToken = default)
         {
-            if (string.IsNullOrWhiteSpace(_options.MerchantId))
+            if (string.IsNullOrWhiteSpace(_options.MerchantId) || _options.MerchantId.Trim().Length != 36)
             {
-                _logger.LogError("ZarinPal MerchantId is not configured");
-                return FailRequest("تنظیمات درگاه پرداخت ناقص است");
+                _logger.LogError("ZarinPal MerchantId missing or not 36 chars");
+                return FailRequest("تنظیمات درگاه پرداخت ناقص است", -9);
             }
 
-            if (amountToman < 1000)
-            {
-                return FailRequest("مبلغ پرداخت کمتر از حد مجاز درگاه است");
-            }
+            if (amountToman < MinAmountToman)
+                return FailRequest("مبلغ پرداخت کمتر از حد مجاز درگاه است", -9);
+
+            if (amountToman > MaxAmountToman)
+                return FailRequest("مبلغ پرداخت بیشتر از حد مجاز درگاه است", -41);
 
             if (string.IsNullOrWhiteSpace(callbackUrl))
+                return FailRequest("آدرس بازگشت پرداخت تنظیم نشده است", -9);
+
+            callbackUrl = callbackUrl.Trim();
+            if (!_options.Sandbox &&
+                !callbackUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
             {
-                return FailRequest("آدرس بازگشت پرداخت تنظیم نشده است");
+                _logger.LogError("ZarinPal production callback must be HTTPS: {CallbackHost}",
+                    TryHost(callbackUrl));
+                return FailRequest("آدرس بازگشت پرداخت نامعتبر است", -9);
             }
+
+            description = NormalizeDescription(description);
+            if (string.IsNullOrWhiteSpace(description))
+                return FailRequest("توضیحات پرداخت الزامی است", -9);
 
             var currency = NormalizeCurrency(_options.Currency);
             var payload = new ZarinPalRequestPayload
             {
-                MerchantId = _options.MerchantId,
+                MerchantId = _options.MerchantId.Trim(),
                 Amount = amountToman,
                 Description = description,
                 CallbackUrl = callbackUrl,
@@ -74,8 +103,8 @@ namespace Api_Vapp.Services.ZarinPal
             {
                 var endpoint = GetApiBaseUrl() + "/pg/v4/payment/request.json";
                 _logger.LogInformation(
-                    "ZarinPal request — Amount: {Amount}, Currency: {Currency}, Sandbox: {Sandbox}",
-                    amountToman, currency, _options.Sandbox);
+                    "ZarinPal request — Amount={Amount} Currency={Currency} Sandbox={Sandbox} CallbackHost={CallbackHost}",
+                    amountToman, currency, _options.Sandbox, TryHost(callbackUrl));
 
                 using var response = await _httpClient.PostAsJsonAsync(endpoint, payload, JsonOptions, cancellationToken);
                 var body = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -89,27 +118,34 @@ namespace Api_Vapp.Services.ZarinPal
                     return FailRequest(ControlledErrorHelper.PaymentFailed);
                 }
 
-                var (dataCode, authority, errorCode) = ParseRequestBody(body);
+                var (dataCode, authority, fee, feeType, errorCode, errorMessage) = ParseRequestBody(body);
                 var code = dataCode ?? errorCode ?? -1;
 
                 if (code == 100 && !string.IsNullOrWhiteSpace(authority))
                 {
                     var paymentUrl = BuildStartPayUrl(authority);
-                    _logger.LogInformation("ZarinPal request success — Authority received");
+                    _logger.LogInformation(
+                        "ZarinPal request success — Authority issued, Fee={Fee}, FeeType={FeeType}",
+                        fee, feeType);
                     return new ZarinPalRequestResult
                     {
                         Success = true,
                         Code = code,
                         Authority = authority,
-                        PaymentUrl = paymentUrl
+                        PaymentUrl = paymentUrl,
+                        Fee = fee,
+                        FeeType = feeType
                     };
                 }
 
                 _logger.LogWarning(
-                    "ZarinPal request rejected — Code: {Code}, Errors: {Errors}",
+                    "ZarinPal request rejected — Code={Code} Hint={Hint} Body={Body}",
                     code,
+                    ExplainCode(code),
                     Truncate(body));
-                return FailRequest(ControlledErrorHelper.PaymentFailed, code);
+                return FailRequest(
+                    MapPublicError(code, errorMessage),
+                    code);
             }
             catch (OperationCanceledException)
             {
@@ -127,18 +163,18 @@ namespace Api_Vapp.Services.ZarinPal
             string authority,
             CancellationToken cancellationToken = default)
         {
-            if (string.IsNullOrWhiteSpace(_options.MerchantId))
+            if (string.IsNullOrWhiteSpace(_options.MerchantId) || _options.MerchantId.Trim().Length != 36)
             {
-                _logger.LogError("ZarinPal MerchantId is not configured");
-                return FailVerify("تنظیمات درگاه پرداخت ناقص است");
+                _logger.LogError("ZarinPal MerchantId missing or not 36 chars");
+                return FailVerify("تنظیمات درگاه پرداخت ناقص است", -9);
             }
 
             if (string.IsNullOrWhiteSpace(authority))
-            {
-                return FailVerify("کد مرجع پرداخت نامعتبر است");
-            }
+                return FailVerify("کد مرجع پرداخت نامعتبر است", -54);
 
-            // تست خودکار سندباکس — فقط با هر دو فلگ Sandbox + AllowSandboxAutoVerify
+            authority = authority.Trim();
+
+            // فقط تست خودکار لوکال/سندباکس — هرگز در Production
             if (_options.Sandbox &&
                 _options.AllowSandboxAutoVerify &&
                 authority.StartsWith("S", StringComparison.OrdinalIgnoreCase))
@@ -155,9 +191,13 @@ namespace Api_Vapp.Services.ZarinPal
                 };
             }
 
+            if (amountToman < MinAmountToman || amountToman > MaxAmountToman)
+                return FailVerify("مبلغ پرداخت نامعتبر است", -50);
+
+            // مبلغ verify باید دقیقاً همان واحد request باشد (IRT=تومان / IRR=ریال)
             var payload = new ZarinPalVerifyPayload
             {
-                MerchantId = _options.MerchantId,
+                MerchantId = _options.MerchantId.Trim(),
                 Amount = amountToman,
                 Authority = authority
             };
@@ -165,7 +205,10 @@ namespace Api_Vapp.Services.ZarinPal
             try
             {
                 var endpoint = GetApiBaseUrl() + "/pg/v4/payment/verify.json";
-                _logger.LogInformation("ZarinPal verify — Amount: {Amount}", amountToman);
+                _logger.LogInformation(
+                    "ZarinPal verify — Amount={Amount} AuthorityPrefix={AuthorityPrefix}",
+                    amountToman,
+                    authority.Length <= 8 ? authority : authority[..8]);
 
                 using var response = await _httpClient.PostAsJsonAsync(endpoint, payload, JsonOptions, cancellationToken);
                 var body = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -179,16 +222,15 @@ namespace Api_Vapp.Services.ZarinPal
                     return FailVerify(ControlledErrorHelper.PaymentFailed);
                 }
 
-                var (dataCode, refId, cardPan, cardHash, errorCode) = ParseVerifyBody(body);
+                var (dataCode, refId, cardPan, cardHash, fee, feeType, errorCode, errorMessage) = ParseVerifyBody(body);
                 var code = dataCode ?? errorCode ?? -1;
 
                 // 100 = اولین Verify موفق | 101 = قبلاً Verify شده (idempotent success)
                 if (code is 100 or 101)
                 {
                     _logger.LogInformation(
-                        "ZarinPal verify success — Code: {Code}, RefId: {RefId}",
-                        code,
-                        refId);
+                        "ZarinPal verify success — Code={Code} RefId={RefId} AlreadyVerified={Already}",
+                        code, refId, code == 101);
                     return new ZarinPalVerifyResult
                     {
                         Success = true,
@@ -196,15 +238,18 @@ namespace Api_Vapp.Services.ZarinPal
                         Code = code,
                         RefId = refId,
                         CardPan = cardPan,
-                        CardHash = cardHash
+                        CardHash = cardHash,
+                        Fee = fee,
+                        FeeType = feeType
                     };
                 }
 
                 _logger.LogWarning(
-                    "ZarinPal verify rejected — Code: {Code}, Body: {Body}",
+                    "ZarinPal verify rejected — Code={Code} Hint={Hint} Body={Body}",
                     code,
+                    ExplainCode(code),
                     Truncate(body));
-                return FailVerify(ControlledErrorHelper.PaymentFailed, code);
+                return FailVerify(MapPublicError(code, errorMessage), code);
             }
             catch (OperationCanceledException)
             {
@@ -237,6 +282,14 @@ namespace Api_Vapp.Services.ZarinPal
             return "IRT";
         }
 
+        private static string NormalizeDescription(string? description)
+        {
+            var text = (description ?? string.Empty).Trim();
+            if (text.Length <= MaxDescriptionLength)
+                return text;
+            return text[..MaxDescriptionLength];
+        }
+
         private static Dictionary<string, string>? BuildMetadata(string? mobile, string? email, string? orderId)
         {
             var metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -262,16 +315,51 @@ namespace Api_Vapp.Services.ZarinPal
             return value.Length <= max ? value : value[..max] + "...";
         }
 
-        /// <summary>
-        /// errors در موفقیت [] و در خطا object است — با JsonDocument هر دو را پوشش می‌دهیم.
-        /// </summary>
-        private static (int? DataCode, string? Authority, int? ErrorCode) ParseRequestBody(string body)
+        private static string? TryHost(string? url) =>
+            Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.Host : null;
+
+        /// <summary>پیام کنترل‌شده برای کلاینت — جزئیات فنی فقط در لاگ</summary>
+        private static string MapPublicError(int code, string? gatewayMessage)
+        {
+            // به کاربر پیام خام درگاه را نشان نده؛ فقط کدهای شناخته‌شده را برای لاگ نگه می‌داریم
+            _ = gatewayMessage;
+            return code switch
+            {
+                -14 => ControlledErrorHelper.PaymentFailed, // domain mismatch
+                -50 => ControlledErrorHelper.PaymentFailed, // amount mismatch
+                -51 => ControlledErrorHelper.PaymentFailed, // unpaid
+                -54 => ControlledErrorHelper.PaymentFailed, // invalid authority
+                _ => ControlledErrorHelper.PaymentFailed
+            };
+        }
+
+        private static string ExplainCode(int code) => code switch
+        {
+            -9 => "validation",
+            -10 => "invalid_merchant_or_ip",
+            -11 => "terminal_inactive",
+            -12 => "rate_limited",
+            -14 => "callback_domain_mismatch",
+            -18 => "referrer_domain_mismatch",
+            -41 => "amount_too_high",
+            -50 => "verify_amount_mismatch",
+            -51 => "payment_failed",
+            -53 => "wrong_merchant",
+            -54 => "invalid_authority",
+            100 => "success",
+            101 => "already_verified",
+            _ => "unknown"
+        };
+
+        private static (int? DataCode, string? Authority, int? Fee, string? FeeType, int? ErrorCode, string? ErrorMessage)
+            ParseRequestBody(string body)
         {
             using var doc = JsonDocument.Parse(body);
             var root = doc.RootElement;
             int? dataCode = null;
             string? authority = null;
-            int? errorCode = null;
+            int? fee = null;
+            string? feeType = null;
 
             if (root.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Object)
             {
@@ -279,13 +367,18 @@ namespace Api_Vapp.Services.ZarinPal
                     dataCode = c;
                 if (data.TryGetProperty("authority", out var authEl) && authEl.ValueKind == JsonValueKind.String)
                     authority = authEl.GetString();
+                if (data.TryGetProperty("fee", out var feeEl) && feeEl.TryGetInt32(out var f))
+                    fee = f;
+                if (data.TryGetProperty("fee_type", out var ftEl) && ftEl.ValueKind == JsonValueKind.String)
+                    feeType = ftEl.GetString();
             }
 
-            errorCode = TryReadErrorCode(root);
-            return (dataCode, authority, errorCode);
+            var (errorCode, errorMessage) = TryReadErrors(root);
+            return (dataCode, authority, fee, feeType, errorCode, errorMessage);
         }
 
-        private static (int? DataCode, string? RefId, string? CardPan, string? CardHash, int? ErrorCode) ParseVerifyBody(string body)
+        private static (int? DataCode, string? RefId, string? CardPan, string? CardHash, int? Fee, string? FeeType, int? ErrorCode, string? ErrorMessage)
+            ParseVerifyBody(string body)
         {
             using var doc = JsonDocument.Parse(body);
             var root = doc.RootElement;
@@ -293,42 +386,64 @@ namespace Api_Vapp.Services.ZarinPal
             string? refId = null;
             string? cardPan = null;
             string? cardHash = null;
+            int? fee = null;
+            string? feeType = null;
 
             if (root.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Object)
             {
                 if (data.TryGetProperty("code", out var codeEl) && codeEl.TryGetInt32(out var c))
                     dataCode = c;
                 if (data.TryGetProperty("ref_id", out var refEl))
-                    refId = refEl.ToString();
+                    refId = refEl.ValueKind == JsonValueKind.String ? refEl.GetString() : refEl.ToString();
                 if (data.TryGetProperty("card_pan", out var panEl) && panEl.ValueKind == JsonValueKind.String)
                     cardPan = panEl.GetString();
                 if (data.TryGetProperty("card_hash", out var hashEl) && hashEl.ValueKind == JsonValueKind.String)
                     cardHash = hashEl.GetString();
+                if (data.TryGetProperty("fee", out var feeEl) && feeEl.TryGetInt32(out var f))
+                    fee = f;
+                if (data.TryGetProperty("fee_type", out var ftEl) && ftEl.ValueKind == JsonValueKind.String)
+                    feeType = ftEl.GetString();
             }
 
-            return (dataCode, refId, cardPan, cardHash, TryReadErrorCode(root));
+            var (errorCode, errorMessage) = TryReadErrors(root);
+            return (dataCode, refId, cardPan, cardHash, fee, feeType, errorCode, errorMessage);
         }
 
-        private static int? TryReadErrorCode(JsonElement root)
+        /// <summary>
+        /// errors در موفقیت [] و در خطا object/{code,message} یا array است.
+        /// </summary>
+        private static (int? Code, string? Message) TryReadErrors(JsonElement root)
         {
             if (!root.TryGetProperty("errors", out var errors))
-                return null;
+                return (null, null);
 
-            if (errors.ValueKind == JsonValueKind.Object &&
-                errors.TryGetProperty("code", out var codeEl) &&
-                codeEl.TryGetInt32(out var code))
-                return code;
+            if (errors.ValueKind == JsonValueKind.Object)
+            {
+                int? code = null;
+                string? message = null;
+                if (errors.TryGetProperty("code", out var codeEl) && codeEl.TryGetInt32(out var c))
+                    code = c;
+                if (errors.TryGetProperty("message", out var msgEl) && msgEl.ValueKind == JsonValueKind.String)
+                    message = msgEl.GetString();
+                return (code, message);
+            }
 
             if (errors.ValueKind == JsonValueKind.Array && errors.GetArrayLength() > 0)
             {
                 var first = errors[0];
-                if (first.ValueKind == JsonValueKind.Object &&
-                    first.TryGetProperty("code", out var arrCode) &&
-                    arrCode.TryGetInt32(out var c))
-                    return c;
+                if (first.ValueKind == JsonValueKind.Object)
+                {
+                    int? code = null;
+                    string? message = null;
+                    if (first.TryGetProperty("code", out var arrCode) && arrCode.TryGetInt32(out var c))
+                        code = c;
+                    if (first.TryGetProperty("message", out var msgEl) && msgEl.ValueKind == JsonValueKind.String)
+                        message = msgEl.GetString();
+                    return (code, message);
+                }
             }
 
-            return null;
+            return (null, null);
         }
 
         #region Wire DTOs
@@ -359,6 +474,10 @@ namespace Api_Vapp.Services.ZarinPal
             [JsonPropertyName("merchant_id")]
             public string MerchantId { get; set; } = string.Empty;
 
+            /// <summary>
+            /// همان مبلغ request با همان واحد (IRT تومان / IRR ریال).
+            /// عدم تطابق → خطای -50.
+            /// </summary>
             [JsonPropertyName("amount")]
             public int Amount { get; set; }
 

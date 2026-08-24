@@ -559,6 +559,73 @@ namespace Api_Vapp.Services
             }
         }
 
+        public async Task<ApiResponse<BookingReminderPreviewDto>> GetReminderPreviewAsync(
+            int systemId,
+            int userId,
+            int serviceId,
+            DateTime startUtc,
+            bool remindersEnabled = true)
+        {
+            try
+            {
+                _logger.LogInformation(
+                    "شروع پیش‌نمایش یادآوری نوبت — {SystemId} {ServiceId}",
+                    systemId,
+                    serviceId);
+
+                if (serviceId <= 0)
+                {
+                    return ApiResponse<BookingReminderPreviewDto>.BadRequest(
+                        "شناسه خدمت الزامی است",
+                        errorCode: ErrorCodes.ValidationFailed);
+                }
+
+                if (startUtc == default)
+                {
+                    return ApiResponse<BookingReminderPreviewDto>.BadRequest(
+                        "زمان نوبت الزامی است",
+                        errorCode: ErrorCodes.ValidationFailed);
+                }
+
+                var system = await _systemRepository.GetByIdAndUserIdAsync(systemId, userId);
+                if (system == null)
+                {
+                    return ApiResponse<BookingReminderPreviewDto>.NotFound("سیستم رزرو یافت نشد");
+                }
+
+                var offsetsRow = await _appointmentRepository.GetServiceReminderOffsetsAsync(systemId, serviceId);
+                if (offsetsRow == null)
+                {
+                    return ApiResponse<BookingReminderPreviewDto>.NotFound("خدمت یافت نشد");
+                }
+
+                var offsets = BookingReminderOffsetsHelper.FromJson(
+                    offsetsRow.Value.ReminderOffsetsJson,
+                    offsetsRow.Value.ReminderOffsetMinutes);
+                var start = NormalizeUtc(startUtc);
+                var now = DateTime.UtcNow;
+                var schedule = BookingReminderOffsetsHelper.BuildSchedule(
+                    start,
+                    now,
+                    remindersEnabled,
+                    BookingAppointmentStatuses.Confirmed,
+                    offsets,
+                    new HashSet<int>());
+
+                _logger.LogInformation(
+                    "پایان پیش‌نمایش یادآوری نوبت — {SystemId} WillSend={WillSend}",
+                    systemId,
+                    schedule.WillSend);
+
+                return ApiResponse<BookingReminderPreviewDto>.CreateSuccess(MapReminderPreview(schedule));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "خطا در پیش‌نمایش یادآوری نوبت — {SystemId}", systemId);
+                return ApiResponse<BookingReminderPreviewDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
         public async Task<ApiResponse<BookingAppointmentDto>> CreateManualBookingAsync(
             int systemId, int userId, CreateManualBookingDto dto)
         {
@@ -748,6 +815,11 @@ namespace Api_Vapp.Services
 
                     appointment.StartUtc = startUtc;
                     appointment.EndUtc = startUtc.AddMinutes(service.DurationMinutes);
+                    appointment.ReminderSentAt = null;
+                    appointment.ReminderSentOffsetsCsv = null;
+                    _logger.LogInformation(
+                        "Booking reminder send-state reset after reschedule — {AppointmentId}",
+                        appointment.Id);
                 }
 
                 if (dto.RemindersEnabled.HasValue)
@@ -1064,17 +1136,10 @@ namespace Api_Vapp.Services
                     continue;
                 }
 
-                var alreadySent = BookingReminderOffsetsHelper.ParseSentOffsets(candidate.ReminderSentOffsetsCsv);
-                // سازگاری: اگر ReminderSentAt قدیمی پر است ولی CSV خالی، همه offsetهای فعلی را ارسال‌شده فرض کن
-                if (alreadySent.Count == 0 &&
-                    candidate.ReminderSentAt.HasValue &&
-                    string.IsNullOrWhiteSpace(candidate.ReminderSentOffsetsCsv))
-                {
-                    foreach (var o in offsets)
-                    {
-                        alreadySent.Add(o);
-                    }
-                }
+                var alreadySent = BookingReminderOffsetsHelper.ResolveSentOffsets(
+                    candidate.ReminderSentOffsetsCsv,
+                    candidate.ReminderSentAt,
+                    offsets);
 
                 var dueOffsets = offsets
                     .Where(o => !alreadySent.Contains(o))
@@ -1100,16 +1165,10 @@ namespace Api_Vapp.Services
                     continue;
                 }
 
-                var sentNow = BookingReminderOffsetsHelper.ParseSentOffsets(tracked.ReminderSentOffsetsCsv);
-                if (sentNow.Count == 0 &&
-                    tracked.ReminderSentAt.HasValue &&
-                    string.IsNullOrWhiteSpace(tracked.ReminderSentOffsetsCsv))
-                {
-                    foreach (var o in offsets)
-                    {
-                        sentNow.Add(o);
-                    }
-                }
+                var sentNow = BookingReminderOffsetsHelper.ResolveSentOffsets(
+                    tracked.ReminderSentOffsetsCsv,
+                    tracked.ReminderSentAt,
+                    offsets);
 
                 var message = BuildReminderMessage(tracked, candidate.BookingSystem, candidate.BookingServiceItem!);
                 if (!message.TrimEnd().EndsWith("لغو11"))
@@ -1453,13 +1512,57 @@ namespace Api_Vapp.Services
             Status = appointment.Status,
             RemindersEnabled = appointment.RemindersEnabled,
             ReminderSentAt = appointment.ReminderSentAt.HasValue ? EnsureUtc(appointment.ReminderSentAt.Value) : null,
-            ReminderOffsetsSent = BookingReminderOffsetsHelper.ParseSentOffsets(appointment.ReminderSentOffsetsCsv)
-                .OrderBy(x => x)
-                .ToList(),
+            ReminderOffsetsSent = ResolveReminderOffsetsSent(appointment),
+            Reminder = MapReminderPreview(appointment),
             CancelledAt = appointment.CancelledAt.HasValue ? EnsureUtc(appointment.CancelledAt.Value) : null,
             CancellationReason = appointment.CancellationReason,
             CreatedAt = EnsureUtc(appointment.CreatedAt),
             HasPaymentReceipt = !string.IsNullOrWhiteSpace(appointment.PaymentReceiptPath)
+        };
+
+        private static List<int> ResolveReminderOffsetsSent(BookingAppointment appointment)
+        {
+            var offsets = BookingReminderOffsetsHelper.FromJson(
+                appointment.BookingServiceItem?.ReminderOffsetsJson,
+                appointment.BookingServiceItem?.ReminderOffsetMinutes ?? 0);
+            return BookingReminderOffsetsHelper.ResolveSentOffsets(
+                    appointment.ReminderSentOffsetsCsv,
+                    appointment.ReminderSentAt,
+                    offsets)
+                .OrderBy(x => x)
+                .ToList();
+        }
+
+        private static BookingReminderPreviewDto MapReminderPreview(BookingAppointment appointment)
+        {
+            var offsets = BookingReminderOffsetsHelper.FromJson(
+                appointment.BookingServiceItem?.ReminderOffsetsJson,
+                appointment.BookingServiceItem?.ReminderOffsetMinutes ?? 0);
+            var sent = BookingReminderOffsetsHelper.ResolveSentOffsets(
+                appointment.ReminderSentOffsetsCsv,
+                appointment.ReminderSentAt,
+                offsets);
+            var schedule = BookingReminderOffsetsHelper.BuildSchedule(
+                EnsureUtc(appointment.StartUtc),
+                DateTime.UtcNow,
+                appointment.RemindersEnabled,
+                appointment.Status,
+                offsets,
+                sent);
+            return MapReminderPreview(schedule);
+        }
+
+        private static BookingReminderPreviewDto MapReminderPreview(BookingReminderSchedule schedule) => new()
+        {
+            RemindersEnabled = schedule.RemindersEnabled,
+            WillSend = schedule.WillSend,
+            OffsetsMinutes = schedule.OffsetsMinutes.ToList(),
+            PendingOffsetsMinutes = schedule.PendingOffsetsMinutes.ToList(),
+            NextReminderAtUtc = schedule.NextReminderAtUtc.HasValue
+                ? EnsureUtc(schedule.NextReminderAtUtc.Value)
+                : null,
+            SkipReasonCode = schedule.SkipReasonCode,
+            SkipReason = schedule.SkipReason
         };
 
         private static bool IsDateWithinPublicBookingWindow(DateOnly date, BookingSystem system, BookingSystemOptions options)

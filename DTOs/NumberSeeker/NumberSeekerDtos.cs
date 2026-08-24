@@ -16,8 +16,11 @@ namespace Api_Vapp.DTOs.NumberSeeker
         [StringLength(100, MinimumLength = 1)]
         public string City { get; set; } = "تهران";
 
+        /// <summary>
+        /// کلمهٔ جستجوی کسب‌وکار — آزاد است (انتخاب از پیشنهادها یا تایپ دلخواه).
+        /// </summary>
         [Required(ErrorMessage = "دسته‌بندی الزامی است")]
-        [StringLength(200, MinimumLength = 1)]
+        [MaxLength(200, ErrorMessage = "دسته‌بندی نمی‌تواند بیشتر از ۲۰۰ کاراکتر باشد")]
         public string Category { get; set; } = string.Empty;
 
         [Range(1, 1000, ErrorMessage = "تعداد شماره باید بین ۱ تا ۱۰۰۰ باشد")]
@@ -226,8 +229,19 @@ namespace Api_Vapp.DTOs.NumberSeeker
 
     public class NumberSeekerCategoriesDto
     {
+        /// <summary>پیشنهادهای دسته — اگر AllowCustomCategory=true فقط suggestion هستند</summary>
         public List<NumberSeekerCategoryDto> Categories { get; set; } = new();
-        public string Placeholder { get; set; } = "مثال : کافه - رستوران و ...";
+
+        public string Placeholder { get; set; } = NumberSeekerCategoryHelper.Placeholder;
+
+        /// <summary>
+        /// true = کاربر می‌تواند متن دلخواه بفرستد (Combobox).
+        /// false = فقط یکی از Categories مجاز است.
+        /// </summary>
+        public bool AllowCustomCategory { get; set; } = true;
+
+        /// <summary>راهنمای کوتاه برای UI Combobox</summary>
+        public string CustomCategoryHint { get; set; } = NumberSeekerCategoryHelper.CustomAllowedHint;
     }
 
     public class NumberSeekerCategoryDto
@@ -241,9 +255,21 @@ namespace Api_Vapp.DTOs.NumberSeeker
     {
         public List<NumberSeekerSourceInfoDto> Sources { get; set; } = new();
         public List<NumberSeekerCityDto> Cities { get; set; } = new();
+
+        /// <summary>پیشنهادهای دسته — اگر AllowCustomCategory=true فقط suggestion هستند</summary>
         public List<NumberSeekerCategoryDto> Categories { get; set; } = new();
+
         public string DefaultCity { get; set; } = "تهران";
-        public string CategoryPlaceholder { get; set; } = "مثال : کافه - رستوران و ...";
+        public string CategoryPlaceholder { get; set; } = NumberSeekerCategoryHelper.Placeholder;
+
+        /// <summary>
+        /// true = فیلد دسته Combobox است (انتخاب از لیست یا تایپ آزاد).
+        /// </summary>
+        public bool AllowCustomCategory { get; set; } = true;
+
+        /// <summary>راهنمای کوتاه برای UI Combobox</summary>
+        public string CustomCategoryHint { get; set; } = NumberSeekerCategoryHelper.CustomAllowedHint;
+
         public int MinPhones { get; set; } = 1;
         public int MaxPhones { get; set; } = 1000;
         public int DefaultPhones { get; set; } = 50;

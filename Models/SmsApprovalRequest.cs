@@ -9,8 +9,9 @@ namespace Api_Vapp.Models
         public int UserId { get; set; }
         public string RequestType { get; set; } = string.Empty;
         public int? MessageCampaignId { get; set; }
-        public int MessageId { get; set; }
+        public int? MessageId { get; set; }
         public int? MessageSessionId { get; set; }
+        public int? ReferralProgramId { get; set; }
         public string ContentPreview { get; set; } = string.Empty;
         public string? TitlePreview { get; set; }
         public int RecipientsCount { get; set; }
@@ -25,8 +26,9 @@ namespace Api_Vapp.Models
 
         public virtual User User { get; set; } = null!;
         public virtual MessageCampaign? MessageCampaign { get; set; }
-        public virtual Message Message { get; set; } = null!;
+        public virtual Message? Message { get; set; }
         public virtual MessageSession? MessageSession { get; set; }
+        public virtual ReferralProgram? ReferralProgram { get; set; }
         public virtual User? ReviewedByUser { get; set; }
     }
 }

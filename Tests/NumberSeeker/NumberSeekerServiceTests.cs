@@ -517,6 +517,160 @@ public class NumberSeekerServiceTests
         Assert.NotNull(repo.Tasks[0].ImportedAt);
     }
 
+    [Fact]
+    public void GetCategories_AllowsCustomCategory()
+    {
+        var service = BuildService(new FakeScraperClient(), new InMemoryTaskRepository());
+        var result = service.GetCategories();
+
+        Assert.True(result.Success);
+        Assert.True(result.Data!.AllowCustomCategory);
+        Assert.False(string.IsNullOrWhiteSpace(result.Data.CustomCategoryHint));
+        Assert.False(string.IsNullOrWhiteSpace(result.Data.Placeholder));
+        Assert.NotEmpty(result.Data.Categories);
+    }
+
+    [Fact]
+    public void GetFormMeta_AllowsCustomCategory()
+    {
+        var service = BuildService(new FakeScraperClient(), new InMemoryTaskRepository());
+        var result = service.GetFormMeta();
+
+        Assert.True(result.Success);
+        Assert.True(result.Data!.AllowCustomCategory);
+        Assert.Equal(NumberSeekerCategoryHelper.CustomAllowedHint, result.Data.CustomCategoryHint);
+        Assert.Equal(NumberSeekerCategoryHelper.Placeholder, result.Data.CategoryPlaceholder);
+        Assert.Contains(result.Data.Categories, c => c.Name == "رستوران");
+    }
+
+    [Fact]
+    public async Task StartScrape_AcceptsCustomCategoryText()
+    {
+        var client = new FakeScraperClient();
+        var repo = new InMemoryTaskRepository();
+        var service = BuildService(client, repo);
+
+        var result = await service.StartScrapeAsync(10, new StartNumberSeekerScrapeDto
+        {
+            Source = "divar",
+            City = "تهران",
+            Category = "  دندانپزشکی  ",
+            MaxPhones = 10
+        });
+
+        Assert.True(result.Success);
+        Assert.Equal(201, result.StatusCode);
+        Assert.Equal("دندانپزشکی", repo.Tasks[0].Category);
+        Assert.Equal("دندانپزشکی", client.LastStartRequest?.Category);
+    }
+
+    [Fact]
+    public async Task StartScrape_RejectsWhitespaceOnlyCategory()
+    {
+        var client = new FakeScraperClient();
+        var repo = new InMemoryTaskRepository();
+        var service = BuildService(client, repo);
+
+        var result = await service.StartScrapeAsync(10, new StartNumberSeekerScrapeDto
+        {
+            Source = "divar",
+            City = "تهران",
+            Category = "   \t  ",
+            MaxPhones = 10
+        });
+
+        Assert.False(result.Success);
+        Assert.Equal(400, result.StatusCode);
+        Assert.Equal(ErrorCodes.ValidationFailed, result.ErrorCode);
+        Assert.Empty(repo.Tasks);
+        Assert.Null(client.LastStartRequest);
+    }
+
+    [Fact]
+    public async Task StartScrape_RejectsWhitespaceOnlyCity()
+    {
+        var client = new FakeScraperClient();
+        var repo = new InMemoryTaskRepository();
+        var service = BuildService(client, repo);
+
+        var result = await service.StartScrapeAsync(10, new StartNumberSeekerScrapeDto
+        {
+            Source = "divar",
+            City = "   ",
+            Category = "دندانپزشکی",
+            MaxPhones = 10
+        });
+
+        Assert.False(result.Success);
+        Assert.Equal(400, result.StatusCode);
+        Assert.Equal(ErrorCodes.ValidationFailed, result.ErrorCode);
+        Assert.Empty(repo.Tasks);
+    }
+
+    [Fact]
+    public void CategoryHelper_CollapsesInternalWhitespace()
+    {
+        Assert.True(NumberSeekerCategoryHelper.TryNormalize(
+            "  کافه\n\tرستوران  ",
+            out var normalized,
+            out var error));
+        Assert.Null(error);
+        Assert.Equal("کافه رستوران", normalized);
+    }
+
+    [Fact]
+    public void CategoryHelper_RejectsTooLong()
+    {
+        var tooLong = new string('ا', NumberSeekerCategoryHelper.MaxLength + 1);
+        Assert.False(NumberSeekerCategoryHelper.TryNormalize(tooLong, out _, out var error));
+        Assert.Contains("۲۰۰", error);
+    }
+
+    [Fact]
+    public void CategoryHelper_AcceptsExactMaxLength()
+    {
+        var exact = new string('ا', NumberSeekerCategoryHelper.MaxLength);
+        Assert.True(NumberSeekerCategoryHelper.TryNormalize(exact, out var normalized, out var error));
+        Assert.Null(error);
+        Assert.Equal(exact, normalized);
+    }
+
+    [Fact]
+    public void CategoryHelper_AcceptsZwnjPersianCategory()
+    {
+        Assert.True(NumberSeekerCategoryHelper.TryNormalize("فست‌فود", out var normalized, out var error));
+        Assert.Null(error);
+        Assert.Equal("فست‌فود", normalized);
+    }
+
+    [Fact]
+    public void CategoryHelper_RejectsPunctuationOnly()
+    {
+        Assert.False(NumberSeekerCategoryHelper.TryNormalize("---", out _, out var error));
+        Assert.Equal("دسته‌بندی نامعتبر است", error);
+    }
+
+    [Fact]
+    public async Task StartScrape_RejectsPunctuationOnlyCategory()
+    {
+        var client = new FakeScraperClient();
+        var repo = new InMemoryTaskRepository();
+        var service = BuildService(client, repo);
+
+        var result = await service.StartScrapeAsync(10, new StartNumberSeekerScrapeDto
+        {
+            Source = "divar",
+            City = "تهران",
+            Category = "???",
+            MaxPhones = 10
+        });
+
+        Assert.False(result.Success);
+        Assert.Equal(400, result.StatusCode);
+        Assert.Equal(ErrorCodes.ValidationFailed, result.ErrorCode);
+        Assert.Null(client.LastStartRequest);
+    }
+
     private static NumberSeekerService BuildService(
         INumberScraperClient client,
         INumberSeekerTaskRepository repo)
@@ -562,11 +716,13 @@ public class NumberSeekerServiceTests
     {
         public bool IsEnabled => true;
         public bool ThrowOnGetStatus { get; set; }
+        public StartNumberSeekerScrapeDto? LastStartRequest { get; private set; }
 
         public Task<NumberSeekerTaskCreatedDto> StartScrapeAsync(
             StartNumberSeekerScrapeDto request,
             CancellationToken cancellationToken = default)
         {
+            LastStartRequest = request;
             return Task.FromResult(new NumberSeekerTaskCreatedDto
             {
                 TaskId = "task-new",

@@ -95,6 +95,7 @@ namespace Api_Vapp.Services
                     Title = createDto.Title?.Trim() ?? string.Empty,
                     LogoUrl = NormalizeStoredFilePath(createDto.LogoUrl),
                     Slug = slug,
+                    SmsCaption = QuickSendLinkSmsHelper.NormalizeCaption(createDto.SmsCaption),
                     TemplateKey = NormalizeOptionalText(createDto.TemplateKey),
                     Status = BusinessCardStatus.Draft,
                     IsActive = true,
@@ -195,6 +196,10 @@ namespace Api_Vapp.Services
                 }
 
                 var card = cardResult.Card!;
+                var originalTitle = card.Title;
+                var originalSlug = card.Slug;
+                var originalSmsCaption = card.SmsCaption;
+                var originalLogoUrl = card.LogoUrl;
 
                 if (!string.IsNullOrWhiteSpace(updateDto.Slug))
                 {
@@ -205,6 +210,11 @@ namespace Api_Vapp.Services
                     }
 
                     card.Slug = slugValidation.NormalizedSlug;
+                }
+
+                if (updateDto.SmsCaption != null)
+                {
+                    card.SmsCaption = QuickSendLinkSmsHelper.NormalizeCaption(updateDto.SmsCaption);
                 }
 
                 if (updateDto.Title != null)
@@ -244,8 +254,14 @@ namespace Api_Vapp.Services
                     card.LogoUrl = NormalizeStoredFilePath(updateDto.LogoUrl);
                 }
 
+                var contentChanged =
+                    !string.Equals(originalTitle, card.Title, StringComparison.Ordinal) ||
+                    !string.Equals(originalSlug, card.Slug, StringComparison.Ordinal) ||
+                    !string.Equals(originalSmsCaption, card.SmsCaption, StringComparison.Ordinal) ||
+                    !string.Equals(originalLogoUrl, card.LogoUrl, StringComparison.Ordinal);
+
                 card.UpdatedAt = DateTime.UtcNow;
-                QuickSendContentApprovalHelper.ResetToPending(card);
+                QuickSendContentApprovalHelper.ResetToPendingIfNeeded(card, contentChanged);
                 await _context.SaveChangesAsync();
 
                 BusinessCardPublicService.InvalidatePublicCache(_cache, card.Slug);
@@ -528,6 +544,7 @@ namespace Api_Vapp.Services
                     Status = card.Status.ToString(),
                     IsActive = GetEffectiveIsActive(card),
                     PublicUrl = BuildPublicUrl(card.Slug),
+                    SmsCaption = card.SmsCaption,
                     CreatedAt = EnsureUtc(card.CreatedAt),
                     PublishedAt = EnsureUtc(card.PublishedAt),
                     ApprovalStatus = card.ApprovalStatus,
@@ -828,9 +845,11 @@ namespace Api_Vapp.Services
                         errorCode: ErrorCodes.InvalidInput);
                 }
 
+                var smsContent = QuickSendLinkSmsHelper.BuildSmsContent(card.SmsCaption, publicUrl);
+
                 var createMessageResult = await _messageService.CreateMessageAsync(userId, new CreateMessageDto
                 {
-                    Content = publicUrl
+                    Content = smsContent
                 });
 
                 if (!createMessageResult.Success || createMessageResult.Data == null)
@@ -1395,7 +1414,8 @@ namespace Api_Vapp.Services
             return dto.Title != null
                    || dto.LogoUrl != null
                    || dto.ClearLogo == true
-                   || dto.Slug != null;
+                   || dto.Slug != null
+                   || dto.SmsCaption != null;
         }
 
         private static bool HasAnySectionChanges(UpdateBusinessCardSectionsDto dto)
@@ -1435,6 +1455,7 @@ namespace Api_Vapp.Services
                 Title = card.Title,
                 LogoUrl = ToPublicFileUrl(card.LogoUrl),
                 Slug = card.Slug,
+                SmsCaption = card.SmsCaption,
                 TemplateKey = card.TemplateKey,
                 TemplateId = card.TemplateId,
                 Status = card.Status.ToString(),

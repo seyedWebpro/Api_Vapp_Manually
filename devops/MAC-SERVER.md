@@ -11,7 +11,25 @@
 | Admin repo (سرور) | `/root/Admin_Vapp` |
 | Public repo (سرور) | `/root/Public_Vapp` |
 
-> **فیلترشکن:** با VPN به این دیتاسنتر وصل نمی‌شوید. SSH را **بدون فیلترشکن** بزنید.
+> **فیلترشکن:** با VPN به این دیتاسنتر وصل نمی‌شوید — مگر **split tunnel** فعال باشد (پایین).
+
+### Split tunnel (Cursor + SSH همزمان)
+
+پروفایل OpenVPN Connect شما route bypass برای `195.24.237.132` دارد. **یک‌بار VPN را disconnect/connect کنید** تا route از profile اعمال شود.
+
+اگر بعد از connect هنوز SSH timeout شد:
+
+```bash
+cd ~/Documents/javad_project/vapp/Api_Vapp_Manually
+bash devops/scripts/vpn-bypass-vapp-server.sh
+```
+
+وضعیت route:
+
+```bash
+bash devops/scripts/vpn-bypass-vapp-server.sh --status
+# BYPASSED (en0) = درست | THROUGH VPN = اسکریپت بالا را بزنید
+```
 
 ---
 
@@ -79,7 +97,7 @@ bash ~/Api_Vapp_Manually/vapp-iran-update.sh --full
 
 | علامت | علت | راه‌حل |
 |--------|-----|--------|
-| `Operation timed out` | فیلترشکن روشن است | VPN را خاموش کنید |
+| `Operation timed out` | VPN ترافیک SSH را می‌بلعد | `bash devops/scripts/vpn-bypass-vapp-server.sh` |
 | `Permission denied (publickey)` | کلید Mac روی سرور نیست | دستور یک‌خطی `authorized_keys` از کنسول وب |
 | `API:000` بلافاصله بعد deploy | API در حال startup/migration | ۶۰ ثانیه صبر → `health-check.sh` |
 

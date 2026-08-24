@@ -18,6 +18,11 @@ namespace Api_Vapp.Models
         /// </summary>
         public string? Slug { get; set; }
 
+        /// <summary>
+        /// عنوان اختیاری ارسال سریع SMS — قبل از لینک عمومی در متن پیام قرار می‌گیرد.
+        /// </summary>
+        public string? SmsCaption { get; set; }
+
         public LuckyWheelStatus Status { get; set; } = LuckyWheelStatus.Draft;
 
         public bool SaveToPhonebook { get; set; }

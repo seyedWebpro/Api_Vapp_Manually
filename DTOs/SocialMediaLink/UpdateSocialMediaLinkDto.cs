@@ -20,6 +20,12 @@ namespace Api_Vapp.DTOs.SocialMediaLink
         public string? LinkUrl { get; set; }
 
         /// <summary>
+        /// عنوان اختیاری ارسال سریع — ارسال رشته خالی برای حذف
+        /// </summary>
+        [MaxLength(100, ErrorMessage = "عنوان ارسال سریع نمی‌تواند بیشتر از ۱۰۰ کاراکتر باشد")]
+        public string? SmsCaption { get; set; }
+
+        /// <summary>
         /// وضعیت فعال/غیرفعال
         /// </summary>
         public bool? IsActive { get; set; }

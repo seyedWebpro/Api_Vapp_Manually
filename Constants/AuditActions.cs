@@ -139,6 +139,12 @@ namespace Api_Vapp.Constants
         public const string SocialMediaLinkDeleted = "SocialMediaLink.Deleted";
         public const string SocialMediaLinkSetDefault = "SocialMediaLink.SetDefault";
 
+        // —— BankAccount (ارسال سریع شماره حساب)
+        public const string BankAccountCreated = "BankAccount.Created";
+        public const string BankAccountUpdated = "BankAccount.Updated";
+        public const string BankAccountDeleted = "BankAccount.Deleted";
+        public const string BankAccountSetDefault = "BankAccount.SetDefault";
+
         // —— SpecialOccasion (فاز ۳)
         public const string SpecialOccasionCreated = "SpecialOccasion.Created";
         public const string SpecialOccasionUpdated = "SpecialOccasion.Updated";

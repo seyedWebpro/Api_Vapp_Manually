@@ -25,6 +25,11 @@ namespace Api_Vapp.Models
         /// </summary>
         public string Slug { get; set; } = string.Empty;
 
+        /// <summary>
+        /// عنوان اختیاری ارسال سریع SMS — قبل از لینک عمومی در متن پیام قرار می‌گیرد.
+        /// </summary>
+        public string? SmsCaption { get; set; }
+
         public BookingSystemStatus Status { get; set; } = BookingSystemStatus.Published;
 
         public bool SaveToPhonebook { get; set; }

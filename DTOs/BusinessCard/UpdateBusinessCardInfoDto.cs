@@ -20,5 +20,11 @@ namespace Api_Vapp.DTOs.BusinessCard
 
         [MaxLength(100, ErrorMessage = "slug نمی‌تواند بیشتر از 100 کاراکتر باشد")]
         public string? Slug { get; set; }
+
+        /// <summary>
+        /// عنوان اختیاری ارسال سریع — ارسال رشته خالی برای حذف
+        /// </summary>
+        [MaxLength(100, ErrorMessage = "عنوان ارسال سریع نمی‌تواند بیشتر از ۱۰۰ کاراکتر باشد")]
+        public string? SmsCaption { get; set; }
     }
 }

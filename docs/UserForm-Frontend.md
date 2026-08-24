@@ -111,6 +111,7 @@ Content:   application/json
 ```
 
 - `slug` اختیاری در create — اگر نباشد، موقع publish خودکار ساخته می‌شود
+- `smsCaption` اختیاری (حداکثر ۱۰۰ کاراکتر) — عنوان ارسال سریع قبل از لینک
 - پاسخ موفق: `statusCode=201`، `data.status = "Draft"`
 
 ---
@@ -121,10 +122,11 @@ Content:   application/json
 
 | فیلد body | رفتار |
 |-----------|--------|
-| `title`, `description`, `slug`, `saveToPhonebook` | فقط اگر ارسال شود |
+| `title`, `description`, `slug`, `smsCaption`, `saveToPhonebook` | فقط اگر ارسال شود |
 | `notebookIds` | اگر ارسال شود → جایگزین کامل لیست |
 
 > `isActive` اینجا نیست — فقط از `POST /{id}/toggle-status` استفاده کنید.
+> `smsCaption` اختیاری (حداکثر ۱۰۰ کاراکتر) — عنوان ارسال سریع قبل از لینک؛ `""` برای حذف. تغییر آن تأیید ادمین را به Pending برمی‌گرداند.
 
 ```json
 { "title": "عنوان جدید" }
@@ -135,6 +137,7 @@ Content:   application/json
   "title": "درخواست استخدام و همکاری",
   "description": "لطفا اطلاعات خود را کامل وارد کنید.",
   "slug": "job-alpha",
+  "smsCaption": "فرم همکاری با ما",
   "saveToPhonebook": true,
   "notebookIds": [1, 2]
 }
@@ -143,6 +146,7 @@ Content:   application/json
 - body خالی `{}` یا بدون هیچ property → `400` + `VALIDATION_FAILED` («هیچ موردی برای به‌روزرسانی ارسال نشده است»)
 - `title` خالی (`"   "`) → `400`
 - `saveToPhonebook=true` بدون `notebookIds` معتبر یا بدون فیلد **mobile** فعال → `400` + `errors[]`
+- متن SMS ارسال سریع = `smsCaption` + خط جدید + `publicUrl` (اگر caption خالی باشد فقط URL)
 
 ---
 
