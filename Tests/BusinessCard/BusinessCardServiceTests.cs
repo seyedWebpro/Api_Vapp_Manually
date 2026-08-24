@@ -327,7 +327,7 @@ internal sealed class BusinessCardTestContext : IAsyncDisposable
         var fileUpload = new FakeFileUploadService();
         var optionsMonitor = Options.Create(new BusinessCardOptions
         {
-            PublicBaseUrl = "https://ok-sms.ir/card"
+            PublicBaseUrl = "https://vapplication.ir/card"
         });
 
         var cache = new MemoryCache(new MemoryCacheOptions());

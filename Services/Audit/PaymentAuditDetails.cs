@@ -1,11 +1,14 @@
 using System.Linq;
 using Api_Vapp.Models;
+using Api_Vapp.Services.ZarinPal;
 
 namespace Api_Vapp.Services.Audit
 {
     /// <summary>
     /// اسنپ‌شات استاندارد لاگ مالی پرداخت — برای ذخیره در AdminAuditLogs (Metadata/After)
-    /// بدون secret (MerchantId کامل، توکن و …)
+    /// بدون secret (MerchantId، توکن و …)
+    /// Authority کامل در DB audit نگه‌داری می‌شود (برای join با Payments.RefId)؛
+    /// در فایل Serilog فقط AuthorityPrefix استفاده شود.
     /// </summary>
     public static class PaymentAuditDetails
     {
@@ -15,6 +18,9 @@ namespace Api_Vapp.Services.Audit
             phoneNumber = user?.PhoneNumber,
             fullName = user?.FullName
         };
+
+        public static string? AuthorityPrefix(string? authority) =>
+            ZarinPalGatewayLogger.AuthorityPrefix(authority) is { Length: > 0 } p ? p : null;
 
         public static object PaymentSnapshot(Payment payment, User? user = null, object? extra = null)
         {
@@ -31,6 +37,7 @@ namespace Api_Vapp.Services.Audit
                 gateway = payment.Gateway,
                 orderId = payment.OrderId,
                 authority = payment.RefId,
+                authorityPrefix = AuthorityPrefix(payment.RefId),
                 referenceNumber = payment.ReferenceNumber,
                 transactionId = payment.TransactionId,
                 cardNumberMasked = MaskCard(payment.CardNumber),
@@ -72,6 +79,7 @@ namespace Api_Vapp.Services.Audit
                 gateway = payment.Gateway,
                 orderId = payment.OrderId,
                 authority = payment.RefId,
+                authorityPrefix = AuthorityPrefix(payment.RefId),
                 status = payment.Status,
                 isSimulation,
                 gatewayHost = TryHost(gatewayUrl),
@@ -109,6 +117,7 @@ namespace Api_Vapp.Services.Audit
                 gateway = payment.Gateway,
                 orderId = payment.OrderId,
                 authority = payment.RefId,
+                authorityPrefix = AuthorityPrefix(payment.RefId),
                 status = payment.Status,
                 gatewayHost = TryHost(gatewayUrl),
                 description = payment.Description
@@ -121,7 +130,8 @@ namespace Api_Vapp.Services.Audit
             string? authority,
             string? status,
             bool success,
-            string? outcomeMessage)
+            string? outcomeMessage,
+            object? gateway = null)
         {
             return new
             {
@@ -129,9 +139,74 @@ namespace Api_Vapp.Services.Audit
                 eventType = "ZarinPalCallback",
                 callbackStatus = status,
                 authority,
+                authorityPrefix = AuthorityPrefix(authority),
                 success,
                 outcomeMessage,
+                gateway,
                 payment = payment == null ? null : PaymentSnapshot(payment, user)
+            };
+        }
+
+        /// <summary>جزئیات نتیجه Verify درگاه برای ذخیره در AdminAuditLogs</summary>
+        public static object GatewayVerifyExtra(
+            int zarinCode,
+            bool alreadyVerified,
+            bool definitive,
+            string outcome,
+            string? refId,
+            int? fee,
+            string? feeType,
+            int? httpStatus,
+            long? durationMs,
+            string? authority)
+        {
+            return new
+            {
+                eventType = "ZarinPalVerify",
+                outcome,
+                zarinCode,
+                alreadyVerified,
+                definitive,
+                refId,
+                fee,
+                feeType,
+                httpStatus,
+                durationMs,
+                authorityPrefix = AuthorityPrefix(authority),
+                currency = "IRT"
+            };
+        }
+
+        public static object GatewayAuthorityExtra(
+            bool succeeded,
+            string? authority,
+            string? paymentUrl,
+            string? description,
+            string? mobile,
+            string? orderId,
+            int amountToman,
+            int? fee,
+            string? feeType,
+            int? httpStatus,
+            long? durationMs,
+            string? error)
+        {
+            return new
+            {
+                eventType = succeeded ? "ZarinPalAuthorityIssued" : "ZarinPalAuthorityFailed",
+                userMobile = mobile,
+                orderId,
+                amountToman,
+                currency = "IRT",
+                authority,
+                authorityPrefix = AuthorityPrefix(authority),
+                gatewayHost = TryHost(paymentUrl),
+                description,
+                fee,
+                feeType,
+                httpStatus,
+                durationMs,
+                error
             };
         }
 

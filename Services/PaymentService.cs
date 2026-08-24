@@ -13,6 +13,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using System.Globalization;
 using System.Text.Encodings.Web;
+using System.Text.Json;
 
 namespace Api_Vapp.Services
 {
@@ -94,6 +95,7 @@ namespace Api_Vapp.Services
                 }
 
                 // بررسی وجود پرداخت در انتظار
+                await _paymentRepository.ExpireStalePendingPaymentsAsync(TimeSpan.FromHours(2));
                 if (await _paymentRepository.HasPendingPaymentAsync(userId))
                 {
                     await _audit.WriteAsync(new AuditEntry
@@ -284,8 +286,28 @@ namespace Api_Vapp.Services
                         !string.Equals(verifyDto.Authority.Trim(), storedAuthority, StringComparison.Ordinal))
                     {
                         _logger.LogWarning(
-                            "ZarinPal authority mismatch for payment {PaymentId}",
-                            payment.Id);
+                            "ZARINPAL_AUTHORITY_MISMATCH TraceId={TraceId} PaymentId={PaymentId} AuthorityPrefixStored={Stored} AuthorityPrefixClient={Client}",
+                            ControlledErrorHelper.GetTraceId(),
+                            payment.Id,
+                            PaymentAuditDetails.AuthorityPrefix(storedAuthority),
+                            PaymentAuditDetails.AuthorityPrefix(verifyDto.Authority));
+                        await _audit.WriteAsync(new AuditEntry
+                        {
+                            Category = AuditCategories.Payment,
+                            Action = AuditActions.PaymentVerifyFailed,
+                            EntityType = AuditEntityTypes.Payment,
+                            EntityId = payment.Id.ToString(),
+                            ActorUserId = payment.UserId,
+                            TargetUserId = payment.UserId,
+                            Succeeded = false,
+                            ErrorMessage = "Authority mismatch",
+                            After = PaymentAuditDetails.PaymentSnapshot(payment, null, extra: new
+                            {
+                                eventType = "AuthorityMismatch",
+                                outcome = "rejected",
+                                clientAuthorityPrefix = PaymentAuditDetails.AuthorityPrefix(verifyDto.Authority)
+                            })
+                        });
                         return ApiResponse<PaymentResultDto>.BadRequest(
                             "کد مرجع پرداخت نامعتبر است",
                             errorCode: ErrorCodes.InvalidInput);
@@ -360,6 +382,7 @@ namespace Api_Vapp.Services
 
                     bool isSuccessful = false;
                     string? saleReferenceId = verifyDto.SaleReferenceId;
+                    ZarinPalVerifyResult? zarinVerifySnapshot = null;
 
                     if (isZarinPal)
                     {
@@ -377,6 +400,7 @@ namespace Api_Vapp.Services
 
                         var amountToman = ToZarinPalAmount(payment.Amount);
                         var zarinVerify = await _zarinPalGatewayClient.VerifyPaymentAsync(amountToman, zarinAuthority);
+                        zarinVerifySnapshot = zarinVerify;
                         isSuccessful = zarinVerify.Success;
                         if (zarinVerify.Success)
                         {
@@ -385,6 +409,53 @@ namespace Api_Vapp.Services
                             saleReferenceId = zarinVerify.RefId ?? saleReferenceId;
                             payment.CardNumber = zarinVerify.CardPan ?? payment.CardNumber;
                             payment.TransactionId = zarinVerify.RefId ?? payment.TransactionId;
+                        }
+                        else if (zarinVerify.IsTransientFailure)
+                        {
+                            // خطای شبکه/موقت — Failed نکن تا callback/verify بعدی بتواند retry کند
+                            payment.ErrorCode = zarinVerify.Code.ToString();
+                            payment.ErrorMessage = "در حال تأیید پرداخت — لطفاً دوباره تلاش کنید";
+                            await _context.SaveChangesAsync();
+                            await transaction.CommitAsync();
+
+                            _logger.LogWarning(
+                                "ZARINPAL_VERIFY_TRANSIENT PaymentId={PaymentId} UserId={UserId} Amount={Amount} Code={Code} HttpStatus={HttpStatus} DurationMs={DurationMs} AuthorityPrefix={AuthorityPrefix} TraceId={TraceId}",
+                                payment.Id, payment.UserId, payment.Amount, zarinVerify.Code,
+                                zarinVerify.HttpStatusCode, zarinVerify.DurationMs,
+                                PaymentAuditDetails.AuthorityPrefix(zarinAuthority),
+                                ControlledErrorHelper.GetTraceId());
+
+                            var transientUser = await _userRepository.GetByIdAsync(payment.UserId);
+                            await _audit.WriteAsync(new AuditEntry
+                            {
+                                Category = AuditCategories.Payment,
+                                Action = AuditActions.PaymentVerifyTransient,
+                                EntityType = AuditEntityTypes.Payment,
+                                EntityId = payment.Id.ToString(),
+                                ActorUserId = payment.UserId,
+                                TargetUserId = payment.UserId,
+                                Succeeded = false,
+                                ErrorMessage = payment.ErrorMessage,
+                                After = PaymentAuditDetails.PaymentSnapshot(payment, transientUser, extra:
+                                    PaymentAuditDetails.GatewayVerifyExtra(
+                                        zarinVerify.Code,
+                                        alreadyVerified: false,
+                                        definitive: false,
+                                        outcome: "transient",
+                                        zarinVerify.RefId,
+                                        zarinVerify.Fee,
+                                        zarinVerify.FeeType,
+                                        zarinVerify.HttpStatusCode,
+                                        zarinVerify.DurationMs,
+                                        zarinAuthority))
+                            });
+
+                            return ApiResponse<PaymentResultDto>.CreateSuccess(new PaymentResultDto
+                            {
+                                Success = false,
+                                Message = payment.ErrorMessage,
+                                Payment = MapToPaymentDto(payment)
+                            }, payment.ErrorMessage);
                         }
                         else
                         {
@@ -497,8 +568,13 @@ namespace Api_Vapp.Services
                             : "پرداخت با موفقیت انجام شد";
 
                         _logger.LogInformation(
-                            "پرداخت تأیید شد. PaymentId={PaymentId} UserId={UserId} Amount={Amount} Type={PaymentType} Gateway={Gateway} Authority={Authority} OrderId={OrderId}",
-                            payment.Id, payment.UserId, payment.Amount, payment.PaymentType, payment.Gateway, payment.RefId, payment.OrderId);
+                            "PAYMENT_VERIFIED TraceId={TraceId} PaymentId={PaymentId} UserId={UserId} Amount={Amount} Type={PaymentType} Gateway={Gateway} AuthorityPrefix={AuthorityPrefix} OrderId={OrderId} ZarinCode={ZarinCode} AlreadyVerified={AlreadyVerified} RefId={RefId} Fee={Fee} HttpStatus={HttpStatus} DurationMs={DurationMs}",
+                            ControlledErrorHelper.GetTraceId(),
+                            payment.Id, payment.UserId, payment.Amount, payment.PaymentType, payment.Gateway,
+                            PaymentAuditDetails.AuthorityPrefix(payment.RefId), payment.OrderId,
+                            zarinVerifySnapshot?.Code, zarinVerifySnapshot?.AlreadyVerified,
+                            zarinVerifySnapshot?.RefId ?? payment.ReferenceNumber,
+                            zarinVerifySnapshot?.Fee, zarinVerifySnapshot?.HttpStatusCode, zarinVerifySnapshot?.DurationMs);
 
                         var verifiedUser = await _userRepository.GetByIdAsync(payment.UserId);
                         await _audit.WriteAsync(new AuditEntry
@@ -512,12 +588,20 @@ namespace Api_Vapp.Services
                             After = PaymentAuditDetails.PaymentSnapshot(payment, verifiedUser, extra: new
                             {
                                 eventType = "PaymentVerified",
-                                outcome = "success",
+                                outcome = zarinVerifySnapshot?.AlreadyVerified == true ? "success_code_101" : "success",
                                 fulfillment = payment.PaymentType == PaymentTypes.Subscription
                                     ? "subscription_activated"
                                     : payment.PaymentType == PaymentTypes.WalletCharge
                                         ? "wallet_credited"
-                                        : "none"
+                                        : "none",
+                                zarinCode = zarinVerifySnapshot?.Code,
+                                alreadyVerified = zarinVerifySnapshot?.AlreadyVerified,
+                                refId = zarinVerifySnapshot?.RefId ?? payment.ReferenceNumber,
+                                fee = zarinVerifySnapshot?.Fee,
+                                feeType = zarinVerifySnapshot?.FeeType,
+                                httpStatus = zarinVerifySnapshot?.HttpStatusCode,
+                                durationMs = zarinVerifySnapshot?.DurationMs,
+                                authorityPrefix = PaymentAuditDetails.AuthorityPrefix(payment.RefId)
                             })
                         });
 
@@ -537,8 +621,11 @@ namespace Api_Vapp.Services
                         };
 
                         _logger.LogWarning(
-                            "پرداخت ناموفق. PaymentId={PaymentId} UserId={UserId} Amount={Amount} ErrorCode={ErrorCode} Message={ErrorMessage}",
-                            payment.Id, payment.UserId, payment.Amount, payment.ErrorCode, payment.ErrorMessage);
+                            "PAYMENT_VERIFY_FAILED TraceId={TraceId} PaymentId={PaymentId} UserId={UserId} Amount={Amount} ErrorCode={ErrorCode} Message={ErrorMessage} AuthorityPrefix={AuthorityPrefix} ZarinCode={ZarinCode} HttpStatus={HttpStatus} DurationMs={DurationMs}",
+                            ControlledErrorHelper.GetTraceId(),
+                            payment.Id, payment.UserId, payment.Amount, payment.ErrorCode, payment.ErrorMessage,
+                            PaymentAuditDetails.AuthorityPrefix(payment.RefId),
+                            zarinVerifySnapshot?.Code, zarinVerifySnapshot?.HttpStatusCode, zarinVerifySnapshot?.DurationMs);
 
                         var failedUser = await _userRepository.GetByIdAsync(payment.UserId);
                         await _audit.WriteAsync(new AuditEntry
@@ -551,11 +638,20 @@ namespace Api_Vapp.Services
                             TargetUserId = payment.UserId,
                             Succeeded = false,
                             ErrorMessage = payment.ErrorMessage,
-                            After = PaymentAuditDetails.PaymentSnapshot(payment, failedUser, extra: new
-                            {
-                                eventType = "PaymentVerifyFailed",
-                                outcome = "failed"
-                            })
+                            After = PaymentAuditDetails.PaymentSnapshot(payment, failedUser, extra:
+                                zarinVerifySnapshot == null
+                                    ? new { eventType = "PaymentVerifyFailed", outcome = "failed" }
+                                    : PaymentAuditDetails.GatewayVerifyExtra(
+                                        zarinVerifySnapshot.Code,
+                                        zarinVerifySnapshot.AlreadyVerified,
+                                        zarinVerifySnapshot.IsDefinitiveFailure,
+                                        outcome: "failed",
+                                        zarinVerifySnapshot.RefId,
+                                        zarinVerifySnapshot.Fee,
+                                        zarinVerifySnapshot.FeeType,
+                                        zarinVerifySnapshot.HttpStatusCode,
+                                        zarinVerifySnapshot.DurationMs,
+                                        payment.RefId))
                         });
 
                         var failPush = PushNotificationCopy.PaymentFailed();
@@ -902,18 +998,25 @@ namespace Api_Vapp.Services
                     await WriteZarinPalAuthorityAuditAsync(
                         payment, user, amountToman, description, mobile, orderId,
                         succeeded: false, authority: null, paymentUrl: null,
-                        error: $"ZarinPal request failed code={result.Code}");
+                        error: $"ZarinPal request failed code={result.Code}",
+                        fee: result.Fee, feeType: result.FeeType,
+                        httpStatus: result.HttpStatusCode, durationMs: result.DurationMs);
                     return (false, null, null, ControlledErrorHelper.PaymentFailed);
                 }
 
                 _logger.LogInformation(
-                    "ZarinPal authority issued. PaymentId={PaymentId} UserId={UserId} Phone={Phone} Amount={Amount} Authority={Authority} OrderId={OrderId}",
-                    paymentId, payment?.UserId, mobile ?? user?.PhoneNumber, amountToman, result.Authority, orderId ?? payment?.OrderId);
+                    "ZARINPAL_AUTHORITY_ISSUED TraceId={TraceId} PaymentId={PaymentId} UserId={UserId} Phone={Phone} Amount={Amount} AuthorityPrefix={AuthorityPrefix} OrderId={OrderId} Fee={Fee} HttpStatus={HttpStatus} DurationMs={DurationMs}",
+                    ControlledErrorHelper.GetTraceId(),
+                    paymentId, payment?.UserId, mobile ?? user?.PhoneNumber, amountToman,
+                    PaymentAuditDetails.AuthorityPrefix(result.Authority), orderId ?? payment?.OrderId,
+                    result.Fee, result.HttpStatusCode, result.DurationMs);
 
                 await WriteZarinPalAuthorityAuditAsync(
                     payment, user, amountToman, description, mobile, orderId,
                     succeeded: true, authority: result.Authority, paymentUrl: result.PaymentUrl,
-                    error: null);
+                    error: null,
+                    fee: result.Fee, feeType: result.FeeType,
+                    httpStatus: result.HttpStatusCode, durationMs: result.DurationMs);
 
                 return (true, result.Authority, result.PaymentUrl, null);
             }
@@ -962,17 +1065,18 @@ namespace Api_Vapp.Services
             authority = authority?.Trim();
             status = status?.Trim();
 
-            if (string.IsNullOrWhiteSpace(authority))
+            if (string.IsNullOrWhiteSpace(authority) ||
+                !Services.ZarinPal.ZarinPalGatewayClient.IsValidAuthority(authority))
             {
-                _logger.LogWarning("ZarinPal callback without Authority");
+                _logger.LogWarning("ZarinPal callback without valid Authority");
                 await _audit.WriteAsync(new AuditEntry
                 {
                     Category = AuditCategories.Payment,
                     Action = AuditActions.PaymentCallback,
                     EntityType = AuditEntityTypes.Payment,
                     Succeeded = false,
-                    ErrorMessage = "Authority missing",
-                    Metadata = PaymentAuditDetails.Callback(null, null, null, status, false, "Authority missing")
+                    ErrorMessage = "Authority missing or invalid format",
+                    Metadata = PaymentAuditDetails.Callback(null, null, authority, status, false, "Authority invalid")
                 });
                 return (false, BuildAppReturnHtml(null, null, false, "کد مرجع پرداخت نامعتبر است"), null);
             }
@@ -1007,8 +1111,10 @@ namespace Api_Vapp.Services
                 }
 
                 _logger.LogInformation(
-                    "ZarinPal callback NOK. PaymentId={PaymentId} UserId={UserId} Phone={Phone} Amount={Amount} Status={Status} Authority={Authority}",
-                    payment.Id, payment.UserId, callbackUser?.PhoneNumber, payment.Amount, status, authority);
+                    "ZARINPAL_CALLBACK_NOK TraceId={TraceId} PaymentId={PaymentId} UserId={UserId} Phone={Phone} Amount={Amount} Status={Status} AuthorityPrefix={AuthorityPrefix}",
+                    ControlledErrorHelper.GetTraceId(),
+                    payment.Id, payment.UserId, callbackUser?.PhoneNumber, payment.Amount, status,
+                    PaymentAuditDetails.AuthorityPrefix(authority));
 
                 await _audit.WriteAsync(new AuditEntry
                 {
@@ -1044,8 +1150,10 @@ namespace Api_Vapp.Services
             // reload برای اسنپ‌شات نهایی
             payment = await _paymentRepository.GetByIdAsync(payment.Id) ?? payment;
             _logger.LogInformation(
-                "ZarinPal callback OK processed. PaymentId={PaymentId} UserId={UserId} Phone={Phone} Amount={Amount} Success={Success} Authority={Authority}",
-                payment.Id, payment.UserId, callbackUser?.PhoneNumber, payment.Amount, success, authority);
+                "ZARINPAL_CALLBACK_OK TraceId={TraceId} PaymentId={PaymentId} UserId={UserId} Phone={Phone} Amount={Amount} Success={Success} AuthorityPrefix={AuthorityPrefix} Status={PaymentStatus}",
+                ControlledErrorHelper.GetTraceId(),
+                payment.Id, payment.UserId, callbackUser?.PhoneNumber, payment.Amount, success,
+                PaymentAuditDetails.AuthorityPrefix(authority), payment.Status);
 
             await _audit.WriteAsync(new AuditEntry
             {
@@ -1073,7 +1181,11 @@ namespace Api_Vapp.Services
             bool succeeded,
             string? authority,
             string? paymentUrl,
-            string? error)
+            string? error,
+            int? fee = null,
+            string? feeType = null,
+            int? httpStatus = null,
+            long? durationMs = null)
         {
             await _audit.WriteAsync(new AuditEntry
             {
@@ -1097,13 +1209,19 @@ namespace Api_Vapp.Services
                     phoneNumber = mobile ?? user?.PhoneNumber,
                     amount = amountToman,
                     amountLabel = $"{amountToman:N0} تومان",
+                    currency = "IRT",
                     paymentType = payment?.PaymentType,
                     gateway = payment?.Gateway ?? PaymentGateways.Zarinpal,
                     orderId = orderId ?? payment?.OrderId,
                     authority,
+                    authorityPrefix = PaymentAuditDetails.AuthorityPrefix(authority),
                     gatewayHost = Uri.TryCreate(paymentUrl, UriKind.Absolute, out var u) ? u.Host : null,
                     description,
-                    status = payment?.Status
+                    status = payment?.Status,
+                    fee,
+                    feeType,
+                    httpStatus,
+                    durationMs
                 }
             });
         }
@@ -1145,7 +1263,9 @@ namespace Api_Vapp.Services
                 query.Add($"message={Uri.EscapeDataString(message)}");
 
             var deepLink = $"{appReturn}?{string.Join("&", query)}";
-            var safeDeepLink = HtmlEncoder.Default.Encode(deepLink);
+            // href باید HTML-encode شود (& → &amp;)؛ داخل JS نباید — وگرنه deep link خراب می‌شود
+            var safeDeepLinkHref = HtmlEncoder.Default.Encode(deepLink);
+            var deepLinkJsLiteral = JsonSerializer.Serialize(deepLink); // شامل کوتیشن‌های امن JS
             var safeMessage = HtmlEncoder.Default.Encode(message ?? (success ? "پرداخت موفق" : "پرداخت ناموفق"));
             var title = success ? "پرداخت موفق" : "پرداخت ناموفق";
 
@@ -1167,10 +1287,10 @@ namespace Api_Vapp.Services
     <h2>{HtmlEncoder.Default.Encode(title)}</h2>
     <p>{safeMessage}</p>
     <p>در حال بازگشت به اپلیکیشن Vapp…</p>
-    <a class=""btn"" href=""{safeDeepLink}"">بازگشت به اپلیکیشن</a>
+    <a class=""btn"" href=""{safeDeepLinkHref}"">بازگشت به اپلیکیشن</a>
   </div>
   <script>
-    setTimeout(function () {{ window.location.replace(""{safeDeepLink}""); }}, 400);
+    setTimeout(function () {{ window.location.replace({deepLinkJsLiteral}); }}, 400);
   </script>
 </body>
 </html>";
@@ -1232,7 +1352,7 @@ namespace Api_Vapp.Services
                 RefId = payment.RefId,
                 ReferenceNumber = payment.ReferenceNumber,
                 TransactionId = payment.TransactionId,
-                CardNumber = payment.CardNumber,
+                CardNumber = MaskCardNumber(payment.CardNumber),
                 Status = payment.Status,
                 StatusTitle = GetStatusTitle(payment.Status),
                 ErrorMessage = payment.ErrorMessage,

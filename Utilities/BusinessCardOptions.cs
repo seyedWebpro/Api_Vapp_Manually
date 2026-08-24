@@ -5,7 +5,7 @@ namespace Api_Vapp.Utilities
         public const string SectionName = "BusinessCard";
 
         /// <summary>
-        /// پایه URL عمومی کارت ویزیت — مثال: https://ok-sms.ir/card
+        /// پایه URL عمومی کارت ویزیت — مثال: https://vapplication.ir/card
         /// </summary>
         public string PublicBaseUrl { get; set; } = string.Empty;
     }

@@ -38,6 +38,8 @@ namespace Api_Vapp.Interfaces
         public string? ErrorMessage { get; init; }
         public int? Fee { get; init; }
         public string? FeeType { get; init; }
+        public int? HttpStatusCode { get; init; }
+        public long? DurationMs { get; init; }
     }
 
     public sealed class ZarinPalVerifyResult
@@ -52,5 +54,15 @@ namespace Api_Vapp.Interfaces
         public string? ErrorMessage { get; init; }
         public int? Fee { get; init; }
         public string? FeeType { get; init; }
+        public int? HttpStatusCode { get; init; }
+        public long? DurationMs { get; init; }
+
+        /// <summary>
+        /// خطای قطعی درگاه — فقط این حالت Status محلی را Failed می‌کند.
+        /// خطاهای شبکه/موقت باید Processing بمانند تا retry ممکن باشد.
+        /// </summary>
+        public bool IsDefinitiveFailure { get; init; }
+
+        public bool IsTransientFailure => !Success && !IsDefinitiveFailure;
     }
 }

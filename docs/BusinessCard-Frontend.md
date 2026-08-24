@@ -72,7 +72,7 @@ Public:    /api/BusinessCardPublic/{slug}  (بدون Auth)
 
 `cardId` را در state ویزارد نگه دار.
 
-Public URL مثال: `https://ok-sms.ir/card/{slug}` (از `BusinessCard:PublicBaseUrl`)
+Public URL مثال: `https://vapplication.ir/card/{slug}` (از `BusinessCard:PublicBaseUrl`)
 
 ---
 

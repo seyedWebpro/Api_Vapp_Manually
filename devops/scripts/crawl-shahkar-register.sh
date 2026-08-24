@@ -5,7 +5,7 @@
 #   bash devops/scripts/crawl-shahkar-register.sh
 #
 # Usage (production):
-#   BASE_URL=https://ok-sms.ir \
+#   BASE_URL=https://vapplication.ir \
 #   AUTH_PHONE=09920374397 \
 #   AUTH_NATIONAL_ID=4220855361 \
 #   bash devops/scripts/crawl-shahkar-register.sh

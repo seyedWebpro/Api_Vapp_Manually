@@ -41,7 +41,7 @@ Log.Logger = new LoggerConfiguration()
         Path.Combine(logPath, "log-.txt"),
         rollingInterval: RollingInterval.Day,
         retainedFileCountLimit: 30,
-        outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj}{NewLine}{Exception}",
+        outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj} {TraceId}{NewLine}{Exception}",
         encoding: Encoding.UTF8
     )
     .CreateLogger();
@@ -593,6 +593,16 @@ app.UseSwaggerUI(c =>
 app.UseHttpsRedirection();
 
 app.UseRouting();
+
+// Push TraceId into Serilog LogContext for every request (matches ApiResponse.traceId)
+app.Use(async (context, next) =>
+{
+    var traceId = Api_Vapp.Utilities.ControlledErrorHelper.GetTraceId(context);
+    using (Serilog.Context.LogContext.PushProperty("TraceId", traceId))
+    {
+        await next();
+    }
+});
 
 // Response Time Middleware (برای محاسبه زمان پاسخ) - Inline
 app.Use(async (context, next) =>

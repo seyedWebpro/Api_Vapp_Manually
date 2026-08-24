@@ -137,9 +137,10 @@ case "$MODE" in
   admin-fast) deploy_admin_fast ;;
   public) deploy_public ;;
   public-fast) deploy_public_fast ;;
-  all-fronts) deploy_admin; deploy_public ;;
+  # Public first: apply-nginx fails if /form|/wheel|/card|/book are 404 while Admin uploads.
+  all-fronts) deploy_public; deploy_admin ;;
   both) deploy_admin; deploy_api ;;
-  all) deploy_admin; deploy_public; deploy_api ;;
+  all) deploy_public; deploy_admin; deploy_api ;;
   health) require_ssh; run_health ;;
   diagnose) run_diagnose ;;
   db-fix) run_db_fix ;;

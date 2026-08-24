@@ -3,7 +3,7 @@
 ربات اسکرپ پایتون روی **همان سرور Vapp** deploy می‌شود. موبایل **هرگز** مستقیم به ربات وصل نمی‌شود.
 
 ```
-موبایل ──HTTPS──► Vapp .NET (:8080 / ok-sms.ir)
+موبایل ──HTTPS──► Vapp .NET (:8080 / vapplication.ir)
                       │  JWT + feature: number_seeker
                       │  X-API-Key (داخلی)
                       ▼
@@ -150,7 +150,7 @@ ssh vapp-prod 'curl -s http://127.0.0.1:8000/health | python3 -m json.tool | hea
 ssh vapp-prod 'docker exec vapp_api_prod curl -s http://host.docker.internal:8000/health | head -c 200'
 
 # Vapp NumberSeeker (نیاز به JWT + feature number_seeker)
-# از Swagger: https://ok-sms.ir/swagger → NumberSeeker
+# از Swagger: https://vapplication.ir/swagger → NumberSeeker
 ```
 
 ### تست اسکرپ از سرور (مستقیم ربات)

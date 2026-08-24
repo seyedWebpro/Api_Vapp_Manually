@@ -99,34 +99,34 @@ namespace Api_Vapp.Services.ZarinPal
                 Metadata = BuildMetadata(mobile, email, orderId)
             };
 
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             try
             {
                 var endpoint = GetApiBaseUrl() + "/pg/v4/payment/request.json";
-                _logger.LogInformation(
-                    "ZarinPal request — Amount={Amount} Currency={Currency} Sandbox={Sandbox} CallbackHost={CallbackHost}",
-                    amountToman, currency, _options.Sandbox, TryHost(callbackUrl));
+                ZarinPalGatewayLogger.RequestStart(
+                    _logger, _options.Sandbox, amountToman, currency, orderId, TryHost(callbackUrl), description);
 
                 using var response = await _httpClient.PostAsJsonAsync(endpoint, payload, JsonOptions, cancellationToken);
                 var body = await response.Content.ReadAsStringAsync(cancellationToken);
+                sw.Stop();
+                var httpStatus = (int)response.StatusCode;
 
-                if (!response.IsSuccessStatusCode)
-                {
-                    _logger.LogWarning(
-                        "ZarinPal request HTTP {StatusCode}: {Body}",
-                        (int)response.StatusCode,
-                        Truncate(body));
-                    return FailRequest(ControlledErrorHelper.PaymentFailed);
-                }
-
-                var (dataCode, authority, fee, feeType, errorCode, errorMessage) = ParseRequestBody(body);
+                // حتی روی HTTP غیر۲xx بدنه را پارس کن (مثلاً -14 با 401)
+                var (dataCode, authority, fee, feeType, errorCode, errorMessage) = TryParseRequestBody(body);
                 var code = dataCode ?? errorCode ?? -1;
+
+                if (!response.IsSuccessStatusCode && code == -1)
+                {
+                    ZarinPalGatewayLogger.RequestFail(
+                        _logger, _options.Sandbox, amountToman, code, "http_error", httpStatus, sw.ElapsedMilliseconds, body);
+                    return FailRequest(ControlledErrorHelper.PaymentFailed, httpStatus: httpStatus, durationMs: sw.ElapsedMilliseconds);
+                }
 
                 if (code == 100 && !string.IsNullOrWhiteSpace(authority))
                 {
                     var paymentUrl = BuildStartPayUrl(authority);
-                    _logger.LogInformation(
-                        "ZarinPal request success — Authority issued, Fee={Fee}, FeeType={FeeType}",
-                        fee, feeType);
+                    ZarinPalGatewayLogger.RequestOk(
+                        _logger, _options.Sandbox, amountToman, authority, fee, feeType, httpStatus, sw.ElapsedMilliseconds);
                     return new ZarinPalRequestResult
                     {
                         Success = true,
@@ -134,18 +134,19 @@ namespace Api_Vapp.Services.ZarinPal
                         Authority = authority,
                         PaymentUrl = paymentUrl,
                         Fee = fee,
-                        FeeType = feeType
+                        FeeType = feeType,
+                        HttpStatusCode = httpStatus,
+                        DurationMs = sw.ElapsedMilliseconds
                     };
                 }
 
-                _logger.LogWarning(
-                    "ZarinPal request rejected — Code={Code} Hint={Hint} Body={Body}",
-                    code,
-                    ExplainCode(code),
-                    Truncate(body));
+                ZarinPalGatewayLogger.RequestFail(
+                    _logger, _options.Sandbox, amountToman, code, ExplainCode(code), httpStatus, sw.ElapsedMilliseconds, body);
                 return FailRequest(
                     MapPublicError(code, errorMessage),
-                    code);
+                    code,
+                    httpStatus: httpStatus,
+                    durationMs: sw.ElapsedMilliseconds);
             }
             catch (OperationCanceledException)
             {
@@ -153,8 +154,9 @@ namespace Api_Vapp.Services.ZarinPal
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "ZarinPal request failed unexpectedly");
-                return FailRequest(ControlledErrorHelper.PaymentFailed);
+                sw.Stop();
+                ZarinPalGatewayLogger.TransportError(_logger, "request", _options.Sandbox, ex, sw.ElapsedMilliseconds);
+                return FailRequest(ControlledErrorHelper.PaymentFailed, durationMs: sw.ElapsedMilliseconds);
             }
         }
 
@@ -180,14 +182,18 @@ namespace Api_Vapp.Services.ZarinPal
                 authority.StartsWith("S", StringComparison.OrdinalIgnoreCase))
             {
                 _logger.LogWarning(
-                    "ZarinPal sandbox auto-verify enabled — Authority accepted without live gateway verify");
+                    "ZARINPAL_SANDBOX_AUTO_VERIFY TraceId={TraceId} AuthorityPrefix={AuthorityPrefix}",
+                    ZarinPalGatewayLogger.TraceId(),
+                    ZarinPalGatewayLogger.AuthorityPrefix(authority));
                 return new ZarinPalVerifyResult
                 {
                     Success = true,
                     AlreadyVerified = false,
                     Code = 100,
                     RefId = $"SBX{DateTime.UtcNow:yyyyMMddHHmmss}{Random.Shared.Next(1000, 9999)}",
-                    CardPan = "5022********1234"
+                    CardPan = "5022********1234",
+                    HttpStatusCode = 200,
+                    DurationMs = 0
                 };
             }
 
@@ -202,35 +208,35 @@ namespace Api_Vapp.Services.ZarinPal
                 Authority = authority
             };
 
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             try
             {
                 var endpoint = GetApiBaseUrl() + "/pg/v4/payment/verify.json";
-                _logger.LogInformation(
-                    "ZarinPal verify — Amount={Amount} AuthorityPrefix={AuthorityPrefix}",
-                    amountToman,
-                    authority.Length <= 8 ? authority : authority[..8]);
+                ZarinPalGatewayLogger.VerifyStart(_logger, _options.Sandbox, amountToman, authority);
 
                 using var response = await _httpClient.PostAsJsonAsync(endpoint, payload, JsonOptions, cancellationToken);
                 var body = await response.Content.ReadAsStringAsync(cancellationToken);
+                sw.Stop();
+                var httpStatus = (int)response.StatusCode;
 
-                if (!response.IsSuccessStatusCode)
-                {
-                    _logger.LogWarning(
-                        "ZarinPal verify HTTP {StatusCode}: {Body}",
-                        (int)response.StatusCode,
-                        Truncate(body));
-                    return FailVerify(ControlledErrorHelper.PaymentFailed);
-                }
-
-                var (dataCode, refId, cardPan, cardHash, fee, feeType, errorCode, errorMessage) = ParseVerifyBody(body);
+                var (dataCode, refId, cardPan, cardHash, fee, feeType, errorCode, errorMessage) = TryParseVerifyBody(body);
                 var code = dataCode ?? errorCode ?? -1;
+
+                if (!response.IsSuccessStatusCode && code == -1)
+                {
+                    ZarinPalGatewayLogger.VerifyFail(
+                        _logger, _options.Sandbox, amountToman, authority, code, "http_error",
+                        definitive: false, httpStatus, sw.ElapsedMilliseconds, body);
+                    return FailVerify(ControlledErrorHelper.PaymentFailed, code: -1, definitive: false,
+                        httpStatus: httpStatus, durationMs: sw.ElapsedMilliseconds);
+                }
 
                 // 100 = اولین Verify موفق | 101 = قبلاً Verify شده (idempotent success)
                 if (code is 100 or 101)
                 {
-                    _logger.LogInformation(
-                        "ZarinPal verify success — Code={Code} RefId={RefId} AlreadyVerified={Already}",
-                        code, refId, code == 101);
+                    ZarinPalGatewayLogger.VerifyOk(
+                        _logger, _options.Sandbox, amountToman, authority, code, code == 101,
+                        refId, cardPan, fee, feeType, httpStatus, sw.ElapsedMilliseconds);
                     return new ZarinPalVerifyResult
                     {
                         Success = true,
@@ -240,16 +246,22 @@ namespace Api_Vapp.Services.ZarinPal
                         CardPan = cardPan,
                         CardHash = cardHash,
                         Fee = fee,
-                        FeeType = feeType
+                        FeeType = feeType,
+                        HttpStatusCode = httpStatus,
+                        DurationMs = sw.ElapsedMilliseconds
                     };
                 }
 
-                _logger.LogWarning(
-                    "ZarinPal verify rejected — Code={Code} Hint={Hint} Body={Body}",
+                var definitive = IsDefinitiveVerifyCode(code);
+                ZarinPalGatewayLogger.VerifyFail(
+                    _logger, _options.Sandbox, amountToman, authority, code, ExplainCode(code),
+                    definitive, httpStatus, sw.ElapsedMilliseconds, body);
+                return FailVerify(
+                    MapPublicError(code, errorMessage),
                     code,
-                    ExplainCode(code),
-                    Truncate(body));
-                return FailVerify(MapPublicError(code, errorMessage), code);
+                    definitive: definitive,
+                    httpStatus: httpStatus,
+                    durationMs: sw.ElapsedMilliseconds);
             }
             catch (OperationCanceledException)
             {
@@ -257,9 +269,22 @@ namespace Api_Vapp.Services.ZarinPal
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "ZarinPal verify failed unexpectedly");
-                return FailVerify(ControlledErrorHelper.PaymentFailed);
+                sw.Stop();
+                ZarinPalGatewayLogger.TransportError(_logger, "verify", _options.Sandbox, ex, sw.ElapsedMilliseconds);
+                return FailVerify(ControlledErrorHelper.PaymentFailed, code: -1, definitive: false,
+                    durationMs: sw.ElapsedMilliseconds);
             }
+        }
+
+        /// <summary>اعتبارسنجی فرمت Authority زرین‌پال (A… / S… سندباکس)</summary>
+        public static bool IsValidAuthority(string? authority)
+        {
+            if (string.IsNullOrWhiteSpace(authority))
+                return false;
+            var a = authority.Trim();
+            if (a.Length is < 20 or > 64)
+                return false;
+            return a.All(c => char.IsLetterOrDigit(c));
         }
 
         public string BuildStartPayUrl(string authority)
@@ -302,11 +327,38 @@ namespace Api_Vapp.Services.ZarinPal
             return metadata.Count == 0 ? null : metadata;
         }
 
-        private static ZarinPalRequestResult FailRequest(string message, int code = -1) =>
-            new() { Success = false, Code = code, ErrorMessage = message };
+        private static ZarinPalRequestResult FailRequest(
+            string message,
+            int code = -1,
+            int? httpStatus = null,
+            long? durationMs = null) =>
+            new()
+            {
+                Success = false,
+                Code = code,
+                ErrorMessage = message,
+                HttpStatusCode = httpStatus,
+                DurationMs = durationMs
+            };
 
-        private static ZarinPalVerifyResult FailVerify(string message, int code = -1) =>
-            new() { Success = false, Code = code, ErrorMessage = message };
+        private static ZarinPalVerifyResult FailVerify(
+            string message,
+            int code = -1,
+            bool? definitive = null,
+            int? httpStatus = null,
+            long? durationMs = null) =>
+            new()
+            {
+                Success = false,
+                Code = code,
+                ErrorMessage = message,
+                IsDefinitiveFailure = definitive ?? IsDefinitiveVerifyCode(code),
+                HttpStatusCode = httpStatus,
+                DurationMs = durationMs
+            };
+
+        /// <summary>کدهایی که پرداخت واقعاً ناموفق/نامعتبر است و retry بی‌فایده است</summary>
+        private static bool IsDefinitiveVerifyCode(int code) => code is -50 or -51 or -53 or -54 or -55;
 
         private static string Truncate(string? value, int max = 500)
         {
@@ -352,6 +404,13 @@ namespace Api_Vapp.Services.ZarinPal
         };
 
         private static (int? DataCode, string? Authority, int? Fee, string? FeeType, int? ErrorCode, string? ErrorMessage)
+            TryParseRequestBody(string body)
+        {
+            try { return ParseRequestBody(body); }
+            catch { return (null, null, null, null, null, null); }
+        }
+
+        private static (int? DataCode, string? Authority, int? Fee, string? FeeType, int? ErrorCode, string? ErrorMessage)
             ParseRequestBody(string body)
         {
             using var doc = JsonDocument.Parse(body);
@@ -375,6 +434,13 @@ namespace Api_Vapp.Services.ZarinPal
 
             var (errorCode, errorMessage) = TryReadErrors(root);
             return (dataCode, authority, fee, feeType, errorCode, errorMessage);
+        }
+
+        private static (int? DataCode, string? RefId, string? CardPan, string? CardHash, int? Fee, string? FeeType, int? ErrorCode, string? ErrorMessage)
+            TryParseVerifyBody(string body)
+        {
+            try { return ParseVerifyBody(body); }
+            catch { return (null, null, null, null, null, null, null, null); }
         }
 
         private static (int? DataCode, string? RefId, string? CardPan, string? CardHash, int? Fee, string? FeeType, int? ErrorCode, string? ErrorMessage)

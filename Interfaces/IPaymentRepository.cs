@@ -44,6 +44,11 @@ namespace Api_Vapp.Interfaces
         Task<bool> HasPendingPaymentAsync(int userId);
 
         /// <summary>
+        /// منقضی‌کردن Pending/Processing قدیمی‌تر از timeout (قفل شارژ را باز می‌کند)
+        /// </summary>
+        Task ExpireStalePendingPaymentsAsync(TimeSpan timeout);
+
+        /// <summary>
         /// دریافت مجموع پرداخت‌های موفق کاربر
         /// </summary>
         Task<decimal> GetTotalSuccessfulPaymentsAsync(int userId);

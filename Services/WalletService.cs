@@ -180,6 +180,8 @@ namespace Api_Vapp.Services
                 }
 
                 var paymentRepository = _serviceProvider.GetRequiredService<IPaymentRepository>();
+                // پرداخت‌های رهاشدهٔ قدیمی‌تر از ۲ ساعت را آزاد کن (جلوگیری از قفل دائمی)
+                await paymentRepository.ExpireStalePendingPaymentsAsync(TimeSpan.FromHours(2));
                 if (await paymentRepository.HasPendingPaymentAsync(userId))
                 {
                     await _audit.WriteAsync(new AuditEntry

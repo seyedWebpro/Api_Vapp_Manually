@@ -1,23 +1,29 @@
-# دامنه production — ok-sms.ir
+# دامنه‌های production
 
-راهنمای کامل انتقال از IP به دامنه؛ الگو از `vamyabSIte/api_vamyab_shop/devops/domain`.
+دو دامنه:
+
+| دامنه | کاربرد |
+|------|--------|
+| `api.v-application.ir` | درگاه پرداخت / callback زرین‌پال (**دست نزن**) |
+| `vapplication.ir` | ادمین، فرم، گردونه، کارت ویزیت، نوبت‌دهی، OTP autofill، Swagger |
 
 ## معماری
 
 ```
-کاربر → DNS (ok-sms.ir) → 195.24.237.132
-                        → Nginx :80 / :443 (Certbot)
+کاربر → DNS
+  api.v-application.ir  → درگاه / callback پرداخت (SSL موجود) → API :8080
+  vapplication.ir       → Nginx :80 / :443
                         → /api, /swagger, /health → API :8080
-                        → /form, /wheel → Public_Vapp (static)
-                        → / → Admin_Vapp (docker :3005 یا static)
+                        → /form, /wheel, /card, /book → Public_Vapp (static)
+                        → / → Admin_Vapp (static)
 ```
 
 | لایه | جزئیات |
 |------|--------|
-| DNS | A record `@` و `www` → `195.24.237.132` — [CLOUDFLARE.md](CLOUDFLARE.md) |
+| DNS | A برای هر دو دامنه → سرور — [CLOUDFLARE.md](CLOUDFLARE.md) |
 | TLS | Certbot روی سرور (پس از DNS) |
 | API | `127.0.0.1:8080` — `vapp_api_prod` |
-| لینک SMS | `https://ok-sms.ir/form/{slug}` و `/wheel/{slug}` |
+| لینک SMS | `https://vapplication.ir/form/{slug}` و `/wheel/{slug}` |
 
 ---
 
@@ -45,17 +51,17 @@ cd ~/Documents/javad_project/vapp/Api_Vapp_Manually && SERVER=vapp-prod bash dev
 
 ### ۱) DNS
 
-→ [CLOUDFLARE.md](CLOUDFLARE.md) — `dig ok-sms.ir +short` باید `195.24.237.132` باشد.
+→ [CLOUDFLARE.md](CLOUDFLARE.md) — `dig v-application.ir +short` باید `195.24.237.132` باشد.
 
 ### ۲) `.env` API
 
 از [env.domain.example](env.domain.example):
 
 ```env
-PUBLIC_API_BASE_URL=https://ok-sms.ir
-PUBLIC_FRONTEND_URL=https://ok-sms.ir
-FORM_PUBLIC_BASE_URL=https://ok-sms.ir/form
-WHEEL_PUBLIC_BASE_URL=https://ok-sms.ir/wheel
+PUBLIC_API_BASE_URL=https://api.v-application.ir
+PUBLIC_FRONTEND_URL=https://vapplication.ir
+FORM_PUBLIC_BASE_URL=https://vapplication.ir/form
+WHEEL_PUBLIC_BASE_URL=https://vapplication.ir/wheel
 ```
 
 ### ۳) Nginx + API
@@ -75,21 +81,21 @@ bash devops/scripts/deploy-public-front-host.sh
 bash devops/scripts/deploy-front-host.sh
 ```
 
-اپ موبایل (`Front_Vapp/.env`): `BASE_URL_RELEASE=https://ok-sms.ir`
+اپ موبایل (`FrontMobile_Vapp/.env`): `BASE_URL_RELEASE=https://vapplication.ir`
 
 ### ۵) تست
 
 ```bash
 bash devops/scripts/health-check.sh --with-domain
-curl -sS -o /dev/null -w '%{http_code}\n' -H 'Host: ok-sms.ir' http://127.0.0.1/form/
+curl -sS -o /dev/null -w '%{http_code}\n' -H 'Host: v-application.ir' http://127.0.0.1/form/
 docker exec vapp_api_prod printenv | grep PublicBaseUrl
 ```
 
 از Mac (بعد از DNS):
 
 ```bash
-curl -sS -o /dev/null -w '%{http_code}\n' https://ok-sms.ir/
-curl -sS -o /dev/null -w '%{http_code}\n' https://ok-sms.ir/form/test
+curl -sS -o /dev/null -w '%{http_code}\n' https://v-application.ir/
+curl -sS -o /dev/null -w '%{http_code}\n' https://vapplication.ir/form/test
 ```
 
 ---

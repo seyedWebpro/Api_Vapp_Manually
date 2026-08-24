@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # nginx reverse proxy — API + Admin + Public (فرم/گردونه SMS)
-# reuse: FRONT_STATIC_ROOT (Admin)، PUBLIC_STATIC_ROOT (Public_Vapp)، DOMAIN_HOST
+# اپ روی DOMAIN_HOST (vapplication.ir) — درگاه جدا روی GATEWAY_HOST (api.v-application.ir)
 #
 # Usage:
 #   bash apply-nginx.sh
-#   DOMAIN_HOST=ok-sms.ir bash apply-nginx.sh
+#   DOMAIN_HOST=vapplication.ir bash apply-nginx.sh
 #   FRONT_STATIC_ROOT=/var/www/vapp-admin PUBLIC_STATIC_ROOT=/var/www/vapp-public bash apply-nginx.sh
 set -euo pipefail
 
@@ -14,16 +14,16 @@ source "$SCRIPT_DIR/lib/load-server-conf.sh"
 
 SERVER_IP="${SERVER_IP:-195.24.237.132}"
 DOMAIN_HOST="${DOMAIN_HOST:-}"
+GATEWAY_HOST="${GATEWAY_HOST:-api.v-application.ir}"
 FRONT_STATIC_ROOT="${FRONT_STATIC_ROOT:-}"
 PUBLIC_STATIC_ROOT="${PUBLIC_STATIC_ROOT:-}"
 PUBLIC_PORT="${PUBLIC_PORT:-3006}"
 DEST="/etc/nginx/sites-available/vapp"
+DEST_GW="/etc/nginx/sites-available/vapp-gateway"
 
 # Always accept localhost health-checks + public IP (and domain when set).
-# Without 127.0.0.1/localhost, curl http://127.0.0.1/... misses this vhost → default site → 502.
 if [[ -n "$DOMAIN_HOST" ]]; then
   if [[ "${DOMAIN_SKIP_WWW:-0}" == "1" ]] || [[ "$DOMAIN_HOST" == *.*.* ]]; then
-    # ساب‌دامین (مثل api.v-application.ir) — www لازم نیست و Certbot را می‌شکند
     SERVER_NAMES="${DOMAIN_HOST} ${SERVER_IP} 127.0.0.1 localhost"
   else
     SERVER_NAMES="${DOMAIN_HOST} www.${DOMAIN_HOST} ${SERVER_IP} 127.0.0.1 localhost"
@@ -41,7 +41,6 @@ if [[ -n "$FRONT_STATIC_ROOT" && ! -f "${FRONT_STATIC_ROOT}/index.html" ]]; then
   FRONT_STATIC_ROOT=""
 fi
 
-# Prefer static public whenever index.html exists (even if env forgot PUBLIC_STATIC_ROOT)
 if [[ -z "$PUBLIC_STATIC_ROOT" && -f /var/www/vapp-public/index.html ]]; then
   PUBLIC_STATIC_ROOT=/var/www/vapp-public
 fi
@@ -53,6 +52,7 @@ fi
 if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
   sudo SERVER_IP="$SERVER_IP" \
     DOMAIN_HOST="$DOMAIN_HOST" \
+    GATEWAY_HOST="$GATEWAY_HOST" \
     FRONT_STATIC_ROOT="$FRONT_STATIC_ROOT" \
     PUBLIC_STATIC_ROOT="$PUBLIC_STATIC_ROOT" \
     PUBLIC_PORT="$PUBLIC_PORT" \
@@ -69,7 +69,6 @@ if [[ -n "$PUBLIC_STATIC_ROOT" ]]; then
         access_log off;
     }
 
-    # بنر/آیکون/تصاویر/فونت ریشه Public_Vapp (قبل از location / ادمین؛ وگرنه HTML ادمین برمی‌گردد)
     location ~* ^/(vapp-logo\\.png|form-bg\\.jpg|gift-icon(-gold)?\\.svg|user(-circle)?-icon\\.svg|phone-icon\\.svg|arrow-icon\\.svg|wheel\\.svg)\$ {
         root ${PUBLIC_STATIC_ROOT};
         expires 7d;
@@ -82,7 +81,6 @@ if [[ -n "$PUBLIC_STATIC_ROOT" ]]; then
         access_log off;
     }
 
-    # توجه: wheel اینجا نباشد — مسیر SPA است (/wheel/:slug)، نه پوشه استاتیک
     location ~ ^/(salon-profile|booking-reservation|lottery-result|service-info|service-pricing|reservation-success)/ {
         root ${PUBLIC_STATIC_ROOT};
         expires 7d;
@@ -91,12 +89,10 @@ if [[ -n "$PUBLIC_STATIC_ROOT" ]]; then
 
     location ~ ^/(form|wheel|card|book)(/.*)?$ {
         root ${PUBLIC_STATIC_ROOT};
-        # SPA: always index.html (assets live under /public-assets/)
         try_files /index.html =404;
     }"
 else
-  PUBLIC_BLOCK="    # Public_Vapp — docker :${PUBLIC_PORT} (prefer static — proxy only if no dist)
-    location /public-assets/ {
+  PUBLIC_BLOCK="    location /public-assets/ {
         proxy_pass http://127.0.0.1:${PUBLIC_PORT};
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
@@ -115,7 +111,6 @@ else
         proxy_connect_timeout 2s;
     }
 
-    # توجه: wheel اینجا نباشد — مسیر SPA است (/wheel/:slug)، نه پوشه استاتیک
     location ~ ^/(salon-profile|booking-reservation|lottery-result|service-info|service-pricing|reservation-success)/ {
         proxy_pass http://127.0.0.1:${PUBLIC_PORT};
         proxy_http_version 1.1;
@@ -137,8 +132,7 @@ else
 fi
 
 if [[ -n "$FRONT_STATIC_ROOT" ]]; then
-  FRONT_BLOCK="    # Admin_Vapp (static)
-    location / {
+  FRONT_BLOCK="    location / {
         root ${FRONT_STATIC_ROOT};
         index index.html;
         try_files \$uri \$uri/ @admin_vapp;
@@ -149,8 +143,7 @@ if [[ -n "$FRONT_STATIC_ROOT" ]]; then
         rewrite ^ /index.html break;
     }"
 else
-  FRONT_BLOCK='    # Admin_Vapp (docker)
-    location / {
+  FRONT_BLOCK='    location / {
         proxy_pass http://127.0.0.1:3005;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
@@ -186,6 +179,65 @@ real_ip_header CF-Connecting-IP;
 '
 fi
 
+API_LOCATIONS=$(cat <<'LOC'
+    location /swagger {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Proto $forwarded_proto;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_redirect off;
+    }
+
+    location /api {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Proto $forwarded_proto;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
+    }
+
+    location /health {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $forwarded_proto;
+    }
+
+    location /hangfire {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Proto $forwarded_proto;
+    }
+
+    location /uploads {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Proto $forwarded_proto;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        client_max_body_size 2048M;
+        proxy_read_timeout 600s;
+    }
+LOC
+)
+
+# Backup current combined config once (before we overwrite app site)
+if [[ -f "$DEST" && ! -f /etc/nginx/sites-available/vapp.bak.pre-split ]]; then
+  cp -a "$DEST" /etc/nginx/sites-available/vapp.bak.pre-split
+fi
+
+# App vhost only — never embeds gateway SSL
 cat >"$DEST" <<NGINX
 map \$http_x_forwarded_proto \$forwarded_proto {
     default \$http_x_forwarded_proto;
@@ -199,55 +251,7 @@ ${CF_REAL_IP}server {
 
     client_max_body_size 2048M;
 
-    location /swagger {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_http_version 1.1;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Forwarded-Host \$host;
-        proxy_set_header X-Forwarded-Proto \$forwarded_proto;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_redirect off;
-    }
-
-    location /api {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_http_version 1.1;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Forwarded-Host \$host;
-        proxy_set_header X-Forwarded-Proto \$forwarded_proto;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_read_timeout 600s;
-        proxy_send_timeout 600s;
-    }
-
-    location /health {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_http_version 1.1;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Forwarded-Proto \$forwarded_proto;
-    }
-
-    location /hangfire {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_http_version 1.1;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Forwarded-Host \$host;
-        proxy_set_header X-Forwarded-Proto \$forwarded_proto;
-    }
-
-    location /uploads {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_http_version 1.1;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Forwarded-Host \$host;
-        proxy_set_header X-Forwarded-Proto \$forwarded_proto;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        client_max_body_size 2048M;
-        proxy_read_timeout 600s;
-    }
+${API_LOCATIONS}
 
 ${PUBLIC_BLOCK}
 
@@ -255,12 +259,77 @@ ${FRONT_BLOCK}
 }
 NGINX
 
+# Gateway site: keep existing file; otherwise extract from backup or write from cert
+if [[ ! -f "$DEST_GW" ]]; then
+  BAK=/etc/nginx/sites-available/vapp.bak.pre-split
+  if [[ -f "$BAK" ]] && grep -q "ssl_certificate /etc/letsencrypt/live/${GATEWAY_HOST}/" "$BAK"; then
+    python3 - "$GATEWAY_HOST" "$BAK" "$DEST_GW" <<'PY'
+import re, sys
+host, src, dst = sys.argv[1], sys.argv[2], sys.argv[3]
+text = open(src, encoding="utf-8").read()
+blocks = []
+for m in re.finditer(r"server\s*\{", text):
+    start = m.start()
+    i = m.end() - 1
+    depth = 0
+    for j in range(i, len(text)):
+        if text[j] == "{":
+            depth += 1
+        elif text[j] == "}":
+            depth -= 1
+            if depth == 0:
+                block = text[start : j + 1]
+                if host in block:
+                    blocks.append(block)
+                break
+open(dst, "w", encoding="utf-8").write("\n\n".join(blocks) + "\n")
+print(f"extracted {len(blocks)} gateway blocks for {host}")
+PY
+  else
+    CERT_DIR="/etc/letsencrypt/live/${GATEWAY_HOST}"
+    if [[ -f "${CERT_DIR}/fullchain.pem" && -f "${CERT_DIR}/privkey.pem" ]]; then
+      cat >"$DEST_GW" <<GW
+# Payment gateway — ${GATEWAY_HOST}
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name ${GATEWAY_HOST};
+
+    ssl_certificate ${CERT_DIR}/fullchain.pem;
+    ssl_certificate_key ${CERT_DIR}/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    client_max_body_size 2048M;
+
+${API_LOCATIONS}
+}
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${GATEWAY_HOST};
+    return 301 https://\$host\$request_uri;
+}
+GW
+    else
+      echo "ERROR: no gateway cert and no backup to extract for ${GATEWAY_HOST}" >&2
+      exit 1
+    fi
+  fi
+  echo "OK: created gateway nginx → $DEST_GW"
+else
+  echo "OK: keep existing gateway nginx → $DEST_GW"
+fi
+
 ln -sf "$DEST" /etc/nginx/sites-enabled/vapp
+ln -sf "$DEST_GW" /etc/nginx/sites-enabled/vapp-gateway
 rm -f /etc/nginx/sites-enabled/default
 nginx -t
 systemctl reload nginx
 
-echo "OK: nginx server_name → ${SERVER_NAMES}"
+echo "OK: nginx app server_name → ${SERVER_NAMES}"
+echo "OK: nginx gateway → ${GATEWAY_HOST}"
 if [[ -n "$FRONT_STATIC_ROOT" ]]; then
   echo "OK: nginx admin static → $FRONT_STATIC_ROOT"
 else
@@ -268,7 +337,6 @@ else
 fi
 if [[ -n "$PUBLIC_STATIC_ROOT" ]]; then
   echo "OK: nginx public static → $PUBLIC_STATIC_ROOT (/form, /wheel, /card, /book)"
-  # Self-check (Host-aware) so a bad vhost never looks "OK"
   # shellcheck source=lib/nginx-http.sh
   source "$SCRIPT_DIR/lib/nginx-http.sh"
   if ! verify_public_routes "$SERVER_IP"; then
@@ -278,6 +346,5 @@ if [[ -n "$PUBLIC_STATIC_ROOT" ]]; then
   echo "OK: Public routes verified 200"
 else
   echo "OK: nginx public docker → 127.0.0.1:${PUBLIC_PORT} (/form, /wheel)"
-  echo "WARN: no /var/www/vapp-public/index.html — docker :${PUBLIC_PORT} often 502; prefer:" >&2
-  echo "  bash $SCRIPT_DIR/deploy-public-front-host.sh" >&2
+  echo "WARN: no /var/www/vapp-public/index.html — prefer: bash $SCRIPT_DIR/deploy-public-front-host.sh" >&2
 fi

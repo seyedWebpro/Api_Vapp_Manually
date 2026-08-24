@@ -1,64 +1,69 @@
-# DNS و SSL — ok-sms.ir (Vapp)
+# DNS و SSL — دامنه‌های Vapp
 
-## وضعیت مورد انتظار
+دو دامنهٔ جدا:
 
-| مورد | مقدار |
-|------|--------|
-| دامنه | `ok-sms.ir` + `www.ok-sms.ir` |
-| IP سرور Vapp | `195.24.237.132` |
-| SSH | پورت `22` |
-| Proxy Cloudflare | **DNS only (Grey Cloud)** توصیه می‌شود |
-| HTTPS | Certbot روی سرور (Let's Encrypt) |
+| دامنه | کاربرد | وضعیت سرور |
+|------|--------|------------|
+| `api.v-application.ir` | درگاه پرداخت / callback زرین‌پال | ✅ فعال + SSL — **دست نزن** |
+| `vapplication.ir` | ادمین، فرم، گردونه، کارت، OTP، Swagger | نیاز به DNS + Certbot |
+| `v-application.ir` (بدون api) | سایت معرفی / مارکتینگ | روی IP دیگر است — برای Vapp لازم نیست |
 
-## ۱) DNS — الزامی قبل از Certbot
+## کاری که باید در Cloudflare بزنی (الزامی برای اپ)
 
-در پنل DNS (Cloudflare یا رجیسترار):
+پنل Cloudflare دامنهٔ **`vapplication.ir`**:
 
 | Type | Name | Content | Proxy |
 |------|------|---------|-------|
-| A | `@` | `195.24.237.132` | DNS only |
-| A | `www` | `195.24.237.132` | DNS only |
+| A | `@` | `195.24.237.132` | **DNS only (Grey Cloud)** |
+| A | `www` | `195.24.237.132` | **DNS only (Grey Cloud)** |
 
-تست از Mac:
+تست بعد از ذخیره (چند دقیقه صبر):
 
 ```bash
-dig ok-sms.ir +short
-dig www.ok-sms.ir +short
-# هر دو باید: 195.24.237.132
+dig vapplication.ir +short
+# باید دقیقاً: 195.24.237.132
 ```
 
-> **توجه:** اگر دامنه به IP دیگری اشاره کند (مثلاً `193.141.65.146`)، ابتدا A record را اصلاح کنید.
+الان از سرور `vapplication.ir` **هیچ A record ندارد** → تا این را نزنی، HTTPS عمومی و Certbot کار نمی‌کند.
 
-## ۲) چرا Grey Cloud؟
+### دست نزن
 
-با Proxied (نارنجی) Cloudflare گاهی به سرورهای ایران **522** می‌دهد. مثل پروژه vamyab: ترافیک مستقیم به IP سرور + SSL با Certbot.
+| رکورد | چرا |
+|------|-----|
+| `api.v-application.ir` → `195.24.237.132` | درگاه پرداخت؛ الان درست است |
+| `v-application.ir` → `188.212.22.227` | سایت جدا؛ برای اپ لازم نیست |
 
-## ۳) SSL — Certbot (بعد از DNS درست)
+## چرا Grey Cloud؟
+
+با Proxied (نارنجی) Cloudflare گاهی به سرورهای ایران **522** می‌دهد. ترافیک مستقیم به IP سرور + SSL با Certbot.
+
+## SSL اپ — بعد از درست شدن DNS
+
+روی سرور (بعد از اینکه dig همان IP را نشان داد):
 
 ```bash
-sudo apt install -y certbot python3-certbot-nginx
-sudo certbot --nginx -d ok-sms.ir -d www.ok-sms.ir \
+ssh vapp-prod 'cd ~/Api_Vapp_Manually && bash devops/scripts/switch-to-domain.sh --certbot'
+# یا فقط:
+sudo certbot --nginx -d vapplication.ir -d www.vapplication.ir \
   --non-interactive --agree-tos --register-unsafely-without-email --redirect
 ```
 
-تمدید: `systemctl status certbot.timer`
+درگاه (`api.v-application.ir`) از قبل SSL دارد — دوباره صادر نکن مگر لازم باشد.
 
-## ۴) فایروال
+## فایروال
 
 ```bash
-sudo ufw allow 22/tcp     # SSH
+sudo ufw allow 22/tcp
 sudo ufw allow 80/tcp
 sudo ufw allow 443/tcp
 ```
 
-پورت‌های `8080`، `3005`، `3006` فقط `127.0.0.1` — از بیرون باز نیستند.
-
-## ۵) URLهای عمومی بعد از دامنه
+## URLهای نهایی
 
 | سرویس | آدرس |
 |--------|------|
-| پنل ادمین | `https://ok-sms.ir/auth` |
-| API | `https://ok-sms.ir/api/...` |
-| فرم SMS | `https://ok-sms.ir/form/{slug}` |
-| گردونه SMS | `https://ok-sms.ir/wheel/{slug}` |
-| Swagger | `https://ok-sms.ir/swagger` |
+| پنل ادمین | `https://vapplication.ir/auth` |
+| فرم / گردونه / کارت | `https://vapplication.ir/form|wheel|card/...` |
+| Swagger | `https://vapplication.ir/swagger` |
+| OTP در SMS | `@vapplication.ir #کد` |
+| Callback درگاه | `https://api.v-application.ir/api/Payment/callback/...` |

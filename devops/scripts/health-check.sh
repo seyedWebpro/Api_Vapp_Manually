@@ -25,7 +25,7 @@ for arg in "$@"; do
   esac
 done
 
-DOMAIN_HOST="${DOMAIN_HOST:-ok-sms.ir}"
+DOMAIN_HOST="${DOMAIN_HOST:-vapplication.ir}"
 SERVER_IP="${SERVER_IP:-195.24.237.132}"
 HEALTH_ATTEMPTS="${HEALTH_ATTEMPTS:-1}"
 HEALTH_SLEEP="${HEALTH_SLEEP:-8}"

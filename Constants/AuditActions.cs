@@ -44,6 +44,8 @@ namespace Api_Vapp.Constants
         public const string PaymentCancelDenied = "Payment.CancelDenied";
         public const string PaymentGatewayAuthorityIssued = "Payment.GatewayAuthorityIssued";
         public const string PaymentGatewayAuthorityFailed = "Payment.GatewayAuthorityFailed";
+        /// <summary>Verify موقت/شبکه — پرداخت Processing می‌ماند</summary>
+        public const string PaymentVerifyTransient = "Payment.VerifyTransient";
 
         // —— Wallet / Cashback (فاز ۲ اولویت ۵)
         public const string WalletCredited = "Wallet.Credited";

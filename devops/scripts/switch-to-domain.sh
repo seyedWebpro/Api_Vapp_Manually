@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# سوئیچ Vapp به دامنه ok-sms.ir (یا برگشت به IP)
+# سوئیچ Vapp به دامنه اپ (یا برگشت به IP)
 #
 # Usage (روی سرور):
 #   bash devops/scripts/switch-to-domain.sh              # دامنه + https در .env
@@ -8,7 +8,8 @@
 #   bash devops/scripts/switch-to-domain.sh --ip-only   # برگشت به IP
 #
 # Env:
-#   DOMAIN_HOST (پیش‌فرض ok-sms.ir) — برای ساب‌دامین: DOMAIN_HOST=api.v-application.ir
+#   DOMAIN_HOST (پیش‌فرض vapplication.ir) — ادمین / فرم / گردونه / کارت
+#   GATEWAY_HOST (پیش‌فرض api.v-application.ir) — callback درگاه پرداخت (دست نزن)
 #   SERVER_IP (پیش‌فرض از server.conf)
 #   DOMAIN_SKIP_WWW=1 — اجباری برای رد کردن www (برای ساب‌دامین خودکار است)
 set -euo pipefail
@@ -17,7 +18,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/load-server-conf.sh
 source "$SCRIPT_DIR/lib/load-server-conf.sh"
 API_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
-DOMAIN_HOST="${DOMAIN_HOST:-${DOMAIN:-ok-sms.ir}}"
+DOMAIN_HOST="${DOMAIN_HOST:-${DOMAIN:-vapplication.ir}}"
+GATEWAY_HOST="${GATEWAY_HOST:-api.v-application.ir}"
 SERVER_IP="${SERVER_IP:-195.24.237.132}"
 ENV_FILE="${ENV_FILE:-$API_DIR/docker/.env}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker/docker-compose.production.yml}"
@@ -78,20 +80,23 @@ write_env_domain() {
   ensure_secrets
   upsert_env SA_PASSWORD "$SEC_SA"
   upsert_env API_PORT_MAPPING "127.0.0.1:8080:8080"
-  upsert_env PUBLIC_API_BASE_URL "${scheme}://${DOMAIN_HOST}"
+  # درگاه پرداخت روی GATEWAY_HOST؛ بقیه روی DOMAIN_HOST (اپ)
+  upsert_env PUBLIC_API_BASE_URL "${scheme}://${GATEWAY_HOST}"
   upsert_env PUBLIC_FRONTEND_URL "${scheme}://${DOMAIN_HOST}"
   upsert_env FORM_PUBLIC_BASE_URL "${scheme}://${DOMAIN_HOST}/form"
   upsert_env WHEEL_PUBLIC_BASE_URL "${scheme}://${DOMAIN_HOST}/wheel"
   upsert_env CARD_PUBLIC_BASE_URL "${scheme}://${DOMAIN_HOST}/card"
   upsert_env BOOKING_PUBLIC_BASE_URL "${scheme}://${DOMAIN_HOST}/book"
   upsert_env Jwt__Secret "$SEC_JWT"
-  # زرین‌پال — callback روی همین دامنه/ساب‌دامین
+  # زرین‌پال — callback فقط روی دامنه درگاه (api.v-application.ir)
   upsert_env Payment__UseSimulation "false"
-  upsert_env ZarinPal__CallbackUrl "${scheme}://${DOMAIN_HOST}/api/Payment/callback/zarinpal"
+  upsert_env ZarinPal__CallbackUrl "${scheme}://${GATEWAY_HOST}/api/Payment/callback/zarinpal"
+  upsert_env ZarinPal__FrontendCallbackUrl "${scheme}://${DOMAIN_HOST}/payment/result"
   upsert_env ZarinPal__Sandbox "false"
   upsert_env ZarinPal__AllowSandboxAutoVerify "false"
   upsert_env ZarinPal__Currency "IRT"
   upsert_env ZarinPal__AppReturnUrl "vapp://payment/result"
+  upsert_env Sms__OtpAutofillDomain "$DOMAIN_HOST"
   chmod 600 "$ENV_FILE"
 }
 
@@ -124,7 +129,8 @@ restart_api() {
 apply_nginx() {
   local dh=""
   [[ "$MODE" != "ip" ]] && dh="$DOMAIN_HOST"
-  PUBLIC_STATIC_ROOT=/var/www/vapp-public SERVER_IP="$SERVER_IP" DOMAIN_HOST="$dh" \
+  PUBLIC_STATIC_ROOT=/var/www/vapp-public SERVER_IP="$SERVER_IP" \
+    DOMAIN_HOST="$dh" GATEWAY_HOST="$GATEWAY_HOST" \
     bash "$SCRIPT_DIR/apply-nginx.sh"
 }
 

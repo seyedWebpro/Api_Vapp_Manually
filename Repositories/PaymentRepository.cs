@@ -66,12 +66,33 @@ namespace Api_Vapp.Repositories
 
         public async Task<bool> HasPendingPaymentAsync(int userId)
         {
-            var recentCutoff = DateTime.UtcNow.AddMinutes(-15); // پرداخت‌های 15 دقیقه اخیر
-            // Pending و Processing هر دو «در جریان» هستند (توکن شبیه‌سازی/درگاه → Processing)
+            // هر Pending/Processing باز — بدون پنجره ۱۵ دقیقه‌ای
+            // (بعد از صدور Authority، تا NOK/Verify قطعی یا انقضا، قفل بماند)
             return await _dbSet
                 .AnyAsync(p => p.UserId == userId &&
-                         (p.Status == PaymentStatuses.Pending || p.Status == PaymentStatuses.Processing) &&
-                         p.CreatedAt >= recentCutoff);
+                         (p.Status == PaymentStatuses.Pending || p.Status == PaymentStatuses.Processing));
+        }
+
+        public async Task ExpireStalePendingPaymentsAsync(TimeSpan timeout)
+        {
+            var cutoff = DateTime.UtcNow.Subtract(timeout);
+            var stale = await _dbSet
+                .Where(p =>
+                    (p.Status == PaymentStatuses.Pending || p.Status == PaymentStatuses.Processing) &&
+                    p.CreatedAt < cutoff)
+                .ToListAsync();
+
+            if (stale.Count == 0)
+                return;
+
+            foreach (var p in stale)
+            {
+                p.Status = PaymentStatuses.Failed;
+                p.ErrorCode = "EXPIRED";
+                p.ErrorMessage = "پرداخت منقضی شد";
+            }
+
+            await _context.SaveChangesAsync();
         }
 
         public async Task<decimal> GetTotalSuccessfulPaymentsAsync(int userId)

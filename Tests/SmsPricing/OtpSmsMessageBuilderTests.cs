@@ -11,10 +11,10 @@ public class OtpSmsMessageBuilderTests
         var message = OtpSmsMessageBuilder.BuildForSend(
             "1234",
             "VerifyOtp",
-            autofillDomain: "ok-sms.ir");
+            autofillDomain: "vapplication.ir");
 
         Assert.Equal(
-            "کد تایید شما: 1234\n\n@ok-sms.ir #1234\nلغو11",
+            "کد تایید شما: 1234\n\n@vapplication.ir #1234\nلغو11",
             message);
     }
 
@@ -24,11 +24,11 @@ public class OtpSmsMessageBuilderTests
         var message = OtpSmsMessageBuilder.BuildForSend(
             "5678",
             "VerifyOtp",
-            autofillDomain: "https://ok-sms.ir/form",
+            autofillDomain: "https://vapplication.ir/form",
             androidAppHash: "AbCdEfGhIjK");
 
         Assert.Equal(
-            "کد تایید شما: 5678\n\n@ok-sms.ir #5678\nلغو11\nAbCdEfGhIjK",
+            "کد تایید شما: 5678\n\n@vapplication.ir #5678\nلغو11\nAbCdEfGhIjK",
             message);
 
         var lines = message.Split('\n');
@@ -56,7 +56,7 @@ public class OtpSmsMessageBuilderTests
     {
         var otp = OtpSmsMessageBuilder.BuildForSend(
             "9999",
-            autofillDomain: "ok-sms.ir",
+            autofillDomain: "vapplication.ir",
             androidAppHash: "XyZ123AbCde");
 
         var prepared = SmsPartsCalculator.PrepareForSend(otp, SmsPartsRules.Defaults);
@@ -69,7 +69,7 @@ public class OtpSmsMessageBuilderTests
     {
         var message = OtpSmsMessageBuilder.BuildForSend(
             "1234",
-            autofillDomain: "ok-sms.ir");
+            autofillDomain: "vapplication.ir");
 
         var parts = SmsPartsCalculator.CalculateParts(message, SmsPartsRules.Defaults);
         Assert.Equal(1, parts);

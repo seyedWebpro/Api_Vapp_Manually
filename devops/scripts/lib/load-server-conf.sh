@@ -13,7 +13,7 @@ fi
 : "${SSH_PORT:=22}"
 : "${SSH_HOST:=vapp-prod}"
 : "${SSH_USER:=root}"
-: "${DOMAIN:=ok-sms.ir}"
+: "${DOMAIN:=vapplication.ir}"
 : "${REMOTE_API_REPO:=/root/Api_Vapp_Manually}"
 : "${REMOTE_FRONT_REPO:=/root/Admin_Vapp}"
 : "${REMOTE_PUBLIC_REPO:=/root/Public_Vapp}"
