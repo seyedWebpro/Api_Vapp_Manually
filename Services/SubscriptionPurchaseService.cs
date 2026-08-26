@@ -270,8 +270,11 @@ namespace Api_Vapp.Services
                     gatewayUrl = string.IsNullOrEmpty(apiBaseUrl) ? redirectPath : $"{apiBaseUrl}{redirectPath}";
                 }
 
+                await _context.Entry(payment).ReloadAsync();
                 payment.RefId = refId;
                 payment.Status = PaymentStatuses.Processing;
+                payment.ErrorCode = null;
+                payment.ErrorMessage = null;
                 await _context.SaveChangesAsync();
 
                 var purchaseUser = await _context.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId);

@@ -95,6 +95,38 @@ namespace Api_Vapp.Repositories
             await _context.SaveChangesAsync();
         }
 
+        public async Task<int> AbandonOpenPaymentsForUserAsync(int userId, string reason)
+        {
+            // فقط رهاشده‌ها را آزاد کن — Pending تازه‌ی بدون RefId (درخواست همزمان in-flight) دست نخورده بماند
+            var graceCutoff = DateTime.UtcNow.AddSeconds(-15);
+            var open = await _dbSet
+                .Where(p =>
+                    p.UserId == userId &&
+                    (
+                        p.Status == PaymentStatuses.Processing
+                        || (p.Status == PaymentStatuses.Pending
+                            && (!string.IsNullOrEmpty(p.RefId) || p.CreatedAt < graceCutoff))
+                    ))
+                .ToListAsync();
+
+            if (open.Count == 0)
+                return 0;
+
+            var message = string.IsNullOrWhiteSpace(reason)
+                ? "جایگزین با درخواست پرداخت جدید"
+                : reason.Trim();
+
+            foreach (var p in open)
+            {
+                p.Status = PaymentStatuses.Cancelled;
+                p.ErrorCode = "SUPERSEDED";
+                p.ErrorMessage = message;
+            }
+
+            await _context.SaveChangesAsync();
+            return open.Count;
+        }
+
         public async Task<decimal> GetTotalSuccessfulPaymentsAsync(int userId)
         {
             return await _dbSet

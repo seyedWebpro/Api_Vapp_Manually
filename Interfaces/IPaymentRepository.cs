@@ -49,6 +49,12 @@ namespace Api_Vapp.Interfaces
         Task ExpireStalePendingPaymentsAsync(TimeSpan timeout);
 
         /// <summary>
+        /// لغو همه پرداخت‌های باز (Pending/Processing) کاربر تا بتواند درخواست جدید بزند
+        /// (مثلاً بعد از بستن مرورگر درگاه). برمی‌گرداند تعداد ردیف‌های لغوشده.
+        /// </summary>
+        Task<int> AbandonOpenPaymentsForUserAsync(int userId, string reason);
+
+        /// <summary>
         /// دریافت مجموع پرداخت‌های موفق کاربر
         /// </summary>
         Task<decimal> GetTotalSuccessfulPaymentsAsync(int userId);

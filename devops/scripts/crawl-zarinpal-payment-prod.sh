@@ -2,17 +2,17 @@
 # کراول عمیق درگاه زرین‌پال — Production / Sandbox
 #
 # Production (پیشنهادی روی سرور واقعی):
-#   BASE_URL=https://v-application.ir bash devops/scripts/crawl-zarinpal-payment-prod.sh
+#   BASE_URL=https://api.v-application.ir bash devops/scripts/crawl-zarinpal-payment-prod.sh
 #
 # Sandbox لوکال (با AllowSandboxAutoVerify برای مسیر OK کامل):
 #   BASE_URL=http://127.0.0.1:5054 MODE=sandbox bash devops/scripts/crawl-zarinpal-payment-prod.sh
 #
 # در Production مسیر «شارژ واقعی بانکی» تست نمی‌شود (نیاز به کارت).
-# بقیهٔ مسیرها: request Authority، NOK، قفل pending، cancel، reuse، verify بدون OK،
-# audit، gateways، SSL، callback HTML، deep link، اشتراک.
+# بقیهٔ مسیرها: request Authority، NOK، retry بعد از بستن درگاه (supersede)، cancel،
+# reuse، verify بدون OK، audit، gateways، SSL، callback HTML، deep link، اشتراک.
 set -euo pipefail
 
-BASE_URL="${BASE_URL:-https://v-application.ir}"
+BASE_URL="${BASE_URL:-https://api.v-application.ir}"
 MODE="${MODE:-production}" # production | sandbox
 AUTH_TOKEN="${AUTH_TOKEN:-}"
 TMP_DIR="$(mktemp -d)"
@@ -178,13 +178,27 @@ else
 fi
 check "authority length >= 20" "$([[ ${#auth1} -ge 20 ]] && echo 1 || echo 0)"
 
-# pending lock
-code="$(http_json POST /api/Wallet/charge "{\"amount\":$CHARGE_AMOUNT,\"gateway\":\"Zarinpal\"}" "$TMP_DIR/ch_pend.json")"
-check "second charge blocked while pending -> 400" "$([[ "$code" == "400" ]] && echo 1 || echo 0)"
+# retry while previous gateway payment is still open → supersede + new Authority (no lock error)
+code="$(http_json POST /api/Wallet/charge "{\"amount\":$CHARGE_AMOUNT,\"gateway\":\"Zarinpal\"}" "$TMP_DIR/ch_retry.json")"
+pid_retry="$(json_get "$TMP_DIR/ch_retry.json" data.paymentId)"
+auth_retry="$(json_get "$TMP_DIR/ch_retry.json" data.refId)"
+check "second charge while open succeeds (supersede)" "$([[ "$code" == "201" || "$code" == "200" ]] && [[ -n "$pid_retry" && -n "$auth_retry" ]] && echo 1 || echo 0)"
+code="$(http_json GET "/api/Payment/${pid1}" "" "$TMP_DIR/p1_super.json")"
+st1_super="$(json_get "$TMP_DIR/p1_super.json" data.status)"
+check "first payment superseded -> Cancelled" "$([[ "$st1_super" == "Cancelled" ]] && echo 1 || echo 0)"
 
-# cancel after authority blocked (avoid nested-quote bash pitfalls)
-code=$(http_json POST "/api/Payment/${pid1}/cancel" '' "${TMP_DIR}/cancel.json")
-check "cancel after authority blocked -> 400" "$([[ "$code" == "400" ]] && echo 1 || echo 0)"
+# cancel after authority allowed (user closed browser / gave up)
+code=$(http_json POST "/api/Payment/${pid_retry}/cancel" '' "${TMP_DIR}/cancel.json")
+check "cancel after authority allowed -> 200" "$([[ "$code" == "200" ]] && echo 1 || echo 0)"
+code="$(http_json GET "/api/Payment/${pid_retry}" "" "$TMP_DIR/p_retry.json")"
+st_retry="$(json_get "$TMP_DIR/p_retry.json" data.status)"
+check "cancelled payment status Cancelled" "$([[ "$st_retry" == "Cancelled" ]] && echo 1 || echo 0)"
+
+# fresh charge for NOK callback path (pid1/auth1 were superseded/cancelled)
+code="$(http_json POST /api/Wallet/charge "{\"amount\":$CHARGE_AMOUNT,\"gateway\":\"Zarinpal\"}" "$TMP_DIR/ch1b.json")"
+pid1="$(json_get "$TMP_DIR/ch1b.json" data.paymentId)"
+auth1="$(json_get "$TMP_DIR/ch1b.json" data.refId)"
+check "fresh charge for NOK path" "$([[ -n "$pid1" && -n "$auth1" ]] && echo 1 || echo 0)"
 
 # ─── 4) Callback NOK — no credit, status Failed ────────────────
 code=$(http_html "/api/Payment/callback/zarinpal?Authority=${auth1}&Status=NOK" "${TMP_DIR}/nok.html")
@@ -374,15 +388,15 @@ PY
 check "audit has request/authority/callback" "$(cat "${TMP_DIR}/audit_ok")"
 check "audit JSON has amount+userId" "$(cat "${TMP_DIR}/audit_detail")"
 
-# CancelDenied audit
-code=$(http_json GET "/api/Admin/Audit?category=payment&action=Payment.CancelDenied&entityId=${pid1}&pageSize=10" '' "${TMP_DIR}/ac.json")
+# PaymentCancelled audit (cancel-after-authority now allowed)
+code=$(http_json GET "/api/Admin/Audit?category=payment&action=Payment.Cancelled&entityId=${pid_retry}&pageSize=10" '' "${TMP_DIR}/ac.json")
 python3 - <<PY
 import json
 d=json.load(open("${TMP_DIR}/ac.json",encoding="utf-8"))
 items=(d.get("data") or {}).get("items") or []
 open("${TMP_DIR}/ac_ok","w").write("1" if items else "0")
 PY
-check "audit CancelDenied stored" "$(cat "${TMP_DIR}/ac_ok")"
+check "audit PaymentCancelled stored" "$(cat "${TMP_DIR}/ac_ok")"
 
 # ─── 10) Direct ZarinPal domain match (live request) ───────────
 # فقط چک می‌کند callback دامنه از دید زرین‌پال قبول است (مثل پاسخ پشتیبانی)
@@ -393,7 +407,7 @@ PY
 curl -sS -m 30 -o "$TMP_DIR/zp_req.json" -w '%{http_code}' \
   https://payment.zarinpal.com/pg/v4/payment/request.json \
   -H 'Content-Type: application/json' -H 'Accept: application/json' \
-  -d "{\"merchant_id\":\"$MERCHANT\",\"amount\":10000,\"description\":\"crawl domain check\",\"callback_url\":\"https://v-application.ir/api/Payment/callback/zarinpal\",\"currency\":\"IRT\"}" \
+  -d "{\"merchant_id\":\"$MERCHANT\",\"amount\":10000,\"description\":\"crawl domain check\",\"callback_url\":\"https://api.v-application.ir/api/Payment/callback/zarinpal\",\"currency\":\"IRT\"}" \
   > "$TMP_DIR/zp_http.txt" || echo 000 > "$TMP_DIR/zp_http.txt"
 python3 - <<PY
 import json

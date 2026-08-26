@@ -94,32 +94,15 @@ namespace Api_Vapp.Services
                     return ApiResponse<PaymentDto>.NotFound("کاربر یافت نشد");
                 }
 
-                // بررسی وجود پرداخت در انتظار
-                await _paymentRepository.ExpireStalePendingPaymentsAsync(TimeSpan.FromHours(2));
-                if (await _paymentRepository.HasPendingPaymentAsync(userId))
+                // پرداخت باز قبلی (مثلاً بعد از بستن مرورگر درگاه) را آزاد کن تا کاربر قفل نشود
+                var abandonedCount = await _paymentRepository.AbandonOpenPaymentsForUserAsync(
+                    userId,
+                    "جایگزین با درخواست پرداخت جدید");
+                if (abandonedCount > 0)
                 {
-                    await _audit.WriteAsync(new AuditEntry
-                    {
-                        Category = AuditCategories.Payment,
-                        Action = AuditActions.PaymentRequestFailed,
-                        EntityType = AuditEntityTypes.Payment,
-                        ActorUserId = userId,
-                        TargetUserId = userId,
-                        Succeeded = false,
-                        ErrorMessage = "پرداخت در انتظار قبلی وجود دارد",
-                        Metadata = new
-                        {
-                            occurredAtUtc = DateTime.UtcNow,
-                            eventType = "PendingPaymentLock",
-                            user = PaymentAuditDetails.UserSnapshot(user),
-                            amount = createDto.Amount,
-                            amountLabel = $"{createDto.Amount:N0} تومان",
-                            paymentType = createDto.PaymentType,
-                            gateway = createDto.Gateway,
-                            description = createDto.Description
-                        }
-                    });
-                    return ApiResponse<PaymentDto>.BadRequest("شما یک پرداخت در انتظار دارید. لطفاً ابتدا آن را تکمیل یا لغو کنید.");
+                    _logger.LogInformation(
+                        "Abandoned {Count} open payment(s) for user {UserId} before CreatePayment",
+                        abandonedCount, userId);
                 }
 
                 // ایجاد شماره سفارش یکتا
@@ -260,13 +243,24 @@ namespace Api_Vapp.Services
 
                 if (payment.Status == PaymentStatuses.Failed || payment.Status == PaymentStatuses.Cancelled)
                 {
-                    var result = new PaymentResultDto
+                    // SUPERSEDED/EXPIRED: ممکن است کاربر بعد از جایگزینی درخواست، همان Authority قدیمی را پرداخت کند
+                    // — اجازه بده Verify درگاه اجرا شود تا پول از دست نرود
+                    var recoverable = string.Equals(payment.ErrorCode, "SUPERSEDED", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(payment.ErrorCode, "EXPIRED", StringComparison.OrdinalIgnoreCase);
+                    if (!recoverable)
                     {
-                        Success = false,
-                        Message = "پرداخت ناموفق بود",
-                        Payment = MapToPaymentDto(payment)
-                    };
-                    return ApiResponse<PaymentResultDto>.CreateSuccess(result, "پرداخت ناموفق بود");
+                        var result = new PaymentResultDto
+                        {
+                            Success = false,
+                            Message = "پرداخت ناموفق بود",
+                            Payment = MapToPaymentDto(payment)
+                        };
+                        return ApiResponse<PaymentResultDto>.CreateSuccess(result, "پرداخت ناموفق بود");
+                    }
+
+                    _logger.LogInformation(
+                        "Recovering {Status} payment {PaymentId} (ErrorCode={ErrorCode}) via gateway verify",
+                        payment.Status, payment.Id, payment.ErrorCode);
                 }
 
                 var isZarinPal = string.Equals(payment.Gateway, PaymentGateways.Zarinpal, StringComparison.OrdinalIgnoreCase);
@@ -839,31 +833,10 @@ namespace Api_Vapp.Services
                     return ApiResponse<bool>.BadRequest("فقط پرداخت‌های در انتظار یا در حال پردازش قابل لغو هستند");
                 }
 
-                // بعد از صدور Authority زرین‌پال، لغو سمت ما می‌تواند باعث گیرکردن پول در درگاه شود
-                if (string.Equals(payment.Gateway, PaymentGateways.Zarinpal, StringComparison.OrdinalIgnoreCase)
-                    && !string.IsNullOrWhiteSpace(payment.RefId))
-                {
-                    await _audit.WriteAsync(new AuditEntry
-                    {
-                        Category = AuditCategories.Payment,
-                        Action = AuditActions.PaymentCancelDenied,
-                        EntityType = AuditEntityTypes.Payment,
-                        EntityId = payment.Id.ToString(),
-                        ActorUserId = userId,
-                        TargetUserId = userId,
-                        Succeeded = false,
-                        ErrorMessage = "لغو پس از صدور Authority مجاز نیست",
-                        After = PaymentAuditDetails.PaymentSnapshot(payment, cancelUser, extra: new
-                        {
-                            eventType = "CancelDenied",
-                            reason = "authority_already_issued"
-                        })
-                    });
-                    return ApiResponse<bool>.BadRequest(
-                        "پرداخت به درگاه ارسال شده و قابل لغو نیست. در صورت انصراف، پرداخت را در درگاه لغو کنید.");
-                }
-
+                // بعد از صدور Authority هم لغو سمت ما مجاز است (کاربر مرورگر را بست / انصراف)
+                // اگر بعداً همان Authority پرداخت شود، Verify با ErrorCode SUPERSEDED بازیابی می‌کند
                 payment.Status = PaymentStatuses.Cancelled;
+                payment.ErrorCode = string.IsNullOrWhiteSpace(payment.RefId) ? "USER_CANCEL" : "SUPERSEDED";
                 payment.ErrorMessage = "لغو توسط کاربر";
                 await _context.SaveChangesAsync();
 

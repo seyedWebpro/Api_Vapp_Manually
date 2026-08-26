@@ -180,31 +180,15 @@ namespace Api_Vapp.Services
                 }
 
                 var paymentRepository = _serviceProvider.GetRequiredService<IPaymentRepository>();
-                // پرداخت‌های رهاشدهٔ قدیمی‌تر از ۲ ساعت را آزاد کن (جلوگیری از قفل دائمی)
-                await paymentRepository.ExpireStalePendingPaymentsAsync(TimeSpan.FromHours(2));
-                if (await paymentRepository.HasPendingPaymentAsync(userId))
+                // پرداخت باز قبلی (بستن مرورگر / انصراف) را آزاد کن تا شارژ دوباره خطا ندهد
+                var abandonedCount = await paymentRepository.AbandonOpenPaymentsForUserAsync(
+                    userId,
+                    "جایگزین با درخواست شارژ کیف پول جدید");
+                if (abandonedCount > 0)
                 {
-                    await _audit.WriteAsync(new AuditEntry
-                    {
-                        Category = AuditCategories.Payment,
-                        Action = AuditActions.PaymentRequestFailed,
-                        EntityType = AuditEntityTypes.Payment,
-                        ActorUserId = userId,
-                        TargetUserId = userId,
-                        Succeeded = false,
-                        ErrorMessage = "پرداخت در انتظار قبلی وجود دارد",
-                        Metadata = new
-                        {
-                            occurredAtUtc = DateTime.UtcNow,
-                            eventType = "WalletChargePendingLock",
-                            user = PaymentAuditDetails.UserSnapshot(user),
-                            requestedAmount,
-                            amountLabel = $"{requestedAmount:N0} تومان",
-                            gateway = request.Gateway
-                        }
-                    });
-                    return ApiResponse<ChargeWalletResponseDto>.BadRequest(
-                        "شما یک پرداخت در انتظار دارید. لطفاً ابتدا آن را تکمیل یا لغو کنید.");
+                    _logger.LogInformation(
+                        "Abandoned {Count} open payment(s) for user {UserId} before wallet charge",
+                        abandonedCount, userId);
                 }
 
                 var orderId = GenerateOrderId();
@@ -278,8 +262,12 @@ namespace Api_Vapp.Services
 
                     refId = zarinResult.Authority;
                     gatewayUrl = zarinResult.PaymentUrl;
+                    // اگر همزمان درخواست دیگری این ردیف را SUPERSEDED کرده، Authority همین‌جا را نگه دار
+                    await _context.Entry(payment).ReloadAsync();
                     payment.RefId = refId;
                     payment.Status = PaymentStatuses.Processing;
+                    payment.ErrorCode = null;
+                    payment.ErrorMessage = null;
                     await _context.SaveChangesAsync();
                 }
                 else
@@ -287,8 +275,11 @@ namespace Api_Vapp.Services
                     // مسیر شبیه‌سازی به‌پرداخت (فقط وقتی UseSimulation=true)
                     isSimulation = true;
                     refId = $"SIMREF{DateTime.UtcNow:yyyyMMddHHmmss}{Random.Shared.Next(1000, 9999)}";
+                    await _context.Entry(payment).ReloadAsync();
                     payment.RefId = refId;
                     payment.Status = PaymentStatuses.Processing;
+                    payment.ErrorCode = null;
+                    payment.ErrorMessage = null;
                     await _context.SaveChangesAsync();
                     gatewayUrl = BuildGatewayUrl(payment.Id);
                 }
