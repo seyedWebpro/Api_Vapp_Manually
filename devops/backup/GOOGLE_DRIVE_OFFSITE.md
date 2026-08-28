@@ -1,4 +1,4 @@
-# بکاپ offsite روی Google Drive (Vapp / ok-sms.ir)
+# بکاپ offsite روی Google Drive (Vapp / vapplication.ir)
 
 همان الگوی Microless — برای اطمینان ۱۰۰٪ وقتی سرور از بین برود.
 

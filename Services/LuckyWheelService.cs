@@ -68,7 +68,7 @@ namespace Api_Vapp.Services
                     Title = createDto.Title?.Trim() ?? string.Empty,
                     Description = NormalizeOptionalText(createDto.Description),
                     Slug = UserFormSlugHelper.Normalize(createDto.Slug),
-                    SmsCaption = QuickSendLinkSmsHelper.NormalizeCaption(createDto.SmsCaption),
+                    SmsCaption = QuickSendLinkSmsHelper.NormalizeCaption(createDto.SmsDescription),
                     Status = LuckyWheelStatus.Draft,
                     SaveToPhonebook = createDto.SaveToPhonebook,
                     IsActive = true,
@@ -142,7 +142,7 @@ namespace Api_Vapp.Services
 
                 var originalTitle = wheel.Title;
                 var originalSlug = wheel.Slug;
-                var originalSmsCaption = wheel.SmsCaption;
+                var originalSmsDescription = wheel.SmsCaption;
                 var originalDescription = wheel.Description;
                 var originalSaveToPhonebook = wheel.SaveToPhonebook;
                 var originalNotebookIds = wheel.Notebooks
@@ -161,9 +161,9 @@ namespace Api_Vapp.Services
                     wheel.Slug = slugValidation.NormalizedSlug;
                 }
 
-                if (updateDto.SmsCaption != null)
+                if (updateDto.SmsDescription != null)
                 {
-                    wheel.SmsCaption = QuickSendLinkSmsHelper.NormalizeCaption(updateDto.SmsCaption);
+                    wheel.SmsCaption = QuickSendLinkSmsHelper.NormalizeCaption(updateDto.SmsDescription);
                 }
 
                 if (updateDto.Title != null)
@@ -234,7 +234,7 @@ namespace Api_Vapp.Services
                 var contentChanged =
                     !string.Equals(originalTitle, wheel.Title, StringComparison.Ordinal) ||
                     !string.Equals(originalSlug, wheel.Slug, StringComparison.Ordinal) ||
-                    !string.Equals(originalSmsCaption, wheel.SmsCaption, StringComparison.Ordinal) ||
+                    !string.Equals(originalSmsDescription, wheel.SmsCaption, StringComparison.Ordinal) ||
                     !string.Equals(originalDescription, wheel.Description, StringComparison.Ordinal) ||
                     originalSaveToPhonebook != wheel.SaveToPhonebook ||
                     !originalNotebookIds.SequenceEqual(currentNotebookIds);
@@ -579,7 +579,7 @@ namespace Api_Vapp.Services
                         Status = wheel.Status.ToString(),
                         IsActive = wheel.IsActive,
                         PublicUrl = BuildPublicUrl(wheel.Slug),
-                        SmsCaption = wheel.SmsCaption,
+                        SmsDescription = wheel.SmsCaption,
                         ParticipantCount = await _luckyWheelRepository.GetParticipantCountAsync(wheel.Id),
                         CreatedAt = EnsureUtc(wheel.CreatedAt),
                         PublishedAt = EnsureUtc(wheel.PublishedAt),
@@ -1082,7 +1082,7 @@ namespace Api_Vapp.Services
             return updateDto.Title != null
                 || updateDto.Description != null
                 || !string.IsNullOrWhiteSpace(updateDto.Slug)
-                || updateDto.SmsCaption != null
+                || updateDto.SmsDescription != null
                 || updateDto.SaveToPhonebook.HasValue
                 || updateDto.NotebookIds != null;
         }
@@ -1110,7 +1110,7 @@ namespace Api_Vapp.Services
                 Title = wheel.Title,
                 Description = wheel.Description,
                 Slug = wheel.Slug,
-                SmsCaption = wheel.SmsCaption,
+                SmsDescription = wheel.SmsCaption,
                 Status = wheel.Status.ToString(),
                 SaveToPhonebook = wheel.SaveToPhonebook,
                 IsActive = wheel.IsActive,

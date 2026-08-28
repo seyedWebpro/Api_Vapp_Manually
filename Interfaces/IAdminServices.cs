@@ -87,8 +87,17 @@ namespace Api_Vapp.Interfaces
 
     public interface IAdminMessageApprovalService
     {
-        Task<ApiResponse<PagedResponse<SmsApprovalRequestResponseDto>>> GetPendingAsync(int page = 1, int pageSize = 20);
-        Task<ApiResponse<PagedResponse<SmsApprovalRequestResponseDto>>> GetAllAsync(string? status = null, int page = 1, int pageSize = 20);
+        Task<ApiResponse<PagedResponse<SmsApprovalRequestResponseDto>>> GetPendingAsync(
+            int page = 1,
+            int pageSize = 20,
+            string? search = null,
+            string? userSearch = null);
+        Task<ApiResponse<PagedResponse<SmsApprovalRequestResponseDto>>> GetAllAsync(
+            string? status = null,
+            string? search = null,
+            string? userSearch = null,
+            int page = 1,
+            int pageSize = 20);
         Task<ApiResponse<SmsApprovalRequestResponseDto>> GetByIdAsync(int id);
         Task<ApiResponse<bool>> ApproveAsync(int id, int adminUserId);
         Task<ApiResponse<bool>> RejectAsync(int id, int adminUserId, RejectApprovalDto dto);
@@ -96,8 +105,17 @@ namespace Api_Vapp.Interfaces
 
     public interface IAdminTemplateApprovalService
     {
-        Task<ApiResponse<PagedResponse<TemplateApprovalResponseDto>>> GetPendingAsync(int page = 1, int pageSize = 20);
-        Task<ApiResponse<PagedResponse<TemplateApprovalResponseDto>>> GetAllAsync(string? status = null, int page = 1, int pageSize = 20);
+        Task<ApiResponse<PagedResponse<TemplateApprovalResponseDto>>> GetPendingAsync(
+            int page = 1,
+            int pageSize = 20,
+            string? search = null,
+            string? userSearch = null);
+        Task<ApiResponse<PagedResponse<TemplateApprovalResponseDto>>> GetAllAsync(
+            string? status = null,
+            string? search = null,
+            string? userSearch = null,
+            int page = 1,
+            int pageSize = 20);
         Task<ApiResponse<TemplateApprovalResponseDto>> GetByIdAsync(int id);
         Task<ApiResponse<bool>> ApproveAsync(int id, int adminUserId);
         Task<ApiResponse<bool>> RejectAsync(int id, int adminUserId, RejectApprovalDto dto);
@@ -120,6 +138,13 @@ namespace Api_Vapp.Interfaces
         Task<ApiResponse<bool>> ApproveAsync(string itemType, int id, int adminUserId);
         Task<ApiResponse<bool>> RejectAsync(string itemType, int id, int adminUserId, RejectApprovalDto dto);
         Task<int> CountPendingAsync();
+    }
+
+    public interface IQuickSendAdminPreviewService
+    {
+        Task<ApiResponse<QuickSendPreviewTokenDto>> CreatePreviewTokenAsync(string itemType, int id, int adminUserId);
+
+        Task<ApiResponse<QuickSendPreviewContentDto>> GetPreviewByTokenAsync(string token);
     }
 
     public interface IAdminDashboardService

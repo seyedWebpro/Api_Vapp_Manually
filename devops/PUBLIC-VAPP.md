@@ -15,7 +15,7 @@ API از همان سرور (`/api/FormPublic` و `/api/LuckyWheelPublic`) سرو
 
 ```
                     ┌─────────────────────────────────────┐
-  کاربر (SMS)  ──►  │  Nginx :80                          │
+  کاربر (SMS)  ──►  │  Nginx :443  https://vapplication.ir   │
                     │  /api/*        → API :8080          │
                     │  /form/*       → Public_Vapp        │
                     │  /wheel/*      → Public_Vapp        │
@@ -34,8 +34,8 @@ API از همان سرور (`/api/FormPublic` و `/api/LuckyWheelPublic`) سرو
 **لینک‌های SMS** در `appsettings` ساخته می‌شوند:
 
 ```json
-"FormBuilder": { "PublicBaseUrl": "http://195.24.237.132/form" }
-"LuckyWheel":  { "PublicBaseUrl": "http://195.24.237.132/wheel" }
+"FormBuilder": { "PublicBaseUrl": "https://vapplication.ir/form" }
+"LuckyWheel":  { "PublicBaseUrl": "https://vapplication.ir/wheel" }
 ```
 
 مثال لینک نهایی: `http://195.24.237.132/form/contact-form`

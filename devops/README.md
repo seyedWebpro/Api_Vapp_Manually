@@ -3,6 +3,9 @@
 Overview, structure and links.  
 **For the actual command list see [`COMMANDS.txt`](COMMANDS.txt).**
 
+**Production domains:** app `https://vapplication.ir` · payment gateway `https://api.v-application.ir`  
+→ [`domain/README.md`](domain/README.md) · [`domain/CLOUDFLARE.md`](domain/CLOUDFLARE.md)
+
 ---
 
 ## Quick start

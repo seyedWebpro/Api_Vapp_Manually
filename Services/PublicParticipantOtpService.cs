@@ -247,12 +247,19 @@ namespace Api_Vapp.Services
                     : "کد تایید به شماره موبایل ارسال شد";
 
                 _logger.LogInformation(
-                    "Public OTP ready — session {SessionId}, mobile {Mobile}, purpose {Purpose}, smsSent {SmsSent}, skippedWallet {Skipped}, expiresInSeconds {ExpiresInSeconds}",
+                    "Public OTP ready — session {SessionId}, owner {OwnerUserId}, mobile {Mobile}, purpose {Purpose}, outcome {Outcome}, smsSent {SmsSent}, skippedWallet {SkippedWallet}, sid {Sid}, expiresInSeconds {ExpiresInSeconds}",
                     session.Id,
+                    ownerUserId.Value,
                     mobile,
                     purpose,
+                    sendResult.SkippedInsufficientBalance
+                        ? "SkippedInsufficientBalance"
+                        : smsSent
+                            ? "Sent"
+                            : "ProviderFailed",
                     smsSent,
                     sendResult.SkippedInsufficientBalance,
+                    sendResult.Sid,
                     OtpExpirationMinutes * 60);
 
                 return ApiResponse<PublicParticipantOtpResponseDto>.CreateSuccess(

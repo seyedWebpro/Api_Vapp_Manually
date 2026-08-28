@@ -88,7 +88,7 @@ namespace Api_Vapp.Services
                         UserId = userId,
                         Platform = platform,
                         LinkUrl = linkUrl,
-                        SmsCaption = QuickSendLinkSmsHelper.NormalizeCaption(createDto.SmsCaption),
+                        SmsCaption = QuickSendLinkSmsHelper.NormalizeCaption(createDto.SmsDescription),
                         IsDefault = setAsDefault,
                         IsActive = true,
                         IsDeleted = false,
@@ -205,7 +205,7 @@ namespace Api_Vapp.Services
 
                 var originalPlatform = link.Platform;
                 var originalLinkUrl = link.LinkUrl;
-                var originalSmsCaption = link.SmsCaption;
+                var originalSmsDescription = link.SmsCaption;
 
                 if (updateDto.Platform != null)
                 {
@@ -226,9 +226,9 @@ namespace Api_Vapp.Services
                     link.LinkUrl = linkUrl;
                 }
 
-                if (updateDto.SmsCaption != null)
+                if (updateDto.SmsDescription != null)
                 {
-                    link.SmsCaption = QuickSendLinkSmsHelper.NormalizeCaption(updateDto.SmsCaption);
+                    link.SmsCaption = QuickSendLinkSmsHelper.NormalizeCaption(updateDto.SmsDescription);
                 }
 
                 if (updateDto.IsActive.HasValue)
@@ -245,7 +245,7 @@ namespace Api_Vapp.Services
                 var contentChanged =
                     !string.Equals(originalPlatform, link.Platform, StringComparison.Ordinal) ||
                     !string.Equals(originalLinkUrl, link.LinkUrl, StringComparison.Ordinal) ||
-                    !string.Equals(originalSmsCaption, link.SmsCaption, StringComparison.Ordinal);
+                    !string.Equals(originalSmsDescription, link.SmsCaption, StringComparison.Ordinal);
                 if (contentChanged)
                 {
                     QuickSendContentApprovalHelper.ResetToPending(link);
@@ -649,7 +649,7 @@ namespace Api_Vapp.Services
                 Id = link.Id,
                 Platform = link.Platform,
                 LinkUrl = link.LinkUrl,
-                SmsCaption = link.SmsCaption,
+                SmsDescription = link.SmsCaption,
                 IsActive = link.IsActive,
                 IsDefault = link.IsDefault,
                 CreatedAt = link.CreatedAt,

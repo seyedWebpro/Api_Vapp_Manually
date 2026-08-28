@@ -10,8 +10,8 @@ namespace Api_Vapp.DTOs.LuckyWheel
 
         public string? Slug { get; set; }
 
-        /// <summary>عنوان اختیاری ارسال سریع SMS (قبل از لینک)</summary>
-        public string? SmsCaption { get; set; }
+        /// <summary>توضیحات اختیاری ارسال SMS (قبل از لینک)</summary>
+        public string? SmsDescription { get; set; }
 
         public string Status { get; set; } = string.Empty;
 

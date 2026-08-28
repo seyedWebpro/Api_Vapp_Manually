@@ -37,12 +37,21 @@ namespace Api_Vapp.Services.Admin
             _appNotifier = appNotifier;
         }
 
-        public Task<ApiResponse<PagedResponse<SmsApprovalRequestResponseDto>>> GetPendingAsync(int page = 1, int pageSize = 20)
+        public Task<ApiResponse<PagedResponse<SmsApprovalRequestResponseDto>>> GetPendingAsync(
+            int page = 1,
+            int pageSize = 20,
+            string? search = null,
+            string? userSearch = null)
         {
-            return GetAllAsync(AdminApprovalStatuses.Pending, page, pageSize);
+            return GetAllAsync(AdminApprovalStatuses.Pending, search, userSearch, page, pageSize);
         }
 
-        public async Task<ApiResponse<PagedResponse<SmsApprovalRequestResponseDto>>> GetAllAsync(string? status = null, int page = 1, int pageSize = 20)
+        public async Task<ApiResponse<PagedResponse<SmsApprovalRequestResponseDto>>> GetAllAsync(
+            string? status = null,
+            string? search = null,
+            string? userSearch = null,
+            int page = 1,
+            int pageSize = 20)
         {
             try
             {
@@ -55,6 +64,8 @@ namespace Api_Vapp.Services.Admin
 
                 if (!string.IsNullOrWhiteSpace(status))
                     query = query.Where(r => r.Status == status);
+
+                query = AdminApprovalListFilters.ApplyMessageApprovalFilters(query, search, userSearch);
 
                 var totalCount = await query.CountAsync();
                 var items = await query

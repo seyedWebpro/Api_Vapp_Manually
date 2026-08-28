@@ -104,7 +104,7 @@ GET /api/ContactNotebook?pageNumber=1&pageSize=100&isActive=true
 | `title` | فقط اگر ارسال شود — خالی/فاصله → `400` |
 | `description` | فقط اگر ارسال شود — `""` توضیحات را پاک می‌کند |
 | `slug` | فقط اگر ارسال شود (غیرخالی) |
-| `smsCaption` | فقط اگر ارسال شود — عنوان ارسال سریع (حداکثر ۱۰۰)؛ `""` پاک می‌کند و تأیید را Pending می‌کند |
+| `smsDescription` | فقط اگر ارسال شود — توضیحات ارسال (حداکثر ۱۰۰)؛ `""` پاک می‌کند و تأیید را Pending می‌کند |
 | `saveToPhonebook` | فقط اگر ارسال شود |
 | `notebookIds` | اگر ارسال شود → **جایگزین کامل** لیست |
 | فیلد ارسال نشده | **مقدار قبلی حفظ می‌شود** |
@@ -155,13 +155,13 @@ GET /api/ContactNotebook?pageNumber=1&pageSize=100&isActive=true
   "title": "گردونه نوروز",
   "description": "اختیاری",
   "slug": "norooz-wheel",
-  "smsCaption": "گردونه شانس نوروز",
+  "smsDescription": "گردونه شانس نوروز",
   "saveToPhonebook": true,
   "notebookIds": [1]
 }
 ```
 
-- `smsCaption` اختیاری (حداکثر ۱۰۰ کاراکتر) — عنوان ارسال سریع قبل از لینک
+- `smsDescription` اختیاری (حداکثر ۱۰۰ کاراکتر) — توضیحات ارسال قبل از لینک
 - پاسخ: `201` + `status: "Draft"`
 
 ---
@@ -177,7 +177,7 @@ GET /api/ContactNotebook?pageNumber=1&pageSize=100&isActive=true
     "title": "گردونه نوروز",
     "description": "...",
     "slug": "norooz-wheel",
-    "smsCaption": "گردونه شانس نوروز",
+    "smsDescription": "گردونه شانس نوروز",
     "status": "Published",
     "saveToPhonebook": true,
     "isActive": true,
@@ -197,7 +197,7 @@ GET /api/ContactNotebook?pageNumber=1&pageSize=100&isActive=true
 }
 ```
 
-متن SMS ارسال سریع = `smsCaption` + خط جدید + `publicUrl` (اگر caption خالی باشد فقط URL).
+متن SMS ارسال سریع = `smsDescription` + خط جدید + `publicUrl` (اگر توضیحات خالی باشد فقط URL).
 
 ---
 

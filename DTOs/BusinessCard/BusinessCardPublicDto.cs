@@ -1,3 +1,5 @@
+using Api_Vapp.Utilities;
+
 namespace Api_Vapp.DTOs.BusinessCard
 {
     /// <summary>
@@ -22,6 +24,15 @@ namespace Api_Vapp.DTOs.BusinessCard
         public bool ContactEnabled { get; set; }
 
         public bool BankingEnabled { get; set; }
+
+        /// <summary>فعال بودن بخش دکمه فروشگاه</summary>
+        public bool ShopEnabled { get; set; }
+
+        /// <summary>آدرس فروشگاه — فقط وقتی shopEnabled=true و مقدار دارد</summary>
+        public string? ShopUrl { get; set; }
+
+        /// <summary>متن دکمه فروشگاه</summary>
+        public string ShopButtonLabel { get; set; } = BusinessCardShopHelper.ButtonLabel;
 
         public string? DescriptionTitle { get; set; }
 

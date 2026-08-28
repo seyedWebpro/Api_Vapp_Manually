@@ -78,6 +78,16 @@ namespace Api_Vapp.Models
         /// </summary>
         public bool BankingEnabled { get; set; }
 
+        /// <summary>
+        /// بخش دکمه فروشگاه — لینک وب‌سایت / فروشگاه آنلاین
+        /// </summary>
+        public bool ShopEnabled { get; set; }
+
+        /// <summary>
+        /// آدرس فروشگاه آنلاین — در دکمه «فروشگاه» کارت عمومی استفاده می‌شود
+        /// </summary>
+        public string? ShopUrl { get; set; }
+
         public string? DescriptionTitle { get; set; }
 
         public string? DescriptionText { get; set; }

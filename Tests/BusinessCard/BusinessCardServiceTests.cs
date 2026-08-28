@@ -1,3 +1,4 @@
+using Api_Vapp.Constants;
 using Api_Vapp.Data;
 using Api_Vapp.DTOs.BusinessCard;
 using Api_Vapp.DTOs.Common;
@@ -153,6 +154,8 @@ public class BusinessCardServiceTests
         });
         Assert.True(publish.Success);
 
+        await ctx.ApproveCardAsync(create.Data.Id);
+
         var publicCard = await ctx.PublicService.GetPublicCardAsync("social-bank-card");
         Assert.True(publicCard.Success);
         Assert.Equal(4, publicCard.Data!.SocialLinks.Count);
@@ -248,6 +251,8 @@ public class BusinessCardServiceTests
         });
         Assert.True(publish.Success);
 
+        await ctx.ApproveCardAsync(create.Data!.Id);
+
         var after = await ctx.PublicService.GetPublicCardAsync("public-card-unit");
         Assert.True(after.Success);
         Assert.Equal("عمومی", after.Data!.Title);
@@ -282,6 +287,130 @@ public class BusinessCardServiceTests
         Assert.Equal(400, result.StatusCode);
         Assert.Equal(ErrorCodes.InvalidInput, result.ErrorCode);
     }
+
+    [Fact]
+    public async Task UpdateSections_ShopUrl_NormalizesAndReturnsInPublic()
+    {
+        await using var ctx = await BusinessCardTestContext.CreateAsync();
+
+        var create = await ctx.Service.CreateDraftAsync(ctx.OwnerUserId, new CreateBusinessCardDto
+        {
+            Title = "فروشگاه تست",
+            ShopEnabled = true,
+            DescriptionEnabled = true,
+            DescriptionText = "توضیحات",
+            ContactEnabled = false
+        });
+
+        var update = await ctx.Service.UpdateSectionsAsync(create.Data!.Id, ctx.OwnerUserId, new UpdateBusinessCardSectionsDto
+        {
+            ShopEnabled = true,
+            ShopUrl = "myshop.ir"
+        });
+
+        Assert.True(update.Success);
+        Assert.True(update.Data!.ShopEnabled);
+        Assert.Equal("https://myshop.ir/", update.Data.ShopUrl);
+        Assert.Equal(BusinessCardShopHelper.ButtonLabel, update.Data.ShopButtonLabel);
+        Assert.Equal(BusinessCardShopHelper.NoStoreHint, update.Data.ShopNoStoreHint);
+        Assert.Equal(BusinessCardShopHelper.ContactPhone, update.Data.ShopContactPhone);
+
+        var publish = await ctx.Service.PublishAsync(create.Data.Id, ctx.OwnerUserId, new PublishBusinessCardDto
+        {
+            Slug = "shop-card-unit"
+        });
+        Assert.True(publish.Success);
+
+        await ctx.ApproveCardAsync(create.Data.Id);
+
+        var publicCard = await ctx.PublicService.GetPublicCardAsync("shop-card-unit");
+        Assert.True(publicCard.Success);
+        Assert.True(publicCard.Data!.ShopEnabled);
+        Assert.Equal("https://myshop.ir/", publicCard.Data.ShopUrl);
+        Assert.Equal(BusinessCardShopHelper.ButtonLabel, publicCard.Data.ShopButtonLabel);
+    }
+
+    [Fact]
+    public async Task UpdateSections_InvalidShopUrl_FailsValidation()
+    {
+        await using var ctx = await BusinessCardTestContext.CreateAsync();
+
+        var create = await ctx.Service.CreateDraftAsync(ctx.OwnerUserId, new CreateBusinessCardDto
+        {
+            Title = "کارت",
+            DescriptionEnabled = true,
+            DescriptionText = "متن"
+        });
+
+        var update = await ctx.Service.UpdateSectionsAsync(create.Data!.Id, ctx.OwnerUserId, new UpdateBusinessCardSectionsDto
+        {
+            ShopEnabled = true,
+            ShopUrl = "not a valid url!!!"
+        });
+
+        Assert.False(update.Success);
+        Assert.Equal(400, update.StatusCode);
+        Assert.Equal(ErrorCodes.ValidationFailed, update.ErrorCode);
+    }
+
+    [Fact]
+    public async Task UpdateSections_ClearShopUrl_Succeeds()
+    {
+        await using var ctx = await BusinessCardTestContext.CreateAsync();
+
+        var create = await ctx.Service.CreateDraftAsync(ctx.OwnerUserId, new CreateBusinessCardDto
+        {
+            Title = "کارت",
+            ShopEnabled = true,
+            ShopUrl = "https://example.com",
+            DescriptionEnabled = true,
+            DescriptionText = "متن"
+        });
+
+        Assert.Equal("https://example.com/", create.Data!.ShopUrl);
+
+        var update = await ctx.Service.UpdateSectionsAsync(create.Data.Id, ctx.OwnerUserId, new UpdateBusinessCardSectionsDto
+        {
+            ShopUrl = ""
+        });
+
+        Assert.True(update.Success);
+        Assert.Null(update.Data!.ShopUrl);
+    }
+
+    [Fact]
+    public async Task PublicService_HidesShopUrlWhenSectionDisabled()
+    {
+        await using var ctx = await BusinessCardTestContext.CreateAsync();
+
+        var create = await ctx.Service.CreateDraftAsync(ctx.OwnerUserId, new CreateBusinessCardDto
+        {
+            Title = "فروشگاه",
+            ShopEnabled = true,
+            ShopUrl = "https://example.com",
+            DescriptionEnabled = true,
+            DescriptionText = "متن",
+            ContactEnabled = false
+        });
+
+        await ctx.Service.UpdateSectionsAsync(create.Data!.Id, ctx.OwnerUserId, new UpdateBusinessCardSectionsDto
+        {
+            ShopEnabled = false
+        });
+
+        var publish = await ctx.Service.PublishAsync(create.Data.Id, ctx.OwnerUserId, new PublishBusinessCardDto
+        {
+            Slug = "shop-hidden-url"
+        });
+        Assert.True(publish.Success);
+
+        await ctx.ApproveCardAsync(create.Data.Id);
+
+        var publicCard = await ctx.PublicService.GetPublicCardAsync("shop-hidden-url");
+        Assert.True(publicCard.Success);
+        Assert.False(publicCard.Data!.ShopEnabled);
+        Assert.Null(publicCard.Data.ShopUrl);
+    }
 }
 
 internal sealed class BusinessCardTestContext : IAsyncDisposable
@@ -300,6 +429,14 @@ internal sealed class BusinessCardTestContext : IAsyncDisposable
     public int OwnerUserId { get; private set; }
 
     public int OtherUserId { get; private set; }
+
+    public async Task ApproveCardAsync(int cardId)
+    {
+        var card = await _context.BusinessCards.FirstAsync(c => c.Id == cardId);
+        card.ApprovalStatus = AdminApprovalStatuses.Approved;
+        card.ApprovedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+    }
 
     public static async Task<BusinessCardTestContext> CreateAsync()
     {

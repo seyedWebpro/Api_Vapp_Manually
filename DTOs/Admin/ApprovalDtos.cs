@@ -78,6 +78,37 @@ namespace Api_Vapp.DTOs.Admin
         public string Reason { get; set; } = string.Empty;
     }
 
+    /// <summary>توکن کوتاه‌عمر برای پیش‌نمایش ادمین (بدون انتشار عمومی)</summary>
+    public class QuickSendPreviewTokenDto
+    {
+        public string Token { get; set; } = string.Empty;
+
+        public DateTime ExpiresAt { get; set; }
+
+        /// <summary>مسیر نسبی در Public_Vapp — مثلاً /preview/{token}</summary>
+        public string PreviewPath { get; set; } = string.Empty;
+    }
+
+    /// <summary>محتوای پیش‌نمایش ادمین — فقط از طریق توکن معتبر</summary>
+    public class QuickSendPreviewContentDto
+    {
+        public string ItemType { get; set; } = string.Empty;
+
+        public string ItemTypeTitle { get; set; } = string.Empty;
+
+        public string Title { get; set; } = string.Empty;
+
+        public string ApprovalStatus { get; set; } = string.Empty;
+
+        public string? RejectionReason { get; set; }
+
+        public bool IsAdminPreview { get; set; } = true;
+
+        public Api_Vapp.DTOs.UserForm.FormPublicDto? Form { get; set; }
+
+        public Api_Vapp.DTOs.BusinessCard.BusinessCardPublicDto? BusinessCard { get; set; }
+    }
+
     public class AdminDashboardStatsDto
     {
         public int PendingSmsApprovals { get; set; }

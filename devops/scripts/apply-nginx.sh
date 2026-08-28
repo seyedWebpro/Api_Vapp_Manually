@@ -237,8 +237,48 @@ if [[ -f "$DEST" && ! -f /etc/nginx/sites-available/vapp.bak.pre-split ]]; then
   cp -a "$DEST" /etc/nginx/sites-available/vapp.bak.pre-split
 fi
 
-# App vhost only — never embeds gateway SSL
-cat >"$DEST" <<NGINX
+APP_CERT_DIR=""
+if [[ -n "$DOMAIN_HOST" && -f "/etc/letsencrypt/live/${DOMAIN_HOST}/fullchain.pem" ]]; then
+  APP_CERT_DIR="/etc/letsencrypt/live/${DOMAIN_HOST}"
+fi
+
+# App vhost — preserve HTTPS when Let's Encrypt cert exists for DOMAIN_HOST
+if [[ -n "$APP_CERT_DIR" ]]; then
+  cat >"$DEST" <<NGINX
+map \$http_x_forwarded_proto \$forwarded_proto {
+    default \$http_x_forwarded_proto;
+    ''      \$scheme;
+}
+
+${CF_REAL_IP}server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name ${SERVER_NAMES};
+
+    ssl_certificate ${APP_CERT_DIR}/fullchain.pem;
+    ssl_certificate_key ${APP_CERT_DIR}/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    client_max_body_size 2048M;
+
+${API_LOCATIONS}
+
+${PUBLIC_BLOCK}
+
+${FRONT_BLOCK}
+}
+
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name ${SERVER_NAMES};
+    return 301 https://\$host\$request_uri;
+}
+NGINX
+  echo "OK: app nginx with existing SSL cert → ${DOMAIN_HOST}"
+else
+  cat >"$DEST" <<NGINX
 map \$http_x_forwarded_proto \$forwarded_proto {
     default \$http_x_forwarded_proto;
     ''      \$scheme;
@@ -258,6 +298,7 @@ ${PUBLIC_BLOCK}
 ${FRONT_BLOCK}
 }
 NGINX
+fi
 
 # Gateway site: keep existing file; otherwise extract from backup or write from cert
 if [[ ! -f "$DEST_GW" ]]; then

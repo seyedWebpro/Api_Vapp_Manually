@@ -22,8 +22,8 @@ namespace Api_Vapp.DTOs.UserForm
 
         public string? PublicUrl { get; set; }
 
-        /// <summary>عنوان اختیاری ارسال سریع SMS</summary>
-        public string? SmsCaption { get; set; }
+        /// <summary>توضیحات اختیاری ارسال SMS</summary>
+        public string? SmsDescription { get; set; }
 
         public DateTime CreatedAt { get; set; }
 

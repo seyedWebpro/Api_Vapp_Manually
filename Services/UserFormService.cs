@@ -69,7 +69,7 @@ namespace Api_Vapp.Services
                     Title = createDto.Title?.Trim() ?? string.Empty,
                     Description = NormalizeOptionalText(createDto.Description),
                     Slug = UserFormSlugHelper.Normalize(createDto.Slug),
-                    SmsCaption = QuickSendLinkSmsHelper.NormalizeCaption(createDto.SmsCaption),
+                    SmsCaption = QuickSendLinkSmsHelper.NormalizeCaption(createDto.SmsDescription),
                     TemplateKey = NormalizeOptionalText(createDto.TemplateKey),
                     Status = UserFormStatus.Draft,
                     SaveToPhonebook = createDto.SaveToPhonebook,
@@ -135,7 +135,7 @@ namespace Api_Vapp.Services
                 var form = formResult.Form!;
                 var originalTitle = form.Title;
                 var originalSlug = form.Slug;
-                var originalSmsCaption = form.SmsCaption;
+                var originalSmsDescription = form.SmsCaption;
                 var originalDescription = form.Description;
                 var originalSaveToPhonebook = form.SaveToPhonebook;
                 var originalNotebookIds = form.Notebooks
@@ -154,9 +154,9 @@ namespace Api_Vapp.Services
                     form.Slug = slugValidation.NormalizedSlug;
                 }
 
-                if (updateDto.SmsCaption != null)
+                if (updateDto.SmsDescription != null)
                 {
-                    form.SmsCaption = QuickSendLinkSmsHelper.NormalizeCaption(updateDto.SmsCaption);
+                    form.SmsCaption = QuickSendLinkSmsHelper.NormalizeCaption(updateDto.SmsDescription);
                 }
 
                 if (updateDto.Title != null)
@@ -219,7 +219,7 @@ namespace Api_Vapp.Services
                 var contentChanged =
                     !string.Equals(originalTitle, form.Title, StringComparison.Ordinal) ||
                     !string.Equals(originalSlug, form.Slug, StringComparison.Ordinal) ||
-                    !string.Equals(originalSmsCaption, form.SmsCaption, StringComparison.Ordinal) ||
+                    !string.Equals(originalSmsDescription, form.SmsCaption, StringComparison.Ordinal) ||
                     !string.Equals(originalDescription, form.Description, StringComparison.Ordinal) ||
                     originalSaveToPhonebook != form.SaveToPhonebook ||
                     !originalNotebookIds.SequenceEqual(currentNotebookIds);
@@ -389,7 +389,7 @@ namespace Api_Vapp.Services
                     Status = form.Status.ToString(),
                     IsActive = GetEffectiveIsActive(form),
                     PublicUrl = BuildPublicUrl(form.Slug),
-                    SmsCaption = form.SmsCaption,
+                    SmsDescription = form.SmsCaption,
                     CreatedAt = EnsureUtc(form.CreatedAt),
                     PublishedAt = EnsureUtc(form.PublishedAt),
                     ApprovalStatus = form.ApprovalStatus,
@@ -1053,7 +1053,7 @@ namespace Api_Vapp.Services
             return updateDto.Title != null
                 || updateDto.Description != null
                 || !string.IsNullOrWhiteSpace(updateDto.Slug)
-                || updateDto.SmsCaption != null
+                || updateDto.SmsDescription != null
                 || updateDto.SaveToPhonebook.HasValue
                 || updateDto.NotebookIds != null;
         }
@@ -1221,7 +1221,7 @@ namespace Api_Vapp.Services
                 Title = form.Title,
                 Description = form.Description,
                 Slug = form.Slug,
-                SmsCaption = form.SmsCaption,
+                SmsDescription = form.SmsCaption,
                 TemplateKey = form.TemplateKey,
                 TemplateId = form.TemplateId,
                 Status = form.Status.ToString(),

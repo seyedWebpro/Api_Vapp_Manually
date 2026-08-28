@@ -15,5 +15,8 @@ namespace Api_Vapp.Interfaces
         Task<ApiResponse<PublicParticipantOtpResponseDto>> ResendOtpAsync(string slug, ResendPublicParticipantOtpDto dto);
 
         Task<ApiResponse<SubmitFormPublicResponseDto>> SubmitFormAsync(string slug, SubmitFormPublicDto dto);
+
+        /// <summary>پیش‌نمایش ادمین — بدون بررسی وضعیت تأیید</summary>
+        Task<ApiResponse<FormPublicDto>> GetAdminPreviewByIdAsync(int id);
     }
 }

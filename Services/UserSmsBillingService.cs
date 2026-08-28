@@ -118,9 +118,17 @@ namespace Api_Vapp.Services
 
                 if (!deduct.Success)
                 {
-                    _logger.LogInformation(
-                        "SMS skipped — insufficient wallet (pre-deduct). UserId={UserId}, Cost={Cost}, Module={Module}",
-                        userId, cost, sourceModule);
+                    LogBillingOutcome(
+                        "SkippedInsufficientBalance",
+                        userId,
+                        mobile,
+                        sourceModule,
+                        sourceEntityId,
+                        cost,
+                        parts,
+                        sid: null,
+                        charged: 0,
+                        reason: deduct.Message);
 
                     await WriteSmsAuditAsync(
                         AuditActions.SmsInsufficientBalance,
@@ -154,9 +162,18 @@ namespace Api_Vapp.Services
                 if (!isSuccess)
                 {
                     await RefundIfNeededAsync(userId, reserved, sourceModule, "ارسال ناموفق به سرویس پیامک");
-                    _logger.LogWarning(
-                        "SMS provider failed after wallet reserve. UserId={UserId}, Module={Module}, Message={Message}, ProviderStatus={Status}",
-                        userId, sourceModule, smsResult.Message, smsResult.Data?.Status);
+                    LogBillingOutcome(
+                        "ProviderFailed",
+                        userId,
+                        mobile,
+                        sourceModule,
+                        sourceEntityId,
+                        cost,
+                        parts,
+                        smsResult.Data?.Sid,
+                        reserved,
+                        reason: smsResult.Message,
+                        providerStatus: smsResult.Data?.Status);
 
                     await WriteSmsAuditAsync(
                         AuditActions.SmsSendFailed,
@@ -201,6 +218,18 @@ namespace Api_Vapp.Services
                     reason: null,
                     providerStatus: smsResult.Data.Status,
                     chargedAmount: reserved);
+
+                LogBillingOutcome(
+                    "Sent",
+                    userId,
+                    mobile,
+                    sourceModule,
+                    sourceEntityId,
+                    cost,
+                    parts,
+                    sid,
+                    reserved,
+                    providerStatus: smsResult.Data.Status);
 
                 return UserSmsSendResult.Success(sid, cost, parts, chargedAmount: reserved);
             }
@@ -253,6 +282,34 @@ namespace Api_Vapp.Services
                 sourceEntityId,
                 sourceEntityLabel,
                 cancellationToken);
+        }
+
+        private void LogBillingOutcome(
+            string outcome,
+            int userId,
+            string mobile,
+            string sourceModule,
+            int? sourceEntityId,
+            decimal cost,
+            int parts,
+            long? sid,
+            decimal charged,
+            string? reason = null,
+            int? providerStatus = null)
+        {
+            _logger.LogInformation(
+                "SMS_BILLING outcome={Outcome} userId={UserId} mobile={MobileMasked} module={Module} entityId={EntityId} cost={Cost} parts={Parts} sid={Sid} charged={Charged} providerStatus={ProviderStatus} reason={Reason}",
+                outcome,
+                userId,
+                MaskMobile(mobile),
+                sourceModule,
+                sourceEntityId,
+                cost,
+                parts,
+                sid,
+                charged,
+                providerStatus,
+                reason ?? "-");
         }
 
         private Task WriteSmsAuditAsync(

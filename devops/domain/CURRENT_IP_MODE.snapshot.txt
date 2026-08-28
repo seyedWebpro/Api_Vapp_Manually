@@ -1,5 +1,6 @@
 # اسنپ‌شات — حالت IP (قبل از دامنه کامل)
 # تاریخ مرجع: 2026-07-07
+# وضعیت فعلی production: دامنه — ببین domain/README.md
 
 server_name:     195.24.237.132
 PUBLIC_API:      http://195.24.237.132
@@ -10,3 +11,8 @@ nginx:           /etc/nginx/sites-available/vapp
 API container:   vapp_api_prod :8080
 Admin:           docker :3005 یا static /var/www/vapp-admin
 Public:          static /var/www/vapp-public (/form, /wheel)
+
+# بعد از دامنه (مرجع):
+#   اپ:     https://vapplication.ir
+#   درگاه:  https://api.v-application.ir
+#   nginx:  vapp + vapp-gateway

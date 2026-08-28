@@ -26,8 +26,8 @@ namespace Api_Vapp.DTOs.BookingSystem
         public string Slug { get; set; } = string.Empty;
         public string PublicUrl { get; set; } = string.Empty;
 
-        /// <summary>عنوان اختیاری ارسال سریع SMS (قبل از لینک)</summary>
-        public string? SmsCaption { get; set; }
+        /// <summary>توضیحات اختیاری ارسال SMS (قبل از لینک)</summary>
+        public string? SmsDescription { get; set; }
 
         public string Status { get; set; } = string.Empty;
         public bool SaveToPhonebook { get; set; }
@@ -112,10 +112,10 @@ namespace Api_Vapp.DTOs.BookingSystem
         public string? CustomSlug { get; set; }
 
         /// <summary>
-        /// عنوان اختیاری ارسال سریع SMS — حداکثر ۱۰۰ کاراکتر
+        /// توضیحات اختیاری ارسال SMS — حداکثر ۱۰۰ کاراکتر
         /// </summary>
-        [MaxLength(100, ErrorMessage = "عنوان ارسال سریع نمی‌تواند بیشتر از ۱۰۰ کاراکتر باشد")]
-        public string? SmsCaption { get; set; }
+        [MaxLength(100, ErrorMessage = "توضیحات ارسال نمی‌تواند بیشتر از ۱۰۰ کاراکتر باشد")]
+        public string? SmsDescription { get; set; }
 
         public bool SaveToPhonebook { get; set; }
 
@@ -333,10 +333,10 @@ namespace Api_Vapp.DTOs.BookingSystem
         public string? Slug { get; set; }
 
         /// <summary>
-        /// عنوان اختیاری ارسال سریع — ارسال رشته خالی برای حذف
+        /// توضیحات اختیاری ارسال — ارسال رشته خالی برای حذف
         /// </summary>
-        [MaxLength(100, ErrorMessage = "عنوان ارسال سریع نمی‌تواند بیشتر از ۱۰۰ کاراکتر باشد")]
-        public string? SmsCaption { get; set; }
+        [MaxLength(100, ErrorMessage = "توضیحات ارسال نمی‌تواند بیشتر از ۱۰۰ کاراکتر باشد")]
+        public string? SmsDescription { get; set; }
 
         /// <summary>بازه رزرو عمومی به روز — اختیاری.</summary>
         [Range(1, 365, ErrorMessage = "بازه رزرو باید بین ۱ تا ۳۶۵ روز باشد")]

@@ -82,5 +82,17 @@ namespace Api_Vapp.Controller.Admin
             var result = await _service.RejectAsync(itemType, id, adminUserId, dto);
             return StatusCode(result.StatusCode, result);
         }
+
+        /// <summary>صدور توکن پیش‌نمایش ادمین (فرم، کارت ویزیت)</summary>
+        [HttpPost("{itemType}/{id:int}/preview-token")]
+        public async Task<ActionResult<ApiResponse<QuickSendPreviewTokenDto>>> CreatePreviewToken(
+            string itemType,
+            int id,
+            [FromServices] IQuickSendAdminPreviewService previewService)
+        {
+            var adminUserId = await GetCurrentUserIdAsync();
+            var result = await previewService.CreatePreviewTokenAsync(itemType, id, adminUserId);
+            return StatusCode(result.StatusCode, result);
+        }
     }
 }

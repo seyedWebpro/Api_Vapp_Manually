@@ -199,7 +199,7 @@
 
 
 ================================================================================
-  دامنه اپ vapplication.ir + درگاه v-application.ir
+  دامنه اپ vapplication.ir + درگاه api.v-application.ir
 ================================================================================
 
   # سوئیچ nginx + .env به دامنه (HTTP — قبل از SSL)
@@ -213,15 +213,15 @@
 
   راهنما: devops/domain/README.md · devops/domain/CLOUDFLARE.md
 
-  dig vapplication.ir +short    # اپ
-  dig v-application.ir +short   # درگاه — باید: 195.24.237.132
+  dig vapplication.ir +short         # اپ → 195.24.237.132
+  dig api.v-application.ir +short    # درگاه → 195.24.237.132
 
 
 ================================================================================
   پورت‌ها
 ================================================================================
 
-  Nginx:   :80 / :443  → https://vapplication.ir (اپ) / https://v-application.ir (درگاه)
+  Nginx:   :80 / :443  → https://vapplication.ir (اپ) / https://api.v-application.ir (درگاه)
   SSH:     :22  (Mac: ssh vapp-prod — بدون فیلترشکن)
   Scraper API:  8000 (phonescraper_api_prod) — داخلی؛ Nginx باز نکنید
   Scraper SQL:  127.0.0.1:1437  (phonescraper_sqlserver_prod) — اختیاری
@@ -234,7 +234,7 @@
   Form:    https://vapplication.ir/form/{slug}
   Wheel:   https://vapplication.ir/wheel/{slug}
   Swagger: https://vapplication.ir/swagger
-  Payment: https://v-application.ir/api/Payment/...
+  Payment: https://api.v-application.ir/api/Payment/...
 
 
 ================================================================================

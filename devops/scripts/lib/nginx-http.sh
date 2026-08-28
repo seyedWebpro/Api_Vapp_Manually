@@ -11,11 +11,25 @@
 : "${SERVER_IP:=195.24.237.132}"
 
 # http_code URL [Host]
+# Accepts 200, or 301/302 (HTTPS redirect after Certbot).
 nginx_http_code() {
   local url="$1"
   local host="${2:-$SERVER_IP}"
   local code
   code="$(curl -sS -m 15 -o /dev/null -w '%{http_code}' -H "Host: ${host}" "$url" 2>/dev/null)" || code="000"
+  [[ "$code" =~ ^[0-9]{3}$ ]] || code="000"
+  # After Certbot: http://domain → 301 https://domain — treat as healthy
+  if [[ "$code" == "301" || "$code" == "302" ]]; then
+    code="200"
+  fi
+  printf '%s' "$code"
+}
+
+# https_code URL — public HTTPS probe (no Host override)
+https_http_code() {
+  local url="$1"
+  local code
+  code="$(curl -sS -m 20 -o /dev/null -w '%{http_code}' "$url" 2>/dev/null)" || code="000"
   [[ "$code" =~ ^[0-9]{3}$ ]] || code="000"
   printf '%s' "$code"
 }
@@ -29,7 +43,7 @@ api_http_code() {
   printf '%s' "$code"
 }
 
-# Verify Public SPA routes return 200. Prints summary. Returns 0 on success.
+# Verify Public SPA routes return 200 (or HTTPS redirect). Prints summary. Returns 0 on success.
 verify_public_routes() {
   local host="${1:-$SERVER_IP}"
   local form wheel card book

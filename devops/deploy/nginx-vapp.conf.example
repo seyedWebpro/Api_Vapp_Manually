@@ -1,79 +1,39 @@
-# Nginx reverse proxy — IP/دامنه
-# reuse: server_name، upstream portها؛ FRONT_STATIC_ROOT برای static به‌جای docker
+# Nginx reverse proxy — نمونه (مرجع؛ نصب واقعی با apply-nginx.sh)
 #
-# نصب: bash devops/scripts/apply-nginx.sh
+# اپ:   vapplication.ir  → /etc/nginx/sites-available/vapp
+# درگاه: api.v-application.ir → /etc/nginx/sites-available/vapp-gateway (جدا)
 #
-# Vapp: API→8080  Admin→3005
+# نصب: DOMAIN_HOST=vapplication.ir bash devops/scripts/apply-nginx.sh
 
+# --- اپ (خلاصه) ---
 server {
-    listen 80;
-    listen [::]:80;
-    server_name 195.24.237.132;
+    listen 443 ssl;
+    server_name vapplication.ir www.vapplication.ir;
+
+    # ssl_certificate .../vapplication.ir/fullchain.pem  (Certbot)
 
     client_max_body_size 2048M;
 
-    location /swagger {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-Host $host;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_redirect off;
-    }
+    location /api { proxy_pass http://127.0.0.1:8080; }
+    location /health { proxy_pass http://127.0.0.1:8080; }
+    location /swagger { proxy_pass http://127.0.0.1:8080; }
+    location /uploads { proxy_pass http://127.0.0.1:8080; }
 
-    location /api {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-Host $host;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_read_timeout 600s;
-        proxy_send_timeout 600s;
-    }
-
-    location /health {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-
-    location /hangfire {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-Host $host;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    }
-
-    location /uploads {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-Host $host;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_read_timeout 600s;
-        proxy_send_timeout 600s;
-        client_max_body_size 2048M;
+    location ~ ^/(form|wheel|card|book)(/.*)?$ {
+        root /var/www/vapp-public;
+        try_files /index.html =404;
     }
 
     location / {
-        proxy_pass http://127.0.0.1:3005;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_cache_bypass $http_upgrade;
+        root /var/www/vapp-admin;
+        try_files $uri $uri/ /index.html;
     }
 }
+
+# --- درگاه (خلاصه — فایل جدا) ---
+# server {
+#     listen 443 ssl;
+#     server_name api.v-application.ir;
+#     ssl_certificate .../api.v-application.ir/fullchain.pem;
+#     location /api { proxy_pass http://127.0.0.1:8080; }
+# }

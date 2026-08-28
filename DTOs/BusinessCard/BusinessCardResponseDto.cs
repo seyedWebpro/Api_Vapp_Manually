@@ -1,3 +1,5 @@
+using Api_Vapp.Utilities;
+
 namespace Api_Vapp.DTOs.BusinessCard
 {
     public class BusinessCardResponseDto
@@ -10,8 +12,8 @@ namespace Api_Vapp.DTOs.BusinessCard
 
         public string? Slug { get; set; }
 
-        /// <summary>عنوان اختیاری ارسال سریع SMS (قبل از لینک)</summary>
-        public string? SmsCaption { get; set; }
+        /// <summary>توضیحات اختیاری ارسال SMS (قبل از لینک)</summary>
+        public string? SmsDescription { get; set; }
 
         public string? TemplateKey { get; set; }
 
@@ -34,6 +36,21 @@ namespace Api_Vapp.DTOs.BusinessCard
         public bool ContactEnabled { get; set; }
 
         public bool BankingEnabled { get; set; }
+
+        /// <summary>فعال بودن بخش دکمه فروشگاه</summary>
+        public bool ShopEnabled { get; set; }
+
+        /// <summary>آدرس فروشگاه آنلاین — null اگر تنظیم نشده</summary>
+        public string? ShopUrl { get; set; }
+
+        /// <summary>متن ثابت دکمه فروشگاه در کارت عمومی</summary>
+        public string ShopButtonLabel { get; set; } = BusinessCardShopHelper.ButtonLabel;
+
+        /// <summary>راهنمای زیر فیلد لینک در ویرایشگر</summary>
+        public string ShopNoStoreHint { get; set; } = BusinessCardShopHelper.NoStoreHint;
+
+        /// <summary>شماره تماس پشتیبانی برای ساخت فروشگاه</summary>
+        public string ShopContactPhone { get; set; } = BusinessCardShopHelper.ContactPhone;
 
         public string? DescriptionTitle { get; set; }
 

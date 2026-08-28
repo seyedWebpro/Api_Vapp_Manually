@@ -19,6 +19,11 @@ namespace Api_Vapp.DTOs.BusinessCard
 
         public bool? BankingEnabled { get; set; }
 
+        public bool? ShopEnabled { get; set; }
+
+        [MaxLength(500, ErrorMessage = "آدرس فروشگاه نمی‌تواند بیشتر از 500 کاراکتر باشد")]
+        public string? ShopUrl { get; set; }
+
         [MaxLength(200, ErrorMessage = "عنوان توضیحات نمی‌تواند بیشتر از 200 کاراکتر باشد")]
         public string? DescriptionTitle { get; set; }
 

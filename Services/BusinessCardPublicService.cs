@@ -1,6 +1,7 @@
 using Api_Vapp.DTOs.BusinessCard;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.Interfaces;
+using Api_Vapp.Models;
 using Api_Vapp.Utilities;
 using Microsoft.Extensions.Caching.Memory;
 
@@ -92,6 +93,32 @@ namespace Api_Vapp.Services
             }
         }
 
+        public async Task<ApiResponse<BusinessCardPublicDto>> GetAdminPreviewByIdAsync(int id)
+        {
+            try
+            {
+                var card = await _businessCardRepository.GetByIdWithDetailsReadOnlyAsync(id);
+                if (card == null || card.IsDeleted)
+                {
+                    return ApiResponse<BusinessCardPublicDto>.NotFound("کارت ویزیت یافت نشد");
+                }
+
+                if (card.Status != BusinessCardStatus.Published)
+                {
+                    return ApiResponse<BusinessCardPublicDto>.BadRequest(
+                        "این کارت ویزیت هنوز منتشر نشده است",
+                        errorCode: ErrorCodes.InvalidInput);
+                }
+
+                return ApiResponse<BusinessCardPublicDto>.CreateSuccess(MapToPublicDto(card));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error loading admin preview for business card {CardId}", id);
+                return ApiResponse<BusinessCardPublicDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
         /// <summary>
         /// حذف کش عمومی بعد از Create/Update/Delete/Publish/Toggle
         /// </summary>
@@ -144,6 +171,9 @@ namespace Api_Vapp.Services
                 MapEnabled = card.MapEnabled,
                 ContactEnabled = card.ContactEnabled,
                 BankingEnabled = card.BankingEnabled,
+                ShopEnabled = card.ShopEnabled,
+                ShopUrl = card.ShopEnabled ? card.ShopUrl : null,
+                ShopButtonLabel = BusinessCardShopHelper.ButtonLabel,
                 DescriptionTitle = card.DescriptionTitle,
                 DescriptionText = card.DescriptionText,
                 MapLatitude = card.MapLatitude,

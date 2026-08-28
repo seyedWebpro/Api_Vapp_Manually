@@ -67,6 +67,32 @@ namespace Api_Vapp.Services
             }
         }
 
+        public async Task<ApiResponse<FormPublicDto>> GetAdminPreviewByIdAsync(int id)
+        {
+            try
+            {
+                var form = await _userFormRepository.GetByIdWithDetailsReadOnlyAsync(id);
+                if (form == null || form.IsDeleted)
+                {
+                    return ApiResponse<FormPublicDto>.NotFound(FormNotFoundMessage);
+                }
+
+                if (form.Status != UserFormStatus.Published)
+                {
+                    return ApiResponse<FormPublicDto>.BadRequest(
+                        "این فرم هنوز منتشر نشده است",
+                        errorCode: ErrorCodes.InvalidInput);
+                }
+
+                return ApiResponse<FormPublicDto>.CreateSuccess(MapToPublicDto(form));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error loading admin preview for form {FormId}", id);
+                return ApiResponse<FormPublicDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
         public async Task<ApiResponse<RegisterPublicParticipantResponseDto>> RegisterAsync(
             string slug,
             RegisterPublicParticipantDto dto)

@@ -229,12 +229,12 @@ Admin API: `/api/Admin/QuickSendApproval`
 فیلدها در response لیست/جزئیات هر ماژول: `approvalStatus`, `rejectionReason`, `approvedAt`
 
 برای آیتم‌های لینک‌دار (`BusinessCard` / `BookingSystem` / `UserForm` / `LuckyWheel` / `SocialMediaLink`):
-- فیلد اختیاری `smsCaption` (عنوان ارسال سریع، حداکثر ۱۰۰ کاراکتر)
-- متن SMS واقعی: `{smsCaption}\n{publicUrl یا linkUrl}` یا فقط URL اگر caption خالی باشد
+- فیلد اختیاری `smsDescription` (توضیحات ارسال، حداکثر ۱۰۰ کاراکتر)
+- متن SMS واقعی: `{smsDescription}\n{publicUrl یا linkUrl}` یا فقط URL اگر توضیحات خالی باشد
 - در پنل ادمین، `contentPreview` = پیش‌نویس کامل همان متن SMS (نه فقط slug/URL خام)
-- تغییر `smsCaption` مثل ویرایش محتوا → دوباره `Pending`
+- تغییر `smsDescription` مثل ویرایش محتوا → دوباره `Pending`
 
-`QuickAction` و `BankAccount` فیلد جداگانه `smsCaption` ندارند (متن اکشن / عنوان+شماره حساب خودشان SMS را می‌سازند).
+`QuickAction` و `BankAccount` فیلد جداگانه `smsDescription` ندارند (متن اکشن / عنوان+شماره حساب خودشان SMS را می‌سازند).
 
 ### کار موبایل
 

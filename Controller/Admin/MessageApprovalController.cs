@@ -26,19 +26,23 @@ namespace Api_Vapp.Controller.Admin
         [HttpGet("pending")]
         public async Task<ActionResult<ApiResponse<PagedResponse<SmsApprovalRequestResponseDto>>>> GetPending(
             [FromQuery] int page = 1,
-            [FromQuery] int pageSize = 20)
+            [FromQuery] int pageSize = 20,
+            [FromQuery] string? search = null,
+            [FromQuery] string? userSearch = null)
         {
-            var result = await _service.GetPendingAsync(page, pageSize);
+            var result = await _service.GetPendingAsync(page, pageSize, search, userSearch);
             return StatusCode(result.StatusCode, result);
         }
 
         [HttpGet]
         public async Task<ActionResult<ApiResponse<PagedResponse<SmsApprovalRequestResponseDto>>>> GetAll(
             [FromQuery] string? status = null,
+            [FromQuery] string? search = null,
+            [FromQuery] string? userSearch = null,
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20)
         {
-            var result = await _service.GetAllAsync(status, page, pageSize);
+            var result = await _service.GetAllAsync(status, search, userSearch, page, pageSize);
             return StatusCode(result.StatusCode, result);
         }
 

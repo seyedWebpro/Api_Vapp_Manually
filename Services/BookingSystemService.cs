@@ -289,7 +289,7 @@ namespace Api_Vapp.Services
             var originalLocation = system.Location;
             var originalActivityType = system.ActivityType;
             var originalSlug = system.Slug;
-            var originalSmsCaption = system.SmsCaption;
+            var originalSmsDescription = system.SmsCaption;
 
             if (updateDto.Title != null)
             {
@@ -338,9 +338,9 @@ namespace Api_Vapp.Services
                 system.Slug = slugValidation.NormalizedSlug!;
             }
 
-            if (updateDto.SmsCaption != null)
+            if (updateDto.SmsDescription != null)
             {
-                system.SmsCaption = QuickSendLinkSmsHelper.NormalizeCaption(updateDto.SmsCaption);
+                system.SmsCaption = QuickSendLinkSmsHelper.NormalizeCaption(updateDto.SmsDescription);
             }
 
             if (updateDto.IsActive.HasValue)
@@ -399,7 +399,7 @@ namespace Api_Vapp.Services
                 !string.Equals(originalLocation, system.Location, StringComparison.Ordinal) ||
                 !string.Equals(originalActivityType, system.ActivityType, StringComparison.Ordinal) ||
                 !string.Equals(originalSlug, system.Slug, StringComparison.Ordinal) ||
-                !string.Equals(originalSmsCaption, system.SmsCaption, StringComparison.Ordinal);
+                !string.Equals(originalSmsDescription, system.SmsCaption, StringComparison.Ordinal);
             if (contentChanged)
             {
                 QuickSendContentApprovalHelper.ResetToPending(system);
@@ -636,7 +636,7 @@ namespace Api_Vapp.Services
                     Description = NormalizeOptionalText(step1.Description),
                     Location = NormalizeOptionalText(step1.Location),
                     Slug = slug,
-                    SmsCaption = QuickSendLinkSmsHelper.NormalizeCaption(step1.SmsCaption),
+                    SmsCaption = QuickSendLinkSmsHelper.NormalizeCaption(step1.SmsDescription),
                     Status = BookingSystemStatus.Published,
                     SaveToPhonebook = step1.SaveToPhonebook,
                     IsActive = true,
@@ -1016,7 +1016,7 @@ namespace Api_Vapp.Services
             dto.NotebookIds != null ||
             dto.IsActive.HasValue ||
             dto.Slug != null ||
-            dto.SmsCaption != null ||
+            dto.SmsDescription != null ||
             dto.BookingWindowDays.HasValue ||
             dto.UseDefaultBookingWindow == true;
 
@@ -1071,7 +1071,7 @@ namespace Api_Vapp.Services
                 Location = system.Location,
                 Slug = system.Slug,
                 PublicUrl = BuildPublicUrl(system.Slug),
-                SmsCaption = system.SmsCaption,
+                SmsDescription = system.SmsCaption,
                 Status = system.Status.ToString(),
                 SaveToPhonebook = system.SaveToPhonebook,
                 IsActive = system.IsActive,

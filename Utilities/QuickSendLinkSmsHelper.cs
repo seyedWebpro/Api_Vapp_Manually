@@ -9,7 +9,7 @@ namespace Api_Vapp.Utilities
         public const int MaxCaptionLength = 100;
 
         /// <summary>
-        /// نرمال‌سازی عنوان ارسال سریع — خالی → null؛ فاصله/خط‌جدید داخلی → یک فاصله؛
+        /// نرمال‌سازی توضیحات ارسال — خالی → null؛ فاصله/خط‌جدید داخلی → یک فاصله؛
         /// طول بیش از MaxCaptionLength → برش (دفاعی؛ اعتبارسنجی اصلی در DTO است).
         /// </summary>
         public static string? NormalizeCaption(string? value)
@@ -32,7 +32,7 @@ namespace Api_Vapp.Utilities
         }
 
         /// <summary>
-        /// متن نهایی SMS: در صورت وجود caption → «عنوان + خط جدید + URL»، وگرنه فقط URL.
+        /// متن نهایی SMS: در صورت وجود توضیحات → «توضیحات + خط جدید + URL»، وگرنه فقط URL.
         /// </summary>
         public static string BuildSmsContent(string? caption, string publicUrl)
         {

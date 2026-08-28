@@ -14,5 +14,6 @@ namespace Api_Vapp.Utilities
         public const int MaxBankShebaLength = 26; // IR + 24 digits
         public const int MaxSocialLinkValueLength = 500;
         public const int MaxSocialLinkLabelLength = 100;
+        public const int MaxShopUrlLength = 500;
     }
 }

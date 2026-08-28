@@ -122,7 +122,7 @@ Content-Type: application/json
   "title": "گردونه جشن تابستانه",
   "description": "توضیح جدید",
   "slug": "summer-festival",
-  "smsCaption": "گردونه شانس جشن تابستانه",
+  "smsDescription": "گردونه شانس جشن تابستانه",
   "saveToPhonebook": true,
   "notebookIds": [1]
 }
@@ -683,13 +683,15 @@ Content-Type: application/json
   "templateKey": "business",
   "title": "سالن زیبایی زهرا",
   "slug": "zahra-salon-test",
-  "smsCaption": "کارت ویزیت سالن زیبایی زهرا",
+  "smsDescription": "کارت ویزیت سالن زیبایی زهرا",
   "sliderEnabled": true,
   "descriptionEnabled": true,
   "servicesEnabled": true,
   "mapEnabled": true,
   "contactEnabled": true,
   "bankingEnabled": true,
+  "shopEnabled": true,
+  "shopUrl": "https://myshop.example.com",
   "descriptionTitle": "درباره سالن",
   "descriptionText": "توضیحات تست",
   "contactPhone": "09121234567",
@@ -724,7 +726,7 @@ Content-Type: application/json
 {
   "title": "سالن زیبایی زهرا",
   "slug": "zahra-salon-test",
-  "smsCaption": "کارت ویزیت سالن زیبایی زهرا"
+  "smsDescription": "کارت ویزیت سالن زیبایی زهرا"
 }
 
 ### به‌روزرسانی بخش‌ها
@@ -737,6 +739,8 @@ Content-Type: application/json
   "contactEnabled": true,
   "contactPhone": "09121234567",
   "bankingEnabled": true,
+  "shopEnabled": true,
+  "shopUrl": "myshop.example.com",
   "bankAccountNumber": "1234567890",
   "bankCardNumber": "6037991234567890",
   "bankShebaNumber": "IR120170000000123456789001",
@@ -745,6 +749,24 @@ Content-Type: application/json
     { "networkType": "whatsapp", "label": "واتساپ شخصی", "value": "09121234567", "displayOrder": 1 },
     { "networkType": "eitaa", "value": "zahra_salon", "displayOrder": 2 }
   ]
+}
+
+### به‌روزرسانی بخش فروشگاه — shopUrl نامعتبر (انتظار 400)
+POST {{Api_Vapp_HostAddress}}/api/BusinessCard/1/update-sections
+Content-Type: application/json
+
+{
+  "shopEnabled": true,
+  "shopUrl": "javascript:alert(1)"
+}
+
+### به‌روزرسانی بخش فروشگاه — shopUrl معتبر
+POST {{Api_Vapp_HostAddress}}/api/BusinessCard/1/update-sections
+Content-Type: application/json
+
+{
+  "shopEnabled": true,
+  "shopUrl": "myshop.example.com"
 }
 
 ### انتشار
@@ -1406,7 +1428,7 @@ Content-Type: application/json
 {
   "platform": "Instagram",
   "linkUrl": "https://instagram.com/yourpage",
-  "smsCaption": "پیج اینستاگرام ما",
+  "smsDescription": "پیج اینستاگرام ما",
   "isDefault": true
 }
 
@@ -1418,7 +1440,7 @@ POST {{Api_Vapp_HostAddress}}/api/SocialMediaLink/1/update
 Content-Type: application/json
 
 {
-  "smsCaption": "کانال اینستاگرام فروشگاه"
+  "smsDescription": "کانال اینستاگرام فروشگاه"
 }
 
 ### ارسال سریع

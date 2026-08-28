@@ -123,12 +123,12 @@ Public URL مثال: `https://vapplication.ir/card/{slug}` (از `BusinessCard:P
   "logoUrl": "/uploads/...",
   "clearLogo": false,
   "slug": "zahra-salon",
-  "smsCaption": "کارت ویزیت سالن زیبایی زهرا"
+  "smsDescription": "کارت ویزیت سالن زیبایی زهرا"
 }
 ```
 
-- `smsCaption` اختیاری (حداکثر ۱۰۰ کاراکتر) — عنوان ارسال سریع SMS قبل از لینک؛ `""` برای حذف
-- تغییر `smsCaption` مثل بقیه محتوای کارت، تأیید ادمین ارسال سریع را به `Pending` برمی‌گرداند
+- `smsDescription` اختیاری (حداکثر ۱۰۰ کاراکتر) — توضیحات ارسال SMS قبل از لینک؛ `""` برای حذف
+- تغییر `smsDescription` مثل بقیه محتوای کارت، تأیید ادمین ارسال سریع را به `Pending` برمی‌گرداند
 
 ---
 
@@ -144,6 +144,8 @@ Public URL مثال: `https://vapplication.ir/card/{slug}` (از `BusinessCard:P
   "mapEnabled": false,
   "contactEnabled": true,
   "bankingEnabled": true,
+  "shopEnabled": true,
+  "shopUrl": "https://myshop.com",
   "descriptionTitle": "درباره سالن",
   "descriptionText": "متن توضیحات",
   "contactPhone": "09121234567",
@@ -188,6 +190,18 @@ Public URL مثال: `https://vapplication.ir/card/{slug}` (از `BusinessCard:P
 | `bankCardNumber` | شماره کارت ۱۶ رقمی |
 | `bankShebaNumber` | شبا — `IR` + ۲۴ رقم (فاصله و حروف کوچک قبول و نرمال می‌شود) |
 
+### بخش فروشگاه
+
+| فیلد | توضیح |
+|------|--------|
+| `shopEnabled` | فعال بودن دکمه «فروشگاه» در کارت عمومی |
+| `shopUrl` | لینk فروشگاه آنلاین — اختیاری؛ بدون scheme، `https://` اضافه می‌شود |
+| `shopButtonLabel` | (فقط response) متن ثابت دکمه: **فروشگاه** |
+| `shopNoStoreHint` | (فقط response احراز هویت) راهنمای زیر فیلد لینk در ویرایشگر |
+| `shopContactPhone` | (فقط response احراز هویت) `02151091000` — برای تماس جهت ساخت فروشگاه |
+
+> راهنمای کامل فیکس Flutter: [`BusinessCard-Shop-Mobile-Fix-Guide.md`](./BusinessCard-Shop-Mobile-Fix-Guide.md)
+
 ---
 
 ## `POST /{id}/publish`
@@ -215,7 +229,7 @@ Public URL مثال: `https://vapplication.ir/card/{slug}` (از `BusinessCard:P
 پس از ذخیره مخاطب در مودال «ارسال سریع»، کاربر کارت را انتخاب می‌کند و SMS ارسال می‌شود.
 
 متن پیام:
-- اگر `smsCaption` تنظیم شده باشد: `{smsCaption}\n{publicUrl}`
+- اگر `smsDescription` تنظیم شده باشد: `{smsDescription}\n{publicUrl}`
 - در غیر این صورت: فقط `publicUrl` (سازگار با قبل)
 
 ```json

@@ -68,7 +68,8 @@ namespace Api_Vapp.Services
                     createDto.ContactEmail,
                     createDto.BankAccountNumber,
                     createDto.BankCardNumber,
-                    createDto.BankShebaNumber);
+                    createDto.BankShebaNumber,
+                    createDto.ShopUrl);
                 if (sectionErrors.Count > 0)
                 {
                     return ApiResponse<BusinessCardResponseDto>.BadRequest(
@@ -95,7 +96,7 @@ namespace Api_Vapp.Services
                     Title = createDto.Title?.Trim() ?? string.Empty,
                     LogoUrl = NormalizeStoredFilePath(createDto.LogoUrl),
                     Slug = slug,
-                    SmsCaption = QuickSendLinkSmsHelper.NormalizeCaption(createDto.SmsCaption),
+                    SmsCaption = QuickSendLinkSmsHelper.NormalizeCaption(createDto.SmsDescription),
                     TemplateKey = NormalizeOptionalText(createDto.TemplateKey),
                     Status = BusinessCardStatus.Draft,
                     IsActive = true,
@@ -106,6 +107,7 @@ namespace Api_Vapp.Services
                     MapEnabled = createDto.MapEnabled ?? false,
                     ContactEnabled = createDto.ContactEnabled ?? true,
                     BankingEnabled = createDto.BankingEnabled ?? false,
+                    ShopEnabled = createDto.ShopEnabled ?? false,
                     DescriptionTitle = NormalizeOptionalText(createDto.DescriptionTitle),
                     DescriptionText = NormalizeOptionalText(createDto.DescriptionText),
                     MapLatitude = createDto.MapLatitude,
@@ -124,6 +126,8 @@ namespace Api_Vapp.Services
                     applyAccount: true,
                     applyCard: true,
                     applySheba: true);
+
+                ApplyShopUrl(card, createDto.ShopUrl, apply: createDto.ShopUrl != null);
 
                 ApplySliderImages(card, createDto.SliderImages);
                 ApplyServiceItems(card, createDto.ServiceItems);
@@ -198,7 +202,7 @@ namespace Api_Vapp.Services
                 var card = cardResult.Card!;
                 var originalTitle = card.Title;
                 var originalSlug = card.Slug;
-                var originalSmsCaption = card.SmsCaption;
+                var originalSmsDescription = card.SmsCaption;
                 var originalLogoUrl = card.LogoUrl;
 
                 if (!string.IsNullOrWhiteSpace(updateDto.Slug))
@@ -212,9 +216,9 @@ namespace Api_Vapp.Services
                     card.Slug = slugValidation.NormalizedSlug;
                 }
 
-                if (updateDto.SmsCaption != null)
+                if (updateDto.SmsDescription != null)
                 {
-                    card.SmsCaption = QuickSendLinkSmsHelper.NormalizeCaption(updateDto.SmsCaption);
+                    card.SmsCaption = QuickSendLinkSmsHelper.NormalizeCaption(updateDto.SmsDescription);
                 }
 
                 if (updateDto.Title != null)
@@ -257,7 +261,7 @@ namespace Api_Vapp.Services
                 var contentChanged =
                     !string.Equals(originalTitle, card.Title, StringComparison.Ordinal) ||
                     !string.Equals(originalSlug, card.Slug, StringComparison.Ordinal) ||
-                    !string.Equals(originalSmsCaption, card.SmsCaption, StringComparison.Ordinal) ||
+                    !string.Equals(originalSmsDescription, card.SmsCaption, StringComparison.Ordinal) ||
                     !string.Equals(originalLogoUrl, card.LogoUrl, StringComparison.Ordinal);
 
                 card.UpdatedAt = DateTime.UtcNow;
@@ -313,7 +317,8 @@ namespace Api_Vapp.Services
                     updateDto.ContactEmail,
                     updateDto.BankAccountNumber,
                     updateDto.BankCardNumber,
-                    updateDto.BankShebaNumber);
+                    updateDto.BankShebaNumber,
+                    updateDto.ShopUrl);
                 if (sectionErrors.Count > 0)
                 {
                     return ApiResponse<BusinessCardResponseDto>.BadRequest(
@@ -342,6 +347,8 @@ namespace Api_Vapp.Services
                     card.ContactEnabled = updateDto.ContactEnabled.Value;
                 if (updateDto.BankingEnabled.HasValue)
                     card.BankingEnabled = updateDto.BankingEnabled.Value;
+                if (updateDto.ShopEnabled.HasValue)
+                    card.ShopEnabled = updateDto.ShopEnabled.Value;
 
                 if (updateDto.DescriptionTitle != null)
                     card.DescriptionTitle = NormalizeOptionalText(updateDto.DescriptionTitle);
@@ -370,6 +377,8 @@ namespace Api_Vapp.Services
                     applyAccount: updateDto.BankAccountNumber != null,
                     applyCard: updateDto.BankCardNumber != null,
                     applySheba: updateDto.BankShebaNumber != null);
+
+                ApplyShopUrl(card, updateDto.ShopUrl, apply: updateDto.ShopUrl != null);
 
                 if (updateDto.SliderImages != null)
                 {
@@ -426,7 +435,8 @@ namespace Api_Vapp.Services
                         descriptionEnabled = card.DescriptionEnabled,
                         servicesEnabled = card.ServicesEnabled,
                         mapEnabled = card.MapEnabled,
-                        contactEnabled = card.ContactEnabled
+                        contactEnabled = card.ContactEnabled,
+                        shopEnabled = card.ShopEnabled
                     }
                 });
 
@@ -544,7 +554,7 @@ namespace Api_Vapp.Services
                     Status = card.Status.ToString(),
                     IsActive = GetEffectiveIsActive(card),
                     PublicUrl = BuildPublicUrl(card.Slug),
-                    SmsCaption = card.SmsCaption,
+                    SmsDescription = card.SmsCaption,
                     CreatedAt = EnsureUtc(card.CreatedAt),
                     PublishedAt = EnsureUtc(card.PublishedAt),
                     ApprovalStatus = card.ApprovalStatus,
@@ -1062,7 +1072,8 @@ namespace Api_Vapp.Services
                    || card.ServicesEnabled
                    || card.MapEnabled
                    || card.ContactEnabled
-                   || card.BankingEnabled;
+                   || card.BankingEnabled
+                   || card.ShopEnabled;
         }
 
         /// <summary>
@@ -1301,6 +1312,17 @@ namespace Api_Vapp.Services
             }
         }
 
+        private static void ApplyShopUrl(BusinessCard card, string? shopUrl, bool apply)
+        {
+            if (!apply)
+            {
+                return;
+            }
+
+            var (normalized, _) = BusinessCardShopHelper.NormalizeUrl(shopUrl);
+            card.ShopUrl = normalized;
+        }
+
         private static List<string> ValidateSectionsPayload(
             List<BusinessCardSliderImageDto>? sliderImages,
             List<BusinessCardServiceItemDto>? serviceItems,
@@ -1308,7 +1330,8 @@ namespace Api_Vapp.Services
             string? contactEmail,
             string? bankAccountNumber,
             string? bankCardNumber,
-            string? bankShebaNumber)
+            string? bankShebaNumber,
+            string? shopUrl)
         {
             var errors = new List<string>();
 
@@ -1406,6 +1429,15 @@ namespace Api_Vapp.Services
                 }
             }
 
+            if (shopUrl != null)
+            {
+                var (_, shopUrlError) = BusinessCardShopHelper.NormalizeUrl(shopUrl);
+                if (shopUrlError != null)
+                {
+                    errors.Add(shopUrlError);
+                }
+            }
+
             return errors;
         }
 
@@ -1415,7 +1447,7 @@ namespace Api_Vapp.Services
                    || dto.LogoUrl != null
                    || dto.ClearLogo == true
                    || dto.Slug != null
-                   || dto.SmsCaption != null;
+                   || dto.SmsDescription != null;
         }
 
         private static bool HasAnySectionChanges(UpdateBusinessCardSectionsDto dto)
@@ -1426,6 +1458,7 @@ namespace Api_Vapp.Services
                    || dto.MapEnabled.HasValue
                    || dto.ContactEnabled.HasValue
                    || dto.BankingEnabled.HasValue
+                   || dto.ShopEnabled.HasValue
                    || dto.DescriptionTitle != null
                    || dto.DescriptionText != null
                    || dto.MapLatitude.HasValue
@@ -1437,6 +1470,7 @@ namespace Api_Vapp.Services
                    || dto.BankAccountNumber != null
                    || dto.BankCardNumber != null
                    || dto.BankShebaNumber != null
+                   || dto.ShopUrl != null
                    || dto.SliderImages != null
                    || dto.ServiceItems != null
                    || dto.SocialLinks != null;
@@ -1455,7 +1489,7 @@ namespace Api_Vapp.Services
                 Title = card.Title,
                 LogoUrl = ToPublicFileUrl(card.LogoUrl),
                 Slug = card.Slug,
-                SmsCaption = card.SmsCaption,
+                SmsDescription = card.SmsCaption,
                 TemplateKey = card.TemplateKey,
                 TemplateId = card.TemplateId,
                 Status = card.Status.ToString(),
@@ -1467,6 +1501,11 @@ namespace Api_Vapp.Services
                 MapEnabled = card.MapEnabled,
                 ContactEnabled = card.ContactEnabled,
                 BankingEnabled = card.BankingEnabled,
+                ShopEnabled = card.ShopEnabled,
+                ShopUrl = card.ShopUrl,
+                ShopButtonLabel = BusinessCardShopHelper.ButtonLabel,
+                ShopNoStoreHint = BusinessCardShopHelper.NoStoreHint,
+                ShopContactPhone = BusinessCardShopHelper.ContactPhone,
                 DescriptionTitle = card.DescriptionTitle,
                 DescriptionText = card.DescriptionText,
                 MapLatitude = card.MapLatitude,

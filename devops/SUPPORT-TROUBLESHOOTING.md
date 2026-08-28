@@ -211,10 +211,17 @@ docker logs vapp_api_prod 2>&1 | grep 'AUDIT_ALERT type=AdminLoginFailSpike'
 ### ه) «SMS / کمپین نرفت»
 
 ```bash
+# بررسی یک‌جا برای کاربر (Audit + DB + لاگ)
+bash devops/scripts/sms-investigate.sh --user-id USER_ID
+bash devops/scripts/sms-investigate.sh --mobile 0912xxxxxxx
+
 bash devops/scripts/audit-search.sh --category message --lines 100
 bash devops/scripts/audit-search.sh --category approval --lines 100
-grep -iE 'sms|message|approval|kavenegar' ~/Api_Vapp_Manually/log/log-$(date +%Y%m%d).txt | tail -100
+bash devops/scripts/audit-search.sh --action Sms.InsufficientBalance --lines 50
+grep -iE 'SMS_BILLING|insufficient wallet|SMS provider failed' ~/Api_Vapp_Manually/log/log-$(date +%Y%m%d).txt | tail -100
 ```
+
+**علت‌های رایج:** کمبود کیف پول (`Sms.InsufficientBalance`)، رد شدن توسط پنل پیامک (`Sms.SendFailed`)، یا کمپین در انتظار تأیید ادمین (`PendingApproval`).
 
 ### و) «شماره‌جو کار نمی‌کند»
 

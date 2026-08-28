@@ -29,12 +29,21 @@ namespace Api_Vapp.Services.Admin
             _logger = logger;
         }
 
-        public Task<ApiResponse<PagedResponse<TemplateApprovalResponseDto>>> GetPendingAsync(int page = 1, int pageSize = 20)
+        public Task<ApiResponse<PagedResponse<TemplateApprovalResponseDto>>> GetPendingAsync(
+            int page = 1,
+            int pageSize = 20,
+            string? search = null,
+            string? userSearch = null)
         {
-            return GetAllAsync(AdminApprovalStatuses.Pending, page, pageSize);
+            return GetAllAsync(AdminApprovalStatuses.Pending, search, userSearch, page, pageSize);
         }
 
-        public async Task<ApiResponse<PagedResponse<TemplateApprovalResponseDto>>> GetAllAsync(string? status = null, int page = 1, int pageSize = 20)
+        public async Task<ApiResponse<PagedResponse<TemplateApprovalResponseDto>>> GetAllAsync(
+            string? status = null,
+            string? search = null,
+            string? userSearch = null,
+            int page = 1,
+            int pageSize = 20)
         {
             try
             {
@@ -47,6 +56,8 @@ namespace Api_Vapp.Services.Admin
 
                 if (!string.IsNullOrWhiteSpace(status))
                     query = query.Where(t => t.ApprovalStatus == status);
+
+                query = AdminApprovalListFilters.ApplyTemplateFilters(query, search, userSearch);
 
                 var totalCount = await query.CountAsync();
                 var templates = await query

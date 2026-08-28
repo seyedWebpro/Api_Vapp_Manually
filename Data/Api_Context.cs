@@ -1995,6 +1995,8 @@ namespace Api_Vapp.Data
                 entity.Property(c => c.MapEnabled).HasDefaultValue(false);
                 entity.Property(c => c.ContactEnabled).HasDefaultValue(true);
                 entity.Property(c => c.BankingEnabled).HasDefaultValue(false);
+                entity.Property(c => c.ShopEnabled).HasDefaultValue(false);
+                entity.Property(c => c.ShopUrl).HasMaxLength(500);
                 entity.Property(c => c.DescriptionTitle).HasMaxLength(200);
                 entity.Property(c => c.DescriptionText).HasMaxLength(4000);
                 entity.Property(c => c.MapAddress).HasMaxLength(500);

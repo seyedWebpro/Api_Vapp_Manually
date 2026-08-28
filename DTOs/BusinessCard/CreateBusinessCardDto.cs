@@ -17,10 +17,10 @@ namespace Api_Vapp.DTOs.BusinessCard
         public string? Slug { get; set; }
 
         /// <summary>
-        /// عنوان اختیاری ارسال سریع SMS — حداکثر ۱۰۰ کاراکتر
+        /// توضیحات اختیاری ارسال SMS — حداکثر ۱۰۰ کاراکتر
         /// </summary>
-        [MaxLength(100, ErrorMessage = "عنوان ارسال سریع نمی‌تواند بیشتر از ۱۰۰ کاراکتر باشد")]
-        public string? SmsCaption { get; set; }
+        [MaxLength(100, ErrorMessage = "توضیحات ارسال نمی‌تواند بیشتر از ۱۰۰ کاراکتر باشد")]
+        public string? SmsDescription { get; set; }
 
         public bool? SliderEnabled { get; set; }
 
@@ -55,6 +55,11 @@ namespace Api_Vapp.DTOs.BusinessCard
         public string? ContactInstagram { get; set; }
 
         public bool? BankingEnabled { get; set; }
+
+        public bool? ShopEnabled { get; set; }
+
+        [MaxLength(500, ErrorMessage = "آدرس فروشگاه نمی‌تواند بیشتر از 500 کاراکتر باشد")]
+        public string? ShopUrl { get; set; }
 
         [MaxLength(30, ErrorMessage = "شماره حساب نمی‌تواند بیشتر از 30 کاراکتر باشد")]
         public string? BankAccountNumber { get; set; }

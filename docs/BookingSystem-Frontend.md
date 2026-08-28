@@ -84,7 +84,7 @@ confirm         →  draftId  →  سیستم + publicUrl
   "description": "توضیحات اختیاری",
   "location": "تهران، سعادت‌آباد",
   "customSlug": "beauty-salon",
-  "smsCaption": "رزرو نوبت سالن زیبایی",
+  "smsDescription": "رزرو نوبت سالن زیبایی",
   "saveToPhonebook": true,
   "notebookIds": [12, 15]
 }
@@ -92,7 +92,7 @@ confirm         →  draftId  →  سیستم + publicUrl
 
 - `location` اختیاری — مکان نمایشی در لیست
 - `customSlug` اختیاری — فقط `a-z0-9-`
-- `smsCaption` اختیاری — عنوان ارسال سریع SMS (حداکثر ۱۰۰ کاراکتر)؛ در متن پیام قبل از لینک می‌آید
+- `smsDescription` اختیاری — توضیحات ارسال SMS (حداکثر ۱۰۰ کاراکتر)؛ در متن پیام قبل از لینک می‌آید
 - اگر `saveToPhonebook=true` → `notebookIds` الزامی
 - `activityType` از `GET /activity-types`
 
@@ -102,11 +102,11 @@ confirm         →  draftId  →  سیستم + publicUrl
 
 ## ویرایش — `POST /{id}/update`
 
-فیلد اختیاری `smsCaption` (حداکثر ۱۰۰ کاراکتر): عنوان ارسال سریع. رشته خالی → حذف عنوان. تغییر آن تأیید ادمین ارسال سریع را به `Pending` برمی‌گرداند.
+فیلد اختیاری `smsDescription` (حداکثر ۱۰۰ کاراکتر): توضیحات ارسال. رشته خالی → حذف عنوان. تغییر آن تأیید ادمین ارسال سریع را به `Pending` برمی‌گرداند.
 
 ## ارسال سریع — `POST /quick-send`
 
-متن SMS = `smsCaption` + خط جدید + `publicUrl` (اگر caption خالی باشد فقط URL).
+متن SMS = `smsDescription` + خط جدید + `publicUrl` (اگر توضیحات خالی باشد فقط URL).
 
 ---
 
@@ -236,7 +236,7 @@ confirm         →  draftId  →  سیستم + publicUrl
       "title": "سالن زیبایی",
       "slug": "beauty-salon",
       "publicUrl": "https://app.com/book/beauty-salon",
-      "smsCaption": "رزرو نوبت سالن زیبایی",
+      "smsDescription": "رزرو نوبت سالن زیبایی",
       "isActive": true,
       "services": [ ... ]
     }

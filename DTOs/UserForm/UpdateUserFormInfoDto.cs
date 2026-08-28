@@ -17,10 +17,10 @@ namespace Api_Vapp.DTOs.UserForm
         public string? Slug { get; set; }
 
         /// <summary>
-        /// عنوان اختیاری ارسال سریع — ارسال رشته خالی برای حذف
+        /// توضیحات اختیاری ارسال — ارسال رشته خالی برای حذف
         /// </summary>
-        [MaxLength(100, ErrorMessage = "عنوان ارسال سریع نمی‌تواند بیشتر از ۱۰۰ کاراکتر باشد")]
-        public string? SmsCaption { get; set; }
+        [MaxLength(100, ErrorMessage = "توضیحات ارسال نمی‌تواند بیشتر از ۱۰۰ کاراکتر باشد")]
+        public string? SmsDescription { get; set; }
 
         public bool? SaveToPhonebook { get; set; }
 

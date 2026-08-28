@@ -46,13 +46,13 @@ Feature اشتراک: `free_quick_send`
 {
   "platform": "Instagram",
   "linkUrl": "https://instagram.com/yourpage",
-  "smsCaption": "پیج اینستاگرام ما",
+  "smsDescription": "پیج اینستاگرام ما",
   "isDefault": true
 }
 ```
 - `platform` و `linkUrl` الزامی
 - `linkUrl` باید `http`/`https` معتبر باشد
-- `smsCaption` اختیاری (حداکثر ۱۰۰ کاراکتر) — عنوان ارسال سریع قبل از لینک؛ در SMS: `{smsCaption}\n{linkUrl}`
+- `smsDescription` اختیاری (حداکثر ۱۰۰ کاراکتر) — توضیحات ارسال قبل از لینک؛ در SMS: `{smsDescription}\n{linkUrl}`
 - اگر اولین لینک فعال باشد یا `isDefault=true` → پیش‌فرض می‌شود
 
 ### Update (partial)
@@ -60,11 +60,11 @@ Feature اشتراک: `free_quick_send`
 {
   "platform": "Telegram",
   "linkUrl": "https://t.me/yourpage",
-  "smsCaption": "کانال تلگرام",
+  "smsDescription": "کانال تلگرام",
   "isActive": true
 }
 ```
-- `smsCaption`: `""` برای حذف عنوان؛ تغییر عنوان/لینک تأیید ادمین را به `Pending` برمی‌گرداند
+- `smsDescription`: `""` برای حذف عنوان؛ تغییر عنوان/لینک تأیید ادمین را به `Pending` برمی‌گرداند
 
 ### Quick-send
 ```json
@@ -73,7 +73,7 @@ Feature اشتراک: `free_quick_send`
   "linkId": 10
 }
 ```
-متن SMS = `smsCaption` + خط جدید + `linkUrl` (اگر caption خالی باشد فقط URL).
+متن SMS = `smsDescription` + خط جدید + `linkUrl` (اگر توضیحات خالی باشد فقط URL).
 ---
 
 ## نمونه پاسخ لیست
@@ -89,7 +89,7 @@ Feature اشتراک: `free_quick_send`
         "id": 2,
         "platform": "WhatsApp",
         "linkUrl": "https://wa.me/989120000000",
-        "smsCaption": "چت واتساپ فروشگاه",
+        "smsDescription": "چت واتساپ فروشگاه",
         "isActive": true,
         "isDefault": true,
         "createdAt": "2026-07-31T14:18:48.828698Z",
