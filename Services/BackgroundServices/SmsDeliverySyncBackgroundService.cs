@@ -23,9 +23,9 @@ namespace Api_Vapp.Services.BackgroundServices
         {
             _serviceProvider = serviceProvider;
             _logger = logger;
-            var intervalMinutes = configuration.GetValue("Sms:DeliverySync:CheckIntervalMinutes", 15);
+            var intervalMinutes = configuration.GetValue("Sms:DeliverySync:CheckIntervalMinutes", 5);
             _checkInterval = TimeSpan.FromMinutes(intervalMinutes);
-            _minAgeBeforeFirstCheckMinutes = configuration.GetValue("Sms:DeliverySync:MinAgeBeforeFirstCheckMinutes", 60);
+            _minAgeBeforeFirstCheckMinutes = configuration.GetValue("Sms:DeliverySync:MinAgeBeforeFirstCheckMinutes", 15);
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)

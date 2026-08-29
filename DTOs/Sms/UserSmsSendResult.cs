@@ -39,7 +39,8 @@ namespace Api_Vapp.DTOs.Sms
             ProviderFailed = true,
             Cost = cost,
             PartsCount = partsCount,
-            Message = message ?? "ارسال پیامک ناموفق بود"
+            Message = message
+                ?? "ارسال پیامک انجام نشد. لطفاً چند لحظه دیگر دوباره تلاش کنید. اگر مشکل ادامه داشت با پشتیبانی تماس بگیرید."
         };
 
         public static UserSmsSendResult Success(long sid, decimal cost, int partsCount, decimal chargedAmount) => new()

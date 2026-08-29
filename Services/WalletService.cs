@@ -360,6 +360,32 @@ namespace Api_Vapp.Services
 
                 try
                 {
+                    // Idempotency: اگر همین ReferenceNumber قبلاً ثبت شده، دوباره موجودی اضافه نکن
+                    if (!string.IsNullOrWhiteSpace(referenceNumber))
+                    {
+                        var existingByRef = await _context.WalletTransactions
+                            .AsNoTracking()
+                            .Where(t => t.UserId == userId
+                                && t.ReferenceNumber == referenceNumber
+                                && t.Status == TransactionStatuses.Completed)
+                            .OrderByDescending(t => t.Id)
+                            .FirstOrDefaultAsync();
+
+                        if (existingByRef != null)
+                        {
+                            if (ownsTransaction && transaction != null)
+                                await transaction.RollbackAsync();
+
+                            _logger.LogInformation(
+                                "Wallet credit skipped — duplicate ReferenceNumber. UserId={UserId}, Ref={Ref}, ExistingTxId={TxId}",
+                                userId, referenceNumber, existingByRef.Id);
+
+                            return ApiResponse<WalletTransactionDto>.CreateSuccess(
+                                MapToWalletTransactionDto(existingByRef),
+                                "تراکنش قبلاً ثبت شده است");
+                        }
+                    }
+
                     var user = await _context.Users
                         .FromSqlRaw(
                             "SELECT * FROM Users WITH (UPDLOCK, ROWLOCK) WHERE Id = {0}",

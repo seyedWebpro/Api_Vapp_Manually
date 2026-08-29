@@ -3537,6 +3537,22 @@ namespace Api_Vapp.Migrations
                         .HasColumnType("bit")
                         .HasDefaultValue(false);
 
+                    b.Property<decimal>("ChargedAmount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,2)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<int>("PartsCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
+                    b.Property<DateTime?>("WalletRefundedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("WalletRefundTransactionId")
+                        .HasColumnType("int");
+
                     b.Property<DateTime?>("LastCheckedAt")
                         .HasColumnType("datetime2");
 
@@ -3605,6 +3621,8 @@ namespace Api_Vapp.Migrations
                     b.HasIndex("UserId", "Sid");
 
                     b.HasIndex("IsDeliveryFinal", "SendStatus", "SentAt");
+
+                    b.HasIndex("IsDeliveryFinal", "WalletRefundedAt", "ChargedAmount");
 
                     b.ToTable("SmsDeliveryRecords");
                 });

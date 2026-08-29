@@ -189,7 +189,12 @@ namespace Api_Vapp.Services
                         providerStatus: smsResult.Data?.Status,
                         chargedThenRefunded: reserved > 0);
 
-                    return UserSmsSendResult.Failed(cost, parts, ControlledErrorHelper.SmsFailed);
+                    return UserSmsSendResult.Failed(
+                        cost,
+                        parts,
+                        string.IsNullOrWhiteSpace(smsResult.Message)
+                            ? ControlledErrorHelper.SmsFailed
+                            : smsResult.Message);
                 }
 
                 var sid = smsResult.Data!.Sid;
@@ -202,7 +207,9 @@ namespace Api_Vapp.Services
                     SourceEntityLabel = sourceEntityLabel,
                     Mobile = mobile,
                     Sid = sid,
-                    MessageText = prepared
+                    MessageText = prepared,
+                    ChargedAmount = reserved,
+                    PartsCount = parts
                 });
 
                 await WriteSmsAuditAsync(

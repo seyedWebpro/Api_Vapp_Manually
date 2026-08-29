@@ -2086,6 +2086,8 @@ namespace Api_Vapp.Data
                 entity.Property(r => r.ProviderStatusMessage).HasMaxLength(200);
                 entity.Property(r => r.IsDeleted).HasDefaultValue(false);
                 entity.Property(r => r.IsDeliveryFinal).HasDefaultValue(false);
+                entity.Property(r => r.ChargedAmount).HasColumnType("decimal(18,2)").HasDefaultValue(0m);
+                entity.Property(r => r.PartsCount).HasDefaultValue(0);
                 entity.Property(r => r.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
                 entity.Property(r => r.SentAt).HasDefaultValueSql("GETUTCDATE()");
 
@@ -2102,6 +2104,7 @@ namespace Api_Vapp.Data
                 entity.HasIndex(r => r.DeliveryCategory);
                 entity.HasIndex(r => r.SentAt);
                 entity.HasIndex(r => new { r.IsDeliveryFinal, r.SendStatus, r.SentAt });
+                entity.HasIndex(r => new { r.IsDeliveryFinal, r.WalletRefundedAt, r.ChargedAmount });
             });
 
             modelBuilder.Entity<NumberSeekerTask>(entity =>

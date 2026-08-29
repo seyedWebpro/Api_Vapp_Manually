@@ -13,6 +13,16 @@ namespace Api_Vapp.Constants
         public const string PendingSync = "PendingSync";
         public const string SendFailed = "SendFailed";
 
+        /// <summary>
+        /// دسته‌های نهایی که پیام به گوشی نرسیده و هزینه باید به کیف پول برگردد
+        /// </summary>
+        public static readonly HashSet<string> WalletRefundEligibleCategories =
+        [
+            NotDelivered,
+            Rejected,
+            SendFailed
+        ];
+
         public static readonly IReadOnlyDictionary<string, string> PersianLabels = new Dictionary<string, string>
         {
             [DeliveredToPhone] = "رسیده به گوشی",
@@ -26,5 +36,8 @@ namespace Api_Vapp.Constants
 
         public static string GetPersianLabel(string category) =>
             PersianLabels.TryGetValue(category, out var label) ? label : category;
+
+        public static bool IsWalletRefundEligible(string category) =>
+            !string.IsNullOrWhiteSpace(category) && WalletRefundEligibleCategories.Contains(category);
     }
 }

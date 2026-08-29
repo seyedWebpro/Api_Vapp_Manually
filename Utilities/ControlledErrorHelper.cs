@@ -7,15 +7,20 @@ namespace Api_Vapp.Utilities
     /// </summary>
     public static class ControlledErrorHelper
     {
-        public const string Unexpected = "کاربرگرامی خطای سرور اتفاق است . لطفا مجدد تلاش کنید و در صورت تکرار با پشتیبانی تماس بگیرید .";
-        public const string InternalServer = "کاربرگرامی خطای سرور اتفاق است . لطفا مجدد تلاش کنید و در صورت تکرار با پشتیبانی تماس بگیرید .";
+        public const string Unexpected = "خطای غیرمنتظره‌ای رخ داد. لطفاً دوباره تلاش کنید و در صورت تکرار با پشتیبانی تماس بگیرید.";
+        public const string InternalServer = "خطای غیرمنتظره‌ای رخ داد. لطفاً دوباره تلاش کنید و در صورت تکرار با پشتیبانی تماس بگیرید.";
         public const string Database = "مشکلی در ذخیره‌سازی اطلاعات پیش آمد. لطفاً دوباره تلاش کنید.";
         public const string Unauthorized = "شما مجاز به انجام این عملیات نیستید";
         public const string NotFound = "منبع مورد نظر یافت نشد";
         public const string BadRequest = "درخواست نامعتبر است";
         public const string InvalidInput = "اطلاعات وارد شده نامعتبر است";
         public const string PaymentFailed = "مشکلی در پردازش پرداخت پیش آمد. لطفاً دوباره تلاش کنید.";
-        public const string SmsFailed = "مشکلی در ارسال پیامک پیش آمد. لطفاً دوباره تلاش کنید. اگر مشکل ادامه داشت، با پشتیبانی پیگیری کنید.";
+        public const string SmsFailed = "ارسال پیامک انجام نشد. لطفاً چند لحظه دیگر دوباره تلاش کنید. اگر مشکل ادامه داشت با پشتیبانی تماس بگیرید.";
+        /// <summary>محدودیت پنل پیامک — ارسال تکراری به یک شماره در بازه کوتاه</summary>
+        public const string SmsDuplicateTooSoon = "ارسال پیامک تکراری به یک شماره در کمتر از یک دقیقه مجاز نیست. لطفاً کمی صبر کنید و دوباره ارسال کنید.";
+        public const string SmsInvalidNumber = "شماره موبایل گیرنده نامعتبر است. لطفاً شماره را بررسی کنید.";
+        public const string SmsBlacklisted = "امکان ارسال پیامک به این شماره وجود ندارد.";
+        public const string SmsTemporarilyUnavailable = "سرویس پیامک موقتاً در دسترس نیست. لطفاً چند لحظه دیگر دوباره تلاش کنید.";
         public const string FileUploadFailed = "مشکلی در آپلود فایل پیش آمد. لطفاً دوباره تلاش کنید.";
         public const string PushFailed = "مشکلی در ارسال اعلان پیش آمد. لطفاً دوباره تلاش کنید.";
         public const string PushNotConfigured = "سرویس اعلان در حال حاضر در دسترس نیست. لطفاً بعداً تلاش کنید.";
@@ -27,7 +32,7 @@ namespace Api_Vapp.Utilities
         public const string InvalidToken = "توکن نامعتبر است. لطفاً دوباره وارد شوید.";
         public const string TokenProcessFailed = "خطا در پردازش توکن. لطفاً دوباره وارد شوید.";
         public const string LogoutFailed = "خطا در پردازش درخواست. لطفاً دوباره تلاش کنید.";
-        public const string SendFailed = "خطا در ارسال پیام";
+        public const string SendFailed = "ارسال پیامک انجام نشد. لطفاً دوباره تلاش کنید.";
         public const string SystemError = "خطای سیستمی. لطفاً با پشتیبانی تماس بگیرید.";
         public const string OtpIncorrect = "کد تایید را اشتباه وارد کرده‌اید.";
         public const string OtpExpired = "کد تایید شما منقضی شده است.";

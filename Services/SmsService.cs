@@ -240,15 +240,23 @@ namespace Api_Vapp.Services
                 }
                 else
                 {
-                    _logger.LogWarning("SMS send failed - Mobile: {Mobile}, Status: {Status}, Message: {Message}",
-                        normalizedMobile, response.Status, response.Message);
-                    return ApiResponse<SendSmsResponseDto>.BadRequest(ControlledErrorHelper.SmsFailed);
+                    var mapped = SmsProviderErrorMapper.Map(response.Status, response.Message);
+                    _logger.LogWarning(
+                        "SMS send failed - Mobile: {Mobile}, Status: {Status}, ProviderMessage: {ProviderMessage}, UserMessage: {UserMessage}, ErrorCode: {ErrorCode}",
+                        normalizedMobile, response.Status, response.Message, mapped.UserMessage, mapped.ErrorCode);
+                    // Data نگه داشته می‌شود تا لایه Retry بتواند Status را ببیند؛ Message همیشه کنترل‌شده است
+                    return ApiResponse<SendSmsResponseDto>.FailureWithData(
+                        response,
+                        mapped.UserMessage,
+                        statusCode: 400,
+                        errorCode: mapped.ErrorCode);
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error sending SMS to {Mobile}", request.Mobile);
-                return ApiResponse<SendSmsResponseDto>.InternalServerError(ControlledErrorHelper.SmsFailed);
+                var mapped = SmsProviderErrorMapper.MapException(ex);
+                _logger.LogError(ex, "Error sending SMS to {Mobile} — ErrorCode: {ErrorCode}", request.Mobile, mapped.ErrorCode);
+                return ApiResponse<SendSmsResponseDto>.InternalServerError(mapped.UserMessage, mapped.ErrorCode);
             }
         }
 
@@ -297,15 +305,22 @@ namespace Api_Vapp.Services
                 }
                 else
                 {
-                    _logger.LogWarning("Bulk SMS send failed - Status: {Status}, Message: {Message}",
-                        response.Status, response.Messege);
-                    return ApiResponse<SendBulkResponseDto>.BadRequest(ControlledErrorHelper.SmsFailed);
+                    var mapped = SmsProviderErrorMapper.Map(response.Status, response.Messege);
+                    _logger.LogWarning(
+                        "Bulk SMS send failed - Status: {Status}, ProviderMessage: {ProviderMessage}, UserMessage: {UserMessage}",
+                        response.Status, response.Messege, mapped.UserMessage);
+                    return ApiResponse<SendBulkResponseDto>.FailureWithData(
+                        response,
+                        mapped.UserMessage,
+                        statusCode: 400,
+                        errorCode: mapped.ErrorCode);
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error sending bulk SMS");
-                return ApiResponse<SendBulkResponseDto>.InternalServerError(ControlledErrorHelper.SmsFailed);
+                var mapped = SmsProviderErrorMapper.MapException(ex);
+                _logger.LogError(ex, "Error sending bulk SMS — ErrorCode: {ErrorCode}", mapped.ErrorCode);
+                return ApiResponse<SendBulkResponseDto>.InternalServerError(mapped.UserMessage, mapped.ErrorCode);
             }
         }
 
@@ -359,15 +374,22 @@ namespace Api_Vapp.Services
                 }
                 else
                 {
-                    _logger.LogWarning("Array SMS send failed - Status: {Status}, Message: {Message}",
-                        response.Status, response.Message);
-                    return ApiResponse<SendArrayResponseDto>.BadRequest(ControlledErrorHelper.SmsFailed);
+                    var mapped = SmsProviderErrorMapper.Map(response.Status, response.Message);
+                    _logger.LogWarning(
+                        "Array SMS send failed - Status: {Status}, ProviderMessage: {ProviderMessage}, UserMessage: {UserMessage}",
+                        response.Status, response.Message, mapped.UserMessage);
+                    return ApiResponse<SendArrayResponseDto>.FailureWithData(
+                        response,
+                        mapped.UserMessage,
+                        statusCode: 400,
+                        errorCode: mapped.ErrorCode);
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error sending array SMS");
-                return ApiResponse<SendArrayResponseDto>.InternalServerError(ControlledErrorHelper.SmsFailed);
+                var mapped = SmsProviderErrorMapper.MapException(ex);
+                _logger.LogError(ex, "Error sending array SMS — ErrorCode: {ErrorCode}", mapped.ErrorCode);
+                return ApiResponse<SendArrayResponseDto>.InternalServerError(mapped.UserMessage, mapped.ErrorCode);
             }
         }
 

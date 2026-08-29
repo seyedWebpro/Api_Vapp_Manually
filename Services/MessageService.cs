@@ -1429,7 +1429,7 @@ namespace Api_Vapp.Services
                         {
                             // پیام بیش از حداکثر صفحات است
                             recipient.Status = "Failed";
-                            recipient.ErrorMessage = ControlledErrorHelper.SendFailed;
+                            recipient.ErrorMessage = "متن پیامک بیش از حداکثر صفحات مجاز است. لطفاً محتوا را کوتاه کنید.";
                             recipient.RetryCount++;
                             failedCount++;
                             _logger.LogWarning("Message exceeds max pages for {Mobile} - Campaign: {CampaignId}", 
@@ -1495,7 +1495,9 @@ namespace Api_Vapp.Services
                                 Mobile = recipient.MobileNumber,
                                 Sid = smsResult.Data.Sid,
                                 MessageText = messageContent,
-                                SentAt = DateTime.UtcNow
+                                SentAt = DateTime.UtcNow,
+                                ChargedAmount = reserved,
+                                PartsCount = actualPartsCount
                             });
                             
                             _logger.LogInformation("SMS sent successfully to {Mobile} - Campaign: {CampaignId}, Sid: {Sid}", 
@@ -1514,12 +1516,15 @@ namespace Api_Vapp.Services
 
                             // ارسال ناموفق
                             recipient.Status = "Failed";
-                            recipient.ErrorMessage = ControlledErrorHelper.SendFailed;
+                            recipient.ErrorMessage = string.IsNullOrWhiteSpace(smsResult.Message)
+                                ? ControlledErrorHelper.SmsFailed
+                                : smsResult.Message;
                             recipient.RetryCount++;
                             failedCount++;
                             
-                            _logger.LogWarning("SMS send failed to {Mobile} - Campaign: {CampaignId}, Error: {Error}", 
-                                recipient.MobileNumber, campaignId, recipient.ErrorMessage);
+                            _logger.LogWarning(
+                                "SMS send failed to {Mobile} - Campaign: {CampaignId}, Error: {Error}, ErrorCode: {ErrorCode}",
+                                recipient.MobileNumber, campaignId, recipient.ErrorMessage, smsResult.ErrorCode);
                         }
                     }
                     catch (Exception ex)
@@ -1558,11 +1563,11 @@ namespace Api_Vapp.Services
                 
                 if (failedCount > 0 && sentCount == 0)
                 {
-                    campaign.ErrorMessage = "همه پیام‌ها با خطا مواجه شدند";
+                    campaign.ErrorMessage = "هیچ پیامکی ارسال نشد. جزئیات را در گزارش گیرندگان ببینید.";
                 }
                 else if (failedCount > 0)
                 {
-                    campaign.ErrorMessage = $"{failedCount} پیام با خطا مواجه شد";
+                    campaign.ErrorMessage = $"{failedCount} پیامک ارسال نشد. جزئیات را در گزارش گیرندگان ببینید.";
                 }
 
                 await _campaignRepository.UpdateAsync(campaign);
@@ -2535,6 +2540,7 @@ namespace Api_Vapp.Services
                 var sendDto = new SendDirectMessageDto
                 {
                     SendType = CampaignSendType.Quick,
+                    // جلوگیری از تکراری فقط با تیک کمپین — ارسال سریع فیلتر نمی‌کند
                     PreventDuplicate = false,
                     DuplicatePreventionHours = 24,
                     SendToSpecificTags = false
@@ -2542,8 +2548,18 @@ namespace Api_Vapp.Services
 
                 var sendResult = await SendDirectMessageAsync(userId, message.Id, sendDto, session);
 
-                _logger.LogInformation("✅ Quick send message completed - MessageId: {MessageId}, ContactId: {ContactId}, UserId: {UserId}", 
-                    message.Id, quickSendDto.ContactId, userId);
+                if (sendResult.Success)
+                {
+                    _logger.LogInformation(
+                        "Quick send message completed - MessageId: {MessageId}, ContactId: {ContactId}, UserId: {UserId}",
+                        message.Id, quickSendDto.ContactId, userId);
+                }
+                else
+                {
+                    _logger.LogWarning(
+                        "Quick send message failed - MessageId: {MessageId}, ContactId: {ContactId}, UserId: {UserId}, Message: {Message}, ErrorCode: {ErrorCode}",
+                        message.Id, quickSendDto.ContactId, userId, sendResult.Message, sendResult.ErrorCode);
+                }
 
                 return sendResult;
             }
@@ -4137,11 +4153,16 @@ namespace Api_Vapp.Services
                         "بعد از اعتبارسنجی، هیچ گیرنده معتبری باقی نمانده است. لطفاً گیرندگان را دوباره انتخاب کنید.");
                 }
 
-                // اعمال فیلترها
-                // فیلتر بر اساس جلوگیری از ارسال تکراری
+                // فیلتر جلوگیری از ارسال تکراری — فقط وقتی کاربر در تنظیمات کمپین تیک «جلوگیری از تکراری» را زده باشد
+                // ارسال سریع و ماژول‌ها PreventDuplicate=false دارند و این فیلتر اعمال نمی‌شود
                 if (sendDto.PreventDuplicate)
                 {
                     recipients = await FilterDuplicateRecipientsAsync(recipients, sendDto.DuplicatePreventionHours, userId);
+                    if (!recipients.Any())
+                    {
+                        return ApiResponse<DirectSendResultDto>.BadRequest(
+                            "به‌خاطر فعال بودن «جلوگیری از ارسال تکراری»، گیرنده‌ای برای ارسال باقی نماند. تیک را بردارید یا بازه زمانی را کوتاه‌تر کنید.");
+                    }
                 }
 
                 // فیلتر بر اساس تگ‌ها
@@ -4210,6 +4231,8 @@ namespace Api_Vapp.Services
                 decimal actualCost = 0;
                 var failedNumbers = new List<string>();
                 decimal deductedAmount = 0;
+                string? lastFailureUserMessage = null;
+                string? lastFailureErrorCode = null;
                 
                 _logger.LogInformation("=== شروع ارسال به {RecipientsCount} گیرنده ===", recipients.Count);
                 _logger.LogInformation("گیرندگان: {Recipients}", 
@@ -4246,9 +4269,10 @@ namespace Api_Vapp.Services
                         // محاسبه دقیق تعداد پارت‌ها برای پیام نهایی
                         if (!SmsPartsCalculator.TryCalculateParts(messageContent, pricing.Rules, out var actualPartsCount, out _))
                         {
-                            // پیام بیش از حداکثر صفحات است
                             failedCount++;
                             failedNumbers.Add(recipient.MobileNumber);
+                            lastFailureUserMessage = "متن پیامک بیش از حداکثر صفحات مجاز است. لطفاً محتوا را کوتاه کنید.";
+                            lastFailureErrorCode = ErrorCodes.InvalidInput;
                             _logger.LogWarning("Message exceeds max pages for {Mobile} - MessageId: {MessageId}", 
                                 recipient.MobileNumber, messageId);
                             continue;
@@ -4269,6 +4293,8 @@ namespace Api_Vapp.Services
                             {
                                 failedCount++;
                                 failedNumbers.Add(recipient.MobileNumber);
+                                lastFailureUserMessage = "موجودی کیف پول کافی نیست";
+                                lastFailureErrorCode = ErrorCodes.InvalidInput;
                                 _logger.LogWarning(
                                     "Direct SMS skipped — insufficient wallet. MessageId={MessageId}, Mobile={Mobile}",
                                     messageId, recipient.MobileNumber);
@@ -4313,7 +4339,9 @@ namespace Api_Vapp.Services
                                 Mobile = recipient.MobileNumber,
                                 Sid = smsResult.Data!.Sid,
                                 MessageText = messageContent,
-                                SentAt = smsSendEndTime
+                                SentAt = smsSendEndTime,
+                                ChargedAmount = reserved,
+                                PartsCount = actualPartsCount
                             });
                             
                             _logger.LogInformation("✅ SMS ارسال شد - گیرنده: {FullName} ({Mobile}), MessageId: {MessageId}, Sid: {Sid}, زمان ارسال (UTC): {SendTime}, مدت زمان: {Duration}ms", 
@@ -4333,10 +4361,14 @@ namespace Api_Vapp.Services
                             // ارسال ناموفق (بعد از Retry)
                             failedCount++;
                             failedNumbers.Add(recipient.MobileNumber);
+                            lastFailureUserMessage = string.IsNullOrWhiteSpace(smsResult.Message)
+                                ? ControlledErrorHelper.SmsFailed
+                                : smsResult.Message;
+                            lastFailureErrorCode = smsResult.ErrorCode ?? ErrorCodes.SmsFailed;
                             
-                            _logger.LogWarning("❌ SMS ارسال نشد - گیرنده: {FullName} ({Mobile}), MessageId: {MessageId}, زمان تلاش (UTC): {SendTime}, مدت زمان: {Duration}ms, خطا: {Error}", 
+                            _logger.LogWarning("❌ SMS ارسال نشد - گیرنده: {FullName} ({Mobile}), MessageId: {MessageId}, زمان تلاش (UTC): {SendTime}, مدت زمان: {Duration}ms, خطا: {Error}, ErrorCode: {ErrorCode}", 
                                 recipient.FullName ?? "بدون نام", recipient.MobileNumber, messageId, smsSendEndTime, smsSendDuration, 
-                                smsResult.Data?.Message ?? smsResult.Message ?? "خطا در ارسال پیامک");
+                                lastFailureUserMessage, lastFailureErrorCode);
                         }
                     }
                     catch (Exception ex)
@@ -4351,6 +4383,8 @@ namespace Api_Vapp.Services
 
                         failedCount++;
                         failedNumbers.Add(recipient.MobileNumber);
+                        lastFailureUserMessage = ControlledErrorHelper.SmsFailed;
+                        lastFailureErrorCode = ErrorCodes.SmsFailed;
                         
                         _logger.LogError(ex, "❌ خطا در ارسال SMS به گیرنده: {FullName} ({Mobile}) برای MessageId: {MessageId}, زمان خطا (UTC): {ErrorTime}", 
                             recipient.FullName ?? "بدون نام", recipient.MobileNumber, messageId, DateTime.UtcNow);
@@ -4386,7 +4420,7 @@ namespace Api_Vapp.Services
                 }
 
                 // به‌روزرسانی وضعیت پیام
-                message.Status = "Sent";
+                message.Status = sentCount > 0 ? "Sent" : (failedCount > 0 ? "Failed" : message.Status);
                 message.UpdatedAt = DateTime.UtcNow;
                 await _messageRepository.UpdateAsync(message);
 
@@ -4398,16 +4432,6 @@ namespace Api_Vapp.Services
                     FailedNumbers = failedNumbers.Any() ? failedNumbers : null,
                     AdminApprovalStatus = AdminApprovalStatuses.Approved
                 };
-
-                var messageText = $"پیام‌ها با موفقیت ارسال شد ({sentCount} ارسال موفق، {failedCount} ناموفق)";
-                if (failedCount > 0)
-                {
-                    messageText += $". شماره‌های ناموفق: {string.Join(", ", failedNumbers.Take(5))}";
-                    if (failedNumbers.Count > 5)
-                    {
-                        messageText += $" و {failedNumbers.Count - 5} شماره دیگر";
-                    }
-                }
 
                 var endTime = DateTime.UtcNow;
                 var totalDuration = (endTime - startTime).TotalSeconds;
@@ -4421,6 +4445,28 @@ namespace Api_Vapp.Services
                 if (failedNumbers.Any())
                 {
                     _logger.LogWarning("شماره‌های ناموفق: {FailedNumbers}", string.Join(", ", failedNumbers));
+                }
+
+                // همه ناموفق — پیام کنترل‌شده مشخص (مثلاً تکراری) به کاربر
+                if (sentCount == 0 && failedCount > 0)
+                {
+                    var failMessage = lastFailureUserMessage ?? ControlledErrorHelper.SmsFailed;
+                    return ApiResponse<DirectSendResultDto>.FailureWithData(
+                        result,
+                        failMessage,
+                        statusCode: 400,
+                        errorCode: lastFailureErrorCode ?? ErrorCodes.SmsFailed);
+                }
+
+                var messageText = failedCount == 0
+                    ? $"پیامک با موفقیت ارسال شد ({sentCount} گیرنده)"
+                    : $"ارسال جزئی انجام شد: {sentCount} موفق، {failedCount} ناموفق";
+
+                if (failedCount > 0 && failedNumbers.Count > 0)
+                {
+                    messageText += $". شماره‌های ناموفق: {string.Join(", ", failedNumbers.Take(5))}";
+                    if (failedNumbers.Count > 5)
+                        messageText += $" و {failedNumbers.Count - 5} شماره دیگر";
                 }
 
                 return ApiResponse<DirectSendResultDto>.CreateSuccess(result, messageText);
@@ -5370,7 +5416,7 @@ namespace Api_Vapp.Services
         }
 
         /// <summary>
-        /// ارسال SMS با Retry Mechanism و Exponential Backoff (مشکل 6.2)
+        /// ارسال SMS با Retry — فقط خطاهای گذرای شبکه retry می‌شوند؛ تکراری/شماره نامعتبر retry نمی‌شوند.
         /// </summary>
         private async Task<ApiResponse<DTOs.Sms.SendSmsResponseDto>> SendSmsWithRetryAsync(
             DTOs.Sms.SendSmsRequestDto request, 
@@ -5386,7 +5432,6 @@ namespace Api_Vapp.Services
                 {
                     if (attempt > 0)
                     {
-                        // Exponential Backoff: delay = initialDelay * 2^(attempt-1)
                         var delayMs = initialDelayMs * (int)Math.Pow(2, attempt - 1);
                         _logger.LogInformation("Retrying SMS send - Attempt: {Attempt}/{MaxRetries}, Delay: {Delay}ms, Mobile: {Mobile}", 
                             attempt + 1, maxRetries + 1, delayMs, request.Mobile);
@@ -5395,8 +5440,6 @@ namespace Api_Vapp.Services
 
                     var result = await _smsService.SendSmsAsync(request);
                     
-                    // اگر ارسال موفق بود، نتیجه را برمی‌گردانیم
-                    // Sid > 0 یعنی پیام ارسال شده (حتی اگر Status = 0 باشد)
                     bool isSuccess = result.Success && result.Data != null && 
                         (result.Data.Sid > 0 || result.Data.Status > 0);
                     
@@ -5410,43 +5453,32 @@ namespace Api_Vapp.Services
                         return result;
                     }
 
-                    // بررسی خطاهای غیرقابل Retry
+                    // خطای کنترل‌شده از SmsService (با یا بدون Data)
+                    if (!string.IsNullOrEmpty(result.ErrorCode) &&
+                        result.ErrorCode is ErrorCodes.SmsDuplicate
+                            or ErrorCodes.SmsInvalidNumber
+                            or ErrorCodes.SmsBlacklisted)
+                    {
+                        _logger.LogWarning(
+                            "SMS send failed with non-retryable error - Mobile: {Mobile}, ErrorCode: {ErrorCode}, Message: {Message}",
+                            request.Mobile, result.ErrorCode, result.Message);
+                        return result;
+                    }
+
                     if (result.Data != null)
                     {
-                        var status = result.Data.Status;
-                        var message = result.Data.Message ?? "";
-                        
-                        // خطاهای غیرقابل Retry:
-                        // 1. Status < 0 (خطاهای API)
-                        // 2. Status = 0 با پیام‌های خاص (مثل "پیام تکراری")
-                        // 3. Sid = 0 و Status = 0 با پیام‌های خطای مشخص
-                        bool isNonRetryable = false;
-                        
-                        if (status < 0)
+                        var mapped = SmsProviderErrorMapper.Map(result.Data.Status, result.Data.Message);
+                        if (mapped.IsNonRetryable)
                         {
-                            isNonRetryable = true;
-                        }
-                        else if (status == 0)
-                        {
-                            // بررسی پیام‌های خطای غیرقابل Retry
-                            var lowerMessage = message.ToLower();
-                            if (lowerMessage.Contains("تکراری") || 
-                                lowerMessage.Contains("duplicate") ||
-                                lowerMessage.Contains("مجاز به ارسال پیام تکراری") ||
-                                lowerMessage.Contains("شماره نامعتبر") ||
-                                lowerMessage.Contains("invalid") ||
-                                lowerMessage.Contains("blacklist") ||
-                                lowerMessage.Contains("مشترک در لیست سیاه"))
-                            {
-                                isNonRetryable = true;
-                            }
-                        }
-                        
-                        if (isNonRetryable)
-                        {
-                            _logger.LogWarning("SMS send failed with non-retryable error - Mobile: {Mobile}, Status: {Status}, Message: {Message}", 
-                                request.Mobile, status, message);
-                            return result;
+                            _logger.LogWarning(
+                                "SMS send failed with non-retryable provider status - Mobile: {Mobile}, Status: {Status}, ErrorCode: {ErrorCode}",
+                                request.Mobile, result.Data.Status, mapped.ErrorCode);
+                            // اطمینان از پیام کنترل‌شده در پاسخ
+                            return ApiResponse<DTOs.Sms.SendSmsResponseDto>.FailureWithData(
+                                result.Data,
+                                mapped.UserMessage,
+                                statusCode: result.StatusCode > 0 ? result.StatusCode : 400,
+                                errorCode: mapped.ErrorCode);
                         }
                     }
 
@@ -5455,32 +5487,31 @@ namespace Api_Vapp.Services
                 catch (Exception ex)
                 {
                     lastException = ex;
+                    var mapped = SmsProviderErrorMapper.MapException(ex);
                     _logger.LogWarning(ex, "Exception during SMS send attempt {Attempt}/{MaxRetries} - Mobile: {Mobile}", 
                         attempt + 1, maxRetries + 1, request.Mobile);
 
-                    // اگر آخرین تلاش بود، خطا را throw می‌کنیم
-                    if (attempt == maxRetries)
+                    if (mapped.IsNonRetryable || attempt == maxRetries)
                     {
-                        _logger.LogError(ex, "All SMS send retry attempts failed - Mobile: {Mobile}", request.Mobile);
+                        _logger.LogError(ex, "SMS send retry stopped - Mobile: {Mobile}, ErrorCode: {ErrorCode}",
+                            request.Mobile, mapped.ErrorCode);
                         break;
                     }
                 }
             }
 
-            // اگر همه Retry ها ناموفق بودند
             if (lastResult != null)
-            {
                 return lastResult;
-            }
 
-            // اگر Exception داشتیم
             if (lastException != null)
             {
+                var mapped = SmsProviderErrorMapper.MapException(lastException);
                 _logger.LogError(lastException, "SMS send failed after all retries - Mobile: {Mobile}", request.Mobile);
-                return ApiResponse<DTOs.Sms.SendSmsResponseDto>.InternalServerError(ControlledErrorHelper.SmsFailed);
+                return ApiResponse<DTOs.Sms.SendSmsResponseDto>.InternalServerError(mapped.UserMessage, mapped.ErrorCode);
             }
 
-            return ApiResponse<DTOs.Sms.SendSmsResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            return ApiResponse<DTOs.Sms.SendSmsResponseDto>.InternalServerError(
+                ControlledErrorHelper.SmsFailed, ErrorCodes.SmsFailed);
         }
 
         private async Task<List<RecipientItemDto>> FilterByTagsAsync(List<RecipientItemDto> recipients, List<int> tagIds, int userId)

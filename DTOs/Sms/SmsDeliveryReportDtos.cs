@@ -16,6 +16,10 @@ namespace Api_Vapp.DTOs.Sms
         public int? ProviderStatusCode { get; set; }
         public string? ProviderStatusMessage { get; set; }
         public bool IsDeliveryFinal { get; set; }
+        public decimal ChargedAmount { get; set; }
+        public int PartsCount { get; set; }
+        public DateTime? WalletRefundedAt { get; set; }
+        public bool IsWalletRefunded { get; set; }
         public DateTime SentAt { get; set; }
         public DateTime? LastCheckedAt { get; set; }
     }

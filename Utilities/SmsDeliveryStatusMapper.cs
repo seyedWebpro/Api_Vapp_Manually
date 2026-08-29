@@ -47,6 +47,12 @@ namespace Api_Vapp.Utilities
         public static bool IsFinalStatus(int providerStatusCode) => FinalStatusCodes.Contains(providerStatusCode);
 
         /// <summary>
+        /// دسته‌هایی که پیام به گوشی نرسیده و هزینه باید به کیف پول برگردد
+        /// </summary>
+        public static bool IsRefundEligibleCategory(string? deliveryCategory) =>
+            SmsDeliveryCategories.IsWalletRefundEligible(deliveryCategory ?? string.Empty);
+
+        /// <summary>
         /// نرمال‌سازی شماره برای تطبیق با پاسخ Delivery (API بدون 0 اول برمی‌گرداند: 9110000000)
         /// </summary>
         public static string NormalizeMobile(string mobile)

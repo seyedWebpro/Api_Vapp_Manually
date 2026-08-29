@@ -106,6 +106,8 @@ namespace Api_Vapp.Constants
         public const string SmsSendSucceeded = "Sms.SendSucceeded";
         public const string SmsSendFailed = "Sms.SendFailed";
         public const string SmsInsufficientBalance = "Sms.InsufficientBalance";
+        public const string SmsDeliveryRefunded = "Sms.DeliveryRefunded";
+        public const string SmsDeliveryRefundFailed = "Sms.DeliveryRefundFailed";
 
         // —— NumberSeeker (فاز ۳)
         public const string NumberSeekerTaskCreated = "NumberSeeker.TaskCreated";

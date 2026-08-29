@@ -25,6 +25,12 @@ namespace Api_Vapp.Models
         /// <summary>متن پیامک ارسالی — برای گزارش جزئیات (ایران‌نوین برنمی‌گرداند)</summary>
         public string? MessageText { get; set; }
 
+        /// <summary>مبلغ کسرشده از کیف پول کاربر هنگام ارسال (۰ = بدون صورتحساب / ارسال دستی)</summary>
+        public decimal ChargedAmount { get; set; }
+
+        /// <summary>تعداد پارت صورتحساب‌شده — فقط برای گزارش</summary>
+        public int PartsCount { get; set; }
+
         /// <summary>Sent | Failed</summary>
         public string SendStatus { get; set; } = "Sent";
 
@@ -36,6 +42,12 @@ namespace Api_Vapp.Models
         public string? ProviderStatusMessage { get; set; }
 
         public bool IsDeliveryFinal { get; set; }
+
+        /// <summary>زمان claim/ثبت برگشت هزینه به‌خاطر نرسیدن به گوشی (idempotency)</summary>
+        public DateTime? WalletRefundedAt { get; set; }
+
+        /// <summary>شناسه تراکنش کیف پول برگشت (در صورت موفقیت)</summary>
+        public int? WalletRefundTransactionId { get; set; }
 
         public DateTime SentAt { get; set; } = DateTime.UtcNow;
 

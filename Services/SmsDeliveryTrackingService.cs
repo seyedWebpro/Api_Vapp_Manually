@@ -3,6 +3,7 @@ using Api_Vapp.DTOs.Common;
 using Api_Vapp.DTOs.Sms;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
+using Api_Vapp.Services.Audit;
 using Api_Vapp.Utilities;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -13,23 +14,31 @@ namespace Api_Vapp.Services
     {
         private readonly ISmsDeliveryRecordRepository _repository;
         private readonly ISmsService _smsService;
+        private readonly IWalletService _walletService;
+        private readonly IAuditService _audit;
         private readonly ILogger<SmsDeliveryTrackingService> _logger;
         private readonly int _maxCheckAttempts;
         private readonly int _minAgeBeforeFirstCheckMinutes;
         private readonly int _maxSidsPerSyncBatch;
+        private readonly bool _refundOnUndelivered;
 
         public SmsDeliveryTrackingService(
             ISmsDeliveryRecordRepository repository,
             ISmsService smsService,
+            IWalletService walletService,
+            IAuditService audit,
             IConfiguration configuration,
             ILogger<SmsDeliveryTrackingService> logger)
         {
             _repository = repository;
             _smsService = smsService;
+            _walletService = walletService;
+            _audit = audit;
             _logger = logger;
             _maxCheckAttempts = configuration.GetValue("Sms:DeliverySync:MaxCheckAttempts", 48);
-            _minAgeBeforeFirstCheckMinutes = configuration.GetValue("Sms:DeliverySync:MinAgeBeforeFirstCheckMinutes", 60);
+            _minAgeBeforeFirstCheckMinutes = configuration.GetValue("Sms:DeliverySync:MinAgeBeforeFirstCheckMinutes", 15);
             _maxSidsPerSyncBatch = configuration.GetValue("Sms:DeliverySync:MaxSidsPerBatch", 50);
+            _refundOnUndelivered = configuration.GetValue("Sms:DeliverySync:RefundOnUndelivered", true);
         }
 
         public async Task TrackSuccessfulSendAsync(SmsDeliveryTrackRequestDto request)
@@ -48,6 +57,9 @@ namespace Api_Vapp.Services
                     ? DateTime.SpecifyKind(request.SentAt.Value, DateTimeKind.Utc)
                     : DateTime.UtcNow;
 
+                var chargedAmount = request.ChargedAmount < 0 ? 0 : request.ChargedAmount;
+                var partsCount = request.PartsCount < 0 ? 0 : request.PartsCount;
+
                 var record = new SmsDeliveryRecord
                 {
                     UserId = request.UserId,
@@ -57,6 +69,8 @@ namespace Api_Vapp.Services
                     Mobile = request.Mobile.Trim(),
                     Sid = request.Sid,
                     MessageText = string.IsNullOrWhiteSpace(request.MessageText) ? null : request.MessageText.Trim(),
+                    ChargedAmount = chargedAmount,
+                    PartsCount = partsCount,
                     SendStatus = SmsSendStatuses.Sent,
                     DeliveryCategory = SmsDeliveryCategories.PendingSync,
                     SentAt = sentAtUtc,
@@ -67,13 +81,15 @@ namespace Api_Vapp.Services
                 await _repository.SaveChangesAsync();
 
                 _logger.LogInformation(
-                    "SMS delivery record created — RecordId: {RecordId}, UserId: {UserId}, Module: {Module}, EntityId: {EntityId}, Mobile: {Mobile}, Sid: {Sid}, SentAtUtc: {SentAtUtc:yyyy-MM-dd HH:mm:ss}, Label: {Label}",
+                    "SMS delivery record created — RecordId: {RecordId}, UserId: {UserId}, Module: {Module}, EntityId: {EntityId}, Mobile: {Mobile}, Sid: {Sid}, ChargedAmount: {ChargedAmount}, Parts: {Parts}, SentAtUtc: {SentAtUtc:yyyy-MM-dd HH:mm:ss}, Label: {Label}",
                     record.Id,
                     record.UserId,
                     record.SourceModule,
                     record.SourceEntityId,
                     record.Mobile,
                     record.Sid,
+                    record.ChargedAmount,
+                    record.PartsCount,
                     record.SentAt,
                     record.SourceEntityLabel ?? "-");
             }
@@ -152,8 +168,8 @@ namespace Api_Vapp.Services
             var dto = MapToDto(updated!);
 
             _logger.LogInformation(
-                "SMS delivery manual refresh completed — RecordId: {RecordId}, Sid: {Sid}, StatusCode: {StatusCode}, StatusMessage: {StatusMessage}, Category: {Category}, IsFinal: {IsFinal}",
-                id, updated!.Sid, updated.ProviderStatusCode, updated.ProviderStatusMessage ?? "-", updated.DeliveryCategory, updated.IsDeliveryFinal);
+                "SMS delivery manual refresh completed — RecordId: {RecordId}, Sid: {Sid}, StatusCode: {StatusCode}, StatusMessage: {StatusMessage}, Category: {Category}, IsFinal: {IsFinal}, WalletRefunded: {Refunded}",
+                id, updated!.Sid, updated.ProviderStatusCode, updated.ProviderStatusMessage ?? "-", updated.DeliveryCategory, updated.IsDeliveryFinal, updated.WalletRefundedAt.HasValue);
 
             return ApiResponse<SmsDeliveryRecordDto>.CreateSuccess(dto);
         }
@@ -252,6 +268,28 @@ namespace Api_Vapp.Services
                 "SMS delivery sync for Sid {Sid} — Trigger: {Trigger}, ActiveRecords: {Count}, RecordIds: [{RecordIds}], Mobiles: [{Mobiles}]",
                 sid, trigger, activeRecords.Count, recordIds, mobiles);
 
+            // اگر همه رکوردها فقط منتظر refund هستند و وضعیت نهایی دارند، API را دوباره نزن
+            var needsProviderSync = activeRecords.Any(r => !r.IsDeliveryFinal);
+            if (needsProviderSync)
+            {
+                await SyncFromProviderAsync(sid, activeRecords, trigger, recordIds);
+            }
+            else
+            {
+                _logger.LogDebug(
+                    "SMS delivery skip provider call — Sid: {Sid}, Trigger: {Trigger}, all records final; processing refunds only",
+                    sid, trigger);
+            }
+
+            await ProcessUndeliveredRefundsAsync(activeRecords, trigger);
+        }
+
+        private async Task SyncFromProviderAsync(
+            long sid,
+            List<SmsDeliveryRecord> activeRecords,
+            string trigger,
+            string recordIds)
+        {
             var deliveryResult = await _smsService.GetDeliveryStatusAsync(sid);
             var nowUtc = DateTime.UtcNow;
 
@@ -357,6 +395,147 @@ namespace Api_Vapp.Services
                 activeRecords.Count(r => r.IsDeliveryFinal));
         }
 
+        private async Task ProcessUndeliveredRefundsAsync(List<SmsDeliveryRecord> records, string trigger)
+        {
+            if (!_refundOnUndelivered)
+                return;
+
+            foreach (var record in records)
+            {
+                if (!record.IsDeliveryFinal)
+                    continue;
+
+                if (!SmsDeliveryStatusMapper.IsRefundEligibleCategory(record.DeliveryCategory))
+                    continue;
+
+                if (record.ChargedAmount <= 0)
+                    continue;
+
+                if (record.WalletRefundTransactionId.HasValue)
+                    continue;
+
+                var claimedAt = DateTime.UtcNow;
+                var claimed = await _repository.TryClaimWalletRefundAsync(record.Id, claimedAt);
+                if (!claimed)
+                {
+                    _logger.LogDebug(
+                        "SMS delivery refund skip — already claimed. RecordId: {RecordId}, Sid: {Sid}",
+                        record.Id, record.Sid);
+                    continue;
+                }
+
+                // مهم: قبل از AddBalance روی همان DbContext، claim را روی entity هم set کن
+                // تا SaveChanges کیف پول، WalletRefundedAt را با null بازنویسی نکند
+                record.WalletRefundedAt = claimedAt;
+
+                try
+                {
+                    var reference = $"SMS-DLR-REFUND-{record.Id}";
+                    var refund = await _walletService.AddBalanceAsync(
+                        record.UserId,
+                        record.ChargedAmount,
+                        WalletTransactionTypes.Refund,
+                        SmsDeliveryRefundCopy.WalletTitle,
+                        SmsDeliveryRefundCopy.BuildWalletDescription(record),
+                        referenceNumber: reference,
+                        sendPushNotification: false);
+
+                    if (!refund.Success || refund.Data == null)
+                    {
+                        await _repository.ClearWalletRefundClaimAsync(record.Id);
+                        record.WalletRefundedAt = null;
+
+                        _logger.LogError(
+                            "CRITICAL: SMS delivery wallet refund failed — RecordId: {RecordId}, UserId: {UserId}, Amount: {Amount}, Sid: {Sid}, Category: {Category}, Trigger: {Trigger}, Error: {Error}",
+                            record.Id, record.UserId, record.ChargedAmount, record.Sid, record.DeliveryCategory, trigger, refund.Message ?? "-");
+
+                        await _audit.WriteAsync(new AuditEntry
+                        {
+                            Category = AuditCategories.Sms,
+                            Action = AuditActions.SmsDeliveryRefundFailed,
+                            EntityType = AuditEntityTypes.SmsSend,
+                            EntityId = record.Id.ToString(),
+                            ActorUserId = record.UserId,
+                            TargetUserId = record.UserId,
+                            Succeeded = false,
+                            ErrorMessage = "WalletRefundFailed",
+                            Metadata = new
+                            {
+                                record.Sid,
+                                record.SourceModule,
+                                record.SourceEntityId,
+                                record.ChargedAmount,
+                                record.DeliveryCategory,
+                                record.ProviderStatusCode,
+                                trigger
+                            }
+                        });
+                        continue;
+                    }
+
+                    await _repository.SetWalletRefundTransactionAsync(record.Id, refund.Data.Id, claimedAt);
+                    record.WalletRefundTransactionId = refund.Data.Id;
+                    record.WalletRefundedAt = claimedAt;
+
+                    _logger.LogInformation(
+                        "SMS delivery wallet refunded — RecordId: {RecordId}, UserId: {UserId}, Amount: {Amount}, Sid: {Sid}, Category: {Category}, WalletTxId: {WalletTxId}, Trigger: {Trigger}",
+                        record.Id, record.UserId, record.ChargedAmount, record.Sid, record.DeliveryCategory, refund.Data.Id, trigger);
+
+                    await _audit.WriteAsync(new AuditEntry
+                    {
+                        Category = AuditCategories.Sms,
+                        Action = AuditActions.SmsDeliveryRefunded,
+                        EntityType = AuditEntityTypes.SmsSend,
+                        EntityId = record.Id.ToString(),
+                        ActorUserId = record.UserId,
+                        TargetUserId = record.UserId,
+                        Succeeded = true,
+                        Metadata = new
+                        {
+                            record.Sid,
+                            record.SourceModule,
+                            record.SourceEntityId,
+                            record.ChargedAmount,
+                            record.PartsCount,
+                            record.DeliveryCategory,
+                            record.ProviderStatusCode,
+                            walletTransactionId = refund.Data.Id,
+                            trigger
+                        }
+                    });
+                }
+                catch (Exception ex)
+                {
+                    await _repository.ClearWalletRefundClaimAsync(record.Id);
+                    record.WalletRefundedAt = null;
+
+                    _logger.LogError(ex,
+                        "CRITICAL: SMS delivery wallet refund exception — RecordId: {RecordId}, UserId: {UserId}, Amount: {Amount}, Sid: {Sid}, Trigger: {Trigger}",
+                        record.Id, record.UserId, record.ChargedAmount, record.Sid, trigger);
+
+                    await _audit.WriteAsync(new AuditEntry
+                    {
+                        Category = AuditCategories.Sms,
+                        Action = AuditActions.SmsDeliveryRefundFailed,
+                        EntityType = AuditEntityTypes.SmsSend,
+                        EntityId = record.Id.ToString(),
+                        ActorUserId = record.UserId,
+                        TargetUserId = record.UserId,
+                        Succeeded = false,
+                        ErrorMessage = "WalletRefundException",
+                        Metadata = new
+                        {
+                            record.Sid,
+                            record.SourceModule,
+                            record.ChargedAmount,
+                            record.DeliveryCategory,
+                            trigger
+                        }
+                    });
+                }
+            }
+        }
+
         private static SmsDeliveryRecordDto MapToDto(SmsDeliveryRecord record)
         {
             var categoryLabel = !string.IsNullOrWhiteSpace(record.ProviderStatusMessage)
@@ -379,6 +558,10 @@ namespace Api_Vapp.Services
                 ProviderStatusCode = record.ProviderStatusCode,
                 ProviderStatusMessage = record.ProviderStatusMessage,
                 IsDeliveryFinal = record.IsDeliveryFinal,
+                ChargedAmount = record.ChargedAmount,
+                PartsCount = record.PartsCount,
+                WalletRefundedAt = record.WalletRefundedAt,
+                IsWalletRefunded = record.WalletRefundTransactionId.HasValue,
                 SentAt = record.SentAt,
                 LastCheckedAt = record.LastCheckedAt
             };

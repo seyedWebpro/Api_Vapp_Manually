@@ -453,6 +453,14 @@ public class SmsReportServiceTests
         public Task<List<SmsDeliveryRecord>> GetActivePendingBySidAsync(long sid, int maxAttempts) =>
             throw new NotImplementedException();
 
+        public Task<bool> TryClaimWalletRefundAsync(int recordId, DateTime claimedAtUtc) =>
+            Task.FromResult(false);
+
+        public Task ClearWalletRefundClaimAsync(int recordId) => Task.CompletedTask;
+
+        public Task SetWalletRefundTransactionAsync(int recordId, int walletTransactionId, DateTime refundedAtUtc) =>
+            Task.CompletedTask;
+
         public Task<(List<SmsSendBatchProjection> Items, int TotalCount)> GetSendBatchesAsync(int userId, SmsSendListFilterDto filter)
         {
             var groupedModules = new[]

@@ -13,5 +13,11 @@ namespace Api_Vapp.DTOs.Sms
         public long Sid { get; set; }
         public string? MessageText { get; set; }
         public DateTime? SentAt { get; set; }
+
+        /// <summary>مبلغ واقعی کسرشده از کیف پول کاربر برای این پیامک (۰ اگر صورتحساب غیرفعال بود)</summary>
+        public decimal ChargedAmount { get; set; }
+
+        /// <summary>تعداد پارت صورتحساب‌شده</summary>
+        public int PartsCount { get; set; }
     }
 }

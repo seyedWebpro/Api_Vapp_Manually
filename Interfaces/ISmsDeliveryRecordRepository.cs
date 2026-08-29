@@ -12,6 +12,12 @@ namespace Api_Vapp.Interfaces
         Task<SmsDeliverySummaryDto> GetSummaryAsync(int userId, SmsDeliveryReportFilterDto filter);
         Task<List<long>> GetDistinctPendingSidsAsync(DateTime sentBeforeUtc, int maxAttempts, int take);
         Task<List<SmsDeliveryRecord>> GetActivePendingBySidAsync(long sid, int maxAttempts);
+        /// <summary>
+        /// claim اتمیک برای برگشت هزینه دلیوری — فقط یک بار موفق می‌شود
+        /// </summary>
+        Task<bool> TryClaimWalletRefundAsync(int recordId, DateTime claimedAtUtc);
+        Task ClearWalletRefundClaimAsync(int recordId);
+        Task SetWalletRefundTransactionAsync(int recordId, int walletTransactionId, DateTime refundedAtUtc);
 
         Task<(List<SmsSendBatchProjection> Items, int TotalCount)> GetSendBatchesAsync(int userId, SmsSendListFilterDto filter);
         Task<SmsSendBatchProjection?> GetSendBatchBySidAsync(int userId, long sid);

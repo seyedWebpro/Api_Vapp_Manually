@@ -174,7 +174,8 @@ throw AppException.Internal(ErrorCodes.Unexpected, ControlledErrorHelper.Unexpec
 - Database → "مشکلی در ذخیره‌سازی اطلاعات پیش آمد..."
 - Unauthorized → "شما مجاز به انجام این عملیات نیستید"
 - NotFound → "منبع مورد نظر یافت نشد"
-- SmsFailed → "مشکلی در ارسال پیامک پیش آمد..."
+- SmsFailed → "ارسال پیامک انجام نشد..."
+- SmsDuplicateTooSoon / SmsInvalidNumber / SmsBlacklisted / SmsTemporarilyUnavailable → پیام‌های کنترل‌شده خاص SMS (از SmsProviderErrorMapper)
 - FileUploadFailed → "مشکلی در آپلود فایل پیش آمد..."
 
 **Controller — قوانین:**
@@ -471,7 +472,7 @@ public async Task<string> UploadFileAsync(IFormFile file, string folder)
 - ex.Message / exception.Message
 - SqlException / StackTrace / InnerException
 - مسیر فایل سرور (C:\... یا /var/...)
-- پیام خام API خارجی (SMS، درگاه پرداخت)
+- پیام خام API خارجی (SMS، درگاه پرداخت) — به‌جای آن از `SmsProviderErrorMapper` / پیام‌های ControlledErrorHelper استفاده کنید
 
 ---
 

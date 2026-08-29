@@ -56,7 +56,26 @@ namespace Api_Vapp.DTOs.Common
             return Error(message, 400, errors, errorCode);
         }
 
-        public static ApiResponse<T> InternalServerError(string message = "کاربرگرامی خطای سرور اتفاق است . لطفا مجدد تلاش کنید و در صورت تکرار با پشتیبانی تماس بگیرید .", string? errorCode = ErrorCodes.Unexpected)
+        /// <summary>
+        /// خطای قابل‌نمایش به کاربر همراه با Data (مثلاً پاسخ پنل برای تشخیص non-retryable)
+        /// </summary>
+        public static ApiResponse<T> FailureWithData(
+            T data,
+            string message,
+            int statusCode = 400,
+            string? errorCode = null)
+        {
+            return new ApiResponse<T>
+            {
+                StatusCode = statusCode,
+                Success = false,
+                Message = message,
+                ErrorCode = errorCode,
+                Data = data
+            };
+        }
+
+        public static ApiResponse<T> InternalServerError(string message = "خطای غیرمنتظره‌ای رخ داد. لطفاً دوباره تلاش کنید و در صورت تکرار با پشتیبانی تماس بگیرید.", string? errorCode = ErrorCodes.Unexpected)
         {
             return Error(message, 500, errorCode: errorCode);
         }

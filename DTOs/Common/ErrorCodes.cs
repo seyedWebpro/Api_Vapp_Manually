@@ -32,6 +32,10 @@ namespace Api_Vapp.DTOs.Common
         public const string TokenProcessFailed = "TOKEN_PROCESS_FAILED";
         public const string LogoutFailed = "LOGOUT_FAILED";
         public const string SmsFailed = "SMS_FAILED";
+        public const string SmsDuplicate = "SMS_DUPLICATE";
+        public const string SmsInvalidNumber = "SMS_INVALID_NUMBER";
+        public const string SmsBlacklisted = "SMS_BLACKLISTED";
+        public const string SmsTemporarilyUnavailable = "SMS_TEMPORARILY_UNAVAILABLE";
         public const string PaymentFailed = "PAYMENT_FAILED";
         public const string FileUploadFailed = "FILE_UPLOAD_FAILED";
         public const string PushFailed = "PUSH_FAILED";

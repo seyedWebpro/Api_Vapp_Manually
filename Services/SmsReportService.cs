@@ -306,7 +306,7 @@ namespace Api_Vapp.Services
                     SourceModuleLabel = SmsSourceModules.GetPersianLabel(record.SourceModule),
                     DeliveryCategory = record.DeliveryCategory,
                     DeliveryCategoryLabel = categoryLabel,
-                    StatusHint = BuildStatusHint(record.DeliveryCategory, categoryLabel),
+                    StatusHint = SmsDeliveryRefundCopy.BuildStatusHint(record, categoryLabel),
                     SentAt = record.SentAt,
                     MessageText = messageText
                 };
@@ -643,18 +643,6 @@ namespace Api_Vapp.Services
 
         private static string ResolveCategoryLabel(SmsDeliveryRecord record) =>
             SmsDeliveryCategories.GetPersianLabel(record.DeliveryCategory);
-
-        private static string BuildStatusHint(string category, string label) =>
-            category switch
-            {
-                SmsDeliveryCategories.DeliveredToPhone => "پیامک با موفقیت به گیرنده تحویل شده است.",
-                SmsDeliveryCategories.SentToOperator => "پیامک به اپراتور ارسال شده و در مسیر تحویل است.",
-                SmsDeliveryCategories.NotDelivered => "پیامک به گوشی گیرنده نرسیده است.",
-                SmsDeliveryCategories.PendingApproval => "پیامک در انتظار تایید است.",
-                SmsDeliveryCategories.Rejected => "پیامک رد شده است.",
-                SmsDeliveryCategories.SendFailed => "ارسال پیامک ناموفق بوده است.",
-                _ => $"وضعیت فعلی: {label}"
-            };
 
         private static (string SendType, string Label) MapSendType(string sourceModule)
         {

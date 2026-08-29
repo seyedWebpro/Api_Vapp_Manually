@@ -149,14 +149,23 @@ namespace Api_Vapp.Repositories
             return BuildSummaryFromGrouped(grouped.Select(x => (x.Category, x.Count)).ToList());
         }
 
-        public Task<List<long>> GetDistinctPendingSidsAsync(DateTime sentBeforeUtc, int maxAttempts, int take) =>
-            _dbSet
+        public Task<List<long>> GetDistinctPendingSidsAsync(DateTime sentBeforeUtc, int maxAttempts, int take)
+        {
+            var refundCategories = SmsDeliveryCategories.WalletRefundEligibleCategories.ToArray();
+
+            return _dbSet
                 .Where(r => !r.IsDeleted
                     && r.SendStatus == SmsSendStatuses.Sent
-                    && !r.IsDeliveryFinal
                     && r.Sid > 0
-                    && r.SentAt <= sentBeforeUtc
-                    && r.CheckAttempts < maxAttempts)
+                    && (
+                        (!r.IsDeliveryFinal
+                            && r.SentAt <= sentBeforeUtc
+                            && r.CheckAttempts < maxAttempts)
+                        || (r.IsDeliveryFinal
+                            && r.ChargedAmount > 0
+                            && r.WalletRefundTransactionId == null
+                            && refundCategories.Contains(r.DeliveryCategory))
+                    ))
                 .GroupBy(r => r.Sid)
                 .Select(g => new { Sid = g.Key, OldestSentAt = g.Min(x => x.SentAt) })
                 .OrderBy(x => x.OldestSentAt)
@@ -164,15 +173,61 @@ namespace Api_Vapp.Repositories
                 .Take(take)
                 .Select(x => x.Sid)
                 .ToListAsync();
+        }
 
-        public Task<List<SmsDeliveryRecord>> GetActivePendingBySidAsync(long sid, int maxAttempts) =>
-            _dbSet
+        public Task<List<SmsDeliveryRecord>> GetActivePendingBySidAsync(long sid, int maxAttempts)
+        {
+            var refundCategories = SmsDeliveryCategories.WalletRefundEligibleCategories.ToArray();
+
+            return _dbSet
                 .Where(r => !r.IsDeleted
                     && r.Sid == sid
                     && r.SendStatus == SmsSendStatuses.Sent
-                    && !r.IsDeliveryFinal
-                    && r.CheckAttempts < maxAttempts)
+                    && (
+                        (!r.IsDeliveryFinal && r.CheckAttempts < maxAttempts)
+                        || (r.IsDeliveryFinal
+                            && r.ChargedAmount > 0
+                            && r.WalletRefundTransactionId == null
+                            && refundCategories.Contains(r.DeliveryCategory))
+                    ))
                 .ToListAsync();
+        }
+
+        public async Task<bool> TryClaimWalletRefundAsync(int recordId, DateTime claimedAtUtc)
+        {
+            var rows = await _dbSet
+                .Where(r => r.Id == recordId
+                    && !r.IsDeleted
+                    && r.ChargedAmount > 0
+                    && r.WalletRefundTransactionId == null
+                    && r.IsDeliveryFinal
+                    && (r.WalletRefundedAt == null
+                        || r.WalletRefundedAt < claimedAtUtc.AddMinutes(-2)))
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(r => r.WalletRefundedAt, claimedAtUtc)
+                    .SetProperty(r => r.UpdatedAt, claimedAtUtc));
+
+            return rows == 1;
+        }
+
+        public async Task ClearWalletRefundClaimAsync(int recordId)
+        {
+            await _dbSet
+                .Where(r => r.Id == recordId && r.WalletRefundTransactionId == null)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(r => r.WalletRefundedAt, (DateTime?)null)
+                    .SetProperty(r => r.UpdatedAt, DateTime.UtcNow));
+        }
+
+        public async Task SetWalletRefundTransactionAsync(int recordId, int walletTransactionId, DateTime refundedAtUtc)
+        {
+            await _dbSet
+                .Where(r => r.Id == recordId)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(r => r.WalletRefundTransactionId, walletTransactionId)
+                    .SetProperty(r => r.WalletRefundedAt, refundedAtUtc)
+                    .SetProperty(r => r.UpdatedAt, refundedAtUtc));
+        }
 
         public async Task<(List<SmsSendBatchProjection> Items, int TotalCount)> GetSendBatchesAsync(
             int userId, SmsSendListFilterDto filter)
