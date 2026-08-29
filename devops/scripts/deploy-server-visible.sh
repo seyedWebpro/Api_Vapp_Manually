@@ -131,7 +131,7 @@ apply_nginx_front() {
   fi
   env_args+=(PUBLIC_STATIC_ROOT="${PUBLIC_STATIC_ROOT:-/var/www/vapp-public}")
   env "${env_args[@]}" SERVER_IP="${SERVER_IP:-195.24.237.132}" \
-    bash "$SCRIPT_DIR/apply-nginx.sh" 2>&1 | tee -a "$DEPLOY_LOG" || true
+    bash "$SCRIPT_DIR/apply-nginx.sh" 2>&1 | tee -a "$DEPLOY_LOG"
 }
 
 run_front_background_and_wait() {

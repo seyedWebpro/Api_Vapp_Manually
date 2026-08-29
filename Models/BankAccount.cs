@@ -12,6 +12,12 @@ namespace Api_Vapp.Models
         /// <summary>عنوان نمایشی (مثلاً نام بانک یا برچسب حساب)</summary>
         public string Title { get; set; } = string.Empty;
 
+        /// <summary>
+        /// توضیحات اختیاری ارسال SMS (قبل از عنوان و شماره‌ها) — حداکثر ۱۰۰ کاراکتر.
+        /// در API به‌صورت <c>smsDescription</c> expose می‌شود.
+        /// </summary>
+        public string? SmsCaption { get; set; }
+
         /// <summary>شماره حساب بانکی</summary>
         public string? AccountNumber { get; set; }
 

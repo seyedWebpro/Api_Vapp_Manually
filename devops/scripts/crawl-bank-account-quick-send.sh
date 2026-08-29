@@ -1,17 +1,29 @@
 #!/usr/bin/env bash
-# Crawl عمیق BankAccount + تأیید ادمین ارسال سریع
+# Crawl عمیق BankAccount + تأیید ادمین ارسال سریع + smsDescription
 # Usage: BASE_URL=http://127.0.0.1:5054 bash devops/scripts/crawl-bank-account-quick-send.sh
 set -euo pipefail
+export PATH="/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:${PATH:-}"
+
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+cd "$ROOT"
 
 BASE_URL="${BASE_URL:-http://127.0.0.1:5054}"
+LOG=/tmp/vapp-bank-account-crawl.log
+PIDFILE=/tmp/vapp-bank-account-crawl.pid
 TMP_DIR="$(mktemp -d)"
 PASS=0
 FAIL=0
 BA_ID=""
 BA2_ID=""
 CONTACT_ID=""
+STARTED_API=0
 
-cleanup() { rm -rf "$TMP_DIR"; }
+cleanup() {
+  rm -rf "$TMP_DIR"
+  if [[ "$STARTED_API" == "1" ]] && [[ -f "$PIDFILE" ]]; then
+    kill "$(cat "$PIDFILE")" 2>/dev/null || true
+  fi
+}
 trap cleanup EXIT
 
 json_get() {
@@ -84,6 +96,60 @@ req() {
 
 echo "=== BankAccount QuickSend Deep Crawl @ $BASE_URL ==="
 
+echo "===== UNIT TESTS ====="
+dotnet test Tests/Api_Vapp.Tests.csproj --nologo \
+  --filter "FullyQualifiedName~BankAccountSmsDescriptionTests" \
+  --logger "console;verbosity=minimal"
+echo "UNIT_OK"
+
+echo "===== BUILD ====="
+dotnet build Api_Vapp.csproj --nologo -v q
+echo "BUILD_OK"
+
+echo "===== RESTART API ====="
+for p in $(lsof -t -iTCP:5054 -sTCP:LISTEN 2>/dev/null || true); do kill "$p" 2>/dev/null || true; done
+sleep 2
+for p in $(lsof -t -iTCP:5054 -sTCP:LISTEN 2>/dev/null || true); do kill -9 "$p" 2>/dev/null || true; done
+sleep 1
+
+nohup env ASPNETCORE_ENVIRONMENT=Development \
+  dotnet exec bin/Debug/net8.0/Api_Vapp.dll --urls "http://127.0.0.1:5054" \
+  > "$LOG" 2>&1 &
+echo $! > "$PIDFILE"
+STARTED_API=1
+echo "API_STARTED:$(cat "$PIDFILE")"
+
+for i in $(seq 1 90); do
+  if grep -qE "Migration completed successfully|Application started|Now listening on" "$LOG" 2>/dev/null; then
+    echo "API_BOOT_SIGNAL"
+    break
+  fi
+  if ! kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+    echo "API_DIED_EARLY"
+    tail -60 "$LOG" || true
+    exit 1
+  fi
+  sleep 2
+done
+
+READY=0
+for i in $(seq 1 60); do
+  code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$BASE_URL/health" || echo 000)
+  if [[ "$code" == "200" ]]; then READY=1; break; fi
+  if ! kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+    echo "API_DIED_WHILE_WAITING"
+    tail -60 "$LOG" || true
+    exit 1
+  fi
+  sleep 2
+done
+if [[ "$READY" != "1" ]]; then
+  echo "API_NOT_READY"
+  tail -60 "$LOG" || true
+  exit 1
+fi
+echo "API_READY"
+
 # --- health ---
 HTTP=$(curl -s -o "$TMP_DIR/health.json" -w "%{http_code}" "$BASE_URL/health" || true)
 assert_eq "health http" "200" "$HTTP"
@@ -115,16 +181,24 @@ HTTP=$(req POST "/api/BankAccount" "$TMP_DIR/badsheba.json" -d '{"title":"بد",
 assert_eq "bad sheba status" "400" "$(json_get "$TMP_DIR/badsheba.json" statusCode)"
 assert_contains "bad sheba msg" "۲۴" "$(json_get "$TMP_DIR/badsheba.json" message)"
 
-# --- create: card only (normalize dashes) ---
+# --- create: card only (normalize dashes) + smsDescription ---
 HTTP=$(req POST "/api/BankAccount" "$TMP_DIR/create1.json" \
-  -d '{"title":"  حساب کارت  ","cardNumber":"6037-9912-3456-7890","isDefault":true}')
+  -d '{"title":"  حساب کارت  ","smsDescription":"برای واریز به شماره کارت زیر اقدام کنید","cardNumber":"6037-9912-3456-7890","isDefault":true}')
 assert_eq "create card-only status" "201" "$(json_get "$TMP_DIR/create1.json" statusCode)"
 BA_ID=$(json_get "$TMP_DIR/create1.json" data.id)
 assert_eq "create Pending" "Pending" "$(json_get "$TMP_DIR/create1.json" data.approvalStatus)"
 assert_eq "create default" "true" "$(json_get "$TMP_DIR/create1.json" data.isDefault)"
 assert_eq "card normalized" "6037991234567890" "$(json_get "$TMP_DIR/create1.json" data.cardNumber)"
 assert_eq "title trimmed" "حساب کارت" "$(json_get "$TMP_DIR/create1.json" data.title)"
+assert_eq "create smsDescription" "برای واریز به شماره کارت زیر اقدام کنید" "$(json_get "$TMP_DIR/create1.json" data.smsDescription)"
 echo "BA_ID=$BA_ID"
+
+# --- validation: smsDescription max 100 ---
+LONG="$(python3 -c 'print("ا"*101)')"
+HTTP=$(req POST "/api/BankAccount" "$TMP_DIR/longcap.json" \
+  -d "{\"title\":\"بد\",\"cardNumber\":\"6037991234567890\",\"smsDescription\":\"${LONG}\"}")
+assert_eq "long smsDescription status" "400" "$(json_get "$TMP_DIR/longcap.json" statusCode)"
+assert_eq "long smsDescription errorCode" "VALIDATION_FAILED" "$(json_get "$TMP_DIR/longcap.json" errorCode)"
 
 # --- create: sheba + account ---
 HTTP=$(req POST "/api/BankAccount" "$TMP_DIR/create2.json" \
@@ -167,7 +241,8 @@ PY
 )
 assert_contains "pending contains BA" "yes" "$FOUND"
 assert_contains "pending title fa" "شماره حساب" "$FOUND"
-assert_contains "pending preview card" "کارت:" "$FOUND"
+assert_contains "pending preview card" "شماره کارت:" "$FOUND"
+assert_contains "pending preview smsDescription" "برای واریز" "$FOUND"
 assert_contains "pending publicUrl null" "public=None" "$FOUND"
 
 # --- contact for quick-send ---
@@ -244,6 +319,21 @@ HTTP=$(req POST "/api/BankAccount/${BA_ID}/update" "$TMP_DIR/upd.json" \
 assert_eq "update status" "200" "$(json_get "$TMP_DIR/upd.json" statusCode)"
 assert_eq "update resets Pending" "Pending" "$(json_get "$TMP_DIR/upd.json" data.approvalStatus)"
 assert_eq "update card" "6037991234567891" "$(json_get "$TMP_DIR/upd.json" data.cardNumber)"
+
+# --- update smsDescription alone -> Pending ---
+HTTP=$(req POST "/api/Admin/QuickSendApproval/BankAccount/${BA_ID}/approve" "$TMP_DIR/ap_cap.json")
+assert_eq "approve before caption edit" "200" "$(json_get "$TMP_DIR/ap_cap.json" statusCode)"
+HTTP=$(req POST "/api/BankAccount/${BA_ID}/update" "$TMP_DIR/upd_cap.json" \
+  -d '{"smsDescription":"لطفاً مبلغ را به کارت زیر واریز کنید"}')
+assert_eq "caption update status" "200" "$(json_get "$TMP_DIR/upd_cap.json" statusCode)"
+assert_eq "caption update value" "لطفاً مبلغ را به کارت زیر واریز کنید" "$(json_get "$TMP_DIR/upd_cap.json" data.smsDescription)"
+assert_eq "caption update resets Pending" "Pending" "$(json_get "$TMP_DIR/upd_cap.json" data.approvalStatus)"
+
+# --- clear smsDescription ---
+HTTP=$(req POST "/api/BankAccount/${BA_ID}/update" "$TMP_DIR/clr_cap.json" -d '{"smsDescription":""}')
+assert_eq "clear caption status" "200" "$(json_get "$TMP_DIR/clr_cap.json" statusCode)"
+CLEARED=$(json_get "$TMP_DIR/clr_cap.json" data.smsDescription)
+assert_eq "clear caption empty" "true" "$([[ -z "$CLEARED" ]] && echo true || echo false)"
 
 # --- update clear all bank fields -> 400 ---
 HTTP=$(req POST "/api/BankAccount/${BA_ID}/update" "$TMP_DIR/clr.json" \

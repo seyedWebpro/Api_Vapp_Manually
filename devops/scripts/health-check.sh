@@ -26,9 +26,11 @@ for arg in "$@"; do
 done
 
 DOMAIN_HOST="${DOMAIN_HOST:-vapplication.ir}"
+GATEWAY_HOST="${GATEWAY_HOST:-api.v-application.ir}"
 SERVER_IP="${SERVER_IP:-195.24.237.132}"
 HEALTH_ATTEMPTS="${HEALTH_ATTEMPTS:-1}"
 HEALTH_SLEEP="${HEALTH_SLEEP:-8}"
+app_ssl_ok=1
 
 check_once() {
   api="$(api_http_code http://127.0.0.1:8080/health)"
@@ -59,6 +61,15 @@ check_once() {
   [[ ! -f /var/www/vapp-public/index.html ]] && public_mode="docker:3006"
 
   echo "API:$api APPVER:$appver ADMIN:$admin($admin_mode) PUBLIC:$public CARD:$card WHEEL:$wheel BOOK:$book NGINX:$nginx_root($domain_note) SWAGGER:$swagger"
+
+  if [[ "$WITH_DOMAIN" == "1" ]]; then
+    app_ssl="fail"
+    gw_ssl="fail"
+    app_ssl_ok=0
+    if verify_https_cert "$DOMAIN_HOST"; then app_ssl="ok"; app_ssl_ok=1; fi
+    if verify_https_cert "$GATEWAY_HOST"; then gw_ssl="ok"; fi
+    echo "SSL: app($DOMAIN_HOST)=$app_ssl gateway($GATEWAY_HOST)=$gw_ssl"
+  fi
 }
 
 print_fix_hints() {
@@ -73,6 +84,7 @@ print_fix_hints() {
     fi
     echo "• PUBLIC form/wheel/card/book → SERVER_IP=$SERVER_IP bash devops/scripts/deploy-public-front-host.sh" >&2
   fi
+  [[ "${app_ssl_ok:-1}" != "1" ]] && echo "• SSL app cert → bash devops/scripts/switch-to-domain.sh" >&2
   echo "• تشخیص کامل: bash devops/scripts/diagnose-deploy.sh" >&2
   echo "" >&2
 }
@@ -82,7 +94,9 @@ is_healthy() {
     [[ "$api" == "200" && "$appver" == "200" ]]
     return
   fi
-  [[ "$api" == "200" && "$appver" == "200" && "$admin" == "200" && "$public" == "200" && "$card" == "200" && "$wheel" == "200" && "$book" == "200" ]]
+  local ssl_ok=1
+  [[ "$WITH_DOMAIN" == "1" && "$app_ssl_ok" != "1" ]] && ssl_ok=0
+  [[ "$api" == "200" && "$appver" == "200" && "$admin" == "200" && "$public" == "200" && "$card" == "200" && "$wheel" == "200" && "$book" == "200" && "$ssl_ok" == "1" ]]
 }
 
 attempt=1

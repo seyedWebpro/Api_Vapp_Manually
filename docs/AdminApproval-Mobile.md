@@ -234,7 +234,12 @@ Admin API: `/api/Admin/QuickSendApproval`
 - در پنل ادمین، `contentPreview` = پیش‌نویس کامل همان متن SMS (نه فقط slug/URL خام)
 - تغییر `smsDescription` مثل ویرایش محتوا → دوباره `Pending`
 
-`QuickAction` و `BankAccount` فیلد جداگانه `smsDescription` ندارند (متن اکشن / عنوان+شماره حساب خودشان SMS را می‌سازند).
+`BankAccount` هم `smsDescription` دارد (اختیاری، max ۱۰۰):
+- متن SMS: `{smsDescription}\n{title}\nشماره حساب/کارت/شبا…` — اگر توضیحات خالی باشد مثل قبل فقط عنوان + شماره‌ها
+- تغییر `smsDescription` → دوباره `Pending`
+- داکیومنت موبایل: `docs/BankAccount-Frontend.md`
+
+`QuickAction` فیلد جداگانه `smsDescription` ندارد (متن اکشن خودش SMS را می‌سازد).
 
 ### کار موبایل
 

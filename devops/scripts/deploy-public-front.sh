@@ -63,7 +63,7 @@ run_deploy() {
   done
 
   FRONT_STATIC_ROOT="${FRONT_STATIC_ROOT:-/var/www/vapp-admin}" \
-    bash "$SCRIPT_DIR/apply-nginx.sh" || true
+    bash "$SCRIPT_DIR/apply-nginx.sh"
 
   deploy_log "PUBLIC:$code"
   docker ps --filter "name=$PUBLIC_CONTAINER" --format 'table {{.Names}}\t{{.Status}}'

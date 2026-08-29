@@ -105,6 +105,7 @@ namespace Api_Vapp.Services
                     {
                         UserId = userId,
                         Title = title,
+                        SmsCaption = QuickSendLinkSmsHelper.NormalizeCaption(createDto.SmsDescription),
                         AccountNumber = accountNumber,
                         CardNumber = cardNumber,
                         ShebaNumber = shebaNumber,
@@ -232,6 +233,7 @@ namespace Api_Vapp.Services
                     return ApiResponse<BankAccountResponseDto>.NotFound("شماره حساب مورد نظر یافت نشد");
 
                 var originalTitle = entity.Title;
+                var originalSmsDescription = entity.SmsCaption;
                 var originalAccount = entity.AccountNumber;
                 var originalCard = entity.CardNumber;
                 var originalSheba = entity.ShebaNumber;
@@ -248,6 +250,10 @@ namespace Api_Vapp.Services
 
                     entity.Title = title;
                 }
+
+                // قرارداد Update: null = بدون تغییر؛ "" = حذف توضیحات ارسال
+                if (updateDto.SmsDescription != null)
+                    entity.SmsCaption = QuickSendLinkSmsHelper.NormalizeCaption(updateDto.SmsDescription);
 
                 // قرارداد Update: null = بدون تغییر؛ رشته خالی/whitespace = پاک‌کردن فیلد
                 if (updateDto.AccountNumber != null)
@@ -319,6 +325,7 @@ namespace Api_Vapp.Services
 
                 var contentChanged =
                     !string.Equals(originalTitle, entity.Title, StringComparison.Ordinal) ||
+                    !string.Equals(originalSmsDescription, entity.SmsCaption, StringComparison.Ordinal) ||
                     !string.Equals(originalAccount, entity.AccountNumber, StringComparison.Ordinal) ||
                     !string.Equals(originalCard, entity.CardNumber, StringComparison.Ordinal) ||
                     !string.Equals(originalSheba, entity.ShebaNumber, StringComparison.Ordinal);
@@ -611,23 +618,22 @@ namespace Api_Vapp.Services
         }
 
         /// <summary>
-        /// پیش‌نمایش محتوا برای پنل ادمین (یک خط فشرده)
+        /// پیش‌نمایش محتوا برای پنل ادمین — همان متن کامل SMS
         /// </summary>
-        public static string BuildContentPreview(BankAccount entity)
-        {
-            var parts = new List<string>(3);
-            if (!string.IsNullOrWhiteSpace(entity.AccountNumber))
-                parts.Add($"حساب:{entity.AccountNumber}");
-            if (!string.IsNullOrWhiteSpace(entity.CardNumber))
-                parts.Add($"کارت:{entity.CardNumber}");
-            if (!string.IsNullOrWhiteSpace(entity.ShebaNumber))
-                parts.Add($"شبا:{entity.ShebaNumber}");
-            return string.Join(" | ", parts);
-        }
+        public static string BuildContentPreview(BankAccount entity) =>
+            BuildSmsContent(entity);
 
+        /// <summary>
+        /// متن SMS: در صورت وجود توضیحات ارسال → قبل از عنوان؛ سپس عنوان و شماره‌ها.
+        /// </summary>
         public static string BuildSmsContent(BankAccount entity)
         {
             var sb = new StringBuilder();
+
+            var smsDescription = QuickSendLinkSmsHelper.NormalizeCaption(entity.SmsCaption);
+            if (!string.IsNullOrEmpty(smsDescription))
+                sb.AppendLine(smsDescription);
+
             if (!string.IsNullOrWhiteSpace(entity.Title))
                 sb.AppendLine(entity.Title.Trim());
 
@@ -664,12 +670,18 @@ namespace Api_Vapp.Services
             }
         }
 
-        private void InvalidateUserCache(int userId)
+        private void InvalidateUserCache(int userId) =>
+            InvalidateListCache(_cache, userId);
+
+        /// <summary>
+        /// پاک‌سازی کش لیست شماره حساب (مثلاً بعد از تأیید/رد ادمین).
+        /// </summary>
+        public static void InvalidateListCache(IMemoryCache cache, int userId)
         {
             for (var page = 1; page <= 20; page++)
             {
                 foreach (var size in new[] { 10, 20, 50, 100 })
-                    _cache.Remove(BuildListCacheKey(userId, page, size));
+                    cache.Remove(BuildListCacheKey(userId, page, size));
             }
         }
 
@@ -710,6 +722,7 @@ namespace Api_Vapp.Services
         {
             Id = entity.Id,
             Title = entity.Title,
+            SmsDescription = entity.SmsCaption,
             AccountNumber = entity.AccountNumber,
             CardNumber = entity.CardNumber,
             ShebaNumber = entity.ShebaNumber,

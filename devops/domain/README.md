@@ -94,5 +94,6 @@ docker exec vapp_api_prod printenv | grep -E 'PublicBaseUrl|CallbackUrl|OtpAutof
 ## نکات
 
 - Nginx اپ: `/etc/nginx/sites-available/vapp` — درگاه: `vapp-gateway` (جدا؛ با apply-nginx بازنویسی نمی‌شود).
+- **`apply-nginx.sh` خودکار `DOMAIN_HOST` را از `server.conf` + گواهی Let's Encrypt می‌گیرد** — deploy فرانت/API دیگر HTTPS را نمی‌شکند.
 - IP موقتاً در `server_name` اپ هست؛ لینک‌های SMS قدیمی با IP هنوز باز می‌شوند.
 - برگشت: [ROLLBACK.md](ROLLBACK.md) یا `switch-to-domain.sh --ip-only` (درگاه را جدا نگه دارید).

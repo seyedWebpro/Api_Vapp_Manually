@@ -10,8 +10,13 @@ namespace Api_Vapp.DTOs.BankAccount
         [MaxLength(100, ErrorMessage = "عنوان نمی‌تواند بیشتر از 100 کاراکتر باشد")]
         public string? Title { get; set; }
 
+        /// <summary>توضیحات اختیاری ارسال SMS — حداکثر ۱۰۰؛ "" برای حذف؛ null = بدون تغییر</summary>
+        [MaxLength(100, ErrorMessage = "توضیحات ارسال نمی‌تواند بیشتر از ۱۰۰ کاراکتر باشد")]
+        public string? SmsDescription { get; set; }
+
         [MaxLength(30, ErrorMessage = "شماره حساب نمی‌تواند بیشتر از 30 کاراکتر باشد")]
         public string? AccountNumber { get; set; }
+
 
         /// <summary>۱۶ رقم؛ جداکننده خط تیره/فاصله مجاز است</summary>
         [MaxLength(19, ErrorMessage = "شماره کارت نامعتبر است")]

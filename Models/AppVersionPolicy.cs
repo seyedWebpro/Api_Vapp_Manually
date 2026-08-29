@@ -11,8 +11,8 @@ namespace Api_Vapp.Models
         /// <summary>android | ios</summary>
         public string Platform { get; set; } = string.Empty;
 
-        /// <summary>آخرین نسخه منتشرشده (مثلاً 1.1.0)</summary>
-        public string LatestVersion { get; set; } = "1.1.0";
+        /// <summary>آخرین نسخه منتشرشده (مثلاً 1.0.0)</summary>
+        public string LatestVersion { get; set; } = "1.0.0";
 
         /// <summary>
         /// حداقل نسخه پشتیبانی‌شده.

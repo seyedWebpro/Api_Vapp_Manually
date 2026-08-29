@@ -34,7 +34,10 @@ namespace Api_Vapp.Data
 
         private static async Task SeedAppVersionPoliciesAsync(Api_Context context, ILogger logger)
         {
-            const string latestVersion = "1.1.0";
+            // همسو با IPA/APK فعلی روی سیب‌اپ و کافه‌بازار (1.0.0).
+            // seeder فقط ردیف گم‌شده را می‌سازد؛ Latest را overwrite نمی‌کند تا
+            // تنظیم ادمین بعد از انتشار نسخهٔ جدید با restart پاک نشود.
+            const string latestVersion = "1.0.0";
             const string minSupportedVersion = "1.0.0";
 
             foreach (var platform in AppVersionPlatforms.All)
@@ -44,19 +47,6 @@ namespace Api_Vapp.Data
 
                 if (existing != null)
                 {
-                    if (existing.LatestVersion != latestVersion
-                        || existing.MinSupportedVersion != minSupportedVersion)
-                    {
-                        existing.LatestVersion = latestVersion;
-                        existing.MinSupportedVersion = minSupportedVersion;
-                        existing.IsActive = true;
-                        existing.UpdatedAt = DateTime.UtcNow;
-                        await context.SaveChangesAsync();
-                        logger.LogInformation(
-                            "AppVersionPolicy updated for platform {Platform} → Latest {Latest}, Min {Min}.",
-                            platform, latestVersion, minSupportedVersion);
-                    }
-
                     continue;
                 }
 
@@ -89,7 +79,7 @@ namespace Api_Vapp.Data
 
                 await context.SaveChangesAsync();
                 logger.LogInformation(
-                    "AppVersionPolicy seeded for platform {Platform} at version {Latest} (optional updates, min {Min}).",
+                    "AppVersionPolicy seeded for platform {Platform} at version {Latest} (min {Min}).",
                     platform, latestVersion, minSupportedVersion);
             }
         }

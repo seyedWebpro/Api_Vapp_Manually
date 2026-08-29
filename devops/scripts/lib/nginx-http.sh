@@ -34,6 +34,28 @@ https_http_code() {
   printf '%s' "$code"
 }
 
+# verify_https_cert HOST — curl ssl_verify_result (0 = OK)
+verify_https_cert() {
+  local host="$1"
+  local verify
+  verify="$(curl -sS -o /dev/null -w '%{ssl_verify_result}' -m 20 "https://${host}/" 2>/dev/null)" || verify="1"
+  [[ "$verify" == "0" ]]
+}
+
+# verify_https_cert_retry HOST [attempts] — wait for nginx reload to settle
+verify_https_cert_retry() {
+  local host="$1"
+  local attempts="${2:-3}"
+  local i
+  for ((i = 1; i <= attempts; i++)); do
+    if verify_https_cert "$host"; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
 # Direct API (no Host needed)
 api_http_code() {
   local url="$1"

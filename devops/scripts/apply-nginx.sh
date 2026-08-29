@@ -11,15 +11,34 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/load-server-conf.sh
 source "$SCRIPT_DIR/lib/load-server-conf.sh"
+# shellcheck source=lib/resolve-nginx-domain.sh
+source "$SCRIPT_DIR/lib/resolve-nginx-domain.sh"
 
 SERVER_IP="${SERVER_IP:-195.24.237.132}"
-DOMAIN_HOST="${DOMAIN_HOST:-}"
 GATEWAY_HOST="${GATEWAY_HOST:-api.v-application.ir}"
 FRONT_STATIC_ROOT="${FRONT_STATIC_ROOT:-}"
 PUBLIC_STATIC_ROOT="${PUBLIC_STATIC_ROOT:-}"
 PUBLIC_PORT="${PUBLIC_PORT:-3006}"
 DEST="/etc/nginx/sites-available/vapp"
 DEST_GW="/etc/nginx/sites-available/vapp-gateway"
+
+if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+  sudo_args=(
+    SERVER_IP="$SERVER_IP"
+    DOMAIN="${DOMAIN:-}"
+    GATEWAY_HOST="$GATEWAY_HOST"
+    FRONT_STATIC_ROOT="$FRONT_STATIC_ROOT"
+    PUBLIC_STATIC_ROOT="$PUBLIC_STATIC_ROOT"
+    PUBLIC_PORT="$PUBLIC_PORT"
+  )
+  if [[ -n "${DOMAIN_HOST+x}" ]]; then
+    sudo_args+=(DOMAIN_HOST="$DOMAIN_HOST")
+  fi
+  sudo "${sudo_args[@]}" bash "$0"
+  exit $?
+fi
+
+resolve_nginx_domain_host
 
 # Always accept localhost health-checks + public IP (and domain when set).
 if [[ -n "$DOMAIN_HOST" ]]; then
@@ -47,17 +66,6 @@ fi
 if [[ -n "$PUBLIC_STATIC_ROOT" && ! -f "${PUBLIC_STATIC_ROOT}/index.html" ]]; then
   echo "WARN: ${PUBLIC_STATIC_ROOT}/index.html missing — public will proxy :${PUBLIC_PORT} (often 502)" >&2
   PUBLIC_STATIC_ROOT=""
-fi
-
-if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
-  sudo SERVER_IP="$SERVER_IP" \
-    DOMAIN_HOST="$DOMAIN_HOST" \
-    GATEWAY_HOST="$GATEWAY_HOST" \
-    FRONT_STATIC_ROOT="$FRONT_STATIC_ROOT" \
-    PUBLIC_STATIC_ROOT="$PUBLIC_STATIC_ROOT" \
-    PUBLIC_PORT="$PUBLIC_PORT" \
-    bash "$0"
-  exit $?
 fi
 
 if [[ -n "$PUBLIC_STATIC_ROOT" ]]; then
@@ -242,6 +250,15 @@ if [[ -n "$DOMAIN_HOST" && -f "/etc/letsencrypt/live/${DOMAIN_HOST}/fullchain.pe
   APP_CERT_DIR="/etc/letsencrypt/live/${DOMAIN_HOST}"
 fi
 
+# Never silently downgrade HTTPS → HTTP when domain is configured but cert is missing.
+if [[ -n "$DOMAIN_HOST" && -z "$APP_CERT_DIR" && -f "$DEST" ]] \
+  && grep -q 'listen 443 ssl' "$DEST" 2>/dev/null; then
+  echo "ERROR: DOMAIN_HOST=$DOMAIN_HOST but Let's Encrypt cert missing — refusing HTTPS downgrade." >&2
+  echo "       Fix: bash $SCRIPT_DIR/switch-to-domain.sh --certbot" >&2
+  echo "       IP-only: DOMAIN_HOST= bash $SCRIPT_DIR/switch-to-domain.sh --ip-only" >&2
+  exit 1
+fi
+
 # App vhost — preserve HTTPS when Let's Encrypt cert exists for DOMAIN_HOST
 if [[ -n "$APP_CERT_DIR" ]]; then
   cat >"$DEST" <<NGINX
@@ -388,4 +405,22 @@ if [[ -n "$PUBLIC_STATIC_ROOT" ]]; then
 else
   echo "OK: nginx public docker → 127.0.0.1:${PUBLIC_PORT} (/form, /wheel)"
   echo "WARN: no /var/www/vapp-public/index.html — prefer: bash $SCRIPT_DIR/deploy-public-front-host.sh" >&2
+fi
+
+# Fail fast if app HTTPS cert does not match DOMAIN_HOST (prevents gateway cert bleed-through).
+if [[ -n "$APP_CERT_DIR" && -n "$DOMAIN_HOST" ]]; then
+  # shellcheck source=lib/nginx-http.sh
+  source "$SCRIPT_DIR/lib/nginx-http.sh"
+  if ! verify_https_cert_retry "$DOMAIN_HOST"; then
+    echo "ERROR: HTTPS cert mismatch for https://${DOMAIN_HOST}/ — run: bash $SCRIPT_DIR/switch-to-domain.sh" >&2
+    exit 1
+  fi
+  echo "OK: HTTPS cert verified → https://${DOMAIN_HOST}/"
+  if [[ -f "/etc/letsencrypt/live/${GATEWAY_HOST}/fullchain.pem" ]]; then
+    if ! verify_https_cert_retry "$GATEWAY_HOST"; then
+      echo "ERROR: HTTPS cert mismatch for https://${GATEWAY_HOST}/" >&2
+      exit 1
+    fi
+    echo "OK: HTTPS cert verified → https://${GATEWAY_HOST}/"
+  fi
 fi

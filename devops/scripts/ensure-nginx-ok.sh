@@ -34,7 +34,6 @@ fi
 SERVER_IP="$SERVER_IP" \
   FRONT_STATIC_ROOT="$FRONT_STATIC_ROOT" \
   PUBLIC_STATIC_ROOT="$PUBLIC_STATIC_ROOT" \
-  DOMAIN_HOST="${DOMAIN_HOST:-}" \
   bash "$SCRIPT_DIR/apply-nginx.sh"
 
 if ! verify_public_routes "$SERVER_IP"; then

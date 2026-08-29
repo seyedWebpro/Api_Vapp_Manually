@@ -523,6 +523,10 @@ namespace Api_Vapp.Migrations
                         .HasMaxLength(26)
                         .HasColumnType("nvarchar(26)");
 
+                    b.Property<string>("SmsCaption")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -550,6 +554,7 @@ namespace Api_Vapp.Migrations
 
                     b.ToTable("BankAccounts");
                 });
+
 
             modelBuilder.Entity("Api_Vapp.Models.BookingAppointment", b =>
                 {

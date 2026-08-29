@@ -723,6 +723,7 @@ namespace Api_Vapp.Data
 
                 entity.Property(b => b.UserId).IsRequired();
                 entity.Property(b => b.Title).IsRequired().HasMaxLength(100);
+                entity.Property(b => b.SmsCaption).HasMaxLength(100);
                 entity.Property(b => b.AccountNumber).HasMaxLength(30);
                 entity.Property(b => b.CardNumber).HasMaxLength(16);
                 entity.Property(b => b.ShebaNumber).HasMaxLength(26);

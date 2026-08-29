@@ -522,10 +522,13 @@ namespace Api_Vapp.Services.Admin
                         UserPhoneNumber = u.PhoneNumber,
                         UserFullName = u.FullName,
                         Title = b.Title,
+                        // پیش‌نویس کامل SMS در EnrichPublicUrl با BuildSmsContent ساخته می‌شود
                         ContentPreview =
-                            (b.AccountNumber != null ? "حساب:" + b.AccountNumber + " | " : "")
-                            + (b.CardNumber != null ? "کارت:" + b.CardNumber + " | " : "")
-                            + (b.ShebaNumber != null ? "شبا:" + b.ShebaNumber : ""),
+                            (b.SmsCaption != null ? b.SmsCaption + "\n" : "")
+                            + (b.Title != null ? b.Title + "\n" : "")
+                            + (b.AccountNumber != null ? "شماره حساب: " + b.AccountNumber + "\n" : "")
+                            + (b.CardNumber != null ? "شماره کارت: " + b.CardNumber + "\n" : "")
+                            + (b.ShebaNumber != null ? "شماره شبا: " + b.ShebaNumber : ""),
                         PublicUrl = null,
                         IsActive = b.IsActive,
                         ApprovalStatus = b.ApprovalStatus,
@@ -580,6 +583,8 @@ namespace Api_Vapp.Services.Admin
         {
             if (itemType == QuickSendItemTypes.SocialMediaLink)
                 SocialMediaLinkService.InvalidateListCache(_cache, ownerUserId);
+            else if (itemType == QuickSendItemTypes.BankAccount)
+                BankAccountService.InvalidateListCache(_cache, ownerUserId);
         }
 
         private void EnrichPublicUrl(QuickSendApprovalResponseDto item)
@@ -624,7 +629,7 @@ namespace Api_Vapp.Services.Admin
             };
 
             if (item.ItemType == QuickSendItemTypes.BankAccount && !string.IsNullOrWhiteSpace(item.ContentPreview))
-                item.ContentPreview = item.ContentPreview.Trim().TrimEnd('|', ' ').Trim();
+                item.ContentPreview = item.ContentPreview.Trim();
         }
 
         private async Task<TrackedQuickSendEntity?> LoadTrackedEntityAsync(string itemType, int id)

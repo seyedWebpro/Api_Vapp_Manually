@@ -9,6 +9,9 @@ namespace Api_Vapp.DTOs.BankAccount
 
         public string Title { get; set; } = string.Empty;
 
+        /// <summary>توضیحات ارسال SMS (اختیاری) — قبل از عنوان و شماره‌ها در پیامک</summary>
+        public string? SmsDescription { get; set; }
+
         public string? AccountNumber { get; set; }
 
         public string? CardNumber { get; set; }
