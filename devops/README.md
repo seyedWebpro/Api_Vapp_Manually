@@ -4,7 +4,8 @@ Overview, structure and links.
 **For the actual command list see [`COMMANDS.txt`](COMMANDS.txt).**
 
 **Production domains:** app `https://vapplication.ir` · payment gateway `https://api.v-application.ir`  
-→ [`domain/README.md`](domain/README.md) · [`domain/CLOUDFLARE.md`](domain/CLOUDFLARE.md)
+**Production DB:** SQL Server Docker only — database name **`DbVapp`** (`vapp_sqlserver_prod`). No legacy remote SQL / `aDb_Vapp`.  
+→ [`domain/README.md`](domain/README.md) · [`domain/CLOUDFLARE.md`](domain/CLOUDFLARE.md) · [`DB.md`](DB.md)
 
 ---
 
@@ -33,6 +34,7 @@ devops/
   ADMIN-AUDIT.md                  ← AdminAuditLogs table usage (short)
   AUDIT_RUNBOOK.md                ← audit search scenarios (detailed)
   PUBLIC-VAPP.md                  ← public form/wheel details
+  DB.md                           ← production DB = Docker DbVapp only
   NUMBER-SCRAPER.md               ← number-scraper robot
   MAC-SERVER.md                   ← SSH / first-time setup
   GITHUB_SSH.md                   ← deploy key setup

@@ -1,18 +1,12 @@
-# اسنپ‌شات — حالت IP (قبل از دامنه کامل)
-# تاریخ مرجع: 2026-07-07
-# وضعیت فعلی production: دامنه — ببین domain/README.md
+# Obsolete — IP-only mode snapshot
 
-server_name:     195.24.237.132
-PUBLIC_API:      http://195.24.237.132
-PUBLIC_FRONTEND: http://195.24.237.132
-FORM_PUBLIC:     http://195.24.237.132/form
-WHEEL_PUBLIC:    http://195.24.237.132/wheel
-nginx:           /etc/nginx/sites-available/vapp
-API container:   vapp_api_prod :8080
-Admin:           docker :3005 یا static /var/www/vapp-admin
-Public:          static /var/www/vapp-public (/form, /wheel)
+Production is **domain-first**. Canonical docs: [`README.md`](README.md).
 
-# بعد از دامنه (مرجع):
-#   اپ:     https://vapplication.ir
-#   درگاه:  https://api.v-application.ir
-#   nginx:  vapp + vapp-gateway
+| | Current |
+|--|---------|
+| App | `https://vapplication.ir` |
+| Payment gateway | `https://api.v-application.ir` |
+| Server IP (SSH / DNS A) | `195.24.237.132` |
+| Database | Docker **`DbVapp`** only |
+
+Emergency nginx/IP notes (same server, same `DbVapp`): [`ROLLBACK.md`](ROLLBACK.md).

@@ -66,6 +66,9 @@ namespace Api_Vapp.Services.Admin
                 })
                 .ToListAsync();
 
+            foreach (var video in videos)
+                ApplyPlaybackFields(video);
+
             _logger.LogInformation("پایان دریافت ویدیوهای آموزشی — Count: {Count}", videos.Count);
             return ApiResponse<List<EducationalVideoResponseDto>>.CreateSuccess(videos);
         }
@@ -93,6 +96,7 @@ namespace Api_Vapp.Services.Admin
             if (video == null)
                 return ApiResponse<EducationalVideoResponseDto>.NotFound("ویدیو یافت نشد");
 
+            ApplyPlaybackFields(video);
             _logger.LogInformation("پایان دریافت ویدیو آموزشی — Id: {Id}", id);
             return ApiResponse<EducationalVideoResponseDto>.CreateSuccess(video);
         }
@@ -407,6 +411,9 @@ namespace Api_Vapp.Services.Admin
                     })
                     .ToListAsync();
 
+                foreach (var video in videos)
+                    ApplyPlaybackFields(video);
+
                 _cache.Set(
                     EducationalVideoCacheKeys.ActiveList,
                     videos,
@@ -532,17 +539,28 @@ namespace Api_Vapp.Services.Admin
             video.IsActive
         };
 
-        private static EducationalVideoResponseDto Map(EducationalVideo video) => new()
+        private static EducationalVideoResponseDto Map(EducationalVideo video)
         {
-            Id = video.Id,
-            Title = video.Title,
-            Description = video.Description,
-            VideoUrl = video.VideoUrl,
-            ThumbnailUrl = video.ThumbnailUrl,
-            SortOrder = video.SortOrder,
-            IsActive = video.IsActive,
-            CreatedAt = video.CreatedAt,
-            UpdatedAt = video.UpdatedAt
-        };
+            var dto = new EducationalVideoResponseDto
+            {
+                Id = video.Id,
+                Title = video.Title,
+                Description = video.Description,
+                VideoUrl = video.VideoUrl,
+                ThumbnailUrl = video.ThumbnailUrl,
+                SortOrder = video.SortOrder,
+                IsActive = video.IsActive,
+                CreatedAt = video.CreatedAt,
+                UpdatedAt = video.UpdatedAt
+            };
+            ApplyPlaybackFields(dto);
+            return dto;
+        }
+
+        private static void ApplyPlaybackFields(EducationalVideoResponseDto dto)
+        {
+            dto.PlaybackUrl = EducationalVideoPlaybackHelper.ResolvePlaybackUrl(dto.VideoUrl);
+            dto.PlaybackMode = EducationalVideoPlaybackHelper.ResolvePlaybackMode(dto.VideoUrl);
+        }
     }
 }

@@ -49,11 +49,13 @@ bash ~/Api_Vapp_Manually/devops/scripts/wait-db-ready.sh
 bash ~/Api_Vapp_Manually/devops/scripts/health-check.sh
 bash ~/Api_Vapp_Manually/vapp-iran-update.sh --test
 
-Admin:   http://195.24.237.132/
-AppVer:  http://195.24.237.132/api/AppVersion/check?platform=android&currentVersion=1.0.0
-Health:  http://195.24.237.132/health
-Swagger: http://195.24.237.132/swagger
-Form:    http://195.24.237.132/form/
+Admin:   https://vapplication.ir/
+AppVer:  https://vapplication.ir/api/AppVersion/check?platform=android&currentVersion=1.0.0
+Health:  https://vapplication.ir/health
+Swagger: https://vapplication.ir/swagger
+Form:    https://vapplication.ir/form/
+Gateway: https://api.v-application.ir/health
+DB:      Docker DbVapp only (see devops/DB.md)
 
 اگر AppVersion=500 بود:
   bash ~/Api_Vapp_Manually/devops/scripts/fix-fresh-db-and-rebuild-api.sh

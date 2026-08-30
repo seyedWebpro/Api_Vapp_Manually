@@ -8,7 +8,7 @@
 # سناریوها:
 #   - health
 #   - بدون توکن → 401 (مگر DisableAuth)
-#   - با توکن → 200 + success=true + data آرایه
+#   - با توکن → 200 + success=true + data آرایه + playbackUrl برای آپارات
 #   - دوبار پشت سر هم → هر دو 200 (cache با SizeLimit نباید 500 بدهد)
 set -euo pipefail
 
@@ -108,6 +108,24 @@ PY
   check "errorCode empty on success" "$([[ -z "$ERR" || "$ERR" == "None" ]] && echo 1 || echo 0)"
   check "data is array" "$([[ "$DATA_TYPE" == "array" ]] && echo 1 || echo 0)"
   check "not UNEXPECTED_ERROR" "$([[ "$ERR" != "UNEXPECTED_ERROR" ]] && echo 1 || echo 0)"
+
+  COUNT="$(python3 - "$OUT1" <<'PY'
+import json,sys
+d=json.load(open(sys.argv[1],encoding='utf-8'))
+data=d.get("data") or []
+print(len(data) if isinstance(data,list) else 0)
+PY
+)"
+  if [[ "$COUNT" != "0" ]]; then
+    MODE="$(json_get "$OUT1" data.0.playbackMode)"
+    PURL="$(json_get "$OUT1" data.0.playbackUrl)"
+    check "playbackUrl present" "$([[ -n "$PURL" ]] && echo 1 || echo 0)"
+    if [[ "$MODE" == "aparat_embed" ]]; then
+      check "aparat playbackUrl is embed" "$([[ "$PURL" == *"/embed/videohash/"* ]] && echo 1 || echo 0)"
+    else
+      check "playbackMode set" "$([[ -n "$MODE" ]] && echo 1 || echo 0)"
+    fi
+  fi
 
   OUT2="$TMP_DIR/videos2.json"
   code2="$(http_get /api/EducationalVideo "$OUT2" "$USER_TOKEN")"

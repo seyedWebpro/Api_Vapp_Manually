@@ -1,6 +1,7 @@
 -- به‌روزرسانی سیاست نسخه اپ → latest=1.1.0 ، min=1.0.0 (آپدیت اختیاری)
--- Usage (روی سرور SQL production):
---   sqlcmd -S ... -d aDb_Vapp -U ... -P ... -C -i devops/scripts/sql/update-app-version-1.1.0.sql
+-- Usage (روی سرور — فقط DbVapp در Docker production):
+--   docker exec vapp_sqlserver_prod /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P "$SA_PASSWORD" -C -d DbVapp -I \
+--     -i devops/scripts/sql/update-app-version-1.1.0.sql
 
 SET QUOTED_IDENTIFIER ON;
 GO

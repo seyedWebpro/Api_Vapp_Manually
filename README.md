@@ -136,9 +136,13 @@ Or use [User Secrets](https://learn.microsoft.com/aspnet/core/security/app-secre
 
 ```bash
 dotnet user-secrets init
-dotnet user-secrets set "defultConnection" "Data Source=.;Initial Catalog=DbVappLocal;Integrated Security=True;TrustServerCertificate=True"
+dotnet user-secrets set "DatabaseProvider" "Local"
+dotnet user-secrets set "ConnectionStrings:LocalConnection" "Data Source=.;Initial Catalog=DbVappLocal;Integrated Security=True;TrustServerCertificate=True"
 dotnet user-secrets set "Jwt:Secret" "YourSecretKey_AtLeast32CharactersLong"
 ```
+
+On Mac with SQL in Docker (API on host), use `DatabaseProvider=LocalDocker` and `ConnectionStrings:LocalDockerHostConnection` (see `appsettings.Development.Mac.json`).  
+Production uses `DatabaseProvider=Docker` → database **`DbVapp`** only.
 
 ### 3. Apply database migrations
 
@@ -163,7 +167,7 @@ Key sections in `appsettings.json`:
 
 | Section | Description |
 |---------|-------------|
-| `localConnection` / `defultConnection` | SQL Server connection strings |
+| `DatabaseProvider` + `ConnectionStrings` | `Local` / `LocalDocker` / `Docker` → matching connection string (`DbVapp` in Docker/prod) |
 | `Jwt` | Secret, issuer, audience, token lifetimes |
 | `Development` | `DisableAuth`, `DisableWalletCheck` flags |
 | `FileUpload` | Max size, allowed MIME types, upload folder |

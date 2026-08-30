@@ -1,6 +1,7 @@
 ================================================================================
   DevOps cheat sheet — Vapp (reuse: README.md در همین پوشه)
-  IP: 195.24.237.132
+  Domains: https://vapplication.ir · https://api.v-application.ir
+  SSH IP: 195.24.237.132 | DB: Docker DbVapp only (see devops/DB.md)
 ================================================================================
 
 

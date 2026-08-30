@@ -107,7 +107,9 @@ bash ~/Api_Vapp_Manually/vapp-iran-update.sh --full
 
 | سرویس | URL |
 |--------|-----|
-| Admin | http://195.24.237.132/admin |
-| Swagger | http://195.24.237.132/swagger |
-| Health | http://195.24.237.132/health |
-| Form | http://195.24.237.132/form/{slug} |
+| Admin | https://vapplication.ir/auth |
+| Swagger | https://vapplication.ir/swagger |
+| Health | https://vapplication.ir/health |
+| Form | https://vapplication.ir/form/{slug} |
+| Payment gateway | https://api.v-application.ir |
+| SSH / IP | `195.24.237.132` (فقط دسترسی سرور؛ داده در Docker `DbVapp`) |

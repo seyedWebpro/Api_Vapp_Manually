@@ -8,7 +8,12 @@ namespace Api_Vapp.DTOs.Admin
         public int Id { get; set; }
         public string Title { get; set; } = string.Empty;
         public string? Description { get; set; }
+        /// <summary>لینک ذخیره‌شده (صفحه آپارات، embed، یا مسیر uploads/...).</summary>
         public string VideoUrl { get; set; } = string.Empty;
+        /// <summary>آدرس پخش داخل اپ — برای آپارات همیشه embed است.</summary>
+        public string PlaybackUrl { get; set; } = string.Empty;
+        /// <summary>aparat_embed | file | direct</summary>
+        public string PlaybackMode { get; set; } = "direct";
         public string? ThumbnailUrl { get; set; }
         public int SortOrder { get; set; }
         public bool IsActive { get; set; }

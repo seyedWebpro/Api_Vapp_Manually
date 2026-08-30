@@ -23,6 +23,7 @@
 | DNS | `vapplication.ir` + `api.v-application.ir` → `195.24.237.132` |
 | TLS | Certbot — `vapplication.ir` و `api.v-application.ir` جدا |
 | API | `127.0.0.1:8080` — `vapp_api_prod` |
+| DB | Docker `vapp_sqlserver_prod` → **`DbVapp` only** (see [`../DB.md`](../DB.md)) |
 | لینک SMS | `https://vapplication.ir/form/{slug}` و `/wheel/{slug}` |
 
 ---

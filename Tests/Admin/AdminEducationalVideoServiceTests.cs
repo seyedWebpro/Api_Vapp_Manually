@@ -73,6 +73,10 @@ public class AdminEducationalVideoServiceTests : IAsyncLifetime
         Assert.Single(first.Data!);
         Assert.Equal("ویدیو فعال", first.Data![0].Title);
         Assert.Equal("https://www.aparat.com/v/test1", first.Data[0].VideoUrl);
+        Assert.Equal(
+            "https://www.aparat.com/video/video/embed/videohash/test1/vt/frame",
+            first.Data[0].PlaybackUrl);
+        Assert.Equal("aparat_embed", first.Data[0].PlaybackMode);
 
         Assert.True(second.Success);
         Assert.Equal(200, second.StatusCode);
