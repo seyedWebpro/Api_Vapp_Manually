@@ -380,39 +380,51 @@ namespace Api_Vapp.Services.Admin
 
         public async Task<ApiResponse<List<EducationalVideoResponseDto>>> GetActiveVideosAsync()
         {
-            if (_cache.TryGetValue(EducationalVideoCacheKeys.ActiveList, out List<EducationalVideoResponseDto>? cached)
-                && cached != null)
+            try
             {
-                return ApiResponse<List<EducationalVideoResponseDto>>.CreateSuccess(cached);
+                if (_cache.TryGetValue(EducationalVideoCacheKeys.ActiveList, out List<EducationalVideoResponseDto>? cached)
+                    && cached != null)
+                {
+                    return ApiResponse<List<EducationalVideoResponseDto>>.CreateSuccess(cached);
+                }
+
+                _logger.LogInformation("شروع دریافت ویدیوهای آموزشی فعال");
+
+                var videos = await _context.EducationalVideos.AsNoTracking()
+                    .Where(v => v.IsActive && !v.IsDeleted && v.VideoUrl != PendingVideoUrl && v.VideoUrl != "")
+                    .OrderBy(v => v.SortOrder)
+                    .Select(v => new EducationalVideoResponseDto
+                    {
+                        Id = v.Id,
+                        Title = v.Title,
+                        Description = v.Description,
+                        VideoUrl = v.VideoUrl,
+                        ThumbnailUrl = v.ThumbnailUrl,
+                        SortOrder = v.SortOrder,
+                        IsActive = v.IsActive,
+                        CreatedAt = v.CreatedAt,
+                        UpdatedAt = v.UpdatedAt
+                    })
+                    .ToListAsync();
+
+                _cache.Set(
+                    EducationalVideoCacheKeys.ActiveList,
+                    videos,
+                    new MemoryCacheEntryOptions
+                    {
+                        AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(10),
+                        SlidingExpiration = TimeSpan.FromMinutes(3),
+                        Size = 1 // الزامی وقتی SizeLimit روی MemoryCache تنظیم شده
+                    });
+
+                _logger.LogInformation("پایان دریافت ویدیوهای آموزشی فعال — Count: {Count}", videos.Count);
+                return ApiResponse<List<EducationalVideoResponseDto>>.CreateSuccess(videos);
             }
-
-            var videos = await _context.EducationalVideos.AsNoTracking()
-                .Where(v => v.IsActive && !v.IsDeleted && v.VideoUrl != PendingVideoUrl && v.VideoUrl != "")
-                .OrderBy(v => v.SortOrder)
-                .Select(v => new EducationalVideoResponseDto
-                {
-                    Id = v.Id,
-                    Title = v.Title,
-                    Description = v.Description,
-                    VideoUrl = v.VideoUrl,
-                    ThumbnailUrl = v.ThumbnailUrl,
-                    SortOrder = v.SortOrder,
-                    IsActive = v.IsActive,
-                    CreatedAt = v.CreatedAt,
-                    UpdatedAt = v.UpdatedAt
-                })
-                .ToListAsync();
-
-            _cache.Set(
-                EducationalVideoCacheKeys.ActiveList,
-                videos,
-                new MemoryCacheEntryOptions
-                {
-                    AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(10),
-                    SlidingExpiration = TimeSpan.FromMinutes(3)
-                });
-
-            return ApiResponse<List<EducationalVideoResponseDto>>.CreateSuccess(videos);
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "خطا در دریافت ویدیوهای آموزشی فعال");
+                return ApiResponse<List<EducationalVideoResponseDto>>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
         }
 
         private async Task RollbackCreateAsync(EducationalVideo video, string? uploadedPath)
