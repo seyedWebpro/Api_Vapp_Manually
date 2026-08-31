@@ -95,7 +95,7 @@ if [[ -n "$PUBLIC_STATIC_ROOT" ]]; then
         access_log off;
     }
 
-    location ~ ^/(form|wheel|card|book)(/.*)?$ {
+    location ~ ^/(form|wheel|card|book|preview)(/.*)?$ {
         root ${PUBLIC_STATIC_ROOT};
         try_files /index.html =404;
     }"
@@ -128,7 +128,7 @@ else
         proxy_connect_timeout 2s;
     }
 
-    location ~ ^/(form|wheel|card|book)(/|\$) {
+    location ~ ^/(form|wheel|card|book|preview)(/|\$) {
         proxy_pass http://127.0.0.1:${PUBLIC_PORT};
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
@@ -394,7 +394,7 @@ else
   echo "OK: nginx admin docker → 127.0.0.1:3005"
 fi
 if [[ -n "$PUBLIC_STATIC_ROOT" ]]; then
-  echo "OK: nginx public static → $PUBLIC_STATIC_ROOT (/form, /wheel, /card, /book)"
+  echo "OK: nginx public static → $PUBLIC_STATIC_ROOT (/form, /wheel, /card, /book, /preview)"
   # shellcheck source=lib/nginx-http.sh
   source "$SCRIPT_DIR/lib/nginx-http.sh"
   if ! verify_public_routes "$SERVER_IP"; then

@@ -68,11 +68,12 @@ api_http_code() {
 # Verify Public SPA routes return 200 (or HTTPS redirect). Prints summary. Returns 0 on success.
 verify_public_routes() {
   local host="${1:-$SERVER_IP}"
-  local form wheel card book
+  local form wheel card book preview
   form="$(nginx_http_code "http://127.0.0.1/form/x" "$host")"
   wheel="$(nginx_http_code "http://127.0.0.1/wheel/x" "$host")"
   card="$(nginx_http_code "http://127.0.0.1/card/x" "$host")"
   book="$(nginx_http_code "http://127.0.0.1/book/x" "$host")"
-  echo "PUBLIC form=$form wheel=$wheel card=$card book=$book (Host: $host)"
-  [[ "$form" == "200" && "$wheel" == "200" && "$card" == "200" && "$book" == "200" ]]
+  preview="$(nginx_http_code "http://127.0.0.1/preview/x" "$host")"
+  echo "PUBLIC form=$form wheel=$wheel card=$card book=$book preview=$preview (Host: $host)"
+  [[ "$form" == "200" && "$wheel" == "200" && "$card" == "200" && "$book" == "200" && "$preview" == "200" ]]
 }

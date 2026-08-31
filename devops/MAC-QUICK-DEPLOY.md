@@ -1,17 +1,33 @@
-# Deploy سریع از Mac
+# Deploy — Mac (hotfix) + GitHub (اصلی)
 
-یک اسکریپت برای انتخاب دستور مناسب — بدون پیچیدگی اضافه.
+**روش اصلی (Aug 2026):** `git push origin main` → GitHub CI → self-hosted deploy روی VPS.  
+**Mac:** فقط hotfix — [`DEPLOY-TIMING.md`](DEPLOY-TIMING.md) · [`DEPLOY-FLOW.md`](DEPLOY-FLOW.md)
 
 ```bash
 cd ~/Documents/javad_project/vapp/Api_Vapp_Manually
+
+# ★ GitHub (پیشنهادی)
+git push origin main
+bash devops/scripts/gh-deploy-production.sh --admin --watch   # ~2 min
+
+# Mac hotfix
 bash devops/scripts/deploy-from-mac.sh <mode>
 ```
 
-پیش‌نیاز: `ssh vapp-prod` کار کند — [`MAC-SERVER.md`](MAC-SERVER.md)
+---
+
+## GitHub — زمان تقریبی
+
+| تغییر | push به | زمان |
+|--------|---------|------|
+| Admin UI | Admin_Pannel_Vapp | **~۲ min** |
+| Public | Public_Vapp | **~۱–۲ min** |
+| API (C#) | Api_Vapp_Manually | **~۱۴ min** |
+| همه (prod) | هر سه (موازی) | **~۱۴ min** |
 
 ---
 
-## چه تغییری دادید؟ → چه بزنید؟
+## Mac — چه تغییری → چه بزنید؟
 
 | تغییر | دستور | زمان تقریبی |
 |--------|--------|-------------|

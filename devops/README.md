@@ -12,19 +12,18 @@ Overview, structure and links.
 ## Quick start
 
 ```bash
-# Mac — from Api_Vapp_Manually
-bash devops/scripts/deploy-from-mac.sh api     # .NET API
-bash devops/scripts/deploy-from-mac.sh admin   # Admin panel
-bash devops/scripts/deploy-from-mac.sh public  # Public form/wheel
-bash devops/scripts/deploy-from-mac.sh health  # Check services
-
-# GitHub Actions — API + Admin + Public (after secrets setup)
+# ★ روش اصلی — GitHub + self-hosted runner (Aug 2026)
+git push origin main   # همان ریپویی که عوض شده
 bash devops/scripts/gh-deploy-production.sh --prod --watch
+
+# Mac — hotfix فقط
+bash devops/scripts/deploy-from-mac.sh api|admin|public
+bash devops/scripts/deploy-from-mac.sh health
 ```
 
-All commands, options and server-side commands are in [`COMMANDS.txt`](COMMANDS.txt).  
-Deploy timing (why `all` ≠ ~6 min): [`DEPLOY-TIMING.md`](DEPLOY-TIMING.md)  
-CI/CD setup: [`CI_CD_QUICK.md`](CI_CD_QUICK.md) · full guide: [`CI_CD.md`](CI_CD.md)
+All commands: [`COMMANDS.txt`](COMMANDS.txt).  
+**چه کار شد:** [`WHAT-WAS-DONE.md`](WHAT-WAS-DONE.md) · **زمان:** [`DEPLOY-TIMING.md`](DEPLOY-TIMING.md) · **فرایند:** [`DEPLOY-FLOW.md`](DEPLOY-FLOW.md)  
+CI/CD: [`CI_CD_QUICK.md`](CI_CD_QUICK.md) · [`CI_CD.md`](CI_CD.md)
 
 ---
 
@@ -33,7 +32,9 @@ CI/CD setup: [`CI_CD_QUICK.md`](CI_CD_QUICK.md) · full guide: [`CI_CD.md`](CI_C
 ```
 devops/
   COMMANDS.txt                    ← all deploy/ops commands (cheat sheet)
-  DEPLOY-TIMING.md                ← why deploy takes 15–25 min vs ~6 min (microless)
+  WHAT-WAS-DONE.md                ← ★ چه کار شد (Aug 2026 self-hosted)
+  DEPLOY-FLOW.md                  ← قدم‌به‌قدم: push → production
+  DEPLOY-TIMING.md                ← زمان Mac vs GitHub (real numbers)
   MAC-QUICK-DEPLOY.md             ← Mac deploy guide by change type
   SUPPORT-TROUBLESHOOTING.md      ← START HERE for support: where to look for errors
   SERVER-LOGS.md                  ← where/how to read server file logs
@@ -73,7 +74,7 @@ devops/
 1. `scripts/setup-github-deploy-key.sh` — server key → GitHub
 2. `scripts/bootstrap-first-run.sh` — install Vapp once
 3. `scripts/bootstrap-scraper-on-server.sh` — install scraper robot (in its own repo)
-4. For daily updates: `deploy-from-mac.sh` or `deploy-server.sh --fast --wait`
+4. For daily updates: **git push** → GitHub CD (self-hosted) · hotfix: `deploy-from-mac.sh`
 
 ---
 

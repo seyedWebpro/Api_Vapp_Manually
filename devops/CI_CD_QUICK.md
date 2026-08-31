@@ -2,69 +2,50 @@
 
 ---
 
-## ★ سریع‌ترین راه — آپدیت API + Admin + Public
+## ★ آپدیت production (روش اصلی)
 
 ```bash
-cd ~/Documents/javad_project/vapp/Api_Vapp_Manually
-bash devops/scripts/gh-deploy-production.sh --prod --watch
-```
-
-با push قبل از deploy:
-
-```bash
+git push origin main                    # فقط ریپوی تغییرکرده
+# یا
 bash devops/scripts/gh-deploy-production.sh --prod --push --watch
 ```
 
-| حالت | دستور |
-|------|--------|
-| فقط API | `bash devops/scripts/gh-deploy-production.sh --api --watch` |
-| فقط Admin | `bash devops/scripts/gh-deploy-production.sh --admin --watch` |
-| فقط Public | `bash devops/scripts/gh-deploy-production.sh --public --watch` |
-| فقط Scraper | `bash devops/scripts/gh-deploy-production.sh --scraper --watch` |
-| prod (API+Admin+Public) | `bash devops/scripts/gh-deploy-production.sh --prod --watch` |
-| همه (+ Scraper) | `bash devops/scripts/gh-deploy-production.sh --all --watch` |
-| تست بدون اجرا | `bash devops/scripts/gh-deploy-production.sh --prod --dry-run` |
+| حالت | دستور | زمان (تقریبی) |
+|------|--------|----------------|
+| فقط Admin | `--admin --watch` | **~۲ min** |
+| فقط Public | `--public --watch` | **~۱–۲ min** |
+| فقط API | `--api --watch` | **~۱۴ min** |
+| prod (API+Admin+Public موازی) | `--prod --watch` | **~۱۴ min** (API کندترین) |
+| + Scraper | `--all --watch` | **~۳۵ min** |
 
-**زمان تقریبی:** CI ~۳–۵ min · Deploy API ~۵–۸ min · Admin/Public ~۱–۳ min · Scraper ~۱۰–۲۰ min
-
-> **CD:** self-hosted runner روی VPS — [`SELF_HOSTED_RUNNER.md`](SELF_HOSTED_RUNNER.md)
+جزئیات: [`DEPLOY-TIMING.md`](DEPLOY-TIMING.md) · قدم‌ها: [`DEPLOY-FLOW.md`](DEPLOY-FLOW.md)
 
 ---
 
-## ★ سریع از Mac (بدون GitHub — hotfix)
+## چه اتفاقی می‌افتد؟
+
+```
+push → CI (GitHub) → Package [API/Scraper] → Deploy (VPS runner) → verify
+```
+
+- **بدون SSH از Mac**
+- Admin/Public: dist آماده → rsync محلی (~۳۰–۴۵ sec)
+- API: artifact Docker → load روی VPS (~۹ min)
+
+---
+
+## Mac (hotfix)
 
 ```bash
-cd ~/Documents/javad_project/vapp/Api_Vapp_Manually
-bash devops/scripts/deploy-from-mac.sh api      # ~4–7 min
-bash devops/scripts/deploy-from-mac.sh admin    # ~2–4 min
-bash devops/scripts/deploy-from-mac.sh public
-bash devops/scripts/deploy-from-mac.sh health
-# release کامل (۱۵–۲۵ min): all یا all-parallel
+bash devops/scripts/deploy-from-mac.sh admin   # ~۲–۴ min
 ```
-
-زمان deploy: [`DEPLOY-TIMING.md`](DEPLOY-TIMING.md)
 
 ---
 
-## چه اتفاقی می‌افتد؟ (GitHub CD)
+## Actions
 
-```
-push به main
-    → CI (build + test)
-    → Deploy job
-        API/Scraper: build Docker روی runner → SSH → docker load → restart
-        Admin/Public: npm build روی runner → rsync dist → apply nginx
-        → post-deploy-verify.sh
-```
-
-**مهم:** سرور از GHCR pull نمی‌کند — image/dist با SSH فرستاده می‌شود (مثل Mac).
-
----
-
-## لینک‌های Actions
-
-| سرویس | Actions |
-|--------|---------|
+| سرویس | URL |
+|--------|-----|
 | API | https://github.com/seyedWebpro/Api_Vapp_Manually/actions |
 | Admin | https://github.com/seyedWebpro/Admin_Pannel_Vapp/actions |
 | Public | https://github.com/seyedWebpro/PublicWeb_Vapp/actions |
@@ -72,21 +53,13 @@ push به main
 
 ---
 
-## Secrets (خلاصه)
-
-| ریپو | Secrets |
-|------|---------|
-| همه | `VAPP_SSH_PRIVATE_KEY`, `VAPP_SSH_HOST`, `VAPP_SSH_PORT`, `VAPP_SSH_USER` |
-
-هر ریپو: Environment **`production`**
-
-جزئیات + لینک‌های گام‌به‌گام: [`CI_CD.md`](CI_CD.md)
-
----
-
-## عیب‌یابی یک‌خطی
+## عیب‌یابی
 
 | مشکل | راه‌حل |
 |------|--------|
-| `Connection timed out` SSH | workflow قدیمی — self-hosted runner نصب کن |
-| Deploy queued | runner `vapp-prod` Offline — [`SELF_HOSTED_RUNNER.md`](SELF_HOSTED_RUNNER.md) |
+| Deploy queued | [`SELF_HOSTED_RUNNER.md`](SELF_HOSTED_RUNNER.md) |
+| SSH timeout (قدیم) | workflow جدید — runner self-hosted |
+
+---
+
+[`CI_CD.md`](CI_CD.md) · [`WHAT-WAS-DONE.md`](WHAT-WAS-DONE.md)

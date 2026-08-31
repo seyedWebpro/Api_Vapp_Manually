@@ -1,107 +1,87 @@
-# CI/CD — GitHub Actions (Phase 1 + Phase 2)
+# CI/CD — GitHub Actions + Self-hosted Runner
 
-اتوماسیون برای چهار ریپوی Vapp.
+**وضعیت (Aug 2026):** ✅ CI روی GitHub · ✅ CD روی VPS (`vapp-prod`) · Mac فقط hotfix
 
-**CD = self-hosted runner روی VPS** (`runs-on: [self-hosted, vapp-prod]`) — سرور فقط از IP ایران reachable است؛ GitHub hosted runner نمی‌تواند SSH inbound بزند.
-
-| ریپo | CI (GitHub hosted) | CD (self-hosted) |
-|------|-------------------|------------------|
-| [Api_Vapp_Manually](https://github.com/seyedWebpro/Api_Vapp_Manually) | build + test | docker load + restart |
-| [Admin_Pannel_Vapp](https://github.com/seyedWebpro/Admin_Pannel_Vapp) | build dist | rsync → `/var/www/vapp-admin` |
-| [PublicWeb_Vapp](https://github.com/seyedWebpro/PublicWeb_Vapp) | build dist | rsync → `/var/www/vapp-public` |
-| [scraping_Number_Vapp](https://github.com/seyedWebpro/scraping_Number_Vapp) | unit tests | docker load + restart |
-
-راهنمای کامل runner: **[`SELF_HOSTED_RUNNER.md`](SELF_HOSTED_RUNNER.md)**
+| ریپo | CI | CD |
+|------|-----|-----|
+| [Api_Vapp_Manually](https://github.com/seyedWebpro/Api_Vapp_Manually) | dotnet test | docker load + restart |
+| [Admin_Pannel_Vapp](https://github.com/seyedWebpro/Admin_Pannel_Vapp) | vite build | rsync → `/var/www/vapp-admin` |
+| [PublicWeb_Vapp](https://github.com/seyedWebpro/PublicWeb_Vapp) | vite build | rsync → `/var/www/vapp-public` |
+| [scraping_Number_Vapp](https://github.com/seyedWebpro/scraping_Number_Vapp) | python tests | docker load + restart |
 
 ---
 
-## ★ پیش‌نیاز — نصب runner (یک‌بار)
-
-### ۱) Token از GitHub (Org — هر ۴ ریپo)
-
-https://github.com/organizations/seyedWebpro/settings/actions/runners/new  
-→ Linux → copy registration token (~۱ ساعت اعتبار)
-
-### ۲) نصب روی VPS
+## روزمره — یک خط
 
 ```bash
-cd /root/Api_Vapp_Manually
-git pull origin main   # بعد از push workflow + devops
-bash devops/scripts/setup-github-self-hosted-runner.sh --token 'PASTE_TOKEN'
-bash devops/scripts/setup-github-self-hosted-runner.sh --status
+git push origin main   # همان ریپویی که عوض شده
 ```
 
-GitHub → Organization → Settings → Actions → Runners → **`vapp-prod`** = **Idle**
-
-### ۳) Push workflowها (ترتیب: API اول)
+یا:
 
 ```bash
-# Api_Vapp_Manually → Admin_Vapp → Public_Vapp → scraping_Number_Vapp
+bash devops/scripts/gh-deploy-production.sh --admin --push --watch
 ```
+
+زمان: [`DEPLOY-TIMING.md`](DEPLOY-TIMING.md) · فرایند: [`DEPLOY-FLOW.md`](DEPLOY-FLOW.md) · تاریخچه: [`WHAT-WAS-DONE.md`](WHAT-WAS-DONE.md)
 
 ---
 
-## معماری hybrid
+## معماری
 
 ```
 push main
-  → CI (ubuntu-latest): test (+ build dist برای front)
-  → Package (ubuntu-latest): docker image artifact  [فقط API + Scraper]
-  → Deploy (self-hosted vapp-prod): docker load / rsync — محلی روی VPS
+  → CI (GitHub ubuntu-latest)
+  → Package [API/Scraper only] (GitHub)
+  → Deploy (VPS self-hosted: vapp-prod)
 ```
 
-Secrets **`VAPP_SSH_*` برای Deploy job لازم نیست** (فقط deploy دستی از Mac).
+**چرا self-hosted?** VPS فقط IP ایران — GitHub runner خارجی SSH timeout می‌گرفت.
 
 ---
 
-## ★ یک دستور — trigger از Mac
+## Runners روی VPS (نصب شده)
+
+| Runner | ریپo | سرویس systemd |
+|--------|------|----------------|
+| vapp-prod-api | Api_Vapp_Manually | `actions.runner.seyedWebpro-Api_Vapp_Manually.vapp-prod-api` |
+| vapp-prod-admin | Admin_Pannel_Vapp | `actions.runner.seyedWebpro-Admin_Pannel_Vapp.vapp-prod-admin` |
+| vapp-prod-public | PublicWeb_Vapp | `actions.runner.seyedWebpro-PublicWeb_Vapp.vapp-prod-public` |
+| vapp-prod-scraper | scraping_Number_Vapp | `actions.runner.seyedWebpro-scraping_Number_Vapp.vapp-prod-scraper` |
 
 ```bash
-cd ~/Documents/javad_project/vapp/Api_Vapp_Manually
-bash devops/scripts/gh-deploy-production.sh --prod --watch
+# وضعیت
+ssh vapp-prod 'systemctl status actions.runner.*'
+bash devops/scripts/setup-github-self-hosted-runner.sh --status
+
+# نصب مجدد (از Mac)
+bash devops/scripts/install-all-vapp-github-runners.sh
 ```
 
-جزئیات: [`CI_CD_QUICK.md`](CI_CD_QUICK.md)
+راهنما: [`SELF_HOSTED_RUNNER.md`](SELF_HOSTED_RUNNER.md)
 
 ---
 
-## Environment `production` (هر چهار ریپo)
+## Environment `production`
 
-1. Settings → Environments → **New environment** → name: `production`
-2. **Required reviewers** → خودت → Save
-
-- API: https://github.com/seyedWebpro/Api_Vapp_Manually/settings/environments
-- Admin: https://github.com/seyedWebpro/Admin_Pannel_Vapp/settings/environments
-- Public: https://github.com/seyedWebpro/PublicWeb_Vapp/settings/environments
-- Scraper: https://github.com/seyedWebpro/scraping_Number_Vapp/settings/environments
+هر چهار ریپo → Settings → Environments → `production` (+ Required reviewers اختیاری)
 
 ---
 
-## Secrets (اختیاری — فقط Mac deploy)
+## Secrets
 
-| Name | When needed |
-|------|-------------|
-| `VAPP_SSH_*` | deploy-from-mac.sh — **نه** self-hosted CD |
-
----
-
-## رفتار pipeline
-
-1. push/PR → CI روی `ubuntu-latest`
-2. push `main` → Package (API/Scraper) → Deploy روی `self-hosted`
-3. `develop` → فقط CI
+| Secret | لازم برای CD? |
+|--------|----------------|
+| `VAPP_SSH_*` | ❌ (فقط Mac deploy) |
 
 ---
 
-## رابطه با Mac
+## Mac (hotfix)
 
-| سناریo | ابزار |
-|--------|--------|
-| release از GitHub | push → Approve → self-hosted deploy |
-| hotfix فوری | `deploy-from-mac.sh api\|admin\|public` |
-| Cursor + VPN | `vpn-bypass-vapp-server.sh` |
-
-زمان deploy: [`DEPLOY-TIMING.md`](DEPLOY-TIMING.md)
+```bash
+bash devops/scripts/deploy-from-mac.sh api|admin|public
+bash devops/scripts/vpn-bypass-vapp-server.sh   # اگر VPN روشن است
+```
 
 ---
 
@@ -109,19 +89,21 @@ bash devops/scripts/gh-deploy-production.sh --prod --watch
 
 | علامت | کار |
 |-------|-----|
-| Deploy job queued forever | runner Offline — `setup-github-self-hosted-runner.sh --status` |
-| No runner with labels | Org runner نصب کن (نه فقط یک repo) |
-| `Connection timed out` SSH | قدیمی — workflow جدید SSH نمی‌زند |
+| Deploy queued | runner Offline — `systemctl restart 'actions.runner.*'` |
+| SSH timeout در log قدیمی | workflow جدید — ignore |
 | API health ≠ 200 | `docker logs vapp_api_prod --tail 80` |
-| Deploy منتظر Approve | Environment → Required reviewers |
+| Approve منتظر | GitHub → Review deployments |
 
 ---
 
-## چرا microless بدون self-hosted کار می‌کند؟
+## microless vs Vapp
 
-microless: سرور `185.213.167.188:3031` از GitHub runner reachable است.  
-Vapp: `195.24.237.132` فقط IP ایران — hence self-hosted runner.
+| | microless | Vapp |
+|---|-----------|------|
+| CD | SSH `:3031` از GitHub | self-hosted روی VPS |
+| Front | Docker ~۵–۸ min | static ~**۲ min** |
+| API | ~۶–۱۰ min | ~**۱۴ min** |
 
 ---
 
-تکرار روی پروژه دیگر: [`CI_CD_REPLICATE.md`](CI_CD_REPLICATE.md)
+[`CI_CD_REPLICATE.md`](CI_CD_REPLICATE.md) · [`CI_CD_QUICK.md`](CI_CD_QUICK.md)

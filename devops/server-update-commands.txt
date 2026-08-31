@@ -8,17 +8,33 @@
 
 
 ================================================================================
-  ★ GitHub Actions — deploy از Mac (بعد از push به main)
+  ★ GitHub Actions — روش اصلی deploy (self-hosted runner روی VPS)
 ================================================================================
 
   cd ~/Documents/javad_project/vapp/Api_Vapp_Manually
 
-  bash devops/scripts/gh-deploy-production.sh --prod --watch
-  bash devops/scripts/gh-deploy-production.sh --all --push --watch   # + Scraper
+  git push origin main                              # فقط ریپوی تغییرکرده
+  bash devops/scripts/gh-deploy-production.sh --prod --push --watch
 
-  • فقط API:    ... --api --watch
-  • فقط Admin:  ... --admin --watch
-  • Secrets:    devops/CI_CD.md
+  زمان (Aug 2026 واقعی):
+    Admin ~2 min | Public ~1-2 min | API ~14 min | prod موازی ~14 min
+
+  • فرایند: devops/DEPLOY-FLOW.md
+  • زمان:   devops/DEPLOY-TIMING.md
+  • چه شد:  devops/WHAT-WAS-DONE.md
+  • runner: devops/SELF_HOSTED_RUNNER.md
+
+  Runners روی VPS (نصب شده):
+    ssh vapp-prod 'systemctl status actions.runner.*'
+
+
+================================================================================
+  ★ GitHub Actions — trigger دستی
+================================================================================
+
+  bash devops/scripts/gh-deploy-production.sh --admin --watch    (~2 min)
+  bash devops/scripts/gh-deploy-production.sh --api --watch    (~14 min)
+  bash devops/scripts/gh-deploy-production.sh --all --watch    (~35 min + scraper)
 
 
 ================================================================================

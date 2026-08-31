@@ -1,133 +1,107 @@
-# زمان Deploy — چرا گاهی ۲۰+ دقیقه؟ (و چطور ~۶ دقیقه)
+# زمان Deploy — Mac vs GitHub (self-hosted)
+
+**آخرین اندازه‌گیری واقعی:** ۳۱ Aug 2026 (runهای موفق GitHub Actions)
+
+---
 
 ## ★ قانون طلایی
 
-**فقط همان لایه‌ای را deploy کن که عوض شده** — نه `all` هر بار.
-
-| سناریو | دستور | زمان واقعی (با cache + uplink معمول) |
-|--------|--------|-------------------------------------|
-| فقط C# / API | `deploy-from-mac.sh api` | **۴–۷ دقیقه** |
-| فقط Admin | `deploy-from-mac.sh admin` | **۲–۴ دقیقه** |
-| dist Admin آماده | `deploy-from-mac.sh admin-fast` | **~۳۰ ثانیه** |
-| فقط Public | `deploy-from-mac.sh public` | **۱–۳ دقیقه** |
-| فقط restart API | `deploy-from-mac.sh api-restart` | **۱–۳ دقیقه** |
-| **هر سه + rebuild کامل** | `deploy-from-mac.sh all` | **۱۵–۲۵ دقیقه** ⚠️ |
-| Scraper (Chromium) | `scraping_Number_Vapp/... deploy-from-mac.sh api` | **۱۵–۴۰ دقیقه** ⚠️ |
-
-مقایسه با microless (~۶ دقیقه): آنجا معمولاً **یک سرویس** (API **یا** Front) deploy می‌شود، image کوچک‌تر/کش گرم‌تر، و uplink گاهی سریع‌تر است.
+**فقط همان لایه‌ای را deploy کن که عوض شده.**
 
 ---
 
-## تجزیه deploy «کامل» (all) — Aug 2026 واقعی
+## GitHub Actions + self-hosted (روش جدید — پیشنهادی)
 
-آخرین `deploy-from-mac.sh all` روی Mac:
+زمان از **push** تا **production live** (runner Idle، cache گرم):
 
-| مرحله | زمان | توضیح |
-|--------|------|--------|
-| Public build + rsync | ~۱ دقیقه | Vite — سبک |
-| Admin build + rsync | ~۳–۵ دقیقه | npm + Vite |
-| API Docker build | ~۵–۶ دقیقه | dotnet restore + publish (اولین بار بدون cache گرم) |
-| **API image upload** | **~۱۲ دقیقه** | ۱۱۲MB zst @ ~۱۳۰ KB/s uplink |
-| git sync + restart + wait DB | ~۲ دقیقه | |
-| **جمع `all`** | **~۲۱ دقیقه** | |
+| سرویس | کل workflow | CI | Package | Deploy روی VPS | vs microless |
+|--------|-------------|-----|---------|----------------|--------------|
+| **Admin** | **~۲ min** | ~۴۵ sec | — | ~۴۵ sec (rsync) | microless Front ~۵–۸ min → **Vapp سریع‌تر** |
+| **Public** | **~۱–۲ min** | ~۳۰ sec | — | ~۳۰ sec | همان |
+| **API** | **~۱۴ min** | ~۱ min | ~۳ min | ~۹ min (download artifact + load) | microless API ~۶–۱۰ min |
+| **Scraper** | **~۳۰–۳۵ min** | ~۱۵ sec | ~۳ min | ~۲۵–۲۸ min (image بزرگ) | جدا deploy کن |
 
-Scraper جدا (~۳۷ دقیقه): image Chromium + ODBC + pip + upload ~۱GB+ — **هرگز با `all` قاطی نکن**.
+### `prod` (API + Admin + Public) — اگر همزمان push شوند
 
----
+Workflowها **موازی** اجرا می‌شوند → زمان wall-clock ≈ **کندترین لایه ≈ ~۱۴ min (API)**، نه جمع سه‌تایی.
 
-## سه علت اصلی کندی
-
-### ۱) پهنای uplink Mac → سرور (بزرگ‌ترین عامل)
-
-```
-112MB ÷ 130 KB/s ≈ 14 دقیقه تئوری
-```
-
-- rsync/resume امن است ولی **سرعت uplink** سقف می‌گذارد.
-- microless از همان الگو `docker save | gzip | ssh` استفاده می‌کند — اگر uplink سریع‌تر باشد، همان pipeline ~۳–۶ دقیقه می‌شود.
-
-**راه‌حل:** فقط وقتی C# عوض شده `api` بزن؛ image را دوباره نفرست اگر `--no-deploy` یا `api-restart` کافی است.
-
-### ۲) deploy چند لایه پشت سر هم (`all`)
-
-`all` = Public → Admin → API **سریالی**. هر کدام build جدا.
-
-**راه‌حل:** `all-parallel` (Public+Admin موازی) یا جداگانه:
-
-```bash
-bash devops/scripts/deploy-from-mac.sh admin   # فقط UI
-bash devops/scripts/deploy-from-mac.sh api     # فقط backend
-```
-
-### ۳) rebuild بدون cache / اولین deploy
-
-- اولین build بعد از clone: NuGet/npm/Docker layer cache سرد → +۵–۱۰ دقیقه
-- deploy CI/CD اول: همه چیز از صفر
-
-**راه‌حل:** deploy دوم همان روز معمولاً **نصف زمان** است.
+| | Mac `all` (قدیم) | GitHub `--prod` (جدید) |
+|---|------------------|------------------------|
+| Admin+Public+API | ~۲۱ min سریالی + uplink Mac | ~۱۴ min موازی (API محدودکننده) |
+| نیاز Mac online | ✅ | ❌ (فقط push) |
 
 ---
 
-## مسیر سریع (~۶ دقیقه) — روزمره
+## تجزیه Admin (~۲ min) — run واقعی
 
-```bash
-cd ~/Documents/javad_project/vapp/Api_Vapp_Manually
+| مرحله | زمان |
+|--------|------|
+| Verify & build (GitHub) | ~۴۵ sec |
+| Deploy (VPS: download dist + rsync + nginx) | ~۴۵ sec |
+| **جمع** | **~۱ min ۴۲ sec** |
 
-# فقط API (تغییر C#)
-bash devops/scripts/deploy-from-mac.sh api
-# → build cache + stream upload: معمولاً ۴–۷ min
-
-# فقط Admin (اگر dist از قبل build کردی)
-cd ../Admin_Vapp && npm run build && cd ../Api_Vapp_Manually
-bash devops/scripts/deploy-from-mac.sh admin-fast
-# → ~۳۰ sec
-
-bash devops/scripts/deploy-from-mac.sh health
-```
+**مثل microless Front (~۳–۶ min) — حتی کمی سریع‌تر** چون static است نه Docker image.
 
 ---
 
-## متغیرهای سرعت (اسکریپت API)
+## تجزیه API (~۱۴ min) — run واقعی
 
-| Env | اثر |
-|-----|-----|
-| `STREAM_UPLOAD=1` | (پیش‌فرض) pipe مستقیم `docker save \| zstd \| ssh` — مثل microless، بدون فایل temp |
-| `USE_RSYNC=1` | upload resumable — اگر uplink قطع می‌شود |
-| `SKIP_GIT_SYNC=1` | فقط image عوض شده، devops روی سرور همان است |
-| `ZSTD_LEVEL=1` | فشرده‌سازی سریع‌تر (فایل کمی بزرگ‌تر) |
-| `SKIP_BUILD=1` | image محلی موجود — فقط upload |
+| مرحله | زمان | کجا |
+|--------|------|-----|
+| Build & Test | ~۱ min ۱۶ sec | GitHub |
+| Package API image | ~۳ min ۶ sec | GitHub |
+| Deploy (download artifact + docker load + restart + wait DB) | ~۹ min ۱۴ sec | VPS |
+| **جمع** | **~۱۳ min ۴۸ sec** | |
 
-مثال upload سریع بدون rebuild:
-
-```bash
-SKIP_BUILD=1 STREAM_UPLOAD=1 bash devops/scripts/deploy-api-upload-image.sh
-```
+گلوگاه Deploy API: **دانلود artifact ~۱۰۰MB از GitHub به VPS ایران** (نه SSH از Mac).
 
 ---
 
-## GitHub Actions vs Mac
+## Mac deploy (hotfix — هنوز موجود)
 
-| | GitHub CI | GitHub CD | Mac CD |
-|---|-----------|-----------|--------|
-| Build/Test | ✅ ~۳–۵ min | — | — |
-| Deploy | — | ❌ SSH timeout از runner | ✅ |
-| uplink | — | — | محدودیت ISP Mac |
+| سناریo | دستور | زمان |
+|--------|--------|------|
+| فقط Admin | `deploy-from-mac.sh admin` | ~۲–۴ min |
+| Admin dist آماده | `admin-fast` | ~۳۰ sec |
+| فقط Public | `public` | ~۱–۳ min |
+| فقط API | `api` | ~۴–۷ min (build + uplink Mac) |
+| **all** سریالی | `all` | **~۱۵–۲۵ min** ⚠️ |
+| Scraper | scraper repo `deploy-from-mac.sh api` | ~۱۵–۴۰ min |
 
-CD عملی: **Mac** (`deploy-from-mac.sh`). جزئیات: [`CI_CD.md`](CI_CD.md)
+Mac هنوز برای **hotfix فوری** یا وقتی GitHub Actions down است.
+
+---
+
+## چرا Mac `all` ~۲۱ min بود؟
+
+1. **Uplink Mac → VPS** ~۱۲ min برای API image
+2. Public + Admin + API **سریالی**
+3. Build سرد اولین بار
+
+GitHub CD این‌ها را حل می‌کند:
+- بدون uplink Mac
+- Admin/Public deploy **ثانیه‌ای** روی VPS
+- API/Scraper: build روی GitHub (سریع)، فقط artifact به VPS می‌آید
+
+---
+
+## Approve دستی
+
+اگر Environment `production` با **Required reviewers** فعال است، بین CI و Deploy چند دقیقه تا چند ساعت **توقف دستی** اضافه می‌شود (در جدول بالا نیست).
 
 ---
 
 ## چک‌لیست «چرا دیر شد؟»
 
-1. `all` یا scraper+zapp با هم زدی؟ → جدا deploy کن
-2. uplink کند بود؟ → `bash devops/scripts/server-net-check.sh` (روی سرور) + speedtest Mac
-3. اولین build/cache سرد؟ → بار دوم سریع‌تر
-4. Scraper stop شد برای API RAM؟ → بعد API دوباره scraper را deploy کن
+1. فقط API push کردی ولی `--prod` زدی؟ → `--api` بزن
+2. Runner Offline? → `systemctl status 'actions.runner.*'`
+3. Scraper + API با هم? → جدا deploy کن
+4. منتظر Approve? → GitHub → Review deployments
 
 ---
 
 ## فایل‌های مرتبط
 
-- [`MAC-QUICK-DEPLOY.md`](MAC-QUICK-DEPLOY.md) — کدام mode
-- [`COMMANDS.txt`](COMMANDS.txt) — همه دستورات
-- [`CI_CD_QUICK.md`](CI_CD_QUICK.md) — GitHub
+- [`DEPLOY-FLOW.md`](DEPLOY-FLOW.md) — قدم‌به‌قدم
+- [`CI_CD_QUICK.md`](CI_CD_QUICK.md) — دستورات
+- [`MAC-QUICK-DEPLOY.md`](MAC-QUICK-DEPLOY.md) — Mac modes

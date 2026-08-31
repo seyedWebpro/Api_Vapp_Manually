@@ -5,24 +5,27 @@
 # SSH alias: vapp-prod (IP 195.24.237.132, Port 22 — see MAC-SERVER.md)
 # بدون فیلترشکن. میرور ایران‌سرور استفاده نشود.
 #
-# ★ زمان deploy: devops/DEPLOY-TIMING.md — چرا all گاهی ۲۰+ دقیقه است
+# ★ زمان: DEPLOY-TIMING.md · فرایند: DEPLOY-FLOW.md · تاریخچه: WHAT-WAS-DONE.md
 #
 # ============================================================
-# 0. ★ QUICK — چه تغییری → چه بزنید (روزمره ~۴–۷ min)
+# 0. ★ QUICK — روش اصلی: GitHub + self-hosted runner (Aug 2026)
 # ============================================================
 #
-# فقط C#:     bash devops/scripts/deploy-from-mac.sh api
-# فقط Admin:  bash devops/scripts/deploy-from-mac.sh admin
-# dist آماده: bash devops/scripts/deploy-from-mac.sh admin-fast
-# فقط Public: bash devops/scripts/deploy-from-mac.sh public
-# health:      bash devops/scripts/deploy-from-mac.sh health
+# git push origin main   # فقط ریپوی تغییرکرده → CI → Deploy روی VPS
 #
-# release کامل (۱۵–۲۵ min — فقط وقتی همه لایه عوض شده):
-#   bash devops/scripts/deploy-from-mac.sh all
-#   bash devops/scripts/deploy-from-mac.sh all-parallel   # Public+Admin موازی → API
+# یا trigger دستی:
+#   bash devops/scripts/gh-deploy-production.sh --admin --push --watch   (~2 min)
+#   bash devops/scripts/gh-deploy-production.sh --api --watch            (~14 min)
+#   bash devops/scripts/gh-deploy-production.sh --prod --watch           (~14 min موازی)
 #
-# GitHub CI/CD: devops/CI_CD_QUICK.md · gh-deploy-production.sh --prod --watch
-# (CD از GitHub Actions: SSH timeout — CD عملی از Mac)
+# Mac hotfix (وقتی عجله داری / GitHub down):
+#   bash devops/scripts/deploy-from-mac.sh admin|public|api
+#   bash devops/scripts/deploy-from-mac.sh health
+#
+# release کامل از Mac (۱۵–۲۵ min — فقط اضطراری):
+#   bash devops/scripts/deploy-from-mac.sh all-parallel
+#
+# Runners روی VPS: devops/SELF_HOSTED_RUNNER.md
 #
 # ============================================================
 # 0a. ★ مسیرهای استاندارد روی سرور (دیگر git pull خام نزنید)
@@ -270,7 +273,9 @@ bash devops/scripts/deploy-from-mac.sh sync-data
 #   Public static: /var/www/vapp-public
 
 # Docs:
-#   devops/DEPLOY-TIMING.md     <- why all takes 15–25 min vs api ~6 min
+#   devops/WHAT-WAS-DONE.md       <- چه کار شد (self-hosted Aug 2026)
+#   devops/DEPLOY-FLOW.md         <- push → production قدم‌به‌قدم
+#   devops/DEPLOY-TIMING.md       <- زمان GitHub vs Mac (real numbers)
 #   devops/MAC-QUICK-DEPLOY.md
 #   devops/CI_CD_QUICK.md
 #   devops/PUBLIC-VAPP.md
