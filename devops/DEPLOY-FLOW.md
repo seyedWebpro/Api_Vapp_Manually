@@ -11,8 +11,8 @@
 ```bash
 cd ~/Documents/javad_project/vapp/Api_Vapp_Manually
 git push origin main                    # فقط ریپویی که عوض شده
-# یا
-bash devops/scripts/gh-deploy-production.sh --admin --push --watch
+# یا (push + deploy یک‌جا — مثل سورس مرجع):
+bash devops/scripts/push-and-deploy.sh --admin --watch
 ```
 
 ### بعدش چه می‌شود؟

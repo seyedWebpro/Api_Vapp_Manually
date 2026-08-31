@@ -40,6 +40,8 @@
 | `scripts/install-all-vapp-github-runners.sh` | نصب هر ۴ runner از Mac |
 | `SELF_HOSTED_RUNNER.md` | راهنمای runner |
 | `DEPLOY-FLOW.md` | فرایند قدم‌به‌قدم |
+| `PUSH-AND-DEPLOY.md` | ★ push + deploy یک‌صفحه‌ای (شروع اینجا) |
+| `scripts/push-and-deploy.sh` | دستور یک‌جا: push GitHub + deploy |
 | `DEPLOY-TIMING.md` | زمان‌بندی Mac vs GitHub |
 | `WHAT-WAS-DONE.md` | همین سند |
 
@@ -77,14 +79,9 @@
 ## دستور روزمره (بعد از setup)
 
 ```bash
+bash devops/scripts/push-and-deploy.sh   # push + deploy prod
+# یا
 git push origin main   # همان ریپویی که عوض شده
-# → CI → (Approve) → Deploy خودکار روی VPS
-```
-
-یا:
-
-```bash
-bash devops/scripts/gh-deploy-production.sh --prod --push --watch
 ```
 
 ---
