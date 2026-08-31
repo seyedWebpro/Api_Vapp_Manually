@@ -20,12 +20,14 @@ push main
 
 ### ۱) Token از GitHub
 
-**Org (پیشنهادی — هر ۴ ریپو):**  
-https://github.com/organizations/seyedWebpro/settings/actions/runners/new  
-→ Runner → Linux → copy token
+`seyedWebpro` حساب **User** است (نه Org) → **۴ runner جدا** روی همان VPS (هر ریپo یکی):
 
-**یا فقط API repo:**  
-https://github.com/seyedWebpro/Api_Vapp_Manually/settings/actions/runners/new
+```bash
+# از Mac — نصب هر ۴ runner یکجا
+bash devops/scripts/install-all-vapp-github-runners.sh
+```
+
+یا دستی: Settings → Actions → Runners → New در هر ریپo.
 
 ### ۲) نصب runner
 
