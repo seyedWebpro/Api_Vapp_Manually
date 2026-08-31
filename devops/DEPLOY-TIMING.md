@@ -4,6 +4,22 @@
 
 ---
 
+## ★ چرا API (~۱۴ min) خیلی بیشتر از فرانت (~۲ min)?
+
+| | **فرانت (Admin/Public)** | **بکند (API)** |
+|---|--------------------------|----------------|
+| نوع deploy | فایل static | Docker image |
+| حجم انتقال | ~۲–۵ MB (dist) | ~۱۰۰+ MB فشرده (artifact) |
+| build | Vite ~۳۰–۴۵ sec | dotnet test + docker build ~۴ min |
+| انتقال به VPS | دانلود dist + rsync محلی ~۳۰ sec | **دانلود artifact GitHub → ایران ~۹ min** |
+| restart | nginx reload | docker load + recreate + SQL migration |
+
+**یک جمله:** فرانت «چند فایل سبک» است؛ API «image سنگین Docker» است که باید از GitHub به سرور ایران بیاید — **این ~۹ دقیقه گلوگاه اصلی است.**
+
+Mac hotfix API (`deploy-from-mac.sh api`) ~۴–۷ min است چون uplink Mac مستقیم است، ولی GitHub CD uplink Mac نمی‌خواهد.
+
+---
+
 ## ★ قانون طلایی
 
 **فقط همان لایه‌ای را deploy کن که عوض شده.**

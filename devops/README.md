@@ -12,17 +12,18 @@ Overview, structure and links.
 ## Quick start
 
 ```bash
-# ★ روش اصلی — GitHub + self-hosted runner (Aug 2026)
+# ★ روش اصلی — push + deploy یک‌جا (مثل سورس مرجع)
+bash devops/scripts/push-and-deploy.sh
+
+# یا فقط push (CI/CD خودکار):
 git push origin main   # همان ریپویی که عوض شده
-bash devops/scripts/gh-deploy-production.sh --prod --watch
 
 # Mac — hotfix فقط
-bash devops/scripts/deploy-from-mac.sh api|admin|public
-bash devops/scripts/deploy-from-mac.sh health
+bash devops/scripts/push-and-deploy.sh --mac admin
 ```
 
-All commands: [`COMMANDS.txt`](COMMANDS.txt).  
-**چه کار شد:** [`WHAT-WAS-DONE.md`](WHAT-WAS-DONE.md) · **زمان:** [`DEPLOY-TIMING.md`](DEPLOY-TIMING.md) · **فرایند:** [`DEPLOY-FLOW.md`](DEPLOY-FLOW.md)  
+**شروع اینجا:** [`PUSH-AND-DEPLOY.md`](PUSH-AND-DEPLOY.md) · همه دستورات: [`COMMANDS.txt`](COMMANDS.txt)  
+**چرا API کندتر؟** [`DEPLOY-TIMING.md`](DEPLOY-TIMING.md) · **فرایند:** [`DEPLOY-FLOW.md`](DEPLOY-FLOW.md)  
 CI/CD: [`CI_CD_QUICK.md`](CI_CD_QUICK.md) · [`CI_CD.md`](CI_CD.md)
 
 ---
@@ -31,6 +32,7 @@ CI/CD: [`CI_CD_QUICK.md`](CI_CD_QUICK.md) · [`CI_CD.md`](CI_CD.md)
 
 ```
 devops/
+  PUSH-AND-DEPLOY.md              ← ★ START HERE: push + deploy یک‌صفحه‌ای
   COMMANDS.txt                    ← all deploy/ops commands (cheat sheet)
   WHAT-WAS-DONE.md                ← ★ چه کار شد (Aug 2026 self-hosted)
   DEPLOY-FLOW.md                  ← قدم‌به‌قدم: push → production

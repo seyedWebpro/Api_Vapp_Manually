@@ -8,13 +8,20 @@
 
 
 ================================================================================
-  ★ GitHub Actions — روش اصلی deploy (self-hosted runner روی VPS)
+  ★ Push + Deploy — روش اصلی (مثل سورس مرجع)
 ================================================================================
 
   cd ~/Documents/javad_project/vapp/Api_Vapp_Manually
 
-  git push origin main                              # فقط ریپوی تغییرکرده
+  bash devops/scripts/push-and-deploy.sh            # prod + push + watch
+  bash devops/scripts/push-and-deploy.sh --admin    # فقط Admin (~2 min)
+  bash devops/scripts/push-and-deploy.sh --auto     # فقط ریپوهای unpushed
+
+  # یا:
+  git push origin main
   bash devops/scripts/gh-deploy-production.sh --prod --push --watch
+
+  راهنما: devops/PUSH-AND-DEPLOY.md
 
   زمان (Aug 2026 واقعی):
     Admin ~2 min | Public ~1-2 min | API ~14 min | prod موازی ~14 min

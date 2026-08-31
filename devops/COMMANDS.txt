@@ -8,15 +8,20 @@
 # ★ زمان: DEPLOY-TIMING.md · فرایند: DEPLOY-FLOW.md · تاریخچه: WHAT-WAS-DONE.md
 #
 # ============================================================
-# 0. ★ QUICK — روش اصلی: GitHub + self-hosted runner (Aug 2026)
+# 0. ★ QUICK — push + deploy (مثل سورس مرجع)
 # ============================================================
 #
-# git push origin main   # فقط ریپوی تغییرکرده → CI → Deploy روی VPS
+# راهنما: devops/PUSH-AND-DEPLOY.md
 #
-# یا trigger دستی:
-#   bash devops/scripts/gh-deploy-production.sh --admin --push --watch   (~2 min)
-#   bash devops/scripts/gh-deploy-production.sh --api --watch            (~14 min)
-#   bash devops/scripts/gh-deploy-production.sh --prod --watch           (~14 min موازی)
+#   bash devops/scripts/push-and-deploy.sh              # prod + push + watch (~14 min)
+#   bash devops/scripts/push-and-deploy.sh --auto       # فقط ریپوهای ahead of origin
+#   bash devops/scripts/push-and-deploy.sh --admin      # فقط Admin (~2 min)
+#   bash devops/scripts/push-and-deploy.sh --api        # فقط API (~14 min)
+#   bash devops/scripts/push-and-deploy.sh --mac admin  # Mac hotfix
+#
+# یا:
+#   git push origin main   # فقط ریپوی تغییرکرده → CI → Deploy روی VPS
+#   bash devops/scripts/gh-deploy-production.sh --prod --push --watch
 #
 # Mac hotfix (وقتی عجله داری / GitHub down):
 #   bash devops/scripts/deploy-from-mac.sh admin|public|api

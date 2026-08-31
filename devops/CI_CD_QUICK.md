@@ -5,10 +5,13 @@
 ## ★ آپدیت production (روش اصلی)
 
 ```bash
-git push origin main                    # فقط ریپوی تغییرکرده
+bash devops/scripts/push-and-deploy.sh           # push + deploy prod (~14 min)
+bash devops/scripts/push-and-deploy.sh --admin   # فقط Admin (~2 min)
 # یا
-bash devops/scripts/gh-deploy-production.sh --prod --push --watch
+git push origin main
 ```
+
+راهنما: [`PUSH-AND-DEPLOY.md`](PUSH-AND-DEPLOY.md)
 
 | حالت | دستور | زمان (تقریبی) |
 |------|--------|----------------|
