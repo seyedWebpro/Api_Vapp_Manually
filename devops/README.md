@@ -23,6 +23,7 @@ bash devops/scripts/gh-deploy-production.sh --prod --watch
 ```
 
 All commands, options and server-side commands are in [`COMMANDS.txt`](COMMANDS.txt).  
+Deploy timing (why `all` ≠ ~6 min): [`DEPLOY-TIMING.md`](DEPLOY-TIMING.md)  
 CI/CD setup: [`CI_CD_QUICK.md`](CI_CD_QUICK.md) · full guide: [`CI_CD.md`](CI_CD.md)
 
 ---
@@ -32,6 +33,7 @@ CI/CD setup: [`CI_CD_QUICK.md`](CI_CD_QUICK.md) · full guide: [`CI_CD.md`](CI_C
 ```
 devops/
   COMMANDS.txt                    ← all deploy/ops commands (cheat sheet)
+  DEPLOY-TIMING.md                ← why deploy takes 15–25 min vs ~6 min (microless)
   MAC-QUICK-DEPLOY.md             ← Mac deploy guide by change type
   SUPPORT-TROUBLESHOOTING.md      ← START HERE for support: where to look for errors
   SERVER-LOGS.md                  ← where/how to read server file logs
@@ -43,6 +45,7 @@ devops/
   MAC-SERVER.md                   ← SSH / first-time setup
   GITHUB_SSH.md                   ← deploy key setup
   CI_CD.md                        ← GitHub Actions CI/CD (secrets, setup)
+  SELF_HOSTED_RUNNER.md           ← ★ نصب runner روی VPS (CD از GitHub)
   CI_CD_QUICK.md                  ← one-page CI/CD cheat sheet
   CI_CD_REPLICATE.md              ← replicate CI/CD to another project
   scripts/                        ← deploy, bootstrap, backup, health-check scripts
@@ -91,6 +94,7 @@ Mobile → Vapp .NET API → Number Scraper (:8000 internally)
 ## See also
 
 - [`COMMANDS.txt`](COMMANDS.txt) — **all commands in one place**
+- [`DEPLOY-TIMING.md`](DEPLOY-TIMING.md) — **deploy duration breakdown**
 - [`MAC-QUICK-DEPLOY.md`](MAC-QUICK-DEPLOY.md) — which mode to pick
 - [`SUPPORT-TROUBLESHOOTING.md`](SUPPORT-TROUBLESHOOTING.md) — **support: where to look when something breaks**
 - [`SERVER-LOGS.md`](SERVER-LOGS.md) — server logs location & commands

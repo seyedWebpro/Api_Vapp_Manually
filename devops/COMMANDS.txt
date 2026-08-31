@@ -1,12 +1,31 @@
 # Vapp — Deploy & Operations Commands
-# Last updated: 2026-08-22
+# Last updated: 2026-08-31
 #
 # Run all commands from: ~/Documents/javad_project/vapp/Api_Vapp_Manually
 # SSH alias: vapp-prod (IP 195.24.237.132, Port 22 — see MAC-SERVER.md)
 # بدون فیلترشکن. میرور ایران‌سرور استفاده نشود.
 #
+# ★ زمان deploy: devops/DEPLOY-TIMING.md — چرا all گاهی ۲۰+ دقیقه است
+#
 # ============================================================
-# 0. ★ مسیرهای استاندارد (دیگر git pull خام نزنید)
+# 0. ★ QUICK — چه تغییری → چه بزنید (روزمره ~۴–۷ min)
+# ============================================================
+#
+# فقط C#:     bash devops/scripts/deploy-from-mac.sh api
+# فقط Admin:  bash devops/scripts/deploy-from-mac.sh admin
+# dist آماده: bash devops/scripts/deploy-from-mac.sh admin-fast
+# فقط Public: bash devops/scripts/deploy-from-mac.sh public
+# health:      bash devops/scripts/deploy-from-mac.sh health
+#
+# release کامل (۱۵–۲۵ min — فقط وقتی همه لایه عوض شده):
+#   bash devops/scripts/deploy-from-mac.sh all
+#   bash devops/scripts/deploy-from-mac.sh all-parallel   # Public+Admin موازی → API
+#
+# GitHub CI/CD: devops/CI_CD_QUICK.md · gh-deploy-production.sh --prod --watch
+# (CD از GitHub Actions: SSH timeout — CD عملی از Mac)
+#
+# ============================================================
+# 0a. ★ مسیرهای استاندارد روی سرور (دیگر git pull خام نزنید)
 # ============================================================
 #
 # یک‌بار کامل (API rebuild + Admin + Public + nginx + health):
@@ -50,35 +69,51 @@
 #   bash ~/Api_Vapp_Manually/vapp-iran-update.sh --diagnose
 #
 # از Mac:
-#   bash devops/scripts/deploy-from-mac.sh api|admin|public|all|health|diagnose|db-fix
+#   bash devops/scripts/deploy-from-mac.sh api|admin|public|all|all-parallel|health|diagnose|db-fix
 #
 # ============================================================
 # 1. MAC — ONE-SHOT DEPLOY (recommended)
 # ============================================================
+#
+# زمان واقعی: DEPLOY-TIMING.md
 
-bash devops/scripts/deploy-from-mac.sh api            # .NET API: build Docker on Mac + upload + wait DB
-bash devops/scripts/deploy-from-mac.sh api-restart    # API: restart + wait Migrate
-bash devops/scripts/deploy-from-mac.sh admin          # Admin_Vapp: build + upload dist
-bash devops/scripts/deploy-from-mac.sh admin-fast     # Admin_Vapp: upload existing dist only
-bash devops/scripts/deploy-from-mac.sh public         # Public_Vapp: build + upload dist
-bash devops/scripts/deploy-from-mac.sh public-fast    # Public_Vapp: upload existing dist only
-bash devops/scripts/deploy-from-mac.sh all-fronts     # Admin + Public together
+bash devops/scripts/deploy-from-mac.sh api            # .NET API (~4–7 min)
+bash devops/scripts/deploy-from-mac.sh api-restart    # restart + wait Migrate (~1–3 min)
+bash devops/scripts/deploy-from-mac.sh admin          # Admin: build + upload (~2–4 min)
+bash devops/scripts/deploy-from-mac.sh admin-fast     # upload existing dist (~30 sec)
+bash devops/scripts/deploy-from-mac.sh public         # Public: build + upload (~1–3 min)
+bash devops/scripts/deploy-from-mac.sh public-fast    # upload existing dist (~30 sec)
+bash devops/scripts/deploy-from-mac.sh all-fronts     # Admin + Public serial
+bash devops/scripts/deploy-from-mac.sh all-parallel   # Public+Admin parallel → API (~12–18 min)
 bash devops/scripts/deploy-from-mac.sh both           # API + Admin
-bash devops/scripts/deploy-from-mac.sh all            # API + Admin + Public
-bash devops/scripts/deploy-from-mac.sh health         # Health (AppVersion + Public)
-bash devops/scripts/deploy-from-mac.sh diagnose       # Full diagnose + next steps
-bash devops/scripts/deploy-from-mac.sh db-fix        # Ensure DbVapp + restart + wait migrate
+bash devops/scripts/deploy-from-mac.sh all            # Public + Admin + API serial (~15–25 min)
+bash devops/scripts/deploy-from-mac.sh health
+bash devops/scripts/deploy-from-mac.sh diagnose
+bash devops/scripts/deploy-from-mac.sh db-fix
 
 # ============================================================
-# 2. MAC — LOW-LEVEL SCRIPTS
+# 1b. MAC — GitHub Actions trigger (CI on GitHub, CD often from Mac)
+# ============================================================
+
+bash devops/scripts/gh-deploy-production.sh --prod --watch
+bash devops/scripts/gh-deploy-production.sh --prod --push --watch
+bash devops/scripts/post-deploy-verify.sh             # smoke بعد از deploy
+
+# ============================================================
+# 2. MAC — LOW-LEVEL SCRIPTS (API upload tuning)
 # ============================================================
 
 SERVER=vapp-prod bash devops/scripts/deploy-api-upload-image.sh
+# STREAM_UPLOAD=1 (default) — pipe save|zstd|ssh, no temp file
+# USE_RSYNC=1 — resumable if uplink drops
+# SKIP_BUILD=1 — upload existing local image only
+# SKIP_GIT_SYNC=1 — image-only hotfix, skip sync-api-repo-safe
+# ZSTD_LEVEL=1 — fast compression (default)
+
 SERVER=vapp-prod bash devops/scripts/deploy-front-upload-dist.sh
 SERVER=vapp-prod bash devops/scripts/deploy-public-front-upload-dist.sh
 SERVER=vapp-prod bash devops/scripts/sync-to-server.sh
 
-# With options:
 SKIP_BUILD=1 SERVER=vapp-prod bash devops/scripts/deploy-front-upload-dist.sh
 SKIP_BUILD=1 SERVER=vapp-prod bash devops/scripts/deploy-public-front-upload-dist.sh
 
@@ -235,7 +270,9 @@ bash devops/scripts/deploy-from-mac.sh sync-data
 #   Public static: /var/www/vapp-public
 
 # Docs:
+#   devops/DEPLOY-TIMING.md     <- why all takes 15–25 min vs api ~6 min
 #   devops/MAC-QUICK-DEPLOY.md
+#   devops/CI_CD_QUICK.md
 #   devops/PUBLIC-VAPP.md
 #   devops/NUMBER-SCRAPER.md
 #   devops/MAC-SERVER.md

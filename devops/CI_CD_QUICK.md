@@ -25,7 +25,9 @@ bash devops/scripts/gh-deploy-production.sh --prod --push --watch
 | همه (+ Scraper) | `bash devops/scripts/gh-deploy-production.sh --all --watch` |
 | تست بدون اجرا | `bash devops/scripts/gh-deploy-production.sh --prod --dry-run` |
 
-**زمان تقریبی:** CI ~۳–۵ دقیقه · Deploy API ~۴–۶ دقیقه · Admin/Public ~۲–۴ دقیقه · Scraper ~۸–۱۵ دقیقه (Chromium image)
+**زمان تقریبی:** CI ~۳–۵ min · Deploy API ~۵–۸ min · Admin/Public ~۱–۳ min · Scraper ~۱۰–۲۰ min
+
+> **CD:** self-hosted runner روی VPS — [`SELF_HOSTED_RUNNER.md`](SELF_HOSTED_RUNNER.md)
 
 ---
 
@@ -33,11 +35,14 @@ bash devops/scripts/gh-deploy-production.sh --prod --push --watch
 
 ```bash
 cd ~/Documents/javad_project/vapp/Api_Vapp_Manually
-bash devops/scripts/deploy-from-mac.sh api
-bash devops/scripts/deploy-from-mac.sh admin
+bash devops/scripts/deploy-from-mac.sh api      # ~4–7 min
+bash devops/scripts/deploy-from-mac.sh admin    # ~2–4 min
 bash devops/scripts/deploy-from-mac.sh public
 bash devops/scripts/deploy-from-mac.sh health
+# release کامل (۱۵–۲۵ min): all یا all-parallel
 ```
+
+زمان deploy: [`DEPLOY-TIMING.md`](DEPLOY-TIMING.md)
 
 ---
 
@@ -83,6 +88,5 @@ push به main
 
 | مشکل | راه‌حل |
 |------|--------|
-| `Connection refused` SSH | `VAPP_SSH_PORT` = **22** · VPN split tunnel — [`MAC-SERVER.md`](MAC-SERVER.md) |
-| Deploy skip شد | push به `main` باشد |
-| Mac سریع‌تر | `bash devops/scripts/deploy-from-mac.sh api` |
+| `Connection timed out` SSH | workflow قدیمی — self-hosted runner نصب کن |
+| Deploy queued | runner `vapp-prod` Offline — [`SELF_HOSTED_RUNNER.md`](SELF_HOSTED_RUNNER.md) |

@@ -4,18 +4,21 @@
 # Usage (from Api_Vapp_Manually root):
 #   SERVER=vapp-prod bash devops/scripts/deploy-api-upload-image.sh
 #   SERVER=vapp-prod bash devops/scripts/deploy-api-upload-image.sh --no-deploy
-#   DOCKER_LOAD_TIMEOUT_SECS=600 SERVER=vapp-prod bash devops/scripts/deploy-api-upload-image.sh
+#   SKIP_BUILD=1              — use existing local image (no docker compose build)
+#   STREAM_UPLOAD=1           — (default) pipe save|compress|ssh like microless — no temp file
+#   USE_RSYNC=1               — resumable file upload (slower setup, good if uplink drops)
+#   SKIP_GIT_SYNC=1           — skip sync-api-repo-safe after load (image-only hotfix)
+#   ZSTD_LEVEL=1              — faster compression (default 1; was -3)
 #
-# Optimizations applied:
-#   - Uses zstd (multi-threaded, fast) or pigz/gzip for image compression.
-#   - Uses rsync --progress --partial for resumable upload with speed/ETA.
-#   - Falls back to pv+ssh or plain ssh if advanced tools are missing.
-#   - SSH keepalive options prevent silent hangs.
-#   - A background watchdog kills the pipeline if no progress is seen for 3 minutes.
-#   - Before docker load: stops nonessential containers and ensures a 2G swapfile
-#     (tiny VPS otherwise OOMs and freezes SSH mid-load).
-#   - docker load has a wall-clock timeout (default 600s) so deploy cannot hang forever.
-#   - Saves image to a temp file first so size is known and upload can resume.
+# Speed tips: see devops/DEPLOY-TIMING.md — only deploy the layer you changed.
+#
+# Optimizations:
+#   - Default STREAM_UPLOAD=1: docker save | zstd | ssh (microless-style, no temp file)
+#   - USE_RSYNC=1: resumable file upload if uplink drops
+#   - zstd level 1 (fast) by default; pigz/gzip fallback
+#   - SSH keepalive + stall watchdog on rsync path
+#   - Before docker load: stop nonessential containers + 2G swap (tiny VPS OOM guard)
+#   - wait-db-ready after restart (not brittle one-shot health)
 #
 # Recommended tools on Mac:
 #   brew install zstd rsync pv pigz
@@ -32,6 +35,11 @@ COMPOSE_FILE="${COMPOSE_FILE:-docker/docker-compose.production.yml}"
 ENV_FILE="${ENV_FILE:-docker/.env}"
 API_IMAGE="${API_IMAGE:-vapp-api}"
 DEPLOY_AFTER_LOAD="${DEPLOY_AFTER_LOAD:-1}"
+SKIP_BUILD="${SKIP_BUILD:-0}"
+STREAM_UPLOAD="${STREAM_UPLOAD:-1}"
+USE_RSYNC="${USE_RSYNC:-0}"
+SKIP_GIT_SYNC="${SKIP_GIT_SYNC:-0}"
+ZSTD_LEVEL="${ZSTD_LEVEL:-1}"
 TMP_TAR=""
 WATCHDOG_PID=""
 
@@ -70,19 +78,25 @@ echo "Build: $LOCAL_API_DIR"
 echo "Server: $SERVER:$REMOTE_API_DIR"
 echo "Image: $API_IMAGE"
 echo "Tools: zstd=${HAS_ZSTD:-none}, pigz=${HAS_PIGZ:-none}, pv=${HAS_PV:-none}, rsync=${HAS_RSYNC:-none}"
+echo "Mode: STREAM_UPLOAD=${STREAM_UPLOAD} USE_RSYNC=${USE_RSYNC} SKIP_BUILD=${SKIP_BUILD}"
 
 cd "$LOCAL_API_DIR"
 
-deploy_step "Build Docker image"
-docker compose -f "$COMPOSE_FILE" build api
+if [[ "$SKIP_BUILD" == "1" ]]; then
+  deploy_step "Validate existing image (SKIP_BUILD=1)"
+  docker image inspect "$API_IMAGE" >/dev/null
+else
+  deploy_step "Build Docker image"
+  docker compose -f "$COMPOSE_FILE" build api
+fi
 
 # Choose the fastest available compression method.
-# Priority: zstd > pigz > gzip
+# Priority: zstd > pigz > gzip — level 1 default (fast; see DEPLOY-TIMING.md)
 if [[ -n "$HAS_ZSTD" ]]; then
-  COMPRESS_CMD=(zstd -T0 -3)
+  COMPRESS_CMD=(zstd -T0 "-${ZSTD_LEVEL}")
   DECOMPRESS_CMD=(zstd -d)
   EXT="zst"
-  COMPRESS_NAME="zstd"
+  COMPRESS_NAME="zstd-${ZSTD_LEVEL}"
 elif [[ -n "$HAS_PIGZ" ]]; then
   COMPRESS_CMD=(pigz -1)
   DECOMPRESS_CMD=(pigz -d)
@@ -95,7 +109,24 @@ else
   COMPRESS_NAME="gzip"
 fi
 
-# macOS mktemp requires XXXXXX at the end of the template (before any extension).
+upload_start=$SECONDS
+
+# ─── Fast path: stream to server (microless-style) ─────────────────────────
+if [[ "$STREAM_UPLOAD" == "1" && "$USE_RSYNC" != "1" ]]; then
+  deploy_step "Stream upload + load on server ($COMPRESS_NAME)"
+  prepare_server_for_image_load
+  deploy_start_heartbeat "stream upload image" 15
+  if ! run_with_timeout "${DOCKER_LOAD_TIMEOUT_SECS:-900}" \
+    docker save "$API_IMAGE" | "${COMPRESS_CMD[@]}" | \
+    ssh "${SSH_OPTS[@]}" "$SERVER" "${DECOMPRESS_CMD[*]} | docker load"; then
+    deploy_log "ERROR: stream upload/load failed or timed out"
+    deploy_log "HINT: retry with USE_RSYNC=1 for resumable upload"
+    exit 1
+  fi
+  deploy_stop_heartbeat
+  deploy_log "Stream upload+load finished in $(_deploy_elapsed "$upload_start")"
+else
+  # ─── Resumable path: temp file + rsync ───────────────────────────────────
 _tmp_base=$(mktemp "${TMPDIR:-/tmp}/vapp-api.XXXXXX")
 TMP_TAR="${_tmp_base}.tar.${EXT}"
 mv "$_tmp_base" "$TMP_TAR"
@@ -270,20 +301,24 @@ else
   deploy_log "Upload+load finished in $(_deploy_elapsed "$upload_start")"
 fi
 
+fi  # STREAM_UPLOAD vs rsync path
+
 [[ -n "$WATCHDOG_PID" ]] && kill "$WATCHDOG_PID" 2>/dev/null || true
 WATCHDOG_PID=""
 
 if [[ "$DEPLOY_AFTER_LOAD" == "1" ]]; then
-  deploy_step "Sync API repo on server (safe reset)"
-  # Pipe local script so sync works even before the new file exists on the server.
-  # Preserves docker/.env, secrets/, wwwroot/uploads/, log/
-  API_REPO_DIR="$REMOTE_API_DIR" API_BRANCH="${API_BRANCH:-main}" \
-    ssh "${SSH_OPTS[@]}" "$SERVER" \
-    "API_REPO_DIR=$REMOTE_API_DIR API_BRANCH=${API_BRANCH:-main} bash -s" \
-    < "$SCRIPT_DIR/sync-api-repo-safe.sh" || {
-      deploy_log "ERROR: safe git sync on server failed"
-      exit 1
-    }
+  if [[ "$SKIP_GIT_SYNC" != "1" ]]; then
+    deploy_step "Sync API repo on server (safe reset)"
+    API_REPO_DIR="$REMOTE_API_DIR" API_BRANCH="${API_BRANCH:-main}" \
+      ssh "${SSH_OPTS[@]}" "$SERVER" \
+      "API_REPO_DIR=$REMOTE_API_DIR API_BRANCH=${API_BRANCH:-main} bash -s" \
+      < "$SCRIPT_DIR/sync-api-repo-safe.sh" || {
+        deploy_log "ERROR: safe git sync on server failed"
+        exit 1
+      }
+  else
+    deploy_log "SKIP_GIT_SYNC=1 — server git unchanged"
+  fi
 
   deploy_step "Restart API container on server"
   deploy_start_heartbeat "deploy/restart API" 15
@@ -294,13 +329,11 @@ if [[ "$DEPLOY_AFTER_LOAD" == "1" ]]; then
   }
   deploy_stop_heartbeat
 
-  deploy_step "Health check on server"
-  # Retry here so it works even if the remote health-check.sh is still the old one-shot version.
-  ssh "${SSH_OPTS[@]}" "$SERVER" \
-    "ok=0; for i in \$(seq 1 ${HEALTH_ATTEMPTS:-8}); do
-       if HEALTH_ATTEMPTS=1 bash $REMOTE_API_DIR/devops/scripts/health-check.sh; then ok=1; break; fi
-       echo \"health retry \$i/${HEALTH_ATTEMPTS:-8} — waiting ${HEALTH_SLEEP:-8}s\"; sleep ${HEALTH_SLEEP:-8}
-     done; [[ \$ok -eq 1 ]]" || true
+  deploy_step "Wait DB + AppVersion ready"
+  ssh "${SSH_OPTS[@]}" "$SERVER" "bash $REMOTE_API_DIR/devops/scripts/wait-db-ready.sh" || {
+    deploy_log "WARN: wait-db-ready failed — try: deploy-from-mac.sh db-fix"
+    exit 1
+  }
 fi
 
 deploy_log "✓ API image uploaded${DEPLOY_AFTER_LOAD:+ and deployed} successfully in $(_deploy_elapsed "$upload_start")"

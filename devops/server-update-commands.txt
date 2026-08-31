@@ -3,6 +3,7 @@
   Domains: https://vapplication.ir · https://api.v-application.ir
   SSH IP: 195.24.237.132 | DB: Docker DbVapp only (see devops/DB.md)
   CI/CD: devops/CI_CD_QUICK.md · gh-deploy-production.sh --prod --watch
+  زمان deploy: devops/DEPLOY-TIMING.md
 ================================================================================
 
 
@@ -52,15 +53,19 @@
 
   cd ~/Documents/javad_project/vapp/Api_Vapp_Manually
 
-  bash devops/scripts/deploy-from-mac.sh api          # تغییر C# (~۳–۷ min)
+  bash devops/scripts/deploy-from-mac.sh api          # تغییر C# (~4–7 min)
   bash devops/scripts/deploy-from-mac.sh api-restart # image آماده — فقط restart
-  bash devops/scripts/deploy-from-mac.sh admin       # تغییر پنل (~۲–۴ min)
-  bash devops/scripts/deploy-from-mac.sh admin-fast  # dist آماده — فقط upload
+  bash devops/scripts/deploy-from-mac.sh admin       # تغییر پنل (~2–4 min)
+  bash devops/scripts/deploy-from-mac.sh admin-fast  # dist آماده — فقط upload (~30 sec)
   bash devops/scripts/deploy-from-mac.sh public       # Public_Vapp (فرم/گردونه SMS)
   bash devops/scripts/deploy-from-mac.sh public-fast
   bash devops/scripts/deploy-from-mac.sh all-fronts   # Admin + Public
-  bash devops/scripts/deploy-from-mac.sh all          # API + Admin + Public
+  bash devops/scripts/deploy-from-mac.sh all-parallel   # Public+Admin موازی → API (~12–18 min)
+  bash devops/scripts/deploy-from-mac.sh all          # همه سریالی (~15–25 min)
   bash devops/scripts/deploy-from-mac.sh health
+
+  • چرا all ۲۰+ دقیقه؟ → devops/DEPLOY-TIMING.md
+  • API stream upload (پیش‌فرض): STREAM_UPLOAD=1 در deploy-api-upload-image.sh
 
 
 ================================================================================
@@ -77,9 +82,10 @@
   ssh vapp-prod 'echo SSH_OK'
   nc -zv -w 5 195.24.237.132 22
 
-  --- Deploy API از Mac ---
+  --- Deploy API از Mac (stream upload — پیش‌فرض) ---
   cd ~/path/to/Api_Vapp_Manually && git pull origin main
   SERVER=vapp-prod bash devops/scripts/deploy-api-upload-image.sh
+  # USE_RSYNC=1 اگر uplink قطع می‌شود · SKIP_BUILD=1 اگر image آماده است
 
   --- rsync سورس از Mac ---
   SERVER=vapp-prod bash devops/scripts/sync-to-server.sh

@@ -25,8 +25,11 @@ bash devops/scripts/deploy-from-mac.sh <mode>
 | dist Public آماده — فقط upload | `deploy-from-mac.sh public-fast` | ~۳۰ ثانیه |
 | Admin + Public هر دو | `deploy-from-mac.sh all-fronts` | ۳–۵ دقیقه |
 | API + Admin هر دو | `deploy-from-mac.sh both` | ۵–۱۰ دقیقه |
-| API + Admin + Public | `deploy-from-mac.sh all` | ۷–۱۲ دقیقه |
+| **API + Admin + Public** | `deploy-from-mac.sh all` | **۱۵–۲۵ دقیقه** ⚠️ |
+| همان ولی Public+Admin موازی | `deploy-from-mac.sh all-parallel` | **۱۲–۱۸ دقیقه** |
 | فقط چک سلامت | `deploy-from-mac.sh health` | چند ثانیه |
+
+> **چرا microless ~۶ دقیقه بود؟** معمولاً **یک سرویس** deploy می‌شد. `all` سه build + upload سریالی است. جزئیات: [`DEPLOY-TIMING.md`](DEPLOY-TIMING.md)
 
 ### روی خود سرور (بدون Mac)
 
@@ -101,7 +104,9 @@ bash devops/scripts/deploy-from-mac.sh api
 
 **ادمین:** `admin` / `admin-fast` فایل‌های `dist` را می‌فرستد و nginx را روی static تنظیم می‌کند (سریع‌تر از build Docker روی سرور ایران).
 
-**گیت سرور:** `deploy-api-upload-image.sh` دیگر `git pull` ساده نمی‌زند؛ با `sync-api-repo-safe.sh` ریپو را به `origin/main` reset می‌کند و `docker/.env` / `secrets/` / `wwwroot/uploads/` / `log/` را نگه می‌دارد. Health بعد از restart چند بار retry می‌شود تا `API:000` لحظه‌ای false alarm ندهد.
+**گیت سرور:** `deploy-api-upload-image.sh` با `sync-api-repo-safe.sh` ریپو را به `origin/main` reset می‌کند و `docker/.env` / `secrets/` / `wwwroot/uploads/` / `log/` را نگه می‌دارد. پیش‌فرض **stream upload** (`docker save | zstd | ssh`) — مثل microless. بعد از restart: `wait-db-ready` (نه health یک‌باره).
+
+**سریع‌تر:** فقط لایه‌ای که عوض شده deploy کن — [`DEPLOY-TIMING.md`](DEPLOY-TIMING.md)
 
 اگر دستی لازم شد:
 ```bash
@@ -126,8 +131,9 @@ bash devops/scripts/pull-production-secrets.sh
 
 | فایل | کار |
 |------|-----|
-| `scripts/deploy-from-mac.sh` | ورودی اصلی |
-| `scripts/deploy-api-upload-image.sh` | build API روی Mac |
+| `scripts/deploy-from-mac.sh` | ورودی اصلی (api, all, all-parallel, …) |
+| `scripts/deploy-api-upload-image.sh` | build API روی Mac + stream upload |
+| `DEPLOY-TIMING.md` | چرا all ۲۰+ دقیقه و چطور ~۶ دقیقه |
 | `scripts/pull-production-secrets.sh` | کشیدن `.env`/secrets سرور → Mac |
 | `scripts/sync-api-repo-safe.sh` | sync امن گیت روی سرور (بدون conflict) |
 | `scripts/deploy-front-upload-dist.sh` | build Admin روی Mac |

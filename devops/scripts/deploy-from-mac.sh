@@ -28,24 +28,25 @@ START=$SECONDS
 
 usage() {
   cat <<'EOF'
-Deploy from Mac — choose path based on change
+Deploy from Mac — choose path based on change (see devops/DEPLOY-TIMING.md)
 
-  api          C# / API — build Docker on Mac + upload (~3–7 min)
+  api          C# / API — build Docker on Mac + stream upload (~4–7 min)
   api-restart  image on server — restart + wait Db/Migrate (~1–3 min)
-  admin        Admin panel — build + upload dist
-  admin-fast   Admin dist already built — upload only
-  public       Public_Vapp (form/wheel) — build + upload
-  public-fast  Public dist already built — upload only
-  all-fronts   Admin + Public
+  admin        Admin panel — build + upload dist (~2–4 min)
+  admin-fast   Admin dist already built — upload only (~30 sec)
+  public       Public_Vapp (form/wheel) — build + upload (~1–3 min)
+  public-fast  Public dist already built — upload only (~30 sec)
+  all-fronts   Admin + Public (serial)
+  all-parallel Public + Admin parallel, then API (~12–18 min)
   both         API + Admin
-  all          API + Admin + Public
+  all          Public + Admin + API serial (~15–25 min) — full release only
   health       health-check on server (incl. AppVersion + Public)
   diagnose     full diagnose on server (reasons + next commands)
-  db-fix      ensure DbVapp + restart API + wait migrate (on server)
+  db-fix       ensure DbVapp + restart API + wait migrate (on server)
 
 Example:
   bash devops/scripts/deploy-from-mac.sh api
-  bash devops/scripts/deploy-from-mac.sh diagnose
+  bash devops/scripts/deploy-from-mac.sh all-parallel
 EOF
 }
 
@@ -80,13 +81,30 @@ run_db_fix() {
 }
 
 deploy_api() {
-  deploy_log "=== API: build + upload + restart ==="
+  deploy_log "=== API: build + stream upload + restart ==="
   require_ssh
   SERVER="$SERVER" bash "$SCRIPT_DIR/deploy-api-upload-image.sh" \
     || fail "API upload/deploy failed" "check Docker build on Mac / SSH"
-  ssh "$SERVER" "bash $REMOTE_API_DIR/devops/scripts/wait-db-ready.sh" \
-    || fail "API up but DB/AppVersion not ready" \
-      "SERVER=$SERVER bash $SCRIPT_DIR/deploy-from-mac.sh db-fix"
+}
+
+deploy_all_parallel() {
+  deploy_log "=== all-parallel: Public + Admin (parallel) → API ==="
+  require_ssh
+  local pub_rc=0 admin_rc=0
+  (
+    SERVER="$SERVER" bash "$SCRIPT_DIR/deploy-public-front-upload-dist.sh"
+  ) &
+  local pub_pid=$!
+  (
+    SERVER="$SERVER" bash "$SCRIPT_DIR/deploy-front-upload-dist.sh"
+  ) &
+  local admin_pid=$!
+  wait "$pub_pid" || pub_rc=$?
+  wait "$admin_pid" || admin_rc=$?
+  [[ "$pub_rc" -eq 0 ]] || fail "Public upload failed"
+  [[ "$admin_rc" -eq 0 ]] || fail "Admin upload failed"
+  SERVER="$SERVER" bash "$SCRIPT_DIR/deploy-api-upload-image.sh" \
+    || fail "API upload/deploy failed"
 }
 
 deploy_api_restart() {
@@ -139,6 +157,7 @@ case "$MODE" in
   public-fast) deploy_public_fast ;;
   # Public first: apply-nginx fails if /form|/wheel|/card|/book are 404 while Admin uploads.
   all-fronts) deploy_public; deploy_admin ;;
+  all-parallel) deploy_all_parallel ;;
   both) deploy_admin; deploy_api ;;
   all) deploy_public; deploy_admin; deploy_api ;;
   health) require_ssh; run_health ;;
