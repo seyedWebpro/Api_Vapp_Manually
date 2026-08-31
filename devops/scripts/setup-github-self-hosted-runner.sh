@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Install GitHub Actions self-hosted runner on Vapp VPS (Iran-only SSH workaround).
 #
-# One runner on the VPS serves all Vapp repos (org-level registration recommended).
-# Deploy jobs use: runs-on: [self-hosted, vapp-prod]
+# One runner per repo (User account — not org). Label: vapp-prod
+#   /opt/actions-runner-vapp-{api,admin,public,scraper}
 #
 # Usage (on VPS as root — copy script or pipe from Mac):
 #   bash devops/scripts/setup-github-self-hosted-runner.sh --token 'XXXXX'

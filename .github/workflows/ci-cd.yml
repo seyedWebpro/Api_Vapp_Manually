@@ -164,12 +164,12 @@ jobs:
     environment: production
     timeout-minutes: 30
     steps:
+      - uses: actions/checkout@v4
+
       - name: Download API image artifact
         uses: actions/download-artifact@v4
         with:
           name: api-docker-image
-
-      - uses: actions/checkout@v4
 
       - name: Sync devops scripts on server
         run: |
