@@ -2,7 +2,22 @@
   DevOps cheat sheet — Vapp (reuse: README.md در همین پوشه)
   Domains: https://vapplication.ir · https://api.v-application.ir
   SSH IP: 195.24.237.132 | DB: Docker DbVapp only (see devops/DB.md)
+  CI/CD: devops/CI_CD_QUICK.md · gh-deploy-production.sh --prod --watch
 ================================================================================
+
+
+================================================================================
+  ★ GitHub Actions — deploy از Mac (بعد از push به main)
+================================================================================
+
+  cd ~/Documents/javad_project/vapp/Api_Vapp_Manually
+
+  bash devops/scripts/gh-deploy-production.sh --prod --watch
+  bash devops/scripts/gh-deploy-production.sh --all --push --watch   # + Scraper
+
+  • فقط API:    ... --api --watch
+  • فقط Admin:  ... --admin --watch
+  • Secrets:    devops/CI_CD.md
 
 
 ================================================================================

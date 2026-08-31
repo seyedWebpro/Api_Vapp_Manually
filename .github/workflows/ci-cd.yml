@@ -1,0 +1,219 @@
+# Vapp API — Phase 1 (CI) + Phase 2 (CD)
+# CD = same ops path as Mac: docker build on runner → SSH docker load → compose restart.
+# Never docker pull GHCR on production server (Iran VPS — unreliable/blocked).
+name: API CI/CD
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: "Force production deploy after CI (main/master only)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: vapp-api-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_VERSION: "8.0.x"
+  DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  API_IMAGE: vapp-api
+  DOCKERFILE: docker/Dockerfile
+  COMPOSE_FILE: docker/docker-compose.production.yml
+  REMOTE_API_DIR: /root/Api_Vapp_Manually
+
+jobs:
+  ci:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+          cache: true
+          cache-dependency-path: |
+            **/*.csproj
+
+      - name: Restore
+        run: |
+          dotnet restore Api_Vapp.sln
+          dotnet restore Tests/Api_Vapp.Tests.csproj
+
+      - name: Build Release
+        run: |
+          dotnet build Api_Vapp.sln -c Release --no-restore
+          dotnet build Tests/Api_Vapp.Tests.csproj -c Release --no-restore
+
+      # Full suite includes integration tests — gate on stable unit subset only.
+      - name: Run CI smoke tests
+        run: |
+          set -euo pipefail
+          mkdir -p TestResults
+          dotnet test Tests/Api_Vapp.Tests.csproj \
+            -c Release --no-build --no-restore \
+            --filter "FullyQualifiedName~SmsProviderErrorMapperTests|FullyQualifiedName~EducationalVideoPlaybackHelperTests|FullyQualifiedName~SmsDeliveryRefundCopyAndFinanceTests" \
+            --logger "trx;LogFileName=ci-smoke.trx" \
+            --results-directory TestResults
+
+      - name: Upload TRX
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: TestResults/*.trx
+          if-no-files-found: warn
+
+      - name: Quality gate summary
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import glob, os, sys, xml.etree.ElementTree as ET
+
+          files = sorted(glob.glob("TestResults/*.trx"))
+          expected = {"ci-smoke.trx"}
+          found = {os.path.basename(f) for f in files}
+          total = passed = failed = skipped = 0
+          lines = ["## Vapp API CI Quality Gate", ""]
+          for f in files:
+              root = ET.parse(f).getroot()
+              c = root.find(".//{*}Counters")
+              if c is None:
+                  continue
+              t = int(c.attrib.get("total", "0"))
+              p = int(c.attrib.get("passed", "0"))
+              ff = int(c.attrib.get("failed", "0"))
+              s = int(c.attrib.get("notExecuted", "0"))
+              total += t; passed += p; failed += ff; skipped += s
+              lines.append(f"- `{os.path.basename(f)}` → total={t}, passed={p}, failed={ff}, skipped={s}")
+          lines[1:1] = [f"- Total: **{total}** · Passed: **{passed}** · Failed: **{failed}** · Skipped: **{skipped}**", ""]
+          summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary:
+              with open(summary, "a", encoding="utf-8") as fp:
+                  fp.write("\n".join(lines) + "\n")
+          missing = expected - found
+          if missing:
+              print(f"ERROR: missing TRX: {sorted(missing)}", file=sys.stderr)
+              sys.exit(1)
+          if total <= 0:
+              print("ERROR: no tests executed", file=sys.stderr)
+              sys.exit(1)
+          if failed > 0:
+              print(f"ERROR: {failed} failed", file=sys.stderr)
+              sys.exit(1)
+          print("Quality gate OK")
+          PY
+
+  deploy:
+    name: Deploy API → Production
+    runs-on: ubuntu-latest
+    needs: ci
+    if: >
+      (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'))
+      || (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy == 'true'
+          && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'))
+    environment: production
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require SSH secrets
+        env:
+          KEY: ${{ secrets.VAPP_SSH_PRIVATE_KEY }}
+          HOST: ${{ secrets.VAPP_SSH_HOST }}
+        run: |
+          if [ -z "$KEY" ] || [ -z "$HOST" ]; then
+            echo "::error::Set secrets VAPP_SSH_PRIVATE_KEY + VAPP_SSH_HOST (see devops/CI_CD.md)"
+            exit 1
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build API image (GHA layer cache)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ env.DOCKERFILE }}
+          push: false
+          load: true
+          tags: ${{ env.API_IMAGE }}
+          cache-from: type=gha,scope=vapp-api
+          cache-to: type=gha,mode=max,scope=vapp-api
+
+      - name: Configure SSH
+        env:
+          VAPP_SSH_PRIVATE_KEY: ${{ secrets.VAPP_SSH_PRIVATE_KEY }}
+          VAPP_SSH_HOST: ${{ secrets.VAPP_SSH_HOST }}
+          VAPP_SSH_PORT: ${{ secrets.VAPP_SSH_PORT }}
+          VAPP_SSH_USER: ${{ secrets.VAPP_SSH_USER }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$VAPP_SSH_PRIVATE_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          PORT="${VAPP_SSH_PORT:-22}"
+          SSH_USER="${VAPP_SSH_USER:-root}"
+          {
+            echo "Host vapp-prod"
+            echo "  HostName ${VAPP_SSH_HOST}"
+            echo "  Port ${PORT}"
+            echo "  User ${SSH_USER}"
+            echo "  IdentityFile ~/.ssh/id_deploy"
+            echo "  IdentitiesOnly yes"
+            echo "  StrictHostKeyChecking accept-new"
+            echo "  ServerAliveInterval 15"
+            echo "  ServerAliveCountMax 60"
+            echo "  TCPKeepAlive yes"
+            echo "  IPQoS throughput"
+          } > ~/.ssh/config
+          chmod 600 ~/.ssh/config
+          ssh -o ConnectTimeout=20 -o BatchMode=yes vapp-prod 'echo SSH_OK'
+
+      - name: Upload image + restart API
+        run: |
+          set -euo pipefail
+          echo "Uploading ${API_IMAGE} (gzip -1)..."
+          docker save "${API_IMAGE}" | gzip -1 | ssh vapp-prod 'gunzip | docker load'
+          echo "Restarting API (image is source of truth — no git pull)..."
+          ssh vapp-prod bash -s <<'REMOTE'
+          set -euo pipefail
+          cd "/root/Api_Vapp_Manually"
+          export COMPOSE_HTTP_TIMEOUT=300 DOCKER_CLIENT_TIMEOUT=300
+          docker compose -f docker/docker-compose.production.yml stop api 2>/dev/null || true
+          docker compose -f docker/docker-compose.production.yml rm -sf api 2>/dev/null || true
+          docker rm -f vapp_api_prod 2>/dev/null || true
+          docker compose -f docker/docker-compose.production.yml --env-file docker/.env up -d --no-build --no-deps api
+          for i in $(seq 1 24); do
+            code="$(curl -sS -m5 -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/health 2>/dev/null || echo 000)"
+            echo "health attempt $i: HTTP $code"
+            [ "$code" = "200" ] && exit 0
+            sleep 5
+          done
+          echo "ERROR: API /health not 200 after 120s"
+          exit 1
+          REMOTE
+
+      - name: Sync post-deploy scripts to server
+        run: |
+          set -euo pipefail
+          REMOTE="${REMOTE_API_DIR}/devops"
+          ssh vapp-prod "mkdir -p ${REMOTE}/scripts/lib"
+          scp devops/scripts/post-deploy-verify.sh "vapp-prod:${REMOTE}/scripts/"
+          scp devops/scripts/lib/nginx-http.sh "vapp-prod:${REMOTE}/scripts/lib/"
+          scp devops/scripts/lib/load-server-conf.sh "vapp-prod:${REMOTE}/scripts/lib/"
+          scp devops/server.conf "vapp-prod:${REMOTE}/"
+
+      - name: Post-deploy verify
+        run: |
+          set -euo pipefail
+          REMOTE_SCRIPT="${REMOTE_API_DIR}/devops/scripts/post-deploy-verify.sh"
+          ssh vapp-prod "chmod +x $(printf %q "$REMOTE_SCRIPT") && bash $(printf %q "$REMOTE_SCRIPT") --api-only"

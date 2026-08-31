@@ -17,9 +17,13 @@ bash devops/scripts/deploy-from-mac.sh api     # .NET API
 bash devops/scripts/deploy-from-mac.sh admin   # Admin panel
 bash devops/scripts/deploy-from-mac.sh public  # Public form/wheel
 bash devops/scripts/deploy-from-mac.sh health  # Check services
+
+# GitHub Actions — API + Admin + Public (after secrets setup)
+bash devops/scripts/gh-deploy-production.sh --prod --watch
 ```
 
-All commands, options and server-side commands are in [`COMMANDS.txt`](COMMANDS.txt).
+All commands, options and server-side commands are in [`COMMANDS.txt`](COMMANDS.txt).  
+CI/CD setup: [`CI_CD_QUICK.md`](CI_CD_QUICK.md) · full guide: [`CI_CD.md`](CI_CD.md)
 
 ---
 
@@ -38,6 +42,9 @@ devops/
   NUMBER-SCRAPER.md               ← number-scraper robot
   MAC-SERVER.md                   ← SSH / first-time setup
   GITHUB_SSH.md                   ← deploy key setup
+  CI_CD.md                        ← GitHub Actions CI/CD (secrets, setup)
+  CI_CD_QUICK.md                  ← one-page CI/CD cheat sheet
+  CI_CD_REPLICATE.md              ← replicate CI/CD to another project
   scripts/                        ← deploy, bootstrap, backup, health-check scripts
   deploy/                         ← nginx example config
   backup/                         ← DB backup scripts
