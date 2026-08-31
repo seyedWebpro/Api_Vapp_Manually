@@ -469,6 +469,7 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.IAppVersionService, Api_Vapp.Serv
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminMessageApprovalService, Api_Vapp.Services.Admin.AdminMessageApprovalService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminTemplateApprovalService, Api_Vapp.Services.Admin.AdminTemplateApprovalService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminQuickSendApprovalService, Api_Vapp.Services.Admin.AdminQuickSendApprovalService>();
+builder.Services.AddSingleton<Api_Vapp.Interfaces.IQuickSendPreviewRateLimiter, Api_Vapp.Services.Admin.QuickSendPreviewRateLimiter>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IQuickSendAdminPreviewService, Api_Vapp.Services.Admin.QuickSendAdminPreviewService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminDashboardService, Api_Vapp.Services.Admin.AdminDashboardService>();
 

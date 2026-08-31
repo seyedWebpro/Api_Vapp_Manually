@@ -2,6 +2,7 @@ using Api_Vapp.DTOs.Admin;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.Interfaces;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.ResponseCaching;
 
 namespace Api_Vapp.Controller
 {
@@ -11,6 +12,7 @@ namespace Api_Vapp.Controller
     [ApiController]
     [Route("api/Public/QuickSendPreview")]
     [Produces("application/json")]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
     public class QuickSendPreviewPublicController : ControllerBase
     {
         private readonly IQuickSendAdminPreviewService _previewService;

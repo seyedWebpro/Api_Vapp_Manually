@@ -1339,6 +1339,13 @@ Authorization: Bearer {{adminToken}}
 GET {{Api_Vapp_HostAddress}}/api/Admin/QuickSendApproval/BusinessCard/1
 Authorization: Bearer {{adminToken}}
 
+### پیش‌نمایش ادمین — صدور توکن (فرم / کارت ویزیت) → Public_Vapp: /preview/{token}
+POST {{Api_Vapp_HostAddress}}/api/Admin/QuickSendApproval/UserForm/1/preview-token
+Authorization: Bearer {{adminToken}}
+
+### پیش‌نمایش ادمین — دریافت محتوا با توکن (بدون Auth)
+GET {{Api_Vapp_HostAddress}}/api/Public/QuickSendPreview/PASTE_TOKEN_HERE
+
 ### تأیید → بعد از این quick-send بدون صف پیام
 POST {{Api_Vapp_HostAddress}}/api/Admin/QuickSendApproval/BusinessCard/1/approve
 Authorization: Bearer {{adminToken}}

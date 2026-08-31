@@ -4,6 +4,7 @@ using Api_Vapp.DTOs.Admin;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Utilities;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Caching.Memory;
 
 namespace Api_Vapp.Services.Admin
@@ -14,11 +15,16 @@ namespace Api_Vapp.Services.Admin
     public class QuickSendAdminPreviewService : IQuickSendAdminPreviewService
     {
         private static readonly TimeSpan PreviewTokenTtl = TimeSpan.FromMinutes(30);
+        /// <summary>Base64url بدون padding — 24 بایت entropy</summary>
+        private const int PreviewTokenByteLength = 24;
+        private const int PreviewTokenCharLength = 32;
 
         private readonly IMemoryCache _cache;
         private readonly IAdminQuickSendApprovalService _approvalService;
         private readonly IUserFormPublicService _formPublicService;
         private readonly IBusinessCardPublicService _businessCardPublicService;
+        private readonly IQuickSendPreviewRateLimiter _rateLimiter;
+        private readonly IHttpContextAccessor _httpContextAccessor;
         private readonly ILogger<QuickSendAdminPreviewService> _logger;
 
         public QuickSendAdminPreviewService(
@@ -26,12 +32,16 @@ namespace Api_Vapp.Services.Admin
             IAdminQuickSendApprovalService approvalService,
             IUserFormPublicService formPublicService,
             IBusinessCardPublicService businessCardPublicService,
+            IQuickSendPreviewRateLimiter rateLimiter,
+            IHttpContextAccessor httpContextAccessor,
             ILogger<QuickSendAdminPreviewService> logger)
         {
             _cache = cache;
             _approvalService = approvalService;
             _formPublicService = formPublicService;
             _businessCardPublicService = businessCardPublicService;
+            _rateLimiter = rateLimiter;
+            _httpContextAccessor = httpContextAccessor;
             _logger = logger;
         }
 
@@ -67,6 +77,19 @@ namespace Api_Vapp.Services.Admin
                         itemResult.ErrorCode);
                 }
 
+                var (issueAllowed, issueRetryAfter) = await _rateLimiter.CheckTokenIssueAsync(adminUserId);
+                if (!issueAllowed)
+                {
+                    _logger.LogWarning(
+                        "Preview token issue rate limited for admin {AdminUserId}, retryAfter={RetryAfter}s",
+                        adminUserId,
+                        issueRetryAfter);
+                    return ApiResponse<QuickSendPreviewTokenDto>.Error(
+                        "تعداد درخواست پیش‌نمایش بیش از حد مجاز است. لطفاً کمی بعد دوباره تلاش کنید.",
+                        StatusCodes.Status429TooManyRequests,
+                        errorCode: ErrorCodes.RateLimited);
+                }
+
                 var token = GenerateToken();
                 var expiresAt = DateTime.UtcNow.Add(PreviewTokenTtl);
                 var cacheKey = BuildCacheKey(token);
@@ -86,6 +109,8 @@ namespace Api_Vapp.Services.Admin
                         Size = 1
                     });
 
+                await _rateLimiter.RecordTokenIssueAsync(adminUserId);
+
                 return ApiResponse<QuickSendPreviewTokenDto>.CreateSuccess(new QuickSendPreviewTokenDto
                 {
                     Token = token,
@@ -104,25 +129,44 @@ namespace Api_Vapp.Services.Admin
         {
             try
             {
-                var normalizedToken = token?.Trim();
-                if (string.IsNullOrWhiteSpace(normalizedToken))
+                var clientKey = ResolveClientKey();
+                var (readAllowed, readRetryAfter) = await _rateLimiter.CheckPreviewReadAsync(clientKey);
+                if (!readAllowed)
                 {
+                    _logger.LogWarning(
+                        "Preview read rate limited for client {ClientKey}, retryAfter={RetryAfter}s",
+                        clientKey,
+                        readRetryAfter);
+                    return ApiResponse<QuickSendPreviewContentDto>.Error(
+                        "تعداد درخواست پیش‌نمایش بیش از حد مجاز است. لطفاً کمی بعد دوباره تلاش کنید.",
+                        StatusCodes.Status429TooManyRequests,
+                        errorCode: ErrorCodes.RateLimited);
+                }
+
+                var normalizedToken = token?.Trim();
+                if (string.IsNullOrWhiteSpace(normalizedToken) || !IsValidTokenFormat(normalizedToken))
+                {
+                    await _rateLimiter.RecordPreviewReadAsync(clientKey);
                     return ApiResponse<QuickSendPreviewContentDto>.BadRequest(
                         "توکن پیش‌نمایش نامعتبر است",
-                        errorCode: ErrorCodes.InvalidInput);
+                        errorCode: ErrorCodes.TokenInvalid);
                 }
 
                 if (!_cache.TryGetValue(BuildCacheKey(normalizedToken), out PreviewTokenEntry? entry) || entry == null)
                 {
+                    await _rateLimiter.RecordPreviewReadAsync(clientKey);
                     return ApiResponse<QuickSendPreviewContentDto>.NotFound(
-                        "لینک پیش‌نمایش منقضی یا نامعتبر است");
+                        "لینک پیش‌نمایش منقضی یا نامعتبر است",
+                        errorCode: ErrorCodes.TokenInvalid);
                 }
 
                 if (entry.ExpiresAt <= DateTime.UtcNow)
                 {
                     _cache.Remove(BuildCacheKey(normalizedToken));
+                    await _rateLimiter.RecordPreviewReadAsync(clientKey);
                     return ApiResponse<QuickSendPreviewContentDto>.NotFound(
-                        "لینک پیش‌نمایش منقضی شده است");
+                        "لینک پیش‌نمایش منقضی شده است",
+                        errorCode: ErrorCodes.TokenExpired);
                 }
 
                 var itemResult = await _approvalService.GetByIdAsync(entry.ItemType, entry.ItemId);
@@ -177,6 +221,7 @@ namespace Api_Vapp.Services.Admin
                         errorCode: ErrorCodes.InvalidInput);
                 }
 
+                await _rateLimiter.RecordPreviewReadAsync(clientKey);
                 return ApiResponse<QuickSendPreviewContentDto>.CreateSuccess(content);
             }
             catch (Exception ex)
@@ -191,14 +236,59 @@ namespace Api_Vapp.Services.Admin
 
         private static string GenerateToken()
         {
-            var bytes = RandomNumberGenerator.GetBytes(24);
+            var bytes = RandomNumberGenerator.GetBytes(PreviewTokenByteLength);
             return Convert.ToBase64String(bytes)
                 .TrimEnd('=')
                 .Replace('+', '-')
                 .Replace('/', '_');
         }
 
+        private static bool IsValidTokenFormat(string token)
+        {
+            if (token.Length != PreviewTokenCharLength)
+            {
+                return false;
+            }
+
+            foreach (var ch in token)
+            {
+                var isAllowed =
+                    (ch >= 'a' && ch <= 'z') ||
+                    (ch >= 'A' && ch <= 'Z') ||
+                    (ch >= '0' && ch <= '9') ||
+                    ch is '-' or '_';
+                if (!isAllowed)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
         private static string BuildCacheKey(string token) => $"quicksend_preview_{token}";
+
+        private string ResolveClientKey()
+        {
+            var ctx = _httpContextAccessor.HttpContext;
+            if (ctx == null)
+            {
+                return "unknown";
+            }
+
+            var forwarded = ctx.Request.Headers["X-Forwarded-For"].FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(forwarded))
+            {
+                var first = forwarded.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .FirstOrDefault();
+                if (!string.IsNullOrWhiteSpace(first))
+                {
+                    return first;
+                }
+            }
+
+            return ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        }
 
         private sealed class PreviewTokenEntry
         {
