@@ -11,6 +11,8 @@
 
 **تفاوت با microless:** Vapp تک‌سرور است (API + Admin + Public + Scraper روی یک VPS). پورت SSH **`22`** است (نه 3031).
 
+> **⚠️ محدودیت CD از GitHub Actions:** runnerهای GitHub از IP خارج به سرور `195.24.237.132:22` **SSH timeout** می‌گیرند (فایروال/VPS). **CI روی GitHub کار می‌کند**؛ **CD عملی از Mac** با `deploy-from-mac.sh` یا `gh-deploy-production.sh` (بعد از self-hosted runner / باز کردن IP). جزئیات پایین.
+
 ---
 
 ## ★ یک دستور — آپدیت API + Admin + Public
@@ -142,6 +144,8 @@ Admin/Public/Scraper در deploy، اسکریپت verify را از `main` ریپ
 | Admin 404 | `ssh vapp-prod 'ls -la /var/www/vapp-admin/'` |
 | Scraper health ≠ 200 | `ssh vapp-prod 'docker logs phonescraper_api_prod --tail 80'` |
 | Mac سریع‌تر | `bash devops/scripts/deploy-from-mac.sh health` |
+| GHA Deploy: `Connection timed out` SSH | سرور IP GitHub Actions را نمی‌بیند — CD از Mac: `bash devops/scripts/deploy-from-mac.sh all` |
+| Secrets: `IRAN_SSH_*` اضافه | workflow فقط `VAPP_SSH_*` می‌خواند — هر دو OK ولی `VAPP_SSH_PRIVATE_KEY` **الزامی** |
 
 ---
 
