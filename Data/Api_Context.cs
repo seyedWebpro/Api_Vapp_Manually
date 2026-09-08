@@ -55,6 +55,7 @@ namespace Api_Vapp.Data
         public DbSet<EducationalVideo> EducationalVideos { get; set; }
         public DbSet<AutomationTypeDefinition> AutomationTypes { get; set; }
         public DbSet<AppBanner> AppBanners { get; set; }
+        public DbSet<AppNewsTickerMessage> AppNewsTickerMessages { get; set; }
         public DbSet<AppVersionPolicy> AppVersionPolicies { get; set; }
         public DbSet<SmsApprovalRequest> SmsApprovalRequests { get; set; }
         public DbSet<UserForm> UserForms { get; set; }
@@ -1367,6 +1368,20 @@ namespace Api_Vapp.Data
                 entity.HasIndex(b => b.Key).IsUnique();
                 entity.HasIndex(b => b.IsActive);
                 entity.HasIndex(b => b.SortOrder);
+            });
+
+            // زیرنویس خبری اپ موبایل
+            modelBuilder.Entity<AppNewsTickerMessage>(entity =>
+            {
+                entity.ToTable("AppNewsTickerMessages");
+                entity.HasKey(m => m.Id);
+                entity.Property(m => m.Id).ValueGeneratedOnAdd();
+                entity.Property(m => m.Text).IsRequired().HasColumnType("nvarchar(max)");
+                entity.Property(m => m.IsActive).HasDefaultValue(true);
+                entity.Property(m => m.IsDeleted).HasDefaultValue(false);
+                entity.Property(m => m.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+                entity.HasIndex(m => m.IsActive);
+                entity.HasIndex(m => m.SortOrder);
             });
 
             // سیاست نسخه اپ موبایل

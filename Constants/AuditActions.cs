@@ -82,6 +82,9 @@ namespace Api_Vapp.Constants
         public const string AutomationTypeUpdated = "AutomationType.Updated";
         public const string AutomationTypeDeleted = "AutomationType.Deleted";
         public const string AppBannerUpdated = "AppBanner.Updated";
+        public const string AppNewsTickerCreated = "AppNewsTicker.Created";
+        public const string AppNewsTickerUpdated = "AppNewsTicker.Updated";
+        public const string AppNewsTickerDeleted = "AppNewsTicker.Deleted";
         public const string AppVersionPolicyUpdated = "AppVersionPolicy.Updated";
         public const string LuckyWheelStatusChanged = "LuckyWheel.StatusChanged";
         public const string LuckyWheelCreated = "LuckyWheel.Created";

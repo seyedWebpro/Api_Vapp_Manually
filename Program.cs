@@ -295,6 +295,33 @@ builder.Services.AddAuthentication(option =>
                     context.Fail(ControlledErrorHelper.InactiveUserAccount);
                 }
             }
+        },
+        OnChallenge = async context =>
+        {
+            if (context.Response.HasStarted)
+                return;
+
+            context.HandleResponse();
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            context.Response.ContentType = "application/json";
+
+            var response = Api_Vapp.DTOs.Common.ApiResponse<object>.Unauthorized(
+                ControlledErrorHelper.Unauthorized);
+            response.TraceId = ControlledErrorHelper.GetTraceId(context.HttpContext);
+            await context.Response.WriteAsJsonAsync(response, context.HttpContext.RequestAborted);
+        },
+        OnForbidden = async context =>
+        {
+            if (context.Response.HasStarted)
+                return;
+
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            context.Response.ContentType = "application/json";
+
+            var response = Api_Vapp.DTOs.Common.ApiResponse<object>.Forbidden(
+                ControlledErrorHelper.Unauthorized);
+            response.TraceId = ControlledErrorHelper.GetTraceId(context.HttpContext);
+            await context.Response.WriteAsJsonAsync(response, context.HttpContext.RequestAborted);
         }
     };
 });
@@ -465,6 +492,8 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.IUserSupportTicketService, Api_Va
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminEducationalVideoService, Api_Vapp.Services.Admin.AdminEducationalVideoService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminAutomationTypeService, Api_Vapp.Services.Admin.AdminAutomationTypeService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminAppBannerService, Api_Vapp.Services.Admin.AdminAppBannerService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IAppNewsTickerRepository, Api_Vapp.Repositories.AppNewsTickerRepository>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IAppNewsTickerService, Api_Vapp.Services.Admin.AppNewsTickerService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAppVersionService, Api_Vapp.Services.AppVersionService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminMessageApprovalService, Api_Vapp.Services.Admin.AdminMessageApprovalService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminTemplateApprovalService, Api_Vapp.Services.Admin.AdminTemplateApprovalService>();
