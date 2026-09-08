@@ -81,7 +81,9 @@ namespace Api_Vapp.Constants
         public const string EducationalVideoDeleted = "EducationalVideo.Deleted";
         public const string AutomationTypeUpdated = "AutomationType.Updated";
         public const string AutomationTypeDeleted = "AutomationType.Deleted";
+        public const string AppBannerCreated = "AppBanner.Created";
         public const string AppBannerUpdated = "AppBanner.Updated";
+        public const string AppBannerDeleted = "AppBanner.Deleted";
         public const string AppNewsTickerCreated = "AppNewsTicker.Created";
         public const string AppNewsTickerUpdated = "AppNewsTicker.Updated";
         public const string AppNewsTickerDeleted = "AppNewsTicker.Deleted";

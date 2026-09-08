@@ -62,6 +62,7 @@ namespace Api_Vapp.Services.Admin
                         LinkType = b.LinkType,
                         SortOrder = b.SortOrder,
                         IsActive = b.IsActive,
+                        IsSystemManaged = b.IsSystemManaged,
                         CreatedAt = b.CreatedAt,
                         UpdatedAt = b.UpdatedAt
                     })
@@ -102,6 +103,62 @@ namespace Api_Vapp.Services.Admin
             }
         }
 
+        public async Task<ApiResponse<AppBannerResponseDto>> CreateAsync(CreateAppBannerDto dto)
+        {
+            try
+            {
+                var key = (dto.Key ?? string.Empty).Trim().ToLowerInvariant();
+                if (!AppBannerKeys.IsKnown(key))
+                    return ApiResponse<AppBannerResponseDto>.BadRequest("محل نمایش بنر معتبر نیست", errorCode: ErrorCodes.ValidationFailed);
+
+                var title = (dto.Title ?? string.Empty).Trim();
+                if (string.IsNullOrWhiteSpace(title) || title.Length > 200)
+                    return ApiResponse<AppBannerResponseDto>.BadRequest("عنوان بنر الزامی است و حداکثر ۲۰۰ کاراکتر دارد", errorCode: ErrorCodes.ValidationFailed);
+
+                var description = string.IsNullOrWhiteSpace(dto.Description) ? null : dto.Description.Trim();
+                if (description?.Length > 1000)
+                    return ApiResponse<AppBannerResponseDto>.BadRequest("توضیحات نمی‌تواند بیشتر از ۱۰۰۰ کاراکتر باشد", errorCode: ErrorCodes.ValidationFailed);
+
+                var linkType = string.IsNullOrWhiteSpace(dto.LinkType) ? AppBannerLinkTypes.None : dto.LinkType.Trim().ToLowerInvariant();
+                if (!AppBannerLinkTypes.IsValid(linkType))
+                    return ApiResponse<AppBannerResponseDto>.BadRequest("نوع لینک معتبر نیست", errorCode: ErrorCodes.ValidationFailed);
+                var linkUrl = string.IsNullOrWhiteSpace(dto.LinkUrl) ? null : dto.LinkUrl.Trim();
+                var linkError = ValidateLink(linkType, linkUrl);
+                if (linkError != null)
+                    return ApiResponse<AppBannerResponseDto>.BadRequest(linkError, errorCode: ErrorCodes.ValidationFailed);
+
+                var banner = new AppBanner
+                {
+                    Key = key,
+                    Title = title,
+                    Description = description,
+                    LinkType = linkType,
+                    LinkUrl = linkType == AppBannerLinkTypes.None ? null : linkUrl,
+                    SortOrder = dto.SortOrder ?? 0,
+                    IsActive = dto.IsActive ?? true,
+                    IsSystemManaged = false,
+                    CreatedAt = DateTime.UtcNow
+                };
+                _context.AppBanners.Add(banner);
+                await _context.SaveChangesAsync();
+                InvalidateActiveCache();
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Admin,
+                    Action = AuditActions.AppBannerCreated,
+                    EntityType = AuditEntityTypes.AppBanner,
+                    EntityId = banner.Id.ToString(),
+                    After = Snapshot(banner)
+                });
+                return ApiResponse<AppBannerResponseDto>.CreateSuccess(Map(banner), "بنر ایجاد شد");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "خطا در ایجاد بنر اپ");
+                return ApiResponse<AppBannerResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
         public async Task<ApiResponse<List<AppBannerResponseDto>>> GetActiveBannersAsync()
         {
             try
@@ -129,6 +186,7 @@ namespace Api_Vapp.Services.Admin
                         LinkType = b.LinkType,
                         SortOrder = b.SortOrder,
                         IsActive = b.IsActive,
+                        IsSystemManaged = b.IsSystemManaged,
                         CreatedAt = b.CreatedAt,
                         UpdatedAt = b.UpdatedAt
                     })
@@ -165,13 +223,6 @@ namespace Api_Vapp.Services.Admin
                 var banner = await _context.AppBanners.FirstOrDefaultAsync(b => b.Id == id && !b.IsDeleted);
                 if (banner == null)
                     return ApiResponse<AppBannerResponseDto>.NotFound("بنر یافت نشد");
-
-                if (!AppBannerKeys.IsKnown(banner.Key))
-                {
-                    return ApiResponse<AppBannerResponseDto>.BadRequest(
-                        "این بنر قابل ویرایش نیست",
-                        errorCode: ErrorCodes.InvalidInput);
-                }
 
                 var title = (dto.Title ?? string.Empty).Trim();
                 if (string.IsNullOrWhiteSpace(title))
@@ -280,13 +331,6 @@ namespace Api_Vapp.Services.Admin
                 if (banner == null)
                     return ApiResponse<AppBannerResponseDto>.NotFound("بنر یافت نشد");
 
-                if (!AppBannerKeys.IsKnown(banner.Key))
-                {
-                    return ApiResponse<AppBannerResponseDto>.BadRequest(
-                        "این بنر قابل ویرایش نیست",
-                        errorCode: ErrorCodes.InvalidInput);
-                }
-
                 var hasFile = imageFile != null && imageFile.Length > 0;
                 if (!hasFile && !clearImage)
                 {
@@ -382,6 +426,39 @@ namespace Api_Vapp.Services.Admin
             }
         }
 
+        public async Task<ApiResponse<bool>> DeleteAsync(int id)
+        {
+            try
+            {
+                var banner = await _context.AppBanners.FirstOrDefaultAsync(b => b.Id == id && !b.IsDeleted);
+                if (banner == null)
+                    return ApiResponse<bool>.NotFound("بنر یافت نشد");
+                if (banner.IsSystemManaged)
+                    return ApiResponse<bool>.BadRequest("بنر سیستمی قابل حذف نیست؛ می‌توانید آن را غیرفعال کنید", errorCode: ErrorCodes.InvalidInput);
+
+                var before = Snapshot(banner);
+                banner.IsDeleted = true;
+                banner.IsActive = false;
+                banner.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+                InvalidateActiveCache();
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Admin,
+                    Action = AuditActions.AppBannerDeleted,
+                    EntityType = AuditEntityTypes.AppBanner,
+                    EntityId = banner.Id.ToString(),
+                    Before = before
+                });
+                return ApiResponse<bool>.CreateSuccess(true, "بنر حذف شد");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "خطا در حذف بنر اپ — Id: {Id}", id);
+                return ApiResponse<bool>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
         private void InvalidateActiveCache() => _cache.Remove(AppBannerCacheKeys.ActiveList);
 
         private static string? ValidateLink(string linkType, string? linkUrl)
@@ -425,6 +502,7 @@ namespace Api_Vapp.Services.Admin
                 LinkType = banner.LinkType,
                 SortOrder = banner.SortOrder,
                 IsActive = banner.IsActive,
+                IsSystemManaged = banner.IsSystemManaged,
                 CreatedAt = banner.CreatedAt,
                 UpdatedAt = banner.UpdatedAt
             };
@@ -434,14 +512,14 @@ namespace Api_Vapp.Services.Admin
 
         private static void ApplyFlags(AppBannerResponseDto banner)
         {
-            banner.IsSystemManaged = AppBannerKeys.IsKnown(banner.Key);
-            banner.CanDelete = false;
+            banner.CanDelete = !banner.IsSystemManaged;
         }
 
         private static object Snapshot(AppBanner banner) => new
         {
             banner.Id,
             banner.Key,
+            banner.IsSystemManaged,
             banner.Title,
             banner.Description,
             banner.ImageUrl,

@@ -17,6 +17,12 @@ namespace Api_Vapp.DTOs.Admin
         public DateTime? UpdatedAt { get; set; }
     }
 
+    public class CreateAppBannerDto : UpdateAppBannerDto
+    {
+        /// <summary>محل نمایش: home | tool</summary>
+        public string? Key { get; set; }
+    }
+
     /// <summary>بدنه به‌روزرسانی بنر — فقط فیلدهای متنی/وضعیت (بدون فایل).</summary>
     public class UpdateAppBannerDto
     {

@@ -414,7 +414,7 @@ namespace Api_Vapp.Data
                 await context.SaveChangesAsync();
 
             var existingByKey = await context.AppBanners
-                .Where(b => !b.IsDeleted)
+                .Where(b => !b.IsDeleted && b.IsSystemManaged)
                 .ToDictionaryAsync(b => b.Key, StringComparer.OrdinalIgnoreCase);
 
             foreach (var definition in AppBannerCatalog.All)
@@ -426,11 +426,12 @@ namespace Api_Vapp.Data
                 }
 
                 var softDeleted = await context.AppBanners
-                    .FirstOrDefaultAsync(b => b.Key == definition.Key);
+                    .FirstOrDefaultAsync(b => b.Key == definition.Key && b.IsSystemManaged);
 
                 if (softDeleted != null)
                 {
                     softDeleted.IsDeleted = false;
+                    softDeleted.IsSystemManaged = true;
                     softDeleted.IsActive = true;
                     softDeleted.Title = definition.Title;
                     softDeleted.Description = definition.Description;
@@ -450,6 +451,7 @@ namespace Api_Vapp.Data
                     LinkType = definition.LinkType,
                     LinkUrl = definition.LinkUrl,
                     SortOrder = definition.SortOrder,
+                    IsSystemManaged = true,
                     IsActive = true,
                     CreatedAt = DateTime.UtcNow
                 });

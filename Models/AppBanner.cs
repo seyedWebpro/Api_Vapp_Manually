@@ -10,6 +10,9 @@ namespace Api_Vapp.Models
         /// <summary>کلید پایدار اسلات (مثلاً home، tool) — اپ با این کلید بنر را پیدا می‌کند.</summary>
         public string Key { get; set; } = string.Empty;
 
+        /// <summary>رکوردهای اولیهٔ سیستم حذف‌پذیر نیستند؛ بنرهای ساخته‌شده توسط ادمین حذف‌پذیرند.</summary>
+        public bool IsSystemManaged { get; set; }
+
         /// <summary>نام نمایشی در پنل ادمین.</summary>
         public string Title { get; set; } = string.Empty;
 

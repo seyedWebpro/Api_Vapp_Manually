@@ -1357,6 +1357,7 @@ namespace Api_Vapp.Data
                 entity.HasKey(b => b.Id);
                 entity.Property(b => b.Id).ValueGeneratedOnAdd();
                 entity.Property(b => b.Key).IsRequired().HasMaxLength(50);
+                entity.Property(b => b.IsSystemManaged).HasDefaultValue(false);
                 entity.Property(b => b.Title).IsRequired().HasMaxLength(200);
                 entity.Property(b => b.Description).HasMaxLength(1000);
                 entity.Property(b => b.ImageUrl).HasMaxLength(1000);
@@ -1365,7 +1366,7 @@ namespace Api_Vapp.Data
                 entity.Property(b => b.IsActive).HasDefaultValue(true);
                 entity.Property(b => b.IsDeleted).HasDefaultValue(false);
                 entity.Property(b => b.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
-                entity.HasIndex(b => b.Key).IsUnique();
+                entity.HasIndex(b => b.Key);
                 entity.HasIndex(b => b.IsActive);
                 entity.HasIndex(b => b.SortOrder);
             });

@@ -50,6 +50,20 @@ namespace Api_Vapp.Controller.Admin
             return StatusCode(result.StatusCode, result);
         }
 
+        [HttpPost("create")]
+        public async Task<ActionResult<ApiResponse<AppBannerResponseDto>>> Create([FromBody] CreateAppBannerDto dto)
+        {
+            var result = await _service.CreateAsync(dto);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        [HttpPost("{id:int}/delete")]
+        public async Task<ActionResult<ApiResponse<bool>>> Delete(int id)
+        {
+            var result = await _service.DeleteAsync(id);
+            return StatusCode(result.StatusCode, result);
+        }
+
         /// <summary>
         /// به‌روزرسانی بنر — هم JSON و هم multipart را می‌پذیرد (بدون ModelState بایندینگ).
         /// </summary>
