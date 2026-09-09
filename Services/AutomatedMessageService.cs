@@ -1309,8 +1309,8 @@ namespace Api_Vapp.Services
                 var recipient = new RecipientItemForAutomatedMessageDto
                 {
                     ContactId = contact.Id,
-                    MobileNumber = contact.MobileNumber,
-                    FullName = contact.FullName,
+                    MobileNumber = contact.MobileNumber?.Trim() ?? string.Empty,
+                    FullName = contact.FullName?.Trim() ?? string.Empty,
                     IsEligible = true
                 };
 
@@ -2745,8 +2745,8 @@ namespace Api_Vapp.Services
 
                         // دریافت مخاطبان از Recipients موجود
                         var contactIds = recipients
-                            .Where(r => r.ContactId.HasValue)
-                            .Select(r => r.ContactId!.Value)
+                            .Where(r => r.ContactId > 0)
+                            .Select(r => r.ContactId)
                             .ToList();
 
                         if (contactIds.Any())
@@ -3305,5 +3305,3 @@ namespace Api_Vapp.Services
         #endregion
     }
 }
-
-

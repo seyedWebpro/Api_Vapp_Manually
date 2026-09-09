@@ -495,8 +495,8 @@ namespace Api_Vapp.Services.BackgroundServices
                     var recipients = System.Text.Json.JsonSerializer.Deserialize<List<DTOs.Automation.RecipientItemForAutomatedMessageDto>>(
                         session.RecipientsJson);
                     scope.ExplicitContactIds = recipients?
-                        .Where(r => r.ContactId.HasValue && r.IsEligible)
-                        .Select(r => r.ContactId!.Value)
+                        .Where(r => r.ContactId > 0 && r.IsEligible)
+                        .Select(r => r.ContactId)
                         .ToHashSet() ?? new HashSet<int>();
                 }
                 catch (Exception ex)
@@ -739,4 +739,3 @@ namespace Api_Vapp.Services.BackgroundServices
         }
     }
 }
-

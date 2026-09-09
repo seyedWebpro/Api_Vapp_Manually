@@ -18,9 +18,9 @@ namespace Api_Vapp.DTOs.Automation
     /// </summary>
     public class RecipientItemForAutomatedMessageDto
     {
-        public int? ContactId { get; set; }
+        public int ContactId { get; set; }
         public string MobileNumber { get; set; } = string.Empty;
-        public string? FullName { get; set; }
+        public string FullName { get; set; } = string.Empty;
         public bool? HasDateOfBirth { get; set; }  // فقط برای نوع Birthday
         public bool? HasCashback { get; set; }     // فقط برای نوع CashbackExpiry
         public bool IsEligible { get; set; }       // آیا واجد شرایط است یا نه
@@ -35,4 +35,3 @@ namespace Api_Vapp.DTOs.Automation
         public string? Warning { get; set; }
     }
 }
-
