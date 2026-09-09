@@ -7,6 +7,7 @@ namespace Api_Vapp.Interfaces
     public interface IBookingAppointmentService
     {
         Task<ApiResponse<BookingPublicSystemDto>> GetPublicSystemAsync(string slug);
+        Task<ApiResponse<BookingPublicSystemDto>> GetAdminPreviewByIdAsync(int id);
         Task<ApiResponse<BookingAvailableSlotsDto>> GetAvailableSlotsAsync(string slug, int serviceId, DateOnly date);
         Task<ApiResponse<CreatePublicBookingResponseDto>> CreatePublicBookingAsync(
             string slug,

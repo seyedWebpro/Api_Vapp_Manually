@@ -146,8 +146,8 @@ namespace Api_Vapp.Services.Admin
                 if (entity == null)
                     return ApiResponse<bool>.NotFound("آیتم ارسال سریع یافت نشد");
 
-                if (entity.Approval.ApprovalStatus != AdminApprovalStatuses.Pending)
-                    return ApiResponse<bool>.BadRequest("این آیتم قبلاً بررسی شده است");
+                if (entity.Approval.ApprovalStatus == AdminApprovalStatuses.Approved)
+                    return ApiResponse<bool>.BadRequest("این آیتم در حال حاضر تأیید شده است");
 
                 var before = new
                 {
@@ -227,8 +227,8 @@ namespace Api_Vapp.Services.Admin
                 if (entity == null)
                     return ApiResponse<bool>.NotFound("آیتم ارسال سریع یافت نشد");
 
-                if (entity.Approval.ApprovalStatus != AdminApprovalStatuses.Pending)
-                    return ApiResponse<bool>.BadRequest("این آیتم قبلاً بررسی شده است");
+                if (entity.Approval.ApprovalStatus == AdminApprovalStatuses.Rejected)
+                    return ApiResponse<bool>.BadRequest("این آیتم در حال حاضر رد شده است");
 
                 var reason = dto.Reason.Trim();
                 var before = new

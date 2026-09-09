@@ -107,8 +107,8 @@ namespace Api_Vapp.Services.Admin
                 if (template == null)
                     return ApiResponse<bool>.NotFound("قالب یافت نشد");
 
-                if (template.ApprovalStatus != AdminApprovalStatuses.Pending)
-                    return ApiResponse<bool>.BadRequest("این قالب قبلاً بررسی شده است یا یافت نشد");
+                if (template.ApprovalStatus == AdminApprovalStatuses.Approved)
+                    return ApiResponse<bool>.BadRequest("این قالب در حال حاضر تأیید شده است");
 
                 var before = new
                 {
@@ -176,8 +176,8 @@ namespace Api_Vapp.Services.Admin
                 if (template == null)
                     return ApiResponse<bool>.NotFound("قالب یافت نشد");
 
-                if (template.ApprovalStatus != AdminApprovalStatuses.Pending)
-                    return ApiResponse<bool>.BadRequest("این قالب قبلاً بررسی شده است یا یافت نشد");
+                if (template.ApprovalStatus == AdminApprovalStatuses.Rejected)
+                    return ApiResponse<bool>.BadRequest("این قالب در حال حاضر رد شده است");
 
                 var reason = dto.Reason.Trim();
                 var before = new

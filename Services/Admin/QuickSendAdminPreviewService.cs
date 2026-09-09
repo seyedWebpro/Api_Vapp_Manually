@@ -23,6 +23,8 @@ namespace Api_Vapp.Services.Admin
         private readonly IAdminQuickSendApprovalService _approvalService;
         private readonly IUserFormPublicService _formPublicService;
         private readonly IBusinessCardPublicService _businessCardPublicService;
+        private readonly ILuckyWheelPublicService? _luckyWheelPublicService;
+        private readonly IBookingAppointmentService? _bookingAppointmentService;
         private readonly IQuickSendPreviewRateLimiter _rateLimiter;
         private readonly IHttpContextAccessor _httpContextAccessor;
         private readonly ILogger<QuickSendAdminPreviewService> _logger;
@@ -32,6 +34,8 @@ namespace Api_Vapp.Services.Admin
             IAdminQuickSendApprovalService approvalService,
             IUserFormPublicService formPublicService,
             IBusinessCardPublicService businessCardPublicService,
+            ILuckyWheelPublicService luckyWheelPublicService,
+            IBookingAppointmentService bookingAppointmentService,
             IQuickSendPreviewRateLimiter rateLimiter,
             IHttpContextAccessor httpContextAccessor,
             ILogger<QuickSendAdminPreviewService> logger)
@@ -40,6 +44,8 @@ namespace Api_Vapp.Services.Admin
             _approvalService = approvalService;
             _formPublicService = formPublicService;
             _businessCardPublicService = businessCardPublicService;
+            _luckyWheelPublicService = luckyWheelPublicService;
+            _bookingAppointmentService = bookingAppointmentService;
             _rateLimiter = rateLimiter;
             _httpContextAccessor = httpContextAccessor;
             _logger = logger;
@@ -214,6 +220,24 @@ namespace Api_Vapp.Services.Admin
 
                     content.BusinessCard = cardResult.Data;
                 }
+                else if (entry.ItemType == QuickSendItemTypes.LuckyWheel)
+                {
+                    if (_luckyWheelPublicService == null)
+                        return ApiResponse<QuickSendPreviewContentDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+                    var result = await _luckyWheelPublicService.GetAdminPreviewByIdAsync(entry.ItemId);
+                    if (!result.Success || result.Data == null)
+                        return ApiResponse<QuickSendPreviewContentDto>.Error(result.Message, result.StatusCode, result.Errors, result.ErrorCode);
+                    content.LuckyWheel = result.Data;
+                }
+                else if (entry.ItemType == QuickSendItemTypes.BookingSystem)
+                {
+                    if (_bookingAppointmentService == null)
+                        return ApiResponse<QuickSendPreviewContentDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+                    var result = await _bookingAppointmentService.GetAdminPreviewByIdAsync(entry.ItemId);
+                    if (!result.Success || result.Data == null)
+                        return ApiResponse<QuickSendPreviewContentDto>.Error(result.Message, result.StatusCode, result.Errors, result.ErrorCode);
+                    content.BookingSystem = result.Data;
+                }
                 else
                 {
                     return ApiResponse<QuickSendPreviewContentDto>.BadRequest(
@@ -232,7 +256,10 @@ namespace Api_Vapp.Services.Admin
         }
 
         private static bool SupportsVisualPreview(string itemType) =>
-            itemType is QuickSendItemTypes.UserForm or QuickSendItemTypes.BusinessCard;
+            itemType is QuickSendItemTypes.UserForm
+                or QuickSendItemTypes.BusinessCard
+                or QuickSendItemTypes.LuckyWheel
+                or QuickSendItemTypes.BookingSystem;
 
         private static string GenerateToken()
         {

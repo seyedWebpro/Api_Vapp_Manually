@@ -77,6 +77,24 @@ namespace Api_Vapp.Services
             }
         }
 
+        public async Task<ApiResponse<BookingPublicSystemDto>> GetAdminPreviewByIdAsync(int id)
+        {
+            try
+            {
+                var system = await _context.BookingSystems.AsNoTracking()
+                    .Include(s => s.Services.Where(service => !service.IsDeleted))
+                    .FirstOrDefaultAsync(s => s.Id == id && !s.IsDeleted);
+                return system == null
+                    ? ApiResponse<BookingPublicSystemDto>.NotFound("صفحه رزرو یافت نشد")
+                    : ApiResponse<BookingPublicSystemDto>.CreateSuccess(MapToPublicDto(system));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error loading booking admin preview {BookingSystemId}", id);
+                return ApiResponse<BookingPublicSystemDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
         public async Task<ApiResponse<BookingAvailableSlotsDto>> GetAvailableSlotsAsync(
             string slug, int serviceId, DateOnly date)
         {

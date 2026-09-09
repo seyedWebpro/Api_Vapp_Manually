@@ -34,6 +34,8 @@ public class QuickSendAdminPreviewServiceTests
             _approvalService,
             _formPublicService,
             _cardPublicService,
+            null!,
+            null!,
             _rateLimiter,
             _httpContextAccessor,
             NullLogger<QuickSendAdminPreviewService>.Instance);
@@ -54,14 +56,15 @@ public class QuickSendAdminPreviewServiceTests
     }
 
     [Fact]
-    public async Task CreatePreviewTokenAsync_LuckyWheel_Returns400()
+    public async Task CreatePreviewTokenAsync_LuckyWheel_ReturnsToken()
     {
+        _approvalService.Item = BuildApprovalItem(QuickSendItemTypes.LuckyWheel, 1, "Pending");
         var service = CreateService();
         var result = await service.CreatePreviewTokenAsync(QuickSendItemTypes.LuckyWheel, 1, adminUserId: 1);
 
-        Assert.False(result.Success);
-        Assert.Equal(400, result.StatusCode);
-        Assert.Equal(ErrorCodes.InvalidInput, result.ErrorCode);
+        Assert.True(result.Success);
+        Assert.Equal(200, result.StatusCode);
+        Assert.StartsWith("/preview/", result.Data!.PreviewPath);
     }
 
     [Fact]

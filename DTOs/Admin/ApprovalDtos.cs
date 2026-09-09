@@ -107,6 +107,8 @@ namespace Api_Vapp.DTOs.Admin
         public Api_Vapp.DTOs.UserForm.FormPublicDto? Form { get; set; }
 
         public Api_Vapp.DTOs.BusinessCard.BusinessCardPublicDto? BusinessCard { get; set; }
+        public Api_Vapp.DTOs.LuckyWheel.LuckyWheelPublicDto? LuckyWheel { get; set; }
+        public Api_Vapp.DTOs.BookingSystem.BookingPublicSystemDto? BookingSystem { get; set; }
     }
 
     public class AdminDashboardStatsDto

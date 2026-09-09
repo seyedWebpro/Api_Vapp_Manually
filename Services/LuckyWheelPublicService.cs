@@ -70,6 +70,24 @@ namespace Api_Vapp.Services
             }
         }
 
+        public async Task<ApiResponse<LuckyWheelPublicDto>> GetAdminPreviewByIdAsync(int id)
+        {
+            try
+            {
+                var wheel = await _context.LuckyWheels.AsNoTracking()
+                    .Include(w => w.Items)
+                    .FirstOrDefaultAsync(w => w.Id == id && !w.IsDeleted);
+                return wheel == null
+                    ? ApiResponse<LuckyWheelPublicDto>.NotFound("گردونه شانس یافت نشد")
+                    : ApiResponse<LuckyWheelPublicDto>.CreateSuccess(MapToPublicDto(wheel));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error loading lucky wheel admin preview {WheelId}", id);
+                return ApiResponse<LuckyWheelPublicDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
         public async Task<ApiResponse<RegisterPublicParticipantResponseDto>> RegisterAsync(
             string slug,
             RegisterPublicParticipantDto dto)

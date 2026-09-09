@@ -7,6 +7,7 @@ namespace Api_Vapp.Interfaces
     public interface ILuckyWheelPublicService
     {
         Task<ApiResponse<LuckyWheelPublicDto>> GetPublicWheelAsync(string slug);
+        Task<ApiResponse<LuckyWheelPublicDto>> GetAdminPreviewByIdAsync(int id);
 
         Task<ApiResponse<RegisterPublicParticipantResponseDto>> RegisterAsync(string slug, RegisterPublicParticipantDto dto);
 
