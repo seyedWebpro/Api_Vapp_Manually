@@ -145,6 +145,7 @@ namespace Api_Vapp.DTOs.Cashback
         public List<CashbackDto> Cashbacks { get; set; } = new();
         public int TotalCount { get; set; }
         public int ActiveCount { get; set; }
+        public int InactiveCount { get; set; }
         public int PageNumber { get; set; }
         public int PageSize { get; set; }
         public int TotalPages { get; set; }
@@ -950,7 +951,6 @@ namespace Api_Vapp.DTOs.Cashback
 
     #endregion
 }
-
 
 
 

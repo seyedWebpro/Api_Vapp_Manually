@@ -12,6 +12,7 @@ namespace Api_Vapp.Utilities
         public static string GetSourceDisplayName(string? source) =>
             (source ?? string.Empty).Trim().ToLowerInvariant() switch
             {
+                "all" => "همه منابع",
                 "divar" => "دیوار",
                 "sheypoor" => "شیپور",
                 "nshan" => "نشان",

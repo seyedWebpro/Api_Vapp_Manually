@@ -12,6 +12,7 @@ namespace Api_Vapp.DTOs.Message
         public string? Description { get; set; }
         public string? Icon { get; set; }
         public bool IsDefault { get; set; }
+        public bool IsQuickSendDefault { get; set; }
         public bool IsActive { get; set; }
         public int? GroupId { get; set; }
         public string? GroupName { get; set; }
@@ -21,5 +22,4 @@ namespace Api_Vapp.DTOs.Message
         public DateTime CreatedAt { get; set; }
     }
 }
-
 

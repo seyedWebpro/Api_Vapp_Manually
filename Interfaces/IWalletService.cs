@@ -40,12 +40,21 @@ namespace Api_Vapp.Interfaces
             int? paymentId = null,
             int? cashbackId = null,
             string? referenceNumber = null,
-            bool sendPushNotification = true);
+            bool sendPushNotification = true,
+            int? actorUserId = null);
 
         /// <summary>
         /// کسر موجودی از کیف پول (استفاده داخلی)
         /// </summary>
-        Task<ApiResponse<WalletTransactionDto>> DeductBalanceAsync(int userId, decimal amount, string title, string? description = null);
+        Task<ApiResponse<WalletTransactionDto>> DeductBalanceAsync(
+            int userId,
+            decimal amount,
+            string title,
+            string? description = null,
+            string? referenceNumber = null,
+            bool sendPushNotification = true,
+            int? actorUserId = null,
+            string? transactionType = null);
 
         /// <summary>
         /// بررسی موجودی کافی

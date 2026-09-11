@@ -33,7 +33,9 @@ namespace Api_Vapp.Interfaces
         Task<ApiResponse<List<CategoryGroupDto>>> GetTemplatesGroupedByCategoryAsync(int userId);
         Task<ApiResponse<TemplateResponseDto>> UpdateTemplateAsync(int id, int userId, UpdateTemplateDto updateDto);
         Task<ApiResponse<bool>> DeleteTemplateAsync(int id, int userId);
-        Task<ApiResponse<TemplateResponseDto>> SetUserDefaultTemplateAsync(int userId, int templateId);
+        Task<ApiResponse<TemplateResponseDto>> SetUserDefaultTemplateAsync(int userId, int templateId, bool isSelected = true);
+        Task<ApiResponse<List<TemplateResponseDto>>> GetQuickSendDefaultTemplatesAsync(int userId);
+        Task<ApiResponse<List<TemplateResponseDto>>> SetQuickSendDefaultTemplatesAsync(int userId, IReadOnlyCollection<int> templateIds);
 
         // Template Group operations
         Task<ApiResponse<TemplateGroupResponseDto>> CreateTemplateGroupAsync(int userId, CreateTemplateGroupDto createDto);
@@ -67,5 +69,3 @@ namespace Api_Vapp.Interfaces
         Task<ApiResponse<MessageTagWithContactCountListResponseDto>> GetTagsWithContactCountAsync(int userId, int pageNumber = 1, int pageSize = 10);
     }
 }
-
-

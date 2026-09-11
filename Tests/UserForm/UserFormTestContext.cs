@@ -199,7 +199,8 @@ internal sealed class UserFormTestContext : IDisposable
             options,
             fileUploadService,
             new NoOpAuditService(),
-            NullLogger<UserFormService>.Instance);
+            NullLogger<UserFormService>.Instance,
+            new NoOpForbiddenWordService());
     }
 
     private async Task SeedAsync()

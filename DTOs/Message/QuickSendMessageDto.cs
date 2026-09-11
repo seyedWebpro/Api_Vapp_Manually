@@ -12,7 +12,9 @@ namespace Api_Vapp.DTOs.Message
         /// </summary>
         [Required(ErrorMessage = "شناسه مخاطب الزامی است")]
         public int ContactId { get; set; }
+
+        /// <summary>شناسه یکی از قالب‌های انتخاب‌شده؛ وقتی بیش از یک انتخاب وجود دارد الزامی است.</summary>
+        public int? TemplateId { get; set; }
     }
 }
-
 

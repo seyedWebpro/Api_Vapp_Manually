@@ -212,9 +212,16 @@ namespace Api_Vapp.DTOs.BookingSystem
 
     public class BookingDashboardStatsDto
     {
+        /// <summary>تعداد کل نوبت‌های روز جاری (تقویم تهران)</summary>
         public int TodayTotal { get; set; }
+
+        /// <summary>تعداد کل نوبت‌های تاییدشده سیستم (همه تاریخ‌ها)</summary>
         public int Confirmed { get; set; }
+
+        /// <summary>تعداد کل نوبت‌های در انتظار تایید سیستم (همه تاریخ‌ها)</summary>
         public int Pending { get; set; }
+
+        /// <summary>تعداد کل نوبت‌های لغوشده سیستم (همه تاریخ‌ها)</summary>
         public int Cancelled { get; set; }
     }
 

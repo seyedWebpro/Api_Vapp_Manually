@@ -494,6 +494,8 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminAutomationTypeService, Api_
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminAppBannerService, Api_Vapp.Services.Admin.AdminAppBannerService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAppNewsTickerRepository, Api_Vapp.Repositories.AppNewsTickerRepository>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAppNewsTickerService, Api_Vapp.Services.Admin.AppNewsTickerService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IForbiddenWordRepository, Api_Vapp.Repositories.ForbiddenWordRepository>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IForbiddenWordService, Api_Vapp.Services.Admin.ForbiddenWordService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAppVersionService, Api_Vapp.Services.AppVersionService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminMessageApprovalService, Api_Vapp.Services.Admin.AdminMessageApprovalService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminTemplateApprovalService, Api_Vapp.Services.Admin.AdminTemplateApprovalService>();
@@ -501,6 +503,8 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminQuickSendApprovalService, A
 builder.Services.AddSingleton<Api_Vapp.Interfaces.IQuickSendPreviewRateLimiter, Api_Vapp.Services.Admin.QuickSendPreviewRateLimiter>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IQuickSendAdminPreviewService, Api_Vapp.Services.Admin.QuickSendAdminPreviewService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminDashboardService, Api_Vapp.Services.Admin.AdminDashboardService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminWalletService, Api_Vapp.Services.Admin.AdminWalletService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminUserInventoryService, Api_Vapp.Services.Admin.AdminUserInventoryService>();
 
 // ثبت Background Services برای پیام‌های خودکار و زمان‌دار
 builder.Services.AddHostedService<Api_Vapp.Services.BackgroundServices.AutomatedMessageBackgroundService>();

@@ -30,6 +30,7 @@ namespace Api_Vapp.Services
         private readonly IAuditService _audit;
         private readonly IMemoryCache _cache;
         private readonly ILogger<BusinessCardService> _logger;
+        private readonly IForbiddenWordService _forbiddenWords;
 
         public BusinessCardService(
             IBusinessCardRepository businessCardRepository,
@@ -41,7 +42,8 @@ namespace Api_Vapp.Services
             IFileUploadService fileUploadService,
             IAuditService audit,
             IMemoryCache cache,
-            ILogger<BusinessCardService> logger)
+            ILogger<BusinessCardService> logger,
+            IForbiddenWordService forbiddenWords)
         {
             _businessCardRepository = businessCardRepository;
             _contactRepository = contactRepository;
@@ -53,6 +55,7 @@ namespace Api_Vapp.Services
             _audit = audit;
             _cache = cache;
             _logger = logger;
+            _forbiddenWords = forbiddenWords;
         }
 
         public async Task<ApiResponse<BusinessCardResponseDto>> CreateDraftAsync(int userId, CreateBusinessCardDto createDto)
@@ -77,6 +80,14 @@ namespace Api_Vapp.Services
                         sectionErrors,
                         ErrorCodes.ValidationFailed);
                 }
+
+                var blocked = await _forbiddenWords.TryBlockIfContainsAsync<BusinessCardResponseDto>(
+                    createDto.Title,
+                    createDto.SmsDescription,
+                    createDto.DescriptionTitle,
+                    createDto.DescriptionText);
+                if (blocked != null)
+                    return blocked;
 
                 string? slug = null;
                 if (!string.IsNullOrWhiteSpace(createDto.Slug))
@@ -264,6 +275,12 @@ namespace Api_Vapp.Services
                     !string.Equals(originalSmsDescription, card.SmsCaption, StringComparison.Ordinal) ||
                     !string.Equals(originalLogoUrl, card.LogoUrl, StringComparison.Ordinal);
 
+                var blocked = await _forbiddenWords.TryBlockIfContainsAsync<BusinessCardResponseDto>(
+                    card.Title,
+                    card.SmsCaption);
+                if (blocked != null)
+                    return blocked;
+
                 card.UpdatedAt = DateTime.UtcNow;
                 QuickSendContentApprovalHelper.ResetToPendingIfNeeded(card, contentChanged);
                 await _context.SaveChangesAsync();
@@ -416,6 +433,12 @@ namespace Api_Vapp.Services
                     });
                 }
 
+                var blocked = await _forbiddenWords.TryBlockIfContainsAsync<BusinessCardResponseDto>(
+                    card.DescriptionTitle,
+                    card.DescriptionText);
+                if (blocked != null)
+                    return blocked;
+
                 card.UpdatedAt = DateTime.UtcNow;
                 QuickSendContentApprovalHelper.ResetToPending(card);
                 await _context.SaveChangesAsync();
@@ -489,6 +512,14 @@ namespace Api_Vapp.Services
                 {
                     return publishError;
                 }
+
+                var blocked = await _forbiddenWords.TryBlockIfContainsAsync<BusinessCardResponseDto>(
+                    card.Title,
+                    card.SmsCaption,
+                    card.DescriptionTitle,
+                    card.DescriptionText);
+                if (blocked != null)
+                    return blocked;
 
                 QuickSendContentApprovalHelper.ResetToPending(card);
                 await _context.SaveChangesAsync();

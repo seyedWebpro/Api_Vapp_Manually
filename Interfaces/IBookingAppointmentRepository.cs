@@ -33,7 +33,20 @@ namespace Api_Vapp.Interfaces
             DateTime? toUtc,
             int? serviceId,
             string? searchName = null);
-        Task<BookingDashboardCounts> GetDashboardCountsAsync(int systemId, DateOnly todayUtc);
+
+        /// <summary>
+        /// آمار داشبورد: todayTotal برای بازه روز تهران؛ confirmed/pending/cancelled کل نوبت‌های سیستم.
+        /// </summary>
+        Task<BookingDashboardCounts> GetDashboardCountsAsync(
+            int systemId,
+            DateTime dayStartUtc,
+            DateTime dayEndUtc);
+
+        Task<List<BookingAppointment>> GetAppointmentsForSystemInRangeAsync(
+            int systemId,
+            DateTime dayStartUtc,
+            DateTime dayEndUtc);
+
         Task<List<BookingAppointment>> GetCalendarAppointmentsAsync(int systemId, DateTime fromUtc, DateTime toUtc);
     }
 

@@ -2,6 +2,7 @@ using Api_Vapp.Data;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
 using Api_Vapp._Utilities;
+using Api_Vapp.Utilities;
 using Microsoft.EntityFrameworkCore;
 
 namespace Api_Vapp.Repositories
@@ -194,14 +195,21 @@ namespace Api_Vapp.Repositories
                 query = query.Where(a => a.Status == status);
             }
 
-            if (fromUtc.HasValue)
-            {
-                query = query.Where(a => a.StartUtc >= fromUtc.Value);
-            }
+            var normalizedSearch = BookingSearchHelper.NormalizeTerm(searchName);
+            var hasSearch = !string.IsNullOrEmpty(normalizedSearch);
 
-            if (toUtc.HasValue)
+            // هنگام جستجوی مشتری، فیلتر بازه تاریخ اعمال نمی‌شود تا نتیجه خارج از ماه جاری هم پیدا شود.
+            if (!hasSearch)
             {
-                query = query.Where(a => a.StartUtc <= toUtc.Value);
+                if (fromUtc.HasValue)
+                {
+                    query = query.Where(a => a.StartUtc >= fromUtc.Value);
+                }
+
+                if (toUtc.HasValue)
+                {
+                    query = query.Where(a => a.StartUtc <= toUtc.Value);
+                }
             }
 
             if (serviceId.HasValue)
@@ -209,10 +217,18 @@ namespace Api_Vapp.Repositories
                 query = query.Where(a => a.BookingServiceItemId == serviceId.Value);
             }
 
-            if (!string.IsNullOrWhiteSpace(searchName))
+            if (hasSearch)
             {
-                var term = searchName.Trim();
-                query = query.Where(a => a.CustomerFullName.Contains(term));
+                var nameVariants = BookingSearchHelper.BuildNameVariants(normalizedSearch);
+                var primaryName = nameVariants[0];
+                var alternateName = nameVariants.Count > 1 ? nameVariants[1] : null;
+                var mobileDigits = new string(normalizedSearch.Where(char.IsDigit).ToArray());
+                var hasMobileDigits = mobileDigits.Length >= 3;
+
+                query = query.Where(a =>
+                    a.CustomerFullName.Contains(primaryName) ||
+                    (alternateName != null && a.CustomerFullName.Contains(alternateName)) ||
+                    (hasMobileDigits && a.CustomerMobile.Contains(mobileDigits)));
             }
 
             var totalCount = await query.CountAsync();
@@ -250,25 +266,42 @@ namespace Api_Vapp.Repositories
             return (items, totalCount);
         }
 
-        public async Task<BookingDashboardCounts> GetDashboardCountsAsync(int systemId, DateOnly todayUtc)
+        public async Task<BookingDashboardCounts> GetDashboardCountsAsync(
+            int systemId,
+            DateTime dayStartUtc,
+            DateTime dayEndUtc)
         {
-            var dayStart = todayUtc.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
-            var dayEnd = dayStart.AddDays(1);
+            var baseQuery = _dbSet.AsNoTracking()
+                .Where(a => a.BookingSystemId == systemId && !a.IsDeleted);
 
-            var todayQuery = _dbSet.AsNoTracking()
-                .Where(a =>
-                    a.BookingSystemId == systemId &&
-                    !a.IsDeleted &&
-                    a.StartUtc >= dayStart &&
-                    a.StartUtc < dayEnd);
+            var todayTotal = await baseQuery.CountAsync(a =>
+                a.StartUtc >= dayStartUtc &&
+                a.StartUtc < dayEndUtc);
 
             return new BookingDashboardCounts
             {
-                TodayTotal = await todayQuery.CountAsync(),
-                Confirmed = await todayQuery.CountAsync(a => a.Status == BookingAppointmentStatuses.Confirmed),
-                Pending = await todayQuery.CountAsync(a => a.Status == BookingAppointmentStatuses.Pending),
-                Cancelled = await todayQuery.CountAsync(a => a.Status == BookingAppointmentStatuses.Cancelled)
+                TodayTotal = todayTotal,
+                Confirmed = await baseQuery.CountAsync(a => a.Status == BookingAppointmentStatuses.Confirmed),
+                Pending = await baseQuery.CountAsync(a => a.Status == BookingAppointmentStatuses.Pending),
+                Cancelled = await baseQuery.CountAsync(a => a.Status == BookingAppointmentStatuses.Cancelled)
             };
+        }
+
+        public async Task<List<BookingAppointment>> GetAppointmentsForSystemInRangeAsync(
+            int systemId,
+            DateTime dayStartUtc,
+            DateTime dayEndUtc)
+        {
+            return await _dbSet
+                .AsNoTracking()
+                .Include(a => a.BookingServiceItem)
+                .Where(a =>
+                    a.BookingSystemId == systemId &&
+                    !a.IsDeleted &&
+                    a.StartUtc >= dayStartUtc &&
+                    a.StartUtc < dayEndUtc)
+                .OrderBy(a => a.StartUtc)
+                .ToListAsync();
         }
 
         public async Task<List<BookingAppointment>> GetCalendarAppointmentsAsync(

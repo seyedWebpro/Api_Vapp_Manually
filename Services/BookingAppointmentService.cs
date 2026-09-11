@@ -356,9 +356,11 @@ namespace Api_Vapp.Services
                     return ApiResponse<BookingDashboardDto>.NotFound("سیستم رزرو یافت نشد");
                 }
 
-                var today = dateUtc ?? DateOnly.FromDateTime(DateTime.UtcNow);
-                var counts = await _appointmentRepository.GetDashboardCountsAsync(systemId, today);
-                var todayAppointments = await _appointmentRepository.GetAppointmentsForSystemOnDateAsync(systemId, today);
+                var today = dateUtc ?? BookingTehranTimeHelper.TodayTehran();
+                var (dayStartUtc, dayEndUtc) = BookingTehranTimeHelper.GetDayUtcRange(today);
+                var counts = await _appointmentRepository.GetDashboardCountsAsync(systemId, dayStartUtc, dayEndUtc);
+                var todayAppointments = await _appointmentRepository.GetAppointmentsForSystemInRangeAsync(
+                    systemId, dayStartUtc, dayEndUtc);
 
                 var todaySchedule = todayAppointments
                     .Where(a => a.Status == BookingAppointmentStatuses.Confirmed)

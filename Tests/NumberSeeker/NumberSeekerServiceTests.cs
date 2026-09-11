@@ -541,6 +541,9 @@ public class NumberSeekerServiceTests
         Assert.Equal(NumberSeekerCategoryHelper.CustomAllowedHint, result.Data.CustomCategoryHint);
         Assert.Equal(NumberSeekerCategoryHelper.Placeholder, result.Data.CategoryPlaceholder);
         Assert.Contains(result.Data.Categories, c => c.Name == "رستوران");
+        var allSources = Assert.Single(result.Data.Sources, s => s.Code == "all");
+        Assert.Equal("همه منابع", allSources.DisplayName);
+        Assert.Equal(1, allSources.SortOrder);
     }
 
     [Fact]
@@ -562,6 +565,26 @@ public class NumberSeekerServiceTests
         Assert.Equal(201, result.StatusCode);
         Assert.Equal("دندانپزشکی", repo.Tasks[0].Category);
         Assert.Equal("دندانپزشکی", client.LastStartRequest?.Category);
+    }
+
+    [Fact]
+    public async Task StartScrape_AcceptsAggregateSource()
+    {
+        var client = new FakeScraperClient();
+        var repo = new InMemoryTaskRepository();
+        var service = BuildService(client, repo);
+
+        var result = await service.StartScrapeAsync(10, new StartNumberSeekerScrapeDto
+        {
+            Source = "all",
+            City = "تهران",
+            Category = "آرایشگاه زنانه",
+            MaxPhones = 50
+        });
+
+        Assert.True(result.Success);
+        Assert.Equal("all", client.LastStartRequest?.Source);
+        Assert.Equal("همه منابع", NumberSeekerUiMapper.GetSourceDisplayName("all"));
     }
 
     [Fact]

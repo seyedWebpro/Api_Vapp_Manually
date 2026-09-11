@@ -1,5 +1,6 @@
 using Api_Vapp.DTOs.Admin;
 using Api_Vapp.DTOs.Common;
+using Api_Vapp.DTOs.Wallet;
 using Microsoft.AspNetCore.Http;
 
 namespace Api_Vapp.Interfaces
@@ -153,5 +154,41 @@ namespace Api_Vapp.Interfaces
     {
         Task<ApiResponse<AdminDashboardStatsDto>> GetStatsAsync();
         Task<ApiResponse<AdminDashboardChartsDto>> GetChartsAsync();
+    }
+
+    /// <summary>
+    /// مدیریت کیف پول کاربران از پنل ادمین (مشاهده موجودی / تاریخچه / شارژ و کسر دستی)
+    /// </summary>
+    public interface IAdminWalletService
+    {
+        Task<ApiResponse<AdminWalletBalanceDto>> GetBalanceAsync(int userId);
+        Task<ApiResponse<WalletTransactionListDto>> GetTransactionsAsync(int userId, int pageNumber = 1, int pageSize = 20);
+        Task<ApiResponse<AdminManualChargeResponseDto>> ManualChargeAsync(int adminUserId, int userId, AdminManualChargeRequestDto dto);
+        Task<ApiResponse<AdminManualChargeResponseDto>> ManualDeductAsync(int adminUserId, int userId, AdminManualChargeRequestDto dto);
+    }
+
+    /// <summary>
+    /// هاب دارایی‌های کاربر برای ادمین — قالب‌ها و محتوای ارسال سریع
+    /// </summary>
+    public interface IAdminUserInventoryService
+    {
+        Task<ApiResponse<AdminUserInventorySummaryDto>> GetSummaryAsync(int userId);
+
+        Task<ApiResponse<PagedResponse<AdminUserTemplateItemDto>>> GetTemplatesAsync(
+            int userId,
+            int page = 1,
+            int pageSize = 20);
+
+        Task<ApiResponse<PagedResponse<AdminUserContentItemDto>>> GetContentsAsync(
+            int userId,
+            string? itemType = null,
+            int page = 1,
+            int pageSize = 20);
+
+        Task<ApiResponse<AdminUserContentViewLinkDto>> CreateContentViewLinkAsync(
+            int userId,
+            string itemType,
+            int id,
+            int adminUserId);
     }
 }

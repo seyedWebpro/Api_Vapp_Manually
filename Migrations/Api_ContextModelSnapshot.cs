@@ -242,6 +242,53 @@ namespace Api_Vapp.Migrations
                     b.ToTable("AppNewsTickerMessages", (string)null);
                 });
 
+            modelBuilder.Entity("Api_Vapp.Models.ForbiddenWord", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<string>("NormalizedWord")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Word")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IsActive");
+
+                    b.HasIndex("NormalizedWord");
+
+                    b.HasIndex("NormalizedWord", "IsDeleted");
+
+                    b.ToTable("ForbiddenWords", (string)null);
+                });
+
             modelBuilder.Entity("Api_Vapp.Models.AppVersionPolicy", b =>
                 {
                     b.Property<int>("Id")
@@ -2668,6 +2715,11 @@ namespace Api_Vapp.Migrations
                         .HasColumnType("bit")
                         .HasDefaultValue(false);
 
+                    b.Property<bool>("IsQuickSendDefault")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -2690,6 +2742,8 @@ namespace Api_Vapp.Migrations
                     b.HasIndex("IsDeleted");
 
                     b.HasIndex("UserId");
+
+                    b.HasIndex("UserId", "IsQuickSendDefault", "IsDeleted");
 
                     b.ToTable("MessageTemplates");
                 });

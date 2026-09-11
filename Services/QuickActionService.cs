@@ -25,6 +25,7 @@ namespace Api_Vapp.Services
         private readonly IAuditService _audit;
         private readonly ILogger<QuickActionService> _logger;
         private readonly IFileUploadService _fileUploadService;
+        private readonly IForbiddenWordService _forbiddenWords;
 
         public QuickActionService(
             IQuickActionRepository quickActionRepository,
@@ -34,7 +35,8 @@ namespace Api_Vapp.Services
             Api_Context context,
             IAuditService audit,
             ILogger<QuickActionService> logger,
-            IFileUploadService fileUploadService)
+            IFileUploadService fileUploadService,
+            IForbiddenWordService forbiddenWords)
         {
             _quickActionRepository = quickActionRepository;
             _contactRepository = contactRepository;
@@ -44,12 +46,19 @@ namespace Api_Vapp.Services
             _audit = audit;
             _logger = logger;
             _fileUploadService = fileUploadService;
+            _forbiddenWords = forbiddenWords;
         }
 
         public async Task<ApiResponse<QuickActionResponseDto>> CreateQuickActionAsync(int userId, CreateQuickActionDto createDto)
         {
             try
             {
+                var blocked = await _forbiddenWords.TryBlockIfContainsAsync<QuickActionResponseDto>(
+                    createDto.Name,
+                    createDto.Content);
+                if (blocked != null)
+                    return blocked;
+
                 // اگر فایل آیکون ارسال شده باشد، آن را آپلود می‌کنیم
                 if (createDto.IconFile != null && createDto.IconFile.Length > 0)
                 {
@@ -300,6 +309,12 @@ namespace Api_Vapp.Services
                     !string.Equals(originalActionType, action.ActionType, StringComparison.Ordinal);
                 if (contentChanged)
                 {
+                    var blocked = await _forbiddenWords.TryBlockIfContainsAsync<QuickActionResponseDto>(
+                        action.Name,
+                        action.Content);
+                    if (blocked != null)
+                        return blocked;
+
                     QuickSendContentApprovalHelper.ResetToPending(action);
                 }
 

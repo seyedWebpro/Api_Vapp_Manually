@@ -27,6 +27,7 @@ namespace Api_Vapp.Services
         private readonly IFileUploadService _fileUploadService;
         private readonly IAuditService _audit;
         private readonly ILogger<LuckyWheelService> _logger;
+        private readonly IForbiddenWordService _forbiddenWords;
 
         public LuckyWheelService(
             ILuckyWheelRepository luckyWheelRepository,
@@ -37,7 +38,8 @@ namespace Api_Vapp.Services
             IOptions<LuckyWheelOptions> luckyWheelOptions,
             IFileUploadService fileUploadService,
             IAuditService audit,
-            ILogger<LuckyWheelService> logger)
+            ILogger<LuckyWheelService> logger,
+            IForbiddenWordService forbiddenWords)
         {
             _luckyWheelRepository = luckyWheelRepository;
             _contactRepository = contactRepository;
@@ -48,6 +50,7 @@ namespace Api_Vapp.Services
             _fileUploadService = fileUploadService;
             _audit = audit;
             _logger = logger;
+            _forbiddenWords = forbiddenWords;
         }
 
         public async Task<ApiResponse<LuckyWheelResponseDto>> CreateDraftAsync(int userId, CreateLuckyWheelDto createDto)
@@ -61,6 +64,12 @@ namespace Api_Vapp.Services
                 {
                     return validation;
                 }
+
+                var blocked = await _forbiddenWords.TryBlockIfContainsAsync<LuckyWheelResponseDto>(
+                    createDto.Title,
+                    createDto.SmsDescription);
+                if (blocked != null)
+                    return blocked;
 
                 var wheel = new LuckyWheel
                 {
@@ -238,6 +247,12 @@ namespace Api_Vapp.Services
                     !string.Equals(originalDescription, wheel.Description, StringComparison.Ordinal) ||
                     originalSaveToPhonebook != wheel.SaveToPhonebook ||
                     !originalNotebookIds.SequenceEqual(currentNotebookIds);
+
+                var blocked = await _forbiddenWords.TryBlockIfContainsAsync<LuckyWheelResponseDto>(
+                    wheel.Title,
+                    wheel.SmsCaption);
+                if (blocked != null)
+                    return blocked;
 
                 wheel.UpdatedAt = DateTime.UtcNow;
                 QuickSendContentApprovalHelper.ResetToPendingIfNeeded(wheel, contentChanged);
@@ -514,6 +529,13 @@ namespace Api_Vapp.Services
                 wheel.IsActive = true;
                 wheel.PublishedAt = DateTime.UtcNow;
                 wheel.UpdatedAt = DateTime.UtcNow;
+
+                var blocked = await _forbiddenWords.TryBlockIfContainsAsync<LuckyWheelResponseDto>(
+                    wheel.Title,
+                    wheel.SmsCaption);
+                if (blocked != null)
+                    return blocked;
+
                 QuickSendContentApprovalHelper.ResetToPending(wheel);
 
                 await _context.SaveChangesAsync();

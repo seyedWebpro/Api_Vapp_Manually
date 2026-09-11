@@ -105,7 +105,7 @@ if [[ -z "$CONNECTION_STRING" ]]; then
 import json
 data=json.load(open('$f'))
 cs=data.get('ConnectionStrings',{})
-print(cs.get('DefaultConnection') or cs.get('LocalDocker') or '')
+print(cs.get('DefaultConnection') or cs.get('LocalDockerHostConnection') or cs.get('LocalDocker') or '')
 ")"
       [[ -n "$CONNECTION_STRING" ]] && break
     fi
@@ -145,7 +145,10 @@ fi
 
 # Docker fallback (local/prod SQL container)
 if command -v docker >/dev/null 2>&1; then
-  CNAME="$(docker ps --format '{{.Names}}' 2>/dev/null | grep -iE 'sql|mssql' | head -1 || true)"
+  CNAME="$(docker ps --format '{{.Names}}' 2>/dev/null | grep -iE 'vapp_sqlserver' | head -1 || true)"
+  if [[ -z "$CNAME" ]]; then
+    CNAME="$(docker ps --format '{{.Names}}' 2>/dev/null | grep -iE 'sql|mssql' | head -1 || true)"
+  fi
   if [[ -n "$CNAME" ]]; then
     DB_NAME="DbVapp"
     [[ -n "$CONNECTION_STRING" ]] && DB_NAME="$(parse_cs "$CONNECTION_STRING" | sed -n '2p')"

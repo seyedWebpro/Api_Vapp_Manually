@@ -285,7 +285,8 @@ internal sealed class BookingSystemTestContext : IDisposable
             messageService: null!,
             options,
             new NoOpAuditService(),
-            NullLogger<BookingSystemService>.Instance);
+            NullLogger<BookingSystemService>.Instance,
+            new NoOpForbiddenWordService());
     }
 
     private static IBookingAppointmentService CreateAppointmentService(

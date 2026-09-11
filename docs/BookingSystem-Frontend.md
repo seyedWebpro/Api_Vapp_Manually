@@ -46,7 +46,7 @@ Content:   application/json
 | ویزارد — خلاصه | `GET /summary?draftId=` |
 | ویزارد — تأیید نهایی | `POST /confirm` |
 | مدیریت خدمات | `GET /{id}/services` + CRUD زیر |
-| داشبورد نوبت‌ها | `GET /{id}/dashboard` |
+| داشبورد نوبت‌ها | `GET /{id}/dashboard` (امروز تهران + آمار وضعیت کلی) |
 | تقویم ماهانه | `GET /{id}/appointments/calendar?year=&month=` |
 | لیست/جدول نوبت‌ها | `GET /{id}/appointments?searchName=&status=&fromUtc=&toUtc=` |
 | جزئیات نوبت | `GET /{id}/appointments/{appointmentId}` |
@@ -388,7 +388,7 @@ Base: `/api/BookingPublic` — **AllowAnonymous**
 
 | عملیات | API |
 |--------|-----|
-| داشبورد (آمار امروز + برنامه امروز) | `GET /{id}/dashboard?date=` |
+| داشبورد (نوبت امروز تهران + آمار وضعیت کلی + برنامه امروز) | `GET /{id}/dashboard?date=` |
 | خلاصه تقویم ماهانه | `GET /{id}/appointments/calendar?year=2026&month=7` |
 | لیست/جدول نوبت‌ها | `GET /{id}/appointments?pageNumber=1&status=&searchName=&fromUtc=&toUtc=&serviceId=` |
 | جزئیات نوبت | `GET /{id}/appointments/{appointmentId}` |
@@ -430,6 +430,11 @@ Auth: Bearer JWT (مالک سیستم)
 
 ### داشبورد — `GET /{id}/dashboard`
 
+- اگر `date` نباشد، روز جاری بر اساس **تقویم تهران** محاسبه می‌شود.
+- `stats.todayTotal`: تعداد نوبت‌های همان روز (همه وضعیت‌ها)
+- `stats.confirmed` / `pending` / `cancelled`: شمارش **کل** نوبت‌های سیستم (همه تاریخ‌ها)
+- `todaySchedule`: فقط نوبت‌های **Confirmed** همان روز تهران
+
 ```json
 {
   "systemId": 12,
@@ -440,7 +445,7 @@ Auth: Bearer JWT (مالک سیستم)
   "publicUrl": "https://app.com/book/beauty",
   "isActive": true,
   "stats": {
-    "todayTotal": 24,
+    "todayTotal": 3,
     "confirmed": 18,
     "pending": 5,
     "cancelled": 1
@@ -449,6 +454,13 @@ Auth: Bearer JWT (مالک سیستم)
 }
 ```
 
+### لیست نوبت‌ها — جستجو
+
+`GET /{id}/appointments?searchName=مسعود&pageNumber=1&pageSize=20`
+
+- `searchName` روی **نام** و **موبایل** مشتری اعمال می‌شود.
+- اگر `searchName` پر باشد، `fromUtc` / `toUtc` **نادیده گرفته می‌شوند** تا جستجو محدود به ماه جاری نشود.
+- برای فیلتر ماه بدون جستجو، همان `fromUtc` / `toUtc` را بفرستید.
 ### تقویم — `GET /{id}/appointments/calendar`
 
 هر روز: `totalCount` + تا ۵ اسلات نمونه (`startUtc`, `status`, `customerFullName`, `serviceTitle`)

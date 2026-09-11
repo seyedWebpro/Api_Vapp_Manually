@@ -25,6 +25,7 @@ namespace Api_Vapp.Services
         private readonly BookingSystemOptions _options;
         private readonly IAuditService _audit;
         private readonly ILogger<BookingSystemService> _logger;
+        private readonly IForbiddenWordService _forbiddenWords;
 
         private const int DraftExpirationHours = 24;
         private const int MaxSlugLength = 100;
@@ -38,7 +39,8 @@ namespace Api_Vapp.Services
             IMessageService messageService,
             IOptions<BookingSystemOptions> options,
             IAuditService audit,
-            ILogger<BookingSystemService> logger)
+            ILogger<BookingSystemService> logger,
+            IForbiddenWordService forbiddenWords)
         {
             _context = context;
             _systemRepository = systemRepository;
@@ -48,6 +50,7 @@ namespace Api_Vapp.Services
             _messageService = messageService;
             _options = options.Value;
             _audit = audit;
+            _forbiddenWords = forbiddenWords;
             _logger = logger;
         }
 
@@ -402,6 +405,13 @@ namespace Api_Vapp.Services
                 !string.Equals(originalSmsDescription, system.SmsCaption, StringComparison.Ordinal);
             if (contentChanged)
             {
+                var blocked = await _forbiddenWords.TryBlockIfContainsAsync<BookingSystemDto>(
+                    system.Title,
+                    system.Description,
+                    system.SmsCaption);
+                if (blocked != null)
+                    return blocked;
+
                 QuickSendContentApprovalHelper.ResetToPending(system);
             }
             await _context.SaveChangesAsync();
@@ -622,6 +632,13 @@ namespace Api_Vapp.Services
             {
                 return ApiResponse<ConfirmBookingSystemResponseDto>.BadRequest("امکان ساخت لینک وجود ندارد");
             }
+
+            var blocked = await _forbiddenWords.TryBlockIfContainsAsync<ConfirmBookingSystemResponseDto>(
+                step1.Title,
+                step1.Description,
+                step1.SmsDescription);
+            if (blocked != null)
+                return blocked;
 
             await using var transaction = await _context.Database.BeginTransactionAsync();
 

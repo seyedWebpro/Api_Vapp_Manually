@@ -73,6 +73,7 @@ namespace Api_Vapp.Services
                 var cashbacks = await _cashbackRepository.GetByUserIdAsync(userId, pageNumber, pageSize, isActive);
                 var totalCount = await _cashbackRepository.GetCountByUserIdAsync(userId, isActive);
                 var activeCount = await _cashbackRepository.GetCountByUserIdAsync(userId, true);
+                var inactiveCount = await _cashbackRepository.GetCountByUserIdAsync(userId, false);
                 var totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
 
                 var cashbackDtos = new List<CashbackDto>();
@@ -86,6 +87,7 @@ namespace Api_Vapp.Services
                     Cashbacks = cashbackDtos,
                     TotalCount = totalCount,
                     ActiveCount = activeCount,
+                    InactiveCount = inactiveCount,
                     PageNumber = pageNumber,
                     PageSize = pageSize,
                     TotalPages = totalPages
@@ -2965,7 +2967,6 @@ namespace Api_Vapp.Services
         #endregion
     }
 }
-
 
 
 

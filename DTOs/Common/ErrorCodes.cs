@@ -26,6 +26,12 @@ namespace Api_Vapp.DTOs.Common
         /// محتوا توسط ادمین رد شده (برای مالک یا دسترسی عمومی)
         /// </summary>
         public const string ContentRejected = "CONTENT_REJECTED";
+
+        /// <summary>
+        /// متن شامل کلمه/عبارت فیلترشده است — نباید وارد صف تأیید شود
+        /// </summary>
+        public const string FilteredWord = "FILTERED_WORD";
+
         public const string DatabaseError = "DATABASE_ERROR";
         public const string TokenExpired = "TOKEN_EXPIRED";
         public const string TokenInvalid = "TOKEN_INVALID";
@@ -36,6 +42,9 @@ namespace Api_Vapp.DTOs.Common
         public const string SmsInvalidNumber = "SMS_INVALID_NUMBER";
         public const string SmsBlacklisted = "SMS_BLACKLISTED";
         public const string SmsTemporarilyUnavailable = "SMS_TEMPORARILY_UNAVAILABLE";
+        public const string QuickSendTemplateLimitReached = "QUICK_SEND_TEMPLATE_LIMIT_REACHED";
+        public const string QuickSendTemplateSelectionRequired = "QUICK_SEND_TEMPLATE_SELECTION_REQUIRED";
+        public const string QuickSendTemplateNotSelected = "QUICK_SEND_TEMPLATE_NOT_SELECTED";
         public const string PaymentFailed = "PAYMENT_FAILED";
         public const string FileUploadFailed = "FILE_UPLOAD_FAILED";
         public const string PushFailed = "PUSH_FAILED";

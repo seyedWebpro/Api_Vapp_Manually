@@ -40,6 +40,7 @@ namespace Api_Vapp.Constants
         public const string AutomationType = "AutomationType";
         public const string AppBanner = "AppBanner";
         public const string AppNewsTicker = "AppNewsTicker";
+        public const string ForbiddenWord = "ForbiddenWord";
         public const string AppVersionPolicy = "AppVersionPolicy";
         public const string Otp = "Otp";
         public const string SmsSend = "SmsSend";

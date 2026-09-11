@@ -56,6 +56,7 @@ namespace Api_Vapp.Data
         public DbSet<AutomationTypeDefinition> AutomationTypes { get; set; }
         public DbSet<AppBanner> AppBanners { get; set; }
         public DbSet<AppNewsTickerMessage> AppNewsTickerMessages { get; set; }
+        public DbSet<ForbiddenWord> ForbiddenWords { get; set; }
         public DbSet<AppVersionPolicy> AppVersionPolicies { get; set; }
         public DbSet<SmsApprovalRequest> SmsApprovalRequests { get; set; }
         public DbSet<UserForm> UserForms { get; set; }
@@ -455,6 +456,7 @@ namespace Api_Vapp.Data
                 entity.Property(mt => mt.Content).IsRequired().HasMaxLength(2000);
                 entity.Property(mt => mt.Category).HasMaxLength(100);
                 entity.Property(mt => mt.IsActive).HasDefaultValue(true);
+                entity.Property(mt => mt.IsQuickSendDefault).HasDefaultValue(false);
                 entity.Property(mt => mt.IsDeleted).HasDefaultValue(false);
                 entity.Property(mt => mt.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
 
@@ -469,6 +471,7 @@ namespace Api_Vapp.Data
                     .OnDelete(DeleteBehavior.NoAction);
 
                 entity.HasIndex(mt => mt.UserId);
+                entity.HasIndex(mt => new { mt.UserId, mt.IsQuickSendDefault, mt.IsDeleted });
                 entity.HasIndex(mt => mt.GroupId);
                 entity.HasIndex(mt => mt.IsDeleted);
             });
@@ -1383,6 +1386,22 @@ namespace Api_Vapp.Data
                 entity.Property(m => m.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
                 entity.HasIndex(m => m.IsActive);
                 entity.HasIndex(m => m.SortOrder);
+            });
+
+            // کلمات فیلتر شده
+            modelBuilder.Entity<ForbiddenWord>(entity =>
+            {
+                entity.ToTable("ForbiddenWords");
+                entity.HasKey(w => w.Id);
+                entity.Property(w => w.Id).ValueGeneratedOnAdd();
+                entity.Property(w => w.Word).IsRequired().HasMaxLength(100);
+                entity.Property(w => w.NormalizedWord).IsRequired().HasMaxLength(100);
+                entity.Property(w => w.IsActive).HasDefaultValue(true);
+                entity.Property(w => w.IsDeleted).HasDefaultValue(false);
+                entity.Property(w => w.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+                entity.HasIndex(w => w.IsActive);
+                entity.HasIndex(w => w.NormalizedWord);
+                entity.HasIndex(w => new { w.NormalizedWord, w.IsDeleted });
             });
 
             // سیاست نسخه اپ موبایل

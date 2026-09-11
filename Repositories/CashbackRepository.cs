@@ -18,6 +18,7 @@ namespace Api_Vapp.Repositories
         public async Task<IEnumerable<Cashback>> GetByUserIdAsync(int userId, int pageNumber = 1, int pageSize = 10, bool? isActive = null)
         {
             var query = _dbSet
+                .AsNoTracking()
                 .Where(c => c.UserId == userId && !c.IsDeleted);
 
             if (isActive.HasValue)
@@ -35,6 +36,7 @@ namespace Api_Vapp.Repositories
         public async Task<int> GetCountByUserIdAsync(int userId, bool? isActive = null)
         {
             var query = _dbSet
+                .AsNoTracking()
                 .Where(c => c.UserId == userId && !c.IsDeleted);
 
             if (isActive.HasValue)
@@ -147,7 +149,6 @@ namespace Api_Vapp.Repositories
         }
     }
 }
-
 
 
 

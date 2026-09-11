@@ -1248,6 +1248,8 @@ namespace Api_Vapp.Services
                 IsPhoneVerified = user.IsPhoneVerified,
                 CanViewNumberSeekerPhones = user.CanViewNumberSeekerPhones,
                 IsDeleted = user.IsDeleted,
+                WalletBalance = user.WalletBalance,
+                FormattedWalletBalance = $"{user.WalletBalance:N0} تومان",
                 CreatedAt = user.CreatedAt,
                 UpdatedAt = user.UpdatedAt,
                 LastLoginAt = user.LastLoginAt

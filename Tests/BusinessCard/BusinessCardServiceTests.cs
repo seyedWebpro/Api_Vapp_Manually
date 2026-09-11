@@ -478,7 +478,8 @@ internal sealed class BusinessCardTestContext : IAsyncDisposable
             fileUpload,
             new NoOpAuditService(),
             cache,
-            NullLogger<BusinessCardService>.Instance);
+            NullLogger<BusinessCardService>.Instance,
+            new NoOpForbiddenWordService());
 
         var publicService = new BusinessCardPublicService(
             repo,

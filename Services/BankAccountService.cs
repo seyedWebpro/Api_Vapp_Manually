@@ -29,6 +29,7 @@ namespace Api_Vapp.Services
         private readonly IAuditService _audit;
         private readonly IMemoryCache _cache;
         private readonly ILogger<BankAccountService> _logger;
+        private readonly IForbiddenWordService _forbiddenWords;
 
         public BankAccountService(
             IBankAccountRepository bankAccountRepository,
@@ -38,7 +39,8 @@ namespace Api_Vapp.Services
             Api_Context context,
             IAuditService audit,
             IMemoryCache cache,
-            ILogger<BankAccountService> logger)
+            ILogger<BankAccountService> logger,
+            IForbiddenWordService forbiddenWords)
         {
             _bankAccountRepository = bankAccountRepository;
             _contactRepository = contactRepository;
@@ -48,6 +50,7 @@ namespace Api_Vapp.Services
             _audit = audit;
             _cache = cache;
             _logger = logger;
+            _forbiddenWords = forbiddenWords;
         }
 
         public async Task<ApiResponse<BankAccountResponseDto>> CreateBankAccountAsync(
@@ -65,6 +68,12 @@ namespace Api_Vapp.Services
                         "عنوان الزامی است",
                         errorCode: ErrorCodes.InvalidInput);
                 }
+
+                var blocked = await _forbiddenWords.TryBlockIfContainsAsync<BankAccountResponseDto>(
+                    title,
+                    createDto.SmsDescription);
+                if (blocked != null)
+                    return blocked;
 
                 var (accountNumber, cardNumber, shebaNumber, fieldError) = NormalizeBankFields(
                     createDto.AccountNumber,
@@ -331,7 +340,15 @@ namespace Api_Vapp.Services
                     !string.Equals(originalSheba, entity.ShebaNumber, StringComparison.Ordinal);
 
                 if (contentChanged)
+                {
+                    var blocked = await _forbiddenWords.TryBlockIfContainsAsync<BankAccountResponseDto>(
+                        entity.Title,
+                        entity.SmsCaption);
+                    if (blocked != null)
+                        return blocked;
+
                     QuickSendContentApprovalHelper.ResetToPending(entity);
+                }
 
                 await _context.SaveChangesAsync();
                 InvalidateUserCache(userId);

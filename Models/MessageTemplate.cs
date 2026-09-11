@@ -33,6 +33,9 @@ namespace Api_Vapp.Models
         // آیا قالب پیش‌فرض است
         public bool IsDefault { get; set; } = false;
 
+        // انتخاب کاربر برای نمایش در بخش ارسال سریع (حداکثر سه قالب)
+        public bool IsQuickSendDefault { get; set; } = false;
+
         // فعال/غیرفعال
         public bool IsActive { get; set; } = true;
 
@@ -75,5 +78,4 @@ namespace Api_Vapp.Models
         #endregion
     }
 }
-
 

@@ -50,6 +50,8 @@ namespace Api_Vapp.Constants
         // —— Wallet / Cashback (فاز ۲ اولویت ۵)
         public const string WalletCredited = "Wallet.Credited";
         public const string WalletDebited = "Wallet.Debited";
+        public const string WalletManualCharged = "Wallet.ManualCharged";
+        public const string WalletManualDebited = "Wallet.ManualDebited";
         public const string CashbackApplied = "Cashback.Applied";
         public const string CashbackDraftApproved = "CashbackDraft.Approved";
         public const string CashbackDraftRejected = "CashbackDraft.Rejected";
@@ -87,6 +89,9 @@ namespace Api_Vapp.Constants
         public const string AppNewsTickerCreated = "AppNewsTicker.Created";
         public const string AppNewsTickerUpdated = "AppNewsTicker.Updated";
         public const string AppNewsTickerDeleted = "AppNewsTicker.Deleted";
+        public const string ForbiddenWordCreated = "ForbiddenWord.Created";
+        public const string ForbiddenWordUpdated = "ForbiddenWord.Updated";
+        public const string ForbiddenWordDeleted = "ForbiddenWord.Deleted";
         public const string AppVersionPolicyUpdated = "AppVersionPolicy.Updated";
         public const string LuckyWheelStatusChanged = "LuckyWheel.StatusChanged";
         public const string LuckyWheelCreated = "LuckyWheel.Created";

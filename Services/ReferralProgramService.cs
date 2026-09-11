@@ -22,6 +22,7 @@ namespace Api_Vapp.Services
         private readonly IUserSmsBillingService _userSmsBilling;
         private readonly IAuditService _audit;
         private readonly ILogger<ReferralProgramService> _logger;
+        private readonly IForbiddenWordService _forbiddenWords;
 
         private const int DraftExpirationHours = 24;
         private const decimal MinFixedAmount = 1000m;
@@ -38,7 +39,8 @@ namespace Api_Vapp.Services
             IReferralContactCodeRepository contactCodeRepository,
             IUserSmsBillingService userSmsBilling,
             IAuditService audit,
-            ILogger<ReferralProgramService> logger)
+            ILogger<ReferralProgramService> logger,
+            IForbiddenWordService forbiddenWords)
         {
             _context = context;
             _programRepository = programRepository;
@@ -48,6 +50,7 @@ namespace Api_Vapp.Services
             _userSmsBilling = userSmsBilling;
             _audit = audit;
             _logger = logger;
+            _forbiddenWords = forbiddenWords;
         }
 
         public async Task<ApiResponse<ReferralProgramListDto>> GetProgramsAsync(int userId, int pageNumber = 1, int pageSize = 10, bool? isActive = null)
@@ -515,6 +518,10 @@ namespace Api_Vapp.Services
 
             var closingText = ReferralInviteSmsHelper.NormalizeClosingText(step3.InviteSmsClosingText);
             var isCustomClosing = ReferralInviteSmsHelper.IsCustomClosingText(closingText);
+
+            var blocked = await _forbiddenWords.TryBlockIfContainsAsync<ConfirmReferralProgramResponseDto>(closingText);
+            if (blocked != null)
+                return blocked;
 
             var isReferrerRewardActive = step1.IsReferrerRewardActive && step1.ReferrerRewardValue > 0;
             var program = new ReferralProgram
@@ -1320,6 +1327,11 @@ namespace Api_Vapp.Services
                 InviteSmsClosingUpdateAction inviteSmsAction = InviteSmsClosingUpdateAction.None;
                 if (updateDto.InviteSmsClosingText != null)
                 {
+                    var blocked = await _forbiddenWords.TryBlockIfContainsAsync<ReferralProgramDto>(
+                        updateDto.InviteSmsClosingText);
+                    if (blocked != null)
+                        return blocked;
+
                     var closingResult = ApplyInviteSmsClosingTextUpdate(program, updateDto.InviteSmsClosingText);
                     if (!closingResult.Success)
                     {

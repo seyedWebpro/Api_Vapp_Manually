@@ -27,11 +27,12 @@ namespace Api_Vapp.Services
 
         private static readonly List<NumberSeekerSourceInfoDto> KnownSources = new()
         {
-            new() { Code = "divar", DisplayName = "دیوار", IconKey = "divar", SortOrder = 1, Enabled = true },
+            new() { Code = "all", DisplayName = "همه منابع", IconKey = "all", SortOrder = 1, Enabled = true },
             new() { Code = "googlemaps", DisplayName = "گوگل مپ", IconKey = "googlemaps", SortOrder = 2, Enabled = true },
-            new() { Code = "sheypoor", DisplayName = "شیپور", IconKey = "sheypoor", SortOrder = 3, Enabled = true },
-            new() { Code = "nshan", DisplayName = "نشان", IconKey = "nshan", SortOrder = 4, Enabled = true },
-            new() { Code = "balad", DisplayName = "بلد", IconKey = "balad", SortOrder = 5, Enabled = true }
+            new() { Code = "nshan", DisplayName = "نشان", IconKey = "nshan", SortOrder = 3, Enabled = true },
+            new() { Code = "balad", DisplayName = "بلد", IconKey = "balad", SortOrder = 4, Enabled = true },
+            new() { Code = "divar", DisplayName = "دیوار", IconKey = "divar", SortOrder = 5, Enabled = true },
+            new() { Code = "sheypoor", DisplayName = "شیپور", IconKey = "sheypoor", SortOrder = 6, Enabled = true }
         };
 
         private static readonly string[] KnownCities =

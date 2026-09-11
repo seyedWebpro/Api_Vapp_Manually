@@ -21,6 +21,7 @@ namespace Api_Vapp.Services
     /// </summary>
     public class MessageService : IMessageService
     {
+        private const int MaxQuickSendDefaultTemplates = 3;
         private readonly IMessageRepository _messageRepository;
         private readonly IMessageCampaignRepository _campaignRepository;
         private readonly IMessageTemplateRepository _templateRepository;
@@ -40,6 +41,7 @@ namespace Api_Vapp.Services
         private readonly IWalletService _walletService;
         private readonly IUserPushNotifier _pushNotifier;
         private readonly INumberSeekerPhoneAccessService _phoneAccess;
+        private readonly IForbiddenWordService _forbiddenWords;
 
         public MessageService(
             IMessageRepository messageRepository,
@@ -60,6 +62,7 @@ namespace Api_Vapp.Services
             IWalletService walletService,
             IUserPushNotifier pushNotifier,
             INumberSeekerPhoneAccessService phoneAccess,
+            IForbiddenWordService forbiddenWords,
             IFileUploadService? fileUploadService = null)
         {
             _messageRepository = messageRepository;
@@ -80,6 +83,7 @@ namespace Api_Vapp.Services
             _audit = audit;
             _pushNotifier = pushNotifier;
             _phoneAccess = phoneAccess;
+            _forbiddenWords = forbiddenWords;
             _fileUploadService = fileUploadService;
         }
 
@@ -91,6 +95,13 @@ namespace Api_Vapp.Services
             {
                 // محتوای پیام (می‌تواند خالی باشد و بعداً به‌روزرسانی شود)
                 var content = string.IsNullOrWhiteSpace(createDto.Content) ? "" : createDto.Content.Trim();
+
+                if (!string.IsNullOrWhiteSpace(content))
+                {
+                    var blocked = await _forbiddenWords.TryBlockIfContainsAsync<MessageResponseDto>(content);
+                    if (blocked != null)
+                        return blocked;
+                }
 
                 int? templateId = null;
                 if (createDto.TemplateId.HasValue)
@@ -264,6 +275,10 @@ namespace Api_Vapp.Services
                 // به‌روزرسانی Content فقط در صورت ارسال مقدار غیرخالی
                 if (!string.IsNullOrWhiteSpace(updateDto.Content))
                 {
+                    var blocked = await _forbiddenWords.TryBlockIfContainsAsync<MessageResponseDto>(updateDto.Content);
+                    if (blocked != null)
+                        return blocked;
+
                     message.Content = updateDto.Content.Trim();
                     var pricing = await _smsPricing.GetRuntimeAsync();
                     message.CharacterCount = SmsPartsCalculator.CountMessageCharacters(message.Content, pricing.Rules);
@@ -1825,6 +1840,26 @@ namespace Api_Vapp.Services
                     return ApiResponse<TemplateResponseDto>.BadRequest("محتویات قالب نمی‌تواند خالی باشد");
                 }
 
+                var templateBlocked = await _forbiddenWords.TryBlockIfContainsAsync<TemplateResponseDto>(
+                    createDto.Name,
+                    createDto.Content);
+                if (templateBlocked != null)
+                {
+                    await transaction.RollbackAsync();
+                    if (uploadedIconPath != null && _fileUploadService != null)
+                    {
+                        try
+                        {
+                            await _fileUploadService.DeleteFileAsync(uploadedIconPath, "template", userId, "icons");
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "⚠️ Error deleting uploaded file after forbidden-word block");
+                        }
+                    }
+                    return templateBlocked;
+                }
+
                 // بررسی وجود کاربر
                 var userExists = await _context.Users.AnyAsync(u => u.Id == userId && !u.IsDeleted);
                 if (!userExists)
@@ -2137,6 +2172,31 @@ namespace Api_Vapp.Services
                 }
                 // برای حذف گروه از قالب، می‌توان از endpoint جداگانه استفاده کرد یا GroupId را به 0 تنظیم کرد
 
+                if (updateDto.Name != null || updateDto.Content != null)
+                {
+                    var nextName = updateDto.Name != null ? updateDto.Name.Trim() : template.Name;
+                    var nextContent = updateDto.Content != null ? updateDto.Content.Trim() : template.Content;
+                    var templateBlocked = await _forbiddenWords.TryBlockIfContainsAsync<TemplateResponseDto>(
+                        nextName,
+                        nextContent);
+                    if (templateBlocked != null)
+                    {
+                        await transaction.RollbackAsync();
+                        if (uploadedIconPath != null && _fileUploadService != null)
+                        {
+                            try
+                            {
+                                await _fileUploadService.DeleteFileAsync(uploadedIconPath, "template", userId, "icons");
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogWarning(ex, "⚠️ Error deleting uploaded file after forbidden-word block");
+                            }
+                        }
+                        return templateBlocked;
+                    }
+                }
+
                 if (updateDto.Name != null) template.Name = updateDto.Name.Trim();
                 var contentChanged = false;
                 if (updateDto.Content != null)
@@ -2323,11 +2383,110 @@ namespace Api_Vapp.Services
             }
         }
 
-        public async Task<ApiResponse<TemplateResponseDto>> SetUserDefaultTemplateAsync(int userId, int templateId)
+        public async Task<ApiResponse<List<TemplateResponseDto>>> GetQuickSendDefaultTemplatesAsync(int userId)
         {
-            _logger.LogInformation("📥 Setting default template for user {UserId}, template {TemplateId}", userId, templateId);
+            try
+            {
+                var templates = await _context.MessageTemplates
+                    .AsNoTracking()
+                    .Include(mt => mt.Group)
+                    .Where(mt => mt.UserId == userId &&
+                                 mt.IsQuickSendDefault &&
+                                 mt.IsActive &&
+                                 !mt.IsDeleted &&
+                                 mt.ApprovalStatus == AdminApprovalStatuses.Approved)
+                    .OrderBy(mt => mt.Id)
+                    .ToListAsync();
 
-            using var transaction = await _context.Database.BeginTransactionAsync();
+                return ApiResponse<List<TemplateResponseDto>>.CreateSuccess(
+                    templates.Select(MapToTemplateResponseDto).ToList());
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "خطا در دریافت قالب‌های منتخب ارسال سریع — UserId: {UserId}", userId);
+                return ApiResponse<List<TemplateResponseDto>>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
+        public async Task<ApiResponse<List<TemplateResponseDto>>> SetQuickSendDefaultTemplatesAsync(
+            int userId,
+            IReadOnlyCollection<int> templateIds)
+        {
+            var ids = templateIds.Where(id => id > 0).Distinct().ToList();
+            if (ids.Count == 0 || ids.Count > MaxQuickSendDefaultTemplates || ids.Count != templateIds.Count)
+            {
+                return ApiResponse<List<TemplateResponseDto>>.BadRequest(
+                    "یک تا سه شناسه قالب یکتا و معتبر ارسال کنید",
+                    errorCode: ErrorCodes.ValidationFailed);
+            }
+
+            using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+            try
+            {
+                var selectedTemplates = await _context.MessageTemplates
+                    .Where(mt => mt.UserId == userId &&
+                                 ids.Contains(mt.Id) &&
+                                 mt.IsActive &&
+                                 !mt.IsDeleted &&
+                                 mt.ApprovalStatus == AdminApprovalStatuses.Approved)
+                    .ToListAsync();
+                if (selectedTemplates.Count != ids.Count)
+                {
+                    await transaction.RollbackAsync();
+                    return ApiResponse<List<TemplateResponseDto>>.BadRequest(
+                        "یک یا چند قالب انتخاب‌شده معتبر، فعال، تأییدشده یا متعلق به شما نیست",
+                        errorCode: ErrorCodes.QuickSendTemplateNotSelected);
+                }
+
+                var currentSelections = await _context.MessageTemplates
+                    .Where(mt => mt.UserId == userId && mt.IsQuickSendDefault && !mt.IsDeleted)
+                    .ToListAsync();
+                var now = DateTime.UtcNow;
+                foreach (var template in currentSelections)
+                {
+                    if (!ids.Contains(template.Id))
+                    {
+                        template.IsQuickSendDefault = false;
+                        template.UpdatedAt = now;
+                    }
+                }
+                foreach (var template in selectedTemplates)
+                {
+                    if (!template.IsQuickSendDefault)
+                    {
+                        template.IsQuickSendDefault = true;
+                        template.UpdatedAt = now;
+                    }
+                }
+
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                var response = await _context.MessageTemplates
+                    .AsNoTracking()
+                    .Include(mt => mt.Group)
+                    .Where(mt => ids.Contains(mt.Id))
+                    .OrderBy(mt => mt.Id)
+                    .ToListAsync();
+                return ApiResponse<List<TemplateResponseDto>>.CreateSuccess(
+                    response.Select(MapToTemplateResponseDto).ToList(),
+                    "قالب‌های ارسال سریع ذخیره شدند");
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                _logger.LogError(ex, "خطا در ذخیره قالب‌های ارسال سریع — UserId: {UserId}", userId);
+                return ApiResponse<List<TemplateResponseDto>>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
+        public async Task<ApiResponse<TemplateResponseDto>> SetUserDefaultTemplateAsync(int userId, int templateId, bool isSelected = true)
+        {
+            _logger.LogInformation(
+                "تنظیم انتخاب ارسال سریع — UserId: {UserId}, TemplateId: {TemplateId}, IsSelected: {IsSelected}",
+                userId, templateId, isSelected);
+
+            using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
             try
             {
                 // بررسی وجود کاربر
@@ -2351,38 +2510,31 @@ namespace Api_Vapp.Services
                     return ApiResponse<TemplateResponseDto>.NotFound("قالب مورد نظر یافت نشد یا متعلق به شما نیست");
                 }
 
-                if (template.ApprovalStatus != AdminApprovalStatuses.Approved)
+                if (isSelected && template.ApprovalStatus != AdminApprovalStatuses.Approved)
                 {
                     await transaction.RollbackAsync();
                     return ApiResponse<TemplateResponseDto>.BadRequest(
                         "فقط قالب تأییدشده می‌تواند به‌عنوان پیش‌فرض تنظیم شود");
                 }
 
-                // غیرفعال کردن تمام قالب‌های پیش‌فرض قبلی کاربر (اگر وجود داشته باشند)
-                var previousDefaultTemplates = await _context.MessageTemplates
-                    .Where(mt => mt.UserId == userId && 
-                                 mt.IsDefault && 
-                                 mt.IsActive && 
-                                 !mt.IsDeleted &&
-                                 mt.Id != templateId)
-                    .ToListAsync();
-
-                if (previousDefaultTemplates.Any())
+                if (isSelected && !template.IsQuickSendDefault)
                 {
-                    foreach (var previousTemplate in previousDefaultTemplates)
+                    var selectedCount = await _context.MessageTemplates.CountAsync(mt =>
+                        mt.UserId == userId &&
+                        mt.IsQuickSendDefault &&
+                        mt.IsActive &&
+                        !mt.IsDeleted);
+                    if (selectedCount >= MaxQuickSendDefaultTemplates)
                     {
-                        previousTemplate.IsDefault = false;
-                        previousTemplate.UpdatedAt = DateTime.UtcNow;
-                        _context.MessageTemplates.Update(previousTemplate);
+                        await transaction.RollbackAsync();
+                        return ApiResponse<TemplateResponseDto>.BadRequest(
+                            "حداکثر سه قالب را می‌توانید برای ارسال سریع انتخاب کنید",
+                            errorCode: ErrorCodes.QuickSendTemplateLimitReached);
                     }
-                    _logger.LogInformation("🔧 {Count} previous default template(s) unset for user {UserId}", 
-                        previousDefaultTemplates.Count, userId);
                 }
 
-                // تنظیم قالب جدید به عنوان پیش‌فرض
-                template.IsDefault = true;
+                template.IsQuickSendDefault = isSelected;
                 template.UpdatedAt = DateTime.UtcNow;
-                _context.MessageTemplates.Update(template);
 
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
@@ -2393,12 +2545,13 @@ namespace Api_Vapp.Services
                     .Include(mt => mt.Group)
                     .FirstOrDefaultAsync(mt => mt.Id == templateId);
 
-                _logger.LogInformation("✅ Default template set successfully: Template {TemplateId} for user {UserId}", 
-                    templateId, userId);
+                _logger.LogInformation(
+                    "انتخاب ارسال سریع ذخیره شد — UserId: {UserId}, TemplateId: {TemplateId}, IsSelected: {IsSelected}",
+                    userId, templateId, isSelected);
 
                 return ApiResponse<TemplateResponseDto>.CreateSuccess(
                     MapToTemplateResponseDto(updatedTemplate ?? template),
-                    "قالب پیش‌فرض با موفقیت تنظیم شد"
+                    isSelected ? "قالب به ارسال سریع اضافه شد" : "قالب از ارسال سریع حذف شد"
                 );
             }
             catch (DbUpdateConcurrencyException ex)
@@ -2455,29 +2608,55 @@ namespace Api_Vapp.Services
                     return ApiResponse<DirectSendResultDto>.Forbidden("مخاطب متعلق به شما نیست");
                 }
 
-                // 3. پیدا کردن قالب پیش‌فرض تأییدشده کاربر
-                var defaultTemplate = await _context.MessageTemplates
-                    .FirstOrDefaultAsync(mt => mt.UserId == userId && 
-                                               mt.IsDefault && 
-                                               mt.IsActive && 
-                                               !mt.IsDeleted &&
-                                               mt.ApprovalStatus == AdminApprovalStatuses.Approved);
+                // 3. انتخاب قالب از میان قالب‌های منتخب و تأییدشدهٔ ارسال سریع
+                var quickSendTemplatesQuery = _context.MessageTemplates
+                    .Where(mt => mt.UserId == userId &&
+                                 mt.IsQuickSendDefault &&
+                                 mt.IsActive &&
+                                 !mt.IsDeleted &&
+                                 mt.ApprovalStatus == AdminApprovalStatuses.Approved);
+
+                MessageTemplate? defaultTemplate;
+                if (quickSendDto.TemplateId.HasValue)
+                {
+                    defaultTemplate = await quickSendTemplatesQuery
+                        .FirstOrDefaultAsync(mt => mt.Id == quickSendDto.TemplateId.Value);
+                    if (defaultTemplate == null)
+                    {
+                        await transaction.RollbackAsync();
+                        return ApiResponse<DirectSendResultDto>.BadRequest(
+                            "قالب انتخاب‌شده در فهرست قالب‌های ارسال سریع شما نیست",
+                            errorCode: ErrorCodes.QuickSendTemplateNotSelected);
+                    }
+                }
+                else
+                {
+                    var selectedTemplates = await quickSendTemplatesQuery
+                        .OrderBy(mt => mt.Id)
+                        .Take(2)
+                        .ToListAsync();
+                    if (selectedTemplates.Count == 0)
+                    {
+                        await transaction.RollbackAsync();
+                        return ApiResponse<DirectSendResultDto>.BadRequest(
+                            "ابتدا حداقل یک قالب را برای ارسال سریع انتخاب کنید",
+                            errorCode: ErrorCodes.QuickSendTemplateSelectionRequired);
+                    }
+                    if (selectedTemplates.Count > 1)
+                    {
+                        await transaction.RollbackAsync();
+                        return ApiResponse<DirectSendResultDto>.BadRequest(
+                            "برای ارسال سریع یکی از قالب‌های منتخب را انتخاب کنید",
+                            errorCode: ErrorCodes.QuickSendTemplateSelectionRequired);
+                    }
+                    defaultTemplate = selectedTemplates.SingleOrDefault();
+                }
 
                 string messageContent;
                 int? templateId = null;
 
-                if (defaultTemplate == null)
-                {
-                    // اگر قالب پیش‌فرض وجود نداشت، یک پیام مناسب با placeholder ارسال می‌کنیم
-                    // این پیام بعداً با PersonalizeMessageWithContactAsync شخصی‌سازی می‌شود
-                    messageContent = "سلام {{نام}} عزیز!\n\nاز تماس شما متشکریم.\n\nبا احترام";
-                    _logger.LogInformation("⚠️ No default template found for user {UserId}, using default message", userId);
-                }
-                else
-                {
-                    messageContent = defaultTemplate.Content;
-                    templateId = defaultTemplate.Id;
-                }
+                messageContent = defaultTemplate!.Content;
+                templateId = defaultTemplate.Id;
 
                 // 4. ایجاد پیام
                 var message = new Message
@@ -5652,6 +5831,7 @@ namespace Api_Vapp.Services
                 Description = template.Description,
                 Icon = template.Icon,
                 IsDefault = template.IsDefault,
+                IsQuickSendDefault = template.IsQuickSendDefault,
                 IsActive = template.IsActive,
                 GroupId = template.GroupId,
                 GroupName = groupName,
@@ -6341,4 +6521,3 @@ namespace Api_Vapp.Services
         #endregion
     }
 }
-

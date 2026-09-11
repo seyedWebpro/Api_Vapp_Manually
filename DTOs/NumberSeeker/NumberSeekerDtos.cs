@@ -8,8 +8,8 @@ namespace Api_Vapp.DTOs.NumberSeeker
     {
         [Required(ErrorMessage = "منبع اسکرپ الزامی است")]
         [RegularExpression(
-            "^(sheypoor|divar|nshan|balad|googlemaps)$",
-            ErrorMessage = "منبع نامعتبر است. مجاز: sheypoor, divar, nshan, balad, googlemaps")]
+            "^(all|sheypoor|divar|nshan|balad|googlemaps)$",
+            ErrorMessage = "منبع نامعتبر است. مجاز: all, sheypoor, divar, nshan, balad, googlemaps")]
         public string Source { get; set; } = string.Empty;
 
         [Required(ErrorMessage = "شهر الزامی است")]
@@ -208,7 +208,7 @@ namespace Api_Vapp.DTOs.NumberSeeker
         public string Code { get; set; } = string.Empty;
         public string DisplayName { get; set; } = string.Empty;
 
-        /// <summary>کلید آیکن سمت کلاینت: divar | googlemaps | sheypoor | nshan | balad</summary>
+        /// <summary>کلید آیکن سمت کلاینت: all | divar | googlemaps | sheypoor | nshan | balad</summary>
         public string IconKey { get; set; } = string.Empty;
 
         public int SortOrder { get; set; }

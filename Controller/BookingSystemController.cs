@@ -317,6 +317,7 @@ namespace Api_Vapp.Controller
             return StatusCode(result.StatusCode, result);
         }
 
+        /// <param name="date">روز تقویم تهران (yyyy-MM-dd). اگر خالی باشد، امروز تهران.</param>
         [HttpGet("{id}/dashboard")]
         [ProducesResponseType(typeof(ApiResponse<BookingDashboardDto>), StatusCodes.Status200OK)]
         public async Task<ActionResult<ApiResponse<BookingDashboardDto>>> GetDashboard(

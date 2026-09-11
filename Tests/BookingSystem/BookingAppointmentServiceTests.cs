@@ -306,6 +306,56 @@ public class BookingAppointmentServiceTests : IAsyncLifetime
 
         BookingApiAssertions.AssertSuccess(result);
         Assert.Equal(systemId, result.Data!.SystemId);
+        Assert.Equal(0, result.Data.Stats.TodayTotal);
+        Assert.Equal(0, result.Data.Stats.Confirmed);
+        Assert.Equal(1, result.Data.Stats.Pending);
+        Assert.Equal(0, result.Data.Stats.Cancelled);
+    }
+
+    [Fact]
+    public async Task GetAppointments_SearchName_FindsAcrossDateRange()
+    {
+        var (systemId, _) = await _ctx.CreateConfirmedSystemAsync();
+        await BookSampleAsync(systemId);
+
+        var farPast = DateTime.UtcNow.AddYears(-1);
+        var farPastEnd = farPast.AddDays(1);
+
+        var result = await _ctx.AppointmentService.GetAppointmentsAsync(
+            systemId,
+            _ctx.OwnerUserId,
+            1,
+            10,
+            null,
+            farPast,
+            farPastEnd,
+            null,
+            "مشتری");
+
+        BookingApiAssertions.AssertSuccess(result);
+        Assert.Single(result.Data!.Appointments);
+        Assert.Equal("مشتری", result.Data.Appointments[0].CustomerFullName);
+    }
+
+    [Fact]
+    public async Task GetAppointments_SearchMobile_ReturnsMatch()
+    {
+        var (systemId, _) = await _ctx.CreateConfirmedSystemAsync();
+        await BookSampleAsync(systemId);
+
+        var result = await _ctx.AppointmentService.GetAppointmentsAsync(
+            systemId,
+            _ctx.OwnerUserId,
+            1,
+            10,
+            null,
+            null,
+            null,
+            null,
+            "09122222222");
+
+        BookingApiAssertions.AssertSuccess(result);
+        Assert.Single(result.Data!.Appointments);
     }
 
     [Fact]

@@ -316,7 +316,7 @@ public class SmsDeliveryWalletRefundFlowTests
         public Task<ApiResponse<WalletTransactionDto>> AddBalanceAsync(
             int userId, decimal amount, string transactionType, string title,
             string? description = null, int? paymentId = null, int? cashbackId = null,
-            string? referenceNumber = null, bool sendPushNotification = true)
+            string? referenceNumber = null, bool sendPushNotification = true, int? actorUserId = null)
         {
             if (!string.IsNullOrWhiteSpace(referenceNumber))
             {
@@ -346,7 +346,10 @@ public class SmsDeliveryWalletRefundFlowTests
         public Task<ApiResponse<WalletTransactionListDto>> GetTransactionsAsync(int userId, int pageNumber = 1, int pageSize = 10) => throw new NotImplementedException();
         public Task<ApiResponse<List<WalletTransactionDto>>> GetRecentTransactionsAsync(int userId, int count = 5) => throw new NotImplementedException();
         public Task<ApiResponse<ChargeWalletResponseDto>> ChargeWalletAsync(int userId, ChargeWalletRequestDto request) => throw new NotImplementedException();
-        public Task<ApiResponse<WalletTransactionDto>> DeductBalanceAsync(int userId, decimal amount, string title, string? description = null) => throw new NotImplementedException();
+        public Task<ApiResponse<WalletTransactionDto>> DeductBalanceAsync(
+            int userId, decimal amount, string title, string? description = null,
+            string? referenceNumber = null, bool sendPushNotification = true,
+            int? actorUserId = null, string? transactionType = null) => throw new NotImplementedException();
         public Task<bool> HasSufficientBalanceAsync(int userId, decimal amount) => Task.FromResult(true);
         public Task<decimal> GetBalanceAsync(int userId) => Task.FromResult(GetBalance(userId));
         public Task<ApiResponse<WalletPageDto>> GetWalletPageAsync(int userId, int recentTransactionsCount = 10) => throw new NotImplementedException();

@@ -105,6 +105,35 @@ namespace Api_Vapp.Controller
             return StatusCode(result.StatusCode, result);
         }
 
+        /// <summary>دریافت قالب‌های تأییدشده‌ای که کاربر برای ارسال سریع انتخاب کرده است.</summary>
+        [HttpGet("quick-send-defaults")]
+        [ProducesResponseType(typeof(ApiResponse<List<TemplateResponseDto>>), StatusCodes.Status200OK)]
+        public async Task<ActionResult<ApiResponse<List<TemplateResponseDto>>>> GetQuickSendDefaultTemplates()
+        {
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _messageService.GetQuickSendDefaultTemplatesAsync(userId);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        /// <summary>جایگزینی اتمیک تمام انتخاب‌های ارسال سریع با یک تا سه قالب تأییدشده.</summary>
+        [HttpPost("quick-send-defaults")]
+        [ProducesResponseType(typeof(ApiResponse<List<TemplateResponseDto>>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<List<TemplateResponseDto>>), StatusCodes.Status400BadRequest)]
+        public async Task<ActionResult<ApiResponse<List<TemplateResponseDto>>>> SetQuickSendDefaultTemplates(
+            [FromBody] SetQuickSendDefaultTemplatesDto dto)
+        {
+            if (!ModelState.IsValid)
+            {
+                var errors = ExtractModelStateErrors();
+                return StatusCode(400, ApiResponse<List<TemplateResponseDto>>.BadRequest(
+                    "داده‌های ورودی نامعتبر است", errors, ErrorCodes.ValidationFailed));
+            }
+
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _messageService.SetQuickSendDefaultTemplatesAsync(userId, dto.TemplateIds);
+            return StatusCode(result.StatusCode, result);
+        }
+
         /// <summary>
         /// دریافت لیست قالب‌ها به صورت دسته‌بندی شده
         /// </summary>
@@ -199,7 +228,7 @@ namespace Api_Vapp.Controller
         }
 
         /// <summary>
-        /// تنظیم قالب پیش‌فرض کاربر
+        /// افزودن یا حذف قالب از انتخاب‌های ارسال سریع کاربر (حداکثر سه قالب)
         /// </summary>
         /// <param name="setDefaultDto">اطلاعات شامل شناسه قالب</param>
         /// <returns>پاسخ شامل اطلاعات قالب پیش‌فرض تنظیم شده</returns>
@@ -209,8 +238,9 @@ namespace Api_Vapp.Controller
         /// **نکات مهم:**
         /// - قالب باید متعلق به کاربر فعلی باشد
         /// - قالب باید فعال و حذف نشده باشد
-        /// - با تنظیم قالب جدید به عنوان پیش‌فرض، قالب پیش‌فرض قبلی به صورت خودکار غیرفعال می‌شود
-        /// - هر کاربر فقط می‌تواند یک قالب پیش‌فرض داشته باشد
+        /// - قالب باید تأییدشده باشد تا انتخاب شود
+        /// - انتخاب قالب جدید، انتخاب‌های قبلی را حذف نمی‌کند
+        /// - هر کاربر حداکثر سه قالب منتخب ارسال سریع دارد
         /// 
         /// **استفاده:**
         /// کاربر می‌تواند از بین تمام قالب‌های خود، یکی را به عنوان قالب پیش‌فرض انتخاب کند.
@@ -221,6 +251,7 @@ namespace Api_Vapp.Controller
         /// <response code="404">قالب یافت نشد یا متعلق به شما نیست</response>
         /// <response code="500">خطای سرور</response>
         [HttpPost("set-default")]
+        [HttpPost("quick-send-defaults/set")]
         [ProducesResponseType(typeof(ApiResponse<TemplateResponseDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<TemplateResponseDto>), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(typeof(ApiResponse<TemplateResponseDto>), StatusCodes.Status404NotFound)]
@@ -234,7 +265,10 @@ namespace Api_Vapp.Controller
             }
 
             var userId = await GetCurrentUserIdAsync();
-            var result = await _messageService.SetUserDefaultTemplateAsync(userId, setDefaultDto.TemplateId);
+            var result = await _messageService.SetUserDefaultTemplateAsync(
+                userId,
+                setDefaultDto.TemplateId,
+                setDefaultDto.IsSelected);
             return StatusCode(result.StatusCode, result);
         }
 
@@ -433,4 +467,3 @@ namespace Api_Vapp.Controller
         #endregion
     }
 }
-

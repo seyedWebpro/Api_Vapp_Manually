@@ -5,6 +5,7 @@ using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
 using Api_Vapp.Repositories;
 using Api_Vapp.Services;
+using Api_Vapp.Tests.Shared;
 using Api_Vapp.Utilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -179,7 +180,8 @@ internal sealed class ReferralProgramTestContext : IDisposable
             new ReferralContactCodeRepository(context),
             FakeSms,
             new Api_Vapp.Tests.Shared.NoOpAuditService(),
-            NullLogger<ReferralProgramService>.Instance);
+            NullLogger<ReferralProgramService>.Instance,
+            new NoOpForbiddenWordService());
     }
 
     private async Task SeedAsync()

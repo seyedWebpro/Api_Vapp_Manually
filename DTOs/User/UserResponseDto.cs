@@ -17,6 +17,12 @@ namespace Api_Vapp.DTOs.User
         public bool CanViewNumberSeekerPhones { get; set; }
         public bool IsDeleted { get; set; }
 
+        /// <summary>موجودی کیف پول (تومان)</summary>
+        public decimal WalletBalance { get; set; }
+
+        /// <summary>موجودی فرمت‌شده برای نمایش</summary>
+        public string FormattedWalletBalance { get; set; } = string.Empty;
+
         // Timestamps
         public DateTime CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }

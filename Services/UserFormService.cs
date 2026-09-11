@@ -30,6 +30,7 @@ namespace Api_Vapp.Services
         private readonly IFileUploadService _fileUploadService;
         private readonly IAuditService _audit;
         private readonly ILogger<UserFormService> _logger;
+        private readonly IForbiddenWordService _forbiddenWords;
 
         public UserFormService(
             IUserFormRepository userFormRepository,
@@ -40,7 +41,8 @@ namespace Api_Vapp.Services
             IOptions<FormBuilderOptions> formBuilderOptions,
             IFileUploadService fileUploadService,
             IAuditService audit,
-            ILogger<UserFormService> logger)
+            ILogger<UserFormService> logger,
+            IForbiddenWordService forbiddenWords)
         {
             _userFormRepository = userFormRepository;
             _contactRepository = contactRepository;
@@ -48,6 +50,7 @@ namespace Api_Vapp.Services
             _messageService = messageService;
             _context = context;
             _formBuilderOptions = formBuilderOptions.Value;
+            _forbiddenWords = forbiddenWords;
             _fileUploadService = fileUploadService;
             _audit = audit;
             _logger = logger;
@@ -62,6 +65,12 @@ namespace Api_Vapp.Services
                 {
                     return validation;
                 }
+
+                var blocked = await _forbiddenWords.TryBlockIfContainsAsync<UserFormResponseDto>(
+                    createDto.Title,
+                    createDto.SmsDescription);
+                if (blocked != null)
+                    return blocked;
 
                 var form = new UserForm
                 {
@@ -224,6 +233,12 @@ namespace Api_Vapp.Services
                     originalSaveToPhonebook != form.SaveToPhonebook ||
                     !originalNotebookIds.SequenceEqual(currentNotebookIds);
 
+                var blocked = await _forbiddenWords.TryBlockIfContainsAsync<UserFormResponseDto>(
+                    form.Title,
+                    form.SmsCaption);
+                if (blocked != null)
+                    return blocked;
+
                 return await SaveFormWithPhonebookValidationAsync(
                     form,
                     notebookIdsForValidation,
@@ -329,6 +344,12 @@ namespace Api_Vapp.Services
                 {
                     return publishError;
                 }
+
+                var blocked = await _forbiddenWords.TryBlockIfContainsAsync<UserFormResponseDto>(
+                    form.Title,
+                    form.SmsCaption);
+                if (blocked != null)
+                    return blocked;
 
                 QuickSendContentApprovalHelper.ResetToPending(form);
                 await _context.SaveChangesAsync();

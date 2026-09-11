@@ -1564,3 +1564,66 @@ Content-Type: application/json
   "customerContactId": 6,
   "idempotencyKey": "receipt-2026-001"
 }
+
+
+# --- Admin Wallet (موجودی / شارژ دستی) ---
+
+### موجودی کیف پول کاربر
+GET {{Api_Vapp_HostAddress}}/api/Admin/Wallet/1/balance
+Authorization: Bearer {{token}}
+
+### تاریخچه تراکنش‌ها
+GET {{Api_Vapp_HostAddress}}/api/Admin/Wallet/1/transactions?pageNumber=1&pageSize=20
+Authorization: Bearer {{token}}
+
+### شارژ دستی — معتبر
+POST {{Api_Vapp_HostAddress}}/api/Admin/Wallet/1/manual-charge
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "amount": 50000,
+  "description": "جبران خطای پرداخت درگاه",
+  "idempotencyKey": "admin-test-charge-001"
+}
+
+### شارژ دستی — validation fail (بدون دلیل)
+POST {{Api_Vapp_HostAddress}}/api/Admin/Wallet/1/manual-charge
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "amount": 50000
+}
+
+### شارژ دستی — بدون توکن
+POST {{Api_Vapp_HostAddress}}/api/Admin/Wallet/1/manual-charge
+Content-Type: application/json
+
+{
+  "amount": 50000,
+  "description": "تست بدون احراز هویت"
+}
+
+
+# --- Admin UserInventory (هاب دارایی کاربر — فاز ۱) ---
+
+### خلاصه شمارنده‌ها
+GET {{Api_Vapp_HostAddress}}/api/Admin/UserInventory/1/summary
+Authorization: Bearer {{token}}
+
+### لیست قالب‌ها (بدون متن — فقط لینک مشاهده)
+GET {{Api_Vapp_HostAddress}}/api/Admin/UserInventory/1/templates?page=1&pageSize=20
+Authorization: Bearer {{token}}
+
+### لیست محتوا (گردونه / کارت / فرم / …)
+GET {{Api_Vapp_HostAddress}}/api/Admin/UserInventory/1/contents?page=1&pageSize=20
+Authorization: Bearer {{token}}
+
+### فیلتر محتوا — گردونه شانس
+GET {{Api_Vapp_HostAddress}}/api/Admin/UserInventory/1/contents?itemType=LuckyWheel&page=1&pageSize=20
+Authorization: Bearer {{token}}
+
+### ساخت لینک مشاهده محتوا (عمومی / پیش‌نمایش ادمین)
+POST {{Api_Vapp_HostAddress}}/api/Admin/UserInventory/1/contents/LuckyWheel/1/view-link
+Authorization: Bearer {{token}}

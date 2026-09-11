@@ -5,6 +5,7 @@ using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
 using Api_Vapp.Repositories;
 using Api_Vapp.Services;
+using Api_Vapp.Tests.Shared;
 using Api_Vapp.Tests.UserForm;
 using Api_Vapp.Utilities;
 using Microsoft.EntityFrameworkCore;
@@ -192,7 +193,8 @@ internal sealed class LuckyWheelTestContext : IDisposable
                 options,
                 new FakeFileUploadService(),
                 new Api_Vapp.Tests.Shared.NoOpAuditService(),
-                NullLogger<LuckyWheelService>.Instance);
+                NullLogger<LuckyWheelService>.Instance,
+                new NoOpForbiddenWordService());
     }
 
     private async Task SeedAsync()

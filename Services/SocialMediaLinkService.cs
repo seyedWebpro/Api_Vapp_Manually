@@ -28,6 +28,7 @@ namespace Api_Vapp.Services
         private readonly IAuditService _audit;
         private readonly IMemoryCache _cache;
         private readonly ILogger<SocialMediaLinkService> _logger;
+        private readonly IForbiddenWordService _forbiddenWords;
 
         public SocialMediaLinkService(
             ISocialMediaLinkRepository linkRepository,
@@ -37,7 +38,8 @@ namespace Api_Vapp.Services
             Api_Context context,
             IAuditService audit,
             IMemoryCache cache,
-            ILogger<SocialMediaLinkService> logger)
+            ILogger<SocialMediaLinkService> logger,
+            IForbiddenWordService forbiddenWords)
         {
             _linkRepository = linkRepository;
             _contactRepository = contactRepository;
@@ -47,6 +49,7 @@ namespace Api_Vapp.Services
             _audit = audit;
             _cache = cache;
             _logger = logger;
+            _forbiddenWords = forbiddenWords;
         }
 
         public async Task<ApiResponse<SocialMediaLinkResponseDto>> CreateSocialMediaLinkAsync(
@@ -68,6 +71,12 @@ namespace Api_Vapp.Services
                     return ApiResponse<SocialMediaLinkResponseDto>.BadRequest(
                         "نوع پلتفرم الزامی است",
                         errorCode: ErrorCodes.InvalidInput);
+
+                var blocked = await _forbiddenWords.TryBlockIfContainsAsync<SocialMediaLinkResponseDto>(
+                    platform,
+                    createDto.SmsDescription);
+                if (blocked != null)
+                    return blocked;
 
                 var userExists = await _context.Users.AsNoTracking()
                     .AnyAsync(u => u.Id == userId && !u.IsDeleted);
@@ -248,6 +257,12 @@ namespace Api_Vapp.Services
                     !string.Equals(originalSmsDescription, link.SmsCaption, StringComparison.Ordinal);
                 if (contentChanged)
                 {
+                    var blocked = await _forbiddenWords.TryBlockIfContainsAsync<SocialMediaLinkResponseDto>(
+                        link.Platform,
+                        link.SmsCaption);
+                    if (blocked != null)
+                        return blocked;
+
                     QuickSendContentApprovalHelper.ResetToPending(link);
                 }
                 await _context.SaveChangesAsync();

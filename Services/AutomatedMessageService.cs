@@ -37,6 +37,7 @@ namespace Api_Vapp.Services
         private readonly IAuditService _audit;
         private readonly ISmsPricingService _smsPricing;
         private readonly IMemoryCache _cache;
+        private readonly IForbiddenWordService _forbiddenWords;
 
         private static readonly TimeSpan ActiveTypesCacheTtl = TimeSpan.FromMinutes(10);
 
@@ -56,7 +57,8 @@ namespace Api_Vapp.Services
             IServiceProvider serviceProvider,
             IAuditService audit,
             ISmsPricingService smsPricing,
-            IMemoryCache cache)
+            IMemoryCache cache,
+            IForbiddenWordService forbiddenWords)
         {
             _automatedMessageRepository = automatedMessageRepository;
             _messageRepository = messageRepository;
@@ -74,6 +76,7 @@ namespace Api_Vapp.Services
             _audit = audit;
             _smsPricing = smsPricing;
             _cache = cache;
+            _forbiddenWords = forbiddenWords;
         }
 
         public async Task<ApiResponse<AutomationTypeListResponseDto>> GetAutomationTypesAsync(int pageNumber = 1, int pageSize = 10)
@@ -210,6 +213,17 @@ namespace Api_Vapp.Services
                 {
                     await transaction.RollbackAsync();
                     return ApiResponse<AutomatedMessageResponseDto>.BadRequest("باید پیام یا شناسه پیام مشخص شود");
+                }
+
+                if (!string.IsNullOrWhiteSpace(createDto.MessageContent))
+                {
+                    var blocked = await _forbiddenWords.TryBlockIfContainsAsync<AutomatedMessageResponseDto>(
+                        createDto.MessageContent);
+                    if (blocked != null)
+                    {
+                        await transaction.RollbackAsync();
+                        return blocked;
+                    }
                 }
 
                 // بررسی وجود MessageId در صورت ارسال
@@ -916,6 +930,14 @@ namespace Api_Vapp.Services
                 // به‌روزرسانی MessageContent فقط در صورت ارسال مقدار غیرخالی
                 if (updateDto.MessageContent != null && updateDto.MessageContent != automatedMessage.MessageContent)
                 {
+                    var blocked = await _forbiddenWords.TryBlockIfContainsAsync<AutomatedMessageResponseDto>(
+                        updateDto.MessageContent);
+                    if (blocked != null)
+                    {
+                        await transaction.RollbackAsync();
+                        return blocked;
+                    }
+
                     automatedMessage.MessageContent = string.IsNullOrWhiteSpace(updateDto.MessageContent) ? null : updateDto.MessageContent.Trim();
                     hasChanges = true;
                 }
@@ -2285,6 +2307,14 @@ namespace Api_Vapp.Services
                     await transaction.RollbackAsync();
                     return ApiResponse<MessageContentResponseDto>.BadRequest(
                         "پیام یافت نشد یا شما مجاز به دسترسی به این پیام نیستید");
+                }
+
+                var blocked = await _forbiddenWords.TryBlockIfContainsAsync<MessageContentResponseDto>(
+                    contentDto.Content);
+                if (blocked != null)
+                {
+                    await transaction.RollbackAsync();
+                    return blocked;
                 }
 
                 // به‌روزرسانی محتوا

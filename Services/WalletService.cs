@@ -344,13 +344,19 @@ namespace Api_Vapp.Services
             int? paymentId = null, 
             int? cashbackId = null,
             string? referenceNumber = null,
-            bool sendPushNotification = true)
+            bool sendPushNotification = true,
+            int? actorUserId = null)
         {
             try
             {
                 if (amount <= 0)
                 {
                     return ApiResponse<WalletTransactionDto>.BadRequest("مبلغ باید بزرگتر از صفر باشد");
+                }
+
+                if (amount != decimal.Truncate(amount))
+                {
+                    return ApiResponse<WalletTransactionDto>.BadRequest("مبلغ باید عدد صحیح تومان باشد");
                 }
 
                 var ownsTransaction = _context.Database.CurrentTransaction == null;
@@ -360,11 +366,23 @@ namespace Api_Vapp.Services
 
                 try
                 {
-                    // Idempotency: اگر همین ReferenceNumber قبلاً ثبت شده، دوباره موجودی اضافه نکن
+                    // قفل ردیف کاربر اول — سپس بررسی idempotency تا race شرط دو شارژ همزمان بسته شود
+                    var user = await _context.Users
+                        .FromSqlRaw(
+                            "SELECT * FROM Users WITH (UPDLOCK, ROWLOCK) WHERE Id = {0}",
+                            userId)
+                        .FirstOrDefaultAsync();
+
+                    if (user == null)
+                    {
+                        if (ownsTransaction && transaction != null)
+                            await transaction.RollbackAsync();
+                        return ApiResponse<WalletTransactionDto>.NotFound("کاربر یافت نشد");
+                    }
+
                     if (!string.IsNullOrWhiteSpace(referenceNumber))
                     {
                         var existingByRef = await _context.WalletTransactions
-                            .AsNoTracking()
                             .Where(t => t.UserId == userId
                                 && t.ReferenceNumber == referenceNumber
                                 && t.Status == TransactionStatuses.Completed)
@@ -384,19 +402,6 @@ namespace Api_Vapp.Services
                                 MapToWalletTransactionDto(existingByRef),
                                 "تراکنش قبلاً ثبت شده است");
                         }
-                    }
-
-                    var user = await _context.Users
-                        .FromSqlRaw(
-                            "SELECT * FROM Users WITH (UPDLOCK, ROWLOCK) WHERE Id = {0}",
-                            userId)
-                        .FirstOrDefaultAsync();
-
-                    if (user == null)
-                    {
-                        if (ownsTransaction && transaction != null)
-                            await transaction.RollbackAsync();
-                        return ApiResponse<WalletTransactionDto>.NotFound("کاربر یافت نشد");
                     }
 
                     var balanceBefore = user.WalletBalance;
@@ -437,7 +442,7 @@ namespace Api_Vapp.Services
                         Action = AuditActions.WalletCredited,
                         EntityType = AuditEntityTypes.WalletTransaction,
                         EntityId = walletTransaction.Id.ToString(),
-                        ActorUserId = userId,
+                        ActorUserId = actorUserId ?? userId,
                         TargetUserId = userId,
                         After = new
                         {
@@ -446,6 +451,7 @@ namespace Api_Vapp.Services
                             user = PaymentAuditDetails.UserSnapshot(user),
                             walletTransactionId = walletTransaction.Id,
                             userId,
+                            actorUserId = actorUserId ?? userId,
                             phoneNumber = user.PhoneNumber,
                             fullName = user.FullName,
                             amount,
@@ -514,7 +520,11 @@ namespace Api_Vapp.Services
             int userId, 
             decimal amount, 
             string title, 
-            string? description = null)
+            string? description = null,
+            string? referenceNumber = null,
+            bool sendPushNotification = true,
+            int? actorUserId = null,
+            string? transactionType = null)
         {
             try
             {
@@ -522,6 +532,15 @@ namespace Api_Vapp.Services
                 {
                     return ApiResponse<WalletTransactionDto>.BadRequest("مبلغ باید بزرگتر از صفر باشد");
                 }
+
+                if (amount != decimal.Truncate(amount))
+                {
+                    return ApiResponse<WalletTransactionDto>.BadRequest("مبلغ باید عدد صحیح تومان باشد");
+                }
+
+                var resolvedType = string.IsNullOrWhiteSpace(transactionType)
+                    ? WalletTransactionTypes.Purchase
+                    : transactionType;
 
                 using var transaction = await _context.Database.BeginTransactionAsync(
                     System.Data.IsolationLevel.Serializable);
@@ -540,15 +559,40 @@ namespace Api_Vapp.Services
                         return ApiResponse<WalletTransactionDto>.NotFound("کاربر یافت نشد");
                     }
 
+                    if (!string.IsNullOrWhiteSpace(referenceNumber))
+                    {
+                        var existingByRef = await _context.WalletTransactions
+                            .Where(t => t.UserId == userId
+                                && t.ReferenceNumber == referenceNumber
+                                && t.Status == TransactionStatuses.Completed)
+                            .OrderByDescending(t => t.Id)
+                            .FirstOrDefaultAsync();
+
+                        if (existingByRef != null)
+                        {
+                            await transaction.RollbackAsync();
+                            _logger.LogInformation(
+                                "Wallet debit skipped — duplicate ReferenceNumber. UserId={UserId}, Ref={Ref}, ExistingTxId={TxId}",
+                                userId, referenceNumber, existingByRef.Id);
+
+                            return ApiResponse<WalletTransactionDto>.CreateSuccess(
+                                MapToWalletTransactionDto(existingByRef),
+                                "تراکنش قبلاً ثبت شده است");
+                        }
+                    }
+
                     if (user.WalletBalance < amount)
                     {
                         await transaction.RollbackAsync();
-                        var warn = PushNotificationCopy.InsufficientWallet(amount, user.WalletBalance);
-                        await _pushNotifier.NotifyAsync(
-                            userId,
-                            NotificationCategory.SystemWarnings,
-                            warn.Title,
-                            warn.Body);
+                        if (sendPushNotification)
+                        {
+                            var warn = PushNotificationCopy.InsufficientWallet(amount, user.WalletBalance);
+                            await _pushNotifier.NotifyAsync(
+                                userId,
+                                NotificationCategory.SystemWarnings,
+                                warn.Title,
+                                warn.Body);
+                        }
                         return ApiResponse<WalletTransactionDto>.BadRequest("موجودی کیف پول کافی نیست");
                     }
 
@@ -558,12 +602,13 @@ namespace Api_Vapp.Services
                     var walletTransaction = new WalletTransaction
                     {
                         UserId = userId,
-                        TransactionType = WalletTransactionTypes.Purchase,
+                        TransactionType = resolvedType,
                         Amount = -amount,
                         BalanceBefore = balanceBefore,
                         BalanceAfter = balanceAfter,
                         Title = title,
                         Description = description,
+                        ReferenceNumber = referenceNumber,
                         Status = TransactionStatuses.Completed,
                         CreatedAt = DateTime.UtcNow,
                         CompletedAt = DateTime.UtcNow
@@ -587,25 +632,35 @@ namespace Api_Vapp.Services
                         Action = AuditActions.WalletDebited,
                         EntityType = AuditEntityTypes.WalletTransaction,
                         EntityId = walletTransaction.Id.ToString(),
+                        ActorUserId = actorUserId ?? userId,
                         TargetUserId = userId,
                         After = new
                         {
+                            occurredAtUtc = DateTime.UtcNow,
+                            eventType = "WalletDebited",
                             walletTransactionId = walletTransaction.Id,
                             userId,
+                            actorUserId = actorUserId ?? userId,
                             amount,
+                            amountLabel = $"{amount:N0} تومان",
                             balanceBefore,
                             balanceAfter,
-                            transactionType = WalletTransactionTypes.Purchase,
-                            title
+                            transactionType = resolvedType,
+                            title,
+                            description,
+                            referenceNumber
                         }
                     });
 
-                    var debitCopy = PushNotificationCopy.WalletDebited(amount, balanceAfter, title);
-                    await _pushNotifier.NotifyAsync(
-                        userId,
-                        NotificationCategory.WalletTransaction,
-                        debitCopy.Title,
-                        debitCopy.Body);
+                    if (sendPushNotification)
+                    {
+                        var debitCopy = PushNotificationCopy.WalletDebited(amount, balanceAfter, title);
+                        await _pushNotifier.NotifyAsync(
+                            userId,
+                            NotificationCategory.WalletTransaction,
+                            debitCopy.Title,
+                            debitCopy.Body);
+                    }
 
                     return ApiResponse<WalletTransactionDto>.CreateSuccess(
                         MapToWalletTransactionDto(walletTransaction),
