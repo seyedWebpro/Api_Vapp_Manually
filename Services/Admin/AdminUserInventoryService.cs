@@ -290,7 +290,7 @@ namespace Api_Vapp.Services.Admin
                         ItemType = normalized,
                         Id = id,
                         ViewMode = AdminContentViewModes.AdminPage,
-                        AdminPath = $"/admin/quick-send-approvals?itemType={normalized}"
+                        AdminPath = $"/admin/quick-send-approvals?itemType={Uri.EscapeDataString(normalized)}"
                     });
                 }
 
@@ -346,6 +346,7 @@ namespace Api_Vapp.Services.Admin
                         ApprovalStatus = c.ApprovalStatus,
                         RejectionReason = c.RejectionReason,
                         PublicUrl = c.Slug,
+                        ContentPreview = c.SmsCaption,
                         CreatedAt = c.CreatedAt,
                         UpdatedAt = c.UpdatedAt
                     })
@@ -368,6 +369,7 @@ namespace Api_Vapp.Services.Admin
                         ApprovalStatus = f.ApprovalStatus,
                         RejectionReason = f.RejectionReason,
                         PublicUrl = f.Slug,
+                        ContentPreview = f.SmsCaption,
                         CreatedAt = f.CreatedAt,
                         UpdatedAt = f.UpdatedAt
                     })
@@ -390,6 +392,7 @@ namespace Api_Vapp.Services.Admin
                         ApprovalStatus = w.ApprovalStatus,
                         RejectionReason = w.RejectionReason,
                         PublicUrl = w.Slug,
+                        ContentPreview = w.SmsCaption,
                         CreatedAt = w.CreatedAt,
                         UpdatedAt = w.UpdatedAt
                     })
@@ -412,6 +415,7 @@ namespace Api_Vapp.Services.Admin
                         ApprovalStatus = b.ApprovalStatus,
                         RejectionReason = b.RejectionReason,
                         PublicUrl = b.Slug,
+                        ContentPreview = b.SmsCaption,
                         CreatedAt = b.CreatedAt,
                         UpdatedAt = b.UpdatedAt
                     })
@@ -434,6 +438,7 @@ namespace Api_Vapp.Services.Admin
                         ApprovalStatus = l.ApprovalStatus,
                         RejectionReason = l.RejectionReason,
                         PublicUrl = l.LinkUrl,
+                        ContentPreview = l.SmsCaption ?? l.LinkUrl,
                         CreatedAt = l.CreatedAt,
                         UpdatedAt = l.UpdatedAt
                     })
@@ -456,6 +461,7 @@ namespace Api_Vapp.Services.Admin
                         ApprovalStatus = a.ApprovalStatus,
                         RejectionReason = a.RejectionReason,
                         PublicUrl = null,
+                        ContentPreview = a.Content,
                         CreatedAt = a.CreatedAt,
                         UpdatedAt = a.UpdatedAt
                     })
@@ -478,6 +484,12 @@ namespace Api_Vapp.Services.Admin
                         ApprovalStatus = b.ApprovalStatus,
                         RejectionReason = b.RejectionReason,
                         PublicUrl = null,
+                        ContentPreview =
+                            (b.SmsCaption != null ? b.SmsCaption + "\n" : "")
+                            + (b.Title != null ? b.Title + "\n" : "")
+                            + (b.AccountNumber != null ? "شماره حساب: " + b.AccountNumber + "\n" : "")
+                            + (b.CardNumber != null ? "شماره کارت: " + b.CardNumber + "\n" : "")
+                            + (b.ShebaNumber != null ? "شماره شبا: " + b.ShebaNumber : ""),
                         CreatedAt = b.CreatedAt,
                         UpdatedAt = b.UpdatedAt
                     })
@@ -490,6 +502,9 @@ namespace Api_Vapp.Services.Admin
 
         private void FinalizeContentItem(AdminUserContentItemDto item)
         {
+            if (!string.IsNullOrWhiteSpace(item.ContentPreview))
+                item.ContentPreview = item.ContentPreview.Trim();
+
             if (IsVisualLinkType(item.ItemType))
             {
                 var slug = item.PublicUrl;
@@ -504,10 +519,11 @@ namespace Api_Vapp.Services.Admin
                 }
 
                 item.CanView = true;
-                // تأییدشده و فعال → همان لینک عمومی کاربر؛ وگرنه پیش‌نمایش ادمین (غیرفعال / در انتظار / رد)
+                var hasAbsolutePublicUrl = IsAbsoluteHttpUrl(item.PublicUrl);
+                // تأییدشده و فعال با URL کامل عمومی → مثل کاربر؛ وگرنه پیش‌نمایش ادمین
                 if (item.ApprovalStatus == AdminApprovalStatuses.Approved
                     && item.IsActive
-                    && !string.IsNullOrWhiteSpace(item.PublicUrl))
+                    && hasAbsolutePublicUrl)
                 {
                     item.ViewMode = AdminContentViewModes.Public;
                 }
@@ -521,15 +537,20 @@ namespace Api_Vapp.Services.Admin
 
             if (item.ItemType == QuickSendItemTypes.SocialMediaLink)
             {
-                item.CanView = !string.IsNullOrWhiteSpace(item.PublicUrl);
+                item.CanView = IsAbsoluteHttpUrl(item.PublicUrl);
                 item.ViewMode = item.CanView ? AdminContentViewModes.External : null;
                 return;
             }
 
-            // شماره حساب / اقدام سریع — بدون سطح عمومی؛ ارجاع به صف تأیید
+            // شماره حساب / اقدام سریع — متن در ContentPreview؛ مشاهده → صف تأیید همان نوع
             item.CanView = true;
             item.ViewMode = AdminContentViewModes.AdminPage;
         }
+
+        private static bool IsAbsoluteHttpUrl(string? url) =>
+            !string.IsNullOrWhiteSpace(url)
+            && (url.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+                || url.StartsWith("https://", StringComparison.OrdinalIgnoreCase));
 
         private static bool IsVisualLinkType(string itemType) =>
             itemType is QuickSendItemTypes.BusinessCard

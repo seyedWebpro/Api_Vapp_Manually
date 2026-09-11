@@ -1,6 +1,7 @@
 using Api_Vapp.Data;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
+using Api_Vapp.Utilities;
 using Microsoft.EntityFrameworkCore;
 
 namespace Api_Vapp.Repositories
@@ -24,7 +25,10 @@ namespace Api_Vapp.Repositories
             if (!string.IsNullOrWhiteSpace(search))
             {
                 var term = search.Trim();
-                query = query.Where(w => w.Word.Contains(term) || w.NormalizedWord.Contains(term));
+                var normalizedTerm = ForbiddenWordMatcher.Normalize(term);
+                query = query.Where(w =>
+                    w.Word.Contains(term) ||
+                    (!string.IsNullOrEmpty(normalizedTerm) && w.NormalizedWord.Contains(normalizedTerm)));
             }
 
             return await query

@@ -60,6 +60,9 @@ namespace Api_Vapp.DTOs.Admin
         /// <summary>لینک عمومی کامل در صورت وجود slug (ممکن است برای عموم مسدود باشد)</summary>
         public string? PublicUrl { get; set; }
 
+        /// <summary>پیش‌نمایش متنی (مثلاً شماره حساب / اقدام سریع / کپشن SMS)</summary>
+        public string? ContentPreview { get; set; }
+
         public DateTime CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
 
