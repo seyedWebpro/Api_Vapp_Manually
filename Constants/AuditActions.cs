@@ -163,6 +163,9 @@ namespace Api_Vapp.Constants
         public const string SpecialOccasionCreated = "SpecialOccasion.Created";
         public const string SpecialOccasionUpdated = "SpecialOccasion.Updated";
         public const string SpecialOccasionDeleted = "SpecialOccasion.Deleted";
+        public const string OccasionPreferenceUpdated = "OccasionPreference.Updated";
+        public const string OccasionProfileUpdated = "OccasionProfile.Updated";
+        public const string OccasionTemplateSubmitted = "OccasionTemplate.Submitted";
 
         // —— ContactNotebook (فاز ۳)
         public const string ContactNotebookCreated = "ContactNotebook.Created";

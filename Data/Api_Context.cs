@@ -22,6 +22,8 @@ namespace Api_Vapp.Data
         public DbSet<AutomatedMessage> AutomatedMessages { get; set; }
         public DbSet<AutomationExecution> AutomationExecutions { get; set; }
         public DbSet<SpecialOccasion> SpecialOccasions { get; set; }
+        public DbSet<UserOccasionPreference> UserOccasionPreferences { get; set; }
+        public DbSet<UserOccasionProfile> UserOccasionProfiles { get; set; }
         public DbSet<QuickAction> QuickActions { get; set; }
         public DbSet<SocialMediaLink> SocialMediaLinks { get; set; }
         public DbSet<BankAccount> BankAccounts { get; set; }
@@ -641,6 +643,7 @@ namespace Api_Vapp.Data
                 entity.HasIndex(ae => ae.AutomatedMessageId);
                 entity.HasIndex(ae => ae.ContactId);
                 entity.HasIndex(ae => ae.ExecutedAt);
+                entity.HasIndex(ae => new { ae.AutomatedMessageId, ae.SpecialOccasionId, ae.ContactId, ae.ExecutedAt });
             });
 
             // تنظیمات SpecialOccasion
@@ -650,7 +653,11 @@ namespace Api_Vapp.Data
                 entity.Property(so => so.Id).ValueGeneratedOnAdd();
 
                 entity.Property(so => so.Name).IsRequired().HasMaxLength(200);
+                entity.Property(so => so.Code).HasMaxLength(50);
                 entity.Property(so => so.Type).HasMaxLength(50).HasDefaultValue("Custom");
+                entity.Property(so => so.Category).HasMaxLength(30).HasDefaultValue("Congratulation");
+                entity.Property(so => so.CalendarType).HasMaxLength(20).HasDefaultValue("Jalali");
+                entity.Property(so => so.DefaultMessage).HasColumnType("nvarchar(max)");
                 entity.Property(so => so.OccasionDate).IsRequired();
                 entity.Property(so => so.IsSystem).HasDefaultValue(false);
                 entity.Property(so => so.IsActive).HasDefaultValue(true);
@@ -665,6 +672,66 @@ namespace Api_Vapp.Data
                 entity.HasIndex(so => so.OccasionDate);
                 entity.HasIndex(so => so.IsSystem);
                 entity.HasIndex(so => so.IsDeleted);
+                entity.HasIndex(so => new { so.CalendarType, so.Month, so.Day, so.IsActive, so.IsDeleted });
+                entity.HasIndex(so => so.Code).IsUnique().HasFilter("[Code] IS NOT NULL AND [IsDeleted] = 0");
+                entity.HasIndex(so => new { so.Category, so.IsActive, so.IsDeleted });
+            });
+
+            modelBuilder.Entity<UserOccasionPreference>(entity =>
+            {
+                entity.HasKey(p => p.Id);
+                entity.Property(p => p.Id).ValueGeneratedOnAdd();
+                entity.Property(p => p.CustomMessage).HasColumnType("nvarchar(max)");
+                entity.Property(p => p.TemplateApprovalStatus).HasMaxLength(20).HasDefaultValue("Approved");
+                entity.Property(p => p.TemplateRejectionReason).HasMaxLength(500);
+                entity.Property(p => p.IsEnabled).HasDefaultValue(true);
+                entity.Property(p => p.IsDeleted).HasDefaultValue(false);
+                entity.Property(p => p.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+                entity.HasOne(p => p.User)
+                    .WithMany()
+                    .HasForeignKey(p => p.UserId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(p => p.SpecialOccasion)
+                    .WithMany(o => o.UserPreferences)
+                    .HasForeignKey(p => p.SpecialOccasionId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(p => p.MessageTemplate)
+                    .WithMany()
+                    .HasForeignKey(p => p.MessageTemplateId)
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                entity.HasIndex(p => new { p.UserId, p.SpecialOccasionId })
+                    .IsUnique()
+                    .HasFilter("[IsDeleted] = 0");
+                entity.HasIndex(p => new { p.UserId, p.IsEnabled, p.IsDeleted });
+            });
+
+            modelBuilder.Entity<UserOccasionProfile>(entity =>
+            {
+                entity.HasKey(p => p.Id);
+                entity.Property(p => p.Id).ValueGeneratedOnAdd();
+                entity.Property(p => p.BusinessName).HasMaxLength(200);
+                entity.Property(p => p.CongratulationsEnabled).HasDefaultValue(true);
+                entity.Property(p => p.CondolencesEnabled).HasDefaultValue(true);
+                entity.Property(p => p.IsDeleted).HasDefaultValue(false);
+                entity.Property(p => p.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+                entity.HasOne(p => p.User)
+                    .WithMany()
+                    .HasForeignKey(p => p.UserId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(p => p.AutomatedMessage)
+                    .WithMany()
+                    .HasForeignKey(p => p.AutomatedMessageId)
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                entity.HasIndex(p => p.UserId)
+                    .IsUnique()
+                    .HasFilter("[IsDeleted] = 0");
             });
 
             // تنظیمات QuickAction

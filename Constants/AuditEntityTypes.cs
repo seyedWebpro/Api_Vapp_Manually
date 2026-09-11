@@ -36,6 +36,8 @@ namespace Api_Vapp.Constants
         public const string SocialMediaLink = "SocialMediaLink";
         public const string BankAccount = "BankAccount";
         public const string SpecialOccasion = "SpecialOccasion";
+        public const string UserOccasionPreference = "UserOccasionPreference";
+        public const string UserOccasionProfile = "UserOccasionProfile";
         public const string AutomatedMessage = "AutomatedMessage";
         public const string AutomationType = "AutomationType";
         public const string AppBanner = "AppBanner";

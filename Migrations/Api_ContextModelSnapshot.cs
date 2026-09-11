@@ -482,6 +482,9 @@ namespace Api_Vapp.Migrations
                     b.Property<int>("SentCount")
                         .HasColumnType("int");
 
+                    b.Property<int?>("SpecialOccasionId")
+                        .HasColumnType("int");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
@@ -496,6 +499,8 @@ namespace Api_Vapp.Migrations
                     b.HasIndex("ContactId");
 
                     b.HasIndex("ExecutedAt");
+
+                    b.HasIndex("AutomatedMessageId", "SpecialOccasionId", "ContactId", "ExecutedAt");
 
                     b.ToTable("AutomationExecutions");
                 });
@@ -3900,10 +3905,31 @@ namespace Api_Vapp.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("CalendarType")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasDefaultValue("Jalali");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasDefaultValue("Congratulation");
+
+                    b.Property<string>("Code")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetime2")
                         .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<byte>("Day")
+                        .HasColumnType("tinyint");
 
                     b.Property<string>("DefaultMessage")
                         .HasColumnType("nvarchar(max)");
@@ -3923,6 +3949,9 @@ namespace Api_Vapp.Migrations
                         .HasColumnType("bit")
                         .HasDefaultValue(false);
 
+                    b.Property<byte>("Month")
+                        .HasColumnType("tinyint");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -3930,6 +3959,9 @@ namespace Api_Vapp.Migrations
 
                     b.Property<DateTime>("OccasionDate")
                         .HasColumnType("datetime2");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
 
                     b.Property<string>("Type")
                         .IsRequired()
@@ -3954,7 +3986,140 @@ namespace Api_Vapp.Migrations
 
                     b.HasIndex("UserId");
 
+                    b.HasIndex("Code")
+                        .IsUnique()
+                        .HasFilter("[Code] IS NOT NULL AND [IsDeleted] = 0");
+
+                    b.HasIndex("CalendarType", "Month", "Day", "IsActive", "IsDeleted");
+
+                    b.HasIndex("Category", "IsActive", "IsDeleted");
+
                     b.ToTable("SpecialOccasions");
+                });
+
+            modelBuilder.Entity("Api_Vapp.Models.UserOccasionPreference", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<string>("CustomMessage")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<bool>("IsEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
+                    b.Property<int?>("MessageTemplateId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SpecialOccasionId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("TemplateApprovedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("TemplateApprovedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("TemplateApprovalStatus")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasDefaultValue("Approved");
+
+                    b.Property<string>("TemplateRejectionReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MessageTemplateId");
+
+                    b.HasIndex("SpecialOccasionId");
+
+                    b.HasIndex("UserId", "IsEnabled", "IsDeleted");
+
+                    b.HasIndex("UserId", "SpecialOccasionId")
+                        .IsUnique()
+                        .HasFilter("[IsDeleted] = 0");
+
+                    b.ToTable("UserOccasionPreferences");
+                });
+
+            modelBuilder.Entity("Api_Vapp.Models.UserOccasionProfile", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int?>("AutomatedMessageId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("BusinessName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<bool>("CondolencesEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
+                    b.Property<bool>("CongratulationsEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<TimeSpan?>("ScheduledTimeTehran")
+                        .HasColumnType("time");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AutomatedMessageId");
+
+                    b.HasIndex("UserId")
+                        .IsUnique()
+                        .HasFilter("[IsDeleted] = 0");
+
+                    b.ToTable("UserOccasionProfiles");
                 });
 
             modelBuilder.Entity("Api_Vapp.Models.SubscriptionDiscountCode", b =>
@@ -6007,6 +6172,50 @@ namespace Api_Vapp.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("Api_Vapp.Models.UserOccasionPreference", b =>
+                {
+                    b.HasOne("Api_Vapp.Models.MessageTemplate", "MessageTemplate")
+                        .WithMany()
+                        .HasForeignKey("MessageTemplateId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Api_Vapp.Models.SpecialOccasion", "SpecialOccasion")
+                        .WithMany("UserPreferences")
+                        .HasForeignKey("SpecialOccasionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Api_Vapp.Models.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("MessageTemplate");
+
+                    b.Navigation("SpecialOccasion");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Api_Vapp.Models.UserOccasionProfile", b =>
+                {
+                    b.HasOne("Api_Vapp.Models.AutomatedMessage", "AutomatedMessage")
+                        .WithMany()
+                        .HasForeignKey("AutomatedMessageId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Api_Vapp.Models.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("AutomatedMessage");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("Api_Vapp.Models.SubscriptionDiscountCode", b =>
                 {
                     b.HasOne("Api_Vapp.Models.SubscriptionPlan", "SubscriptionPlan")
@@ -6408,6 +6617,8 @@ namespace Api_Vapp.Migrations
             modelBuilder.Entity("Api_Vapp.Models.SpecialOccasion", b =>
                 {
                     b.Navigation("AutomatedMessages");
+
+                    b.Navigation("UserPreferences");
                 });
 
             modelBuilder.Entity("Api_Vapp.Models.SubscriptionDiscountCode", b =>

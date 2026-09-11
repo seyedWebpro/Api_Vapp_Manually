@@ -1,5 +1,6 @@
 using Api_Vapp.Constants;
 using Api_Vapp.Models;
+using Api_Vapp.Utilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -28,6 +29,7 @@ namespace Api_Vapp.Data
             await SeedSubscriptionFeaturesAsync(context, logger);
             await SeedSubscriptionPlansAsync(context, logger);
             await SeedAutomationTypesAsync(context, logger);
+            await SeedSystemOccasionsAsync(context, logger);
             await SeedAppBannersAsync(context, logger);
             await SeedAppVersionPoliciesAsync(context, logger);
         }
@@ -380,6 +382,52 @@ namespace Api_Vapp.Data
 
             await context.SaveChangesAsync();
             logger.LogInformation("Automation types seeded.");
+        }
+
+        private static async Task SeedSystemOccasionsAsync(Api_Context context, ILogger logger)
+        {
+            var existingCodes = await context.SpecialOccasions
+                .Where(o => o.IsSystem && o.Code != null)
+                .Select(o => o.Code!)
+                .ToListAsync();
+            var existingSet = existingCodes.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            var added = 0;
+            foreach (var item in SystemOccasionCatalog.All)
+            {
+                if (existingSet.Contains(item.Code))
+                    continue;
+
+                context.SpecialOccasions.Add(new SpecialOccasion
+                {
+                    Code = item.Code,
+                    Name = item.Name,
+                    Type = item.Type,
+                    Category = item.Category,
+                    CalendarType = item.CalendarType,
+                    Month = item.Month,
+                    Day = item.Day,
+                    OccasionDate = OccasionCalendarHelper.BuildReferenceOccasionDateUtc(item.CalendarType, item.Month, item.Day),
+                    DefaultMessage = item.DefaultMessage,
+                    SortOrder = item.SortOrder,
+                    IsSystem = true,
+                    IsActive = true,
+                    IsDeleted = false,
+                    UserId = null,
+                    CreatedAt = DateTime.UtcNow
+                });
+                added++;
+            }
+
+            if (added > 0)
+            {
+                await context.SaveChangesAsync();
+                logger.LogInformation("System occasions seeded — Added: {Count}", added);
+            }
+            else
+            {
+                logger.LogInformation("System occasions already present.");
+            }
         }
 
         private static async Task SeedAppBannersAsync(Api_Context context, ILogger logger)

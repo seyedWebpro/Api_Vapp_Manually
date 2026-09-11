@@ -15,6 +15,9 @@ namespace Api_Vapp.Models
         // شناسه مخاطب (اختیاری - برای پیام‌های شخصی)
         public int? ContactId { get; set; }
 
+        /// <summary>شناسه مناسبت (برای اتوماسیون چندمناسبتی در یک روز)</summary>
+        public int? SpecialOccasionId { get; set; }
+
         // محتوای پیام ارسال شده
         public string? MessageContent { get; set; }
 

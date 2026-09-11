@@ -1,58 +1,61 @@
 namespace Api_Vapp.Models
 {
     /// <summary>
-    /// مدل مناسبت‌های خاص
-    /// برای پیام‌های خودکار در مناسبت‌های سال (اعیاد، وفات‌ها و غیره)
+    /// مناسبت‌های سالانه (سیستمی یا سفارشی کاربر)
+    /// اعیاد، عزاداری‌ها، و مناسبت‌های خاص کسب‌وکار (مثل سالروز تاسیس)
     /// </summary>
     public class SpecialOccasion
     {
-        // شناسه یکتای مناسبت
         public int Id { get; set; }
 
-        // شناسه کاربر (null برای مناسبت‌های سیستمی)
+        /// <summary>null برای مناسبت‌های سیستمی</summary>
         public int? UserId { get; set; }
 
-        // نام مناسبت
+        /// <summary>کد یکتای سیستمی (مثلاً NOROOZ) — برای کاربر null</summary>
+        public string? Code { get; set; }
+
         public string Name { get; set; } = string.Empty;
 
-        // نوع مناسبت (Holiday, Death, Custom)
-        public string Type { get; set; } = "Custom"; // Holiday, Death, Custom
+        /// <summary>Holiday | Death | Custom</summary>
+        public string Type { get; set; } = "Custom";
 
-        // تاریخ مناسبت (فقط روز و ماه)
+        /// <summary>Congratulation | Condolence</summary>
+        public string Category { get; set; } = "Congratulation";
+
+        /// <summary>Jalali | Gregorian | Hijri</summary>
+        public string CalendarType { get; set; } = "Jalali";
+
+        /// <summary>ماه در تقویم مشخص‌شده (۱–۱۲)</summary>
+        public byte Month { get; set; }
+
+        /// <summary>روز در تقویم مشخص‌شده</summary>
+        public byte Day { get; set; }
+
+        /// <summary>
+        /// تاریخ مرجع سازگاری با نسخه‌های قبلی (date-only UTC).
+        /// برای تطبیق سالانه از Month/Day/CalendarType استفاده می‌شود.
+        /// </summary>
         public DateTime OccasionDate { get; set; }
 
-        // متن پیش‌فرض پیام
+        /// <summary>قالب پیش‌فرض ادمین (می‌تواند شامل {{نام}}، {{نام برند}}، {{نام شرکت}}، {{مناسبت}} باشد)</summary>
         public string? DefaultMessage { get; set; }
 
-        // آیا مناسبت سیستمی است
-        public bool IsSystem { get; set; } = false;
+        public int SortOrder { get; set; }
 
-        // فعال/غیرفعال
+        public bool IsSystem { get; set; }
+
         public bool IsActive { get; set; } = true;
 
-        // حذف شده (Soft Delete)
-        public bool IsDeleted { get; set; } = false;
+        public bool IsDeleted { get; set; }
 
-        #region Timestamps
-
-        // تاریخ و زمان ایجاد
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
-        // تاریخ و زمان آخرین به‌روزرسانی
         public DateTime? UpdatedAt { get; set; }
 
-        #endregion
-
-        #region Navigation Properties
-
-        // کاربر ایجادکننده (در صورت سفارشی بودن)
         public virtual User? User { get; set; }
 
-        // پیام‌های خودکار استفاده‌کننده
         public virtual ICollection<AutomatedMessage> AutomatedMessages { get; set; } = new List<AutomatedMessage>();
 
-        #endregion
+        public virtual ICollection<UserOccasionPreference> UserPreferences { get; set; } = new List<UserOccasionPreference>();
     }
 }
-
-

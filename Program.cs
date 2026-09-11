@@ -380,6 +380,8 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.IUserFormRepository, Api_Vapp.Rep
 builder.Services.AddScoped<Api_Vapp.Interfaces.ILuckyWheelRepository, Api_Vapp.Repositories.LuckyWheelRepository>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IBusinessCardRepository, Api_Vapp.Repositories.BusinessCardRepository>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.ISpecialOccasionRepository, Api_Vapp.Repositories.SpecialOccasionRepository>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IUserOccasionPreferenceRepository, Api_Vapp.Repositories.UserOccasionPreferenceRepository>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IUserOccasionProfileRepository, Api_Vapp.Repositories.UserOccasionProfileRepository>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAutomatedMessageRepository, Api_Vapp.Repositories.AutomatedMessageRepository>();
 
 // ثبت Repository های مالی و کیف پول

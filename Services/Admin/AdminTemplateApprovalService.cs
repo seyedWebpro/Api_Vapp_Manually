@@ -123,6 +123,14 @@ namespace Api_Vapp.Services.Admin
                 template.ApprovedByUserId = adminUserId;
                 template.RejectionReason = null;
                 template.UpdatedAt = DateTime.UtcNow;
+
+                await SyncLinkedOccasionPreferencesAsync(
+                    template.Id,
+                    AdminApprovalStatuses.Approved,
+                    adminUserId,
+                    approvedAt: template.ApprovedAt,
+                    rejectionReason: null);
+
                 await _context.SaveChangesAsync();
 
                 await _audit.WriteAsync(new AuditEntry
@@ -193,6 +201,14 @@ namespace Api_Vapp.Services.Admin
                 template.ApprovedByUserId = adminUserId;
                 template.RejectionReason = reason;
                 template.UpdatedAt = DateTime.UtcNow;
+
+                await SyncLinkedOccasionPreferencesAsync(
+                    template.Id,
+                    AdminApprovalStatuses.Rejected,
+                    adminUserId,
+                    approvedAt: null,
+                    rejectionReason: reason);
+
                 await _context.SaveChangesAsync();
 
                 await _audit.WriteAsync(new AuditEntry
@@ -236,6 +252,39 @@ namespace Api_Vapp.Services.Admin
                 _logger.LogError(ex, "Error rejecting template {TemplateId}", id);
                 return ApiResponse<bool>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
+        }
+
+        /// <summary>
+        /// قالب‌های مناسبتی به UserOccasionPreference لینک می‌شوند؛
+        /// وضعیت ارسال از Preference خوانده می‌شود، پس باید با تأیید/رد ادمین همگام شود.
+        /// </summary>
+        private async Task SyncLinkedOccasionPreferencesAsync(
+            int messageTemplateId,
+            string approvalStatus,
+            int adminUserId,
+            DateTime? approvedAt,
+            string? rejectionReason)
+        {
+            var linked = await _context.UserOccasionPreferences
+                .Where(p => p.MessageTemplateId == messageTemplateId && !p.IsDeleted)
+                .ToListAsync();
+
+            if (linked.Count == 0)
+                return;
+
+            var now = DateTime.UtcNow;
+            foreach (var preference in linked)
+            {
+                preference.TemplateApprovalStatus = approvalStatus;
+                preference.TemplateApprovedAt = approvedAt;
+                preference.TemplateApprovedByUserId = adminUserId;
+                preference.TemplateRejectionReason = rejectionReason;
+                preference.UpdatedAt = now;
+            }
+
+            _logger.LogInformation(
+                "Synced {Count} occasion preferences after template {TemplateId} → {Status}",
+                linked.Count, messageTemplateId, approvalStatus);
         }
 
         private static TemplateApprovalResponseDto Map(MessageTemplate template) => new()

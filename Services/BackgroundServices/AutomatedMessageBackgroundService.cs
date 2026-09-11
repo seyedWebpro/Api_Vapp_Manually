@@ -297,41 +297,110 @@ namespace Api_Vapp.Services.BackgroundServices
             AutomatedMessage automatedMessage,
             IContactRepository contactRepository,
             IAuditService auditService,
-            DateTime today,
+            DateTime todayUtc,
             CancellationToken cancellationToken)
         {
-            if (!automatedMessage.SpecialOccasionId.HasValue)
-                return;
+            var nowUtc = DateTime.UtcNow;
+            var todayParts = OccasionCalendarHelper.GetTodayParts(nowUtc);
 
-            var now = DateTime.UtcNow;
+            var profile = await context.UserOccasionProfiles.AsNoTracking()
+                .FirstOrDefaultAsync(p => p.UserId == automatedMessage.UserId && !p.IsDeleted, cancellationToken);
 
-            if (!automatedMessage.ScheduledTime.HasReachedScheduledTime(today, now))
+            // زمان ارسال: اول پروفایل (ساعت تهران)، وگرنه ScheduledTime اتوماسیون به‌عنوان تهران
+            var scheduledTehran = profile?.ScheduledTimeTehran ?? automatedMessage.ScheduledTime;
+            if (!OccasionCalendarHelper.HasReachedScheduledTimeTehran(scheduledTehran, nowUtc))
             {
-                var scheduledTimeUtc = today.CombineWithTime(automatedMessage.ScheduledTime!.Value);
                 _logger.LogInformation(
-                    "SpecialOccasion automation {Id} scheduled for {ScheduledTime} UTC, current {CurrentTime} UTC — too early, skipping",
-                    automatedMessage.Id, scheduledTimeUtc.ToString("yyyy-MM-dd HH:mm:ss"), now.ToString("yyyy-MM-dd HH:mm:ss"));
+                    "SpecialOccasion automation {Id} scheduled for {ScheduledTime} Tehran, current Tehran {CurrentTehran} — too early, skipping",
+                    automatedMessage.Id,
+                    scheduledTehran?.ToString(@"hh\:mm"),
+                    OccasionCalendarHelper.ToTehran(nowUtc).ToString("HH:mm:ss"));
                 return;
             }
 
-            var specialOccasion = await context.SpecialOccasions
-                .AsNoTracking()
-                .FirstOrDefaultAsync(so => so.Id == automatedMessage.SpecialOccasionId.Value
-                    && !so.IsDeleted
-                    && so.IsActive, cancellationToken);
-
-            if (specialOccasion == null)
-                return;
-
-            // مقایسه ماه/روز (مناسبت سالانه) — تاریخ با EnsureDateOnlyUtc ذخیره می‌شود
-            var occasionDateUtc = specialOccasion.OccasionDate.EnsureDateOnlyUtc();
-            if (!occasionDateUtc.IsSameMonthDay(today))
+            if (profile != null && !profile.CongratulationsEnabled && !profile.CondolencesEnabled)
             {
-                _logger.LogInformation(
-                    "SpecialOccasion automation {Id} occasion date {OccasionDate} is not today {Today} (month/day) — skipping",
-                    automatedMessage.Id, occasionDateUtc.ToString("yyyy-MM-dd"), today.ToString("yyyy-MM-dd"));
+                _logger.LogInformation("SpecialOccasion automation {Id} — both categories disabled for user {UserId}",
+                    automatedMessage.Id, automatedMessage.UserId);
                 return;
             }
+
+            List<SpecialOccasion> occasionsToday;
+
+            if (automatedMessage.SpecialOccasionId.HasValue)
+            {
+                // مسیر سازگاری: یک مناسبت لینک‌شده
+                var single = await context.SpecialOccasions.AsNoTracking()
+                    .FirstOrDefaultAsync(so => so.Id == automatedMessage.SpecialOccasionId.Value
+                        && !so.IsDeleted
+                        && so.IsActive, cancellationToken);
+
+                occasionsToday = single != null
+                    && OccasionCalendarHelper.IsOccasionToday(single.CalendarType, single.Month, single.Day, todayParts)
+                        ? [single]
+                        : [];
+            }
+            else
+            {
+                // مسیر جدول مناسبتی: همه مناسبت‌های امروز (سیستمی + سفارشی کاربر)
+                var monthCandidates = new HashSet<byte>
+                {
+                    (byte)todayParts.JalaliMonth,
+                    (byte)todayParts.GregorianMonth,
+                    (byte)todayParts.HijriMonth
+                };
+
+                var candidates = await context.SpecialOccasions.AsNoTracking()
+                    .Where(so => !so.IsDeleted
+                        && so.IsActive
+                        && monthCandidates.Contains(so.Month)
+                        && (so.IsSystem || so.UserId == automatedMessage.UserId))
+                    .ToListAsync(cancellationToken);
+
+                occasionsToday = candidates
+                    .Where(so => OccasionCalendarHelper.IsOccasionToday(so.CalendarType, so.Month, so.Day, todayParts))
+                    .ToList();
+            }
+
+            if (occasionsToday.Count == 0)
+            {
+                _logger.LogInformation(
+                    "SpecialOccasion automation {Id} — no matching occasions for Tehran day {TehranDate}",
+                    automatedMessage.Id, todayParts.TehranDate);
+                return;
+            }
+
+            // فیلتر دسته تبریک/تسلیت
+            if (profile != null)
+            {
+                occasionsToday = occasionsToday
+                    .Where(o =>
+                    {
+                        var cat = OccasionCategories.Normalize(o.Category);
+                        if (cat == OccasionCategories.Condolence)
+                            return profile.CondolencesEnabled;
+                        return profile.CongratulationsEnabled;
+                    })
+                    .ToList();
+            }
+
+            if (occasionsToday.Count == 0)
+                return;
+
+            var occasionIds = occasionsToday.Select(o => o.Id).ToList();
+            var preferences = await context.UserOccasionPreferences.AsNoTracking()
+                .Where(p => p.UserId == automatedMessage.UserId
+                    && !p.IsDeleted
+                    && occasionIds.Contains(p.SpecialOccasionId))
+                .ToDictionaryAsync(p => p.SpecialOccasionId, cancellationToken);
+
+            // مناسبت‌هایی که کاربر صریحاً غیرفعال کرده حذف شوند (پیش‌فرض: فعال)
+            occasionsToday = occasionsToday
+                .Where(o => !preferences.TryGetValue(o.Id, out var pref) || pref.IsEnabled)
+                .ToList();
+
+            if (occasionsToday.Count == 0)
+                return;
 
             var selectedScope = await ResolveSelectedContactScopeAsync(context, automatedMessage, cancellationToken);
 
@@ -342,38 +411,75 @@ namespace Api_Vapp.Services.BackgroundServices
                 .ToListAsync(cancellationToken);
 
             contacts = contacts.Where(c => IsContactInSelectedScope(c, selectedScope)).ToList();
+            if (contacts.Count == 0)
+            {
+                _logger.LogInformation("SpecialOccasion automation {Id} — no contacts in selected scope", automatedMessage.Id);
+                return;
+            }
 
-            _logger.LogInformation("Processing SpecialOccasion automation {Id} for {Count} contacts (scoped)",
-                automatedMessage.Id, contacts.Count);
+            var (dayStartUtc, dayEndUtc) = OccasionCalendarHelper.GetTehranDayUtcRange(todayParts.TehranDate);
 
-            var todayStart = today.Date;
-            var todayEnd = todayStart.AddDays(1);
-
-            var handledContactIds = await context.AutomationExecutions
+            var handledKeys = await context.AutomationExecutions
                 .AsNoTracking()
                 .Where(ae => ae.AutomatedMessageId == automatedMessage.Id
                     && ae.ContactId.HasValue
-                    && ae.ExecutedAt >= todayStart
-                    && ae.ExecutedAt < todayEnd)
-                .Select(ae => ae.ContactId!.Value)
-                .ToHashSetAsync(cancellationToken);
+                    && ae.SpecialOccasionId.HasValue
+                    && ae.ExecutedAt >= dayStartUtc
+                    && ae.ExecutedAt < dayEndUtc)
+                .Select(ae => new { OccasionId = ae.SpecialOccasionId!.Value, ContactId = ae.ContactId!.Value })
+                .ToListAsync(cancellationToken);
 
-            var contactsToQueue = contacts
-                .Where(c => !handledContactIds.Contains(c.Id))
-                .ToList();
+            var handledSet = handledKeys
+                .Select(x => (x.OccasionId, x.ContactId))
+                .ToHashSet();
 
-            var skippedCount = contacts.Count - contactsToQueue.Count;
-            var queuedCount = 0;
+            var businessName = profile?.BusinessName;
+            var totalQueued = 0;
 
-            if (contactsToQueue.Count > 0)
+            foreach (var occasion in occasionsToday)
             {
-                queuedCount = await EnqueueAutomatedBatchForAdminApprovalAsync(
-                    context, automatedMessage, contactsToQueue, auditService, cancellationToken);
+                preferences.TryGetValue(occasion.Id, out var pref);
+                var template = OccasionMessagePersonalizer.ResolveEffectiveTemplate(occasion, pref);
+                if (string.IsNullOrWhiteSpace(template) && !string.IsNullOrWhiteSpace(occasion.DefaultMessage))
+                    template = occasion.DefaultMessage;
+
+                if (string.IsNullOrWhiteSpace(template))
+                {
+                    _logger.LogWarning(
+                        "SpecialOccasion automation {Id} occasion {OccasionId} has empty template — skipped",
+                        automatedMessage.Id, occasion.Id);
+                    continue;
+                }
+
+                // اگر قالب سفارشی Pending باشد ولی Default موجود است، Default استفاده می‌شود (ResolveEffectiveTemplate)
+                var contentForQueue = OccasionMessagePersonalizer.ApplyForQueuePreview(
+                    template, businessName, occasion.Name);
+
+                var contactsToQueue = contacts
+                    .Where(c => !handledSet.Contains((occasion.Id, c.Id)))
+                    .ToList();
+
+                if (contactsToQueue.Count == 0)
+                    continue;
+
+                var queued = await EnqueueAutomatedBatchForAdminApprovalAsync(
+                    context,
+                    automatedMessage,
+                    contactsToQueue,
+                    auditService,
+                    cancellationToken,
+                    specialOccasionId: occasion.Id,
+                    overrideMessageContent: contentForQueue,
+                    campaignTitleSuffix: occasion.Name);
+
+                totalQueued += queued;
+                foreach (var c in contactsToQueue)
+                    handledSet.Add((occasion.Id, c.Id));
             }
 
             _logger.LogInformation(
-                "SpecialOccasion automation {Id} completed: {QueuedCount} queued for approval, {SkippedCount} skipped",
-                automatedMessage.Id, queuedCount, skippedCount);
+                "SpecialOccasion automation {Id} completed for Tehran {TehranDate}: {OccasionCount} occasions, {QueuedCount} recipients queued",
+                automatedMessage.Id, todayParts.TehranDate, occasionsToday.Count, totalQueued);
         }
 
         private Task ProcessCustomAutomationAsync(
@@ -529,13 +635,15 @@ namespace Api_Vapp.Services.BackgroundServices
         /// به‌جای ارسال مستقیم SMS، کمپین PendingApproval می‌سازد/به‌روز می‌کند تا از صف تأیید ادمین رد شود.
         /// شخصی‌سازی در ConfirmAndSend انجام می‌شود (IsPersonalized=true) تا از N+1 جلوگیری شود.
         /// </summary>
-        /// <returns>تعداد گیرندگانی که به صف اضافه شدند</returns>
         private async Task<int> EnqueueAutomatedBatchForAdminApprovalAsync(
             Api_Context context,
             AutomatedMessage automatedMessage,
             List<Contact> contacts,
             IAuditService auditService,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            int? specialOccasionId = null,
+            string? overrideMessageContent = null,
+            string? campaignTitleSuffix = null)
         {
             if (contacts.Count == 0)
                 return 0;
@@ -543,22 +651,34 @@ namespace Api_Vapp.Services.BackgroundServices
             await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
             try
             {
-                var todayStart = DateTime.UtcNow.Date;
+                var todayParts = OccasionCalendarHelper.GetTodayParts();
+                var (dayStartUtc, _) = OccasionCalendarHelper.GetTehranDayUtcRange(todayParts.TehranDate);
 
-                // کمپین بازِ امروز برای همین اتوماسیون (در صورت وجود، گیرندگان جدید را به همان اضافه کن)
-                var existingCampaign = await context.MessageCampaigns
+                // کمپین بازِ امروز تهران برای همین اتوماسیون (+مناسبت) در صورت وجود
+                var existingCampaignQuery = context.MessageCampaigns
                     .Include(c => c.Recipients)
-                    .FirstOrDefaultAsync(c => c.AutomatedMessageId == automatedMessage.Id
+                    .Where(c => c.AutomatedMessageId == automatedMessage.Id
                         && !c.IsDeleted
-                        && c.CreatedAt >= todayStart
+                        && c.CreatedAt >= dayStartUtc
                         && c.Status == "PendingApproval"
-                        && c.AdminApprovalStatus == AdminApprovalStatuses.Pending,
-                        cancellationToken);
+                        && c.AdminApprovalStatus == AdminApprovalStatuses.Pending);
 
-                string messageContent = automatedMessage.MessageContent ?? string.Empty;
+                var existingCampaign = await existingCampaignQuery.FirstOrDefaultAsync(cancellationToken);
+
+                if (existingCampaign != null && !string.IsNullOrWhiteSpace(campaignTitleSuffix)
+                    && existingCampaign.Title != null
+                    && !existingCampaign.Title.Contains(campaignTitleSuffix, StringComparison.Ordinal))
+                {
+                    // برای مناسبت‌های مختلف کمپین جدا بساز تا متن متفاوت حفظ شود
+                    existingCampaign = null;
+                }
+
+                string messageContent = overrideMessageContent
+                    ?? automatedMessage.MessageContent
+                    ?? string.Empty;
                 Message? message = null;
 
-                if (automatedMessage.MessageId.HasValue)
+                if (string.IsNullOrWhiteSpace(overrideMessageContent) && automatedMessage.MessageId.HasValue)
                 {
                     message = await context.Messages
                         .FirstOrDefaultAsync(m => m.Id == automatedMessage.MessageId.Value && !m.IsDeleted, cancellationToken);
@@ -596,10 +716,14 @@ namespace Api_Vapp.Services.BackgroundServices
                         return 0;
                     }
 
+                    var title = automatedMessage.Title ?? $"پیام خودکار #{automatedMessage.Id}";
+                    if (!string.IsNullOrWhiteSpace(campaignTitleSuffix))
+                        title = $"{title} — {campaignTitleSuffix}";
+
                     message = new Message
                     {
                         UserId = automatedMessage.UserId,
-                        Title = automatedMessage.Title ?? $"پیام خودکار #{automatedMessage.Id}",
+                        Title = title,
                         Content = messageContent,
                         CharacterCount = SmsPartsCalculator.CountMessageCharacters(messageContent, pricing.Rules),
                         PartsCount = partsCount,
@@ -609,12 +733,53 @@ namespace Api_Vapp.Services.BackgroundServices
                     };
                     await context.Messages.AddAsync(message, cancellationToken);
                     await context.SaveChangesAsync(cancellationToken);
-                    automatedMessage.MessageId = message.Id;
+
+                    // فقط وقتی override نداریم MessageId اتوماسیون را عوض کن
+                    if (string.IsNullOrWhiteSpace(overrideMessageContent))
+                        automatedMessage.MessageId = message.Id;
                 }
                 else if (!message.IsPersonalized)
                 {
                     message.IsPersonalized = true;
                     message.UpdatedAt = DateTime.UtcNow;
+                }
+                else if (!string.IsNullOrWhiteSpace(overrideMessageContent))
+                {
+                    // برای هر مناسبت Message جدا با متن خودش
+                    await using var pricingScope = _serviceProvider.CreateAsyncScope();
+                    var pricing = await pricingScope.ServiceProvider
+                        .GetRequiredService<ISmsPricingService>()
+                        .GetRuntimeAsync(cancellationToken);
+
+                    int partsCount;
+                    try
+                    {
+                        partsCount = SmsPartsCalculator.CalculateParts(messageContent, pricing.Rules);
+                    }
+                    catch (ArgumentException ex)
+                    {
+                        _logger.LogWarning(ex, "Occasion message exceeds max pages — AutomatedMessageId: {Id}", automatedMessage.Id);
+                        await transaction.RollbackAsync(cancellationToken);
+                        return 0;
+                    }
+
+                    var title = automatedMessage.Title ?? $"پیام خودکار #{automatedMessage.Id}";
+                    if (!string.IsNullOrWhiteSpace(campaignTitleSuffix))
+                        title = $"{title} — {campaignTitleSuffix}";
+
+                    message = new Message
+                    {
+                        UserId = automatedMessage.UserId,
+                        Title = title,
+                        Content = messageContent,
+                        CharacterCount = SmsPartsCalculator.CountMessageCharacters(messageContent, pricing.Rules),
+                        PartsCount = partsCount,
+                        IsPersonalized = true,
+                        Status = "Ready",
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    await context.Messages.AddAsync(message, cancellationToken);
+                    await context.SaveChangesAsync(cancellationToken);
                 }
 
                 var now = DateTime.UtcNow;
@@ -638,11 +803,15 @@ namespace Api_Vapp.Services.BackgroundServices
                 }
                 else
                 {
+                    var campaignTitle = automatedMessage.Title ?? $"خودکار — {automatedMessage.AutomationType} #{automatedMessage.Id}";
+                    if (!string.IsNullOrWhiteSpace(campaignTitleSuffix))
+                        campaignTitle = $"{campaignTitle} — {campaignTitleSuffix}";
+
                     campaign = new MessageCampaign
                     {
                         MessageId = message.Id,
                         UserId = automatedMessage.UserId,
-                        Title = automatedMessage.Title ?? $"خودکار — {automatedMessage.AutomationType} #{automatedMessage.Id}",
+                        Title = campaignTitle,
                         SendType = "Automated",
                         AutomatedMessageId = automatedMessage.Id,
                         RecipientsCount = 0,
@@ -670,6 +839,7 @@ namespace Api_Vapp.Services.BackgroundServices
                     {
                         AutomatedMessageId = automatedMessage.Id,
                         ContactId = contact.Id,
+                        SpecialOccasionId = specialOccasionId,
                         ExecutedAt = now,
                         Status = "PendingApproval",
                         MessageContent = previewContent,
@@ -722,12 +892,18 @@ namespace Api_Vapp.Services.BackgroundServices
                     EntityId = campaign.Id.ToString(),
                     ActorUserId = automatedMessage.UserId,
                     Source = AuditSources.Background,
-                    After = new { automatedMessageId = automatedMessage.Id, addedRecipients = contacts.Count, totalRecipients = campaign.RecipientsCount }
+                    After = new
+                    {
+                        automatedMessageId = automatedMessage.Id,
+                        specialOccasionId,
+                        addedRecipients = contacts.Count,
+                        totalRecipients = campaign.RecipientsCount
+                    }
                 }, cancellationToken);
 
                 _logger.LogInformation(
-                    "Queued automated message {AutomationId} as campaign {CampaignId} (+{Added} recipients, total {Total}) for admin approval",
-                    automatedMessage.Id, campaign.Id, contacts.Count, campaign.RecipientsCount);
+                    "Queued automated message {AutomationId} occasion {OccasionId} as campaign {CampaignId} (+{Added} recipients, total {Total}) for admin approval",
+                    automatedMessage.Id, specialOccasionId, campaign.Id, contacts.Count, campaign.RecipientsCount);
 
                 return contacts.Count;
             }

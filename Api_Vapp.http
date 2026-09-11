@@ -1627,3 +1627,91 @@ Authorization: Bearer {{token}}
 ### ساخت لینک مشاهده محتوا (عمومی / پیش‌نمایش ادمین)
 POST {{Api_Vapp_HostAddress}}/api/Admin/UserInventory/1/contents/LuckyWheel/1/view-link
 Authorization: Bearer {{token}}
+
+###
+# --- جدول تبریک و تسلیت مناسبتی ---
+
+### جدول مناسبت‌ها (سیستمی + سفارشی)
+GET {{Api_Vapp_HostAddress}}/api/SpecialOccasion/table
+Authorization: Bearer {{token}}
+
+### جدول فقط تبریک‌ها
+GET {{Api_Vapp_HostAddress}}/api/SpecialOccasion/table?category=Congratulation
+Authorization: Bearer {{token}}
+
+### پروفایل مناسبتی
+GET {{Api_Vapp_HostAddress}}/api/SpecialOccasion/profile
+Authorization: Bearer {{token}}
+
+### به‌روزرسانی پروفایل (نام شرکت + ساعت تهران + فعال‌سازی دسته‌ها)
+POST {{Api_Vapp_HostAddress}}/api/SpecialOccasion/profile/update
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "businessName": "شرکت نمونه",
+  "congratulationsEnabled": true,
+  "condolencesEnabled": false,
+  "scheduledTimeTehran": "10:00"
+}
+
+### فعال/غیرفعال دسته تسلیت
+POST {{Api_Vapp_HostAddress}}/api/SpecialOccasion/category/toggle
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "category": "Condolence",
+  "isEnabled": false
+}
+
+### فعال/غیرفعال یک مناسبت
+POST {{Api_Vapp_HostAddress}}/api/SpecialOccasion/1/toggle
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "isEnabled": true
+}
+
+### ویرایش قالب مناسبت (می‌رود برای تأیید متن اگر با پیش‌فرض فرق کند)
+POST {{Api_Vapp_HostAddress}}/api/SpecialOccasion/1/template/update
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "customMessage": "سلام {{نام}} عزیز\nمناسبت {{مناسبت}} مبارک\n{{نام شرکت}}"
+}
+
+### بازگشت به قالب پیش‌فرض ادمین
+POST {{Api_Vapp_HostAddress}}/api/SpecialOccasion/1/template/reset
+Authorization: Bearer {{token}}
+
+### ایجاد مناسبت سفارشی (مثلاً سالروز تاسیس — ۲۵ خرداد)
+POST {{Api_Vapp_HostAddress}}/api/SpecialOccasion
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "سالروز تأسیس شرکت",
+  "type": "Custom",
+  "category": "Congratulation",
+  "calendarType": "Jalali",
+  "month": 3,
+  "day": 25,
+  "defaultMessage": "سالروز تأسیس {{نام شرکت}} مبارک {{نام}} عزیز"
+}
+
+### validation fail — بدون نام
+POST {{Api_Vapp_HostAddress}}/api/SpecialOccasion
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "calendarType": "Jalali",
+  "month": 3,
+  "day": 25
+}
+
+### بدون توکن — باید 401
+GET {{Api_Vapp_HostAddress}}/api/SpecialOccasion/table

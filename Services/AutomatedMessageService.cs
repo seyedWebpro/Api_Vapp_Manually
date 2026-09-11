@@ -246,12 +246,13 @@ namespace Api_Vapp.Services
                     return ApiResponse<AutomatedMessageResponseDto>.BadRequest("تعداد روز قبل از رویداد باید مشخص شود");
                 }
 
-                // بررسی نیاز به SpecialOccasionId
+                // SpecialOccasionId اختیاری است: اگر خالی باشد، جدول مناسبتی کاربر پردازش می‌شود
                 if (string.Equals(typeDefinition.Type, AutomationTypeCodes.SpecialOccasion, StringComparison.OrdinalIgnoreCase)
-                    && !createDto.SpecialOccasionId.HasValue)
+                    && createDto.SpecialOccasionId.HasValue
+                    && createDto.SpecialOccasionId.Value <= 0)
                 {
                     await transaction.RollbackAsync();
-                    return ApiResponse<AutomatedMessageResponseDto>.BadRequest("مناسبت خاص باید انتخاب شود");
+                    return ApiResponse<AutomatedMessageResponseDto>.BadRequest("شناسه مناسبت نامعتبر است");
                 }
 
                 // بررسی صحت ScheduledTime
