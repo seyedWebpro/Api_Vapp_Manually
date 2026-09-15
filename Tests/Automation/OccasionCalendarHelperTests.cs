@@ -1,4 +1,5 @@
 using Api_Vapp.Constants;
+using Api_Vapp.Models;
 using Api_Vapp.Utilities;
 using Xunit;
 
@@ -121,6 +122,51 @@ namespace Api_Vapp.Tests.Automation
         {
             Assert.Equal(OccasionCategories.Condolence, OccasionTypeCodes.ToCategory(OccasionTypeCodes.Death));
             Assert.Equal(OccasionCategories.Congratulation, OccasionTypeCodes.ToCategory(OccasionTypeCodes.Holiday));
+        }
+
+        [Fact]
+        public void ResolveEffectiveTemplate_PendingUserTemplateWithoutDefault_ReturnsEmpty()
+        {
+            var occasion = new SpecialOccasion { IsSystem = false, DefaultMessage = null };
+            var preference = new UserOccasionPreference
+            {
+                CustomMessage = "متن تأییدنشده کاربر",
+                TemplateApprovalStatus = AdminApprovalStatuses.Pending
+            };
+
+            var result = OccasionMessagePersonalizer.ResolveEffectiveTemplate(occasion, preference);
+
+            Assert.Empty(result);
+        }
+
+        [Fact]
+        public void ResolveEffectiveTemplate_ApprovedUserTemplate_ReturnsCustomMessage()
+        {
+            var occasion = new SpecialOccasion { DefaultMessage = "قالب پیش‌فرض" };
+            var preference = new UserOccasionPreference
+            {
+                CustomMessage = "قالب تأییدشده کاربر",
+                TemplateApprovalStatus = AdminApprovalStatuses.Approved
+            };
+
+            var result = OccasionMessagePersonalizer.ResolveEffectiveTemplate(occasion, preference);
+
+            Assert.Equal("قالب تأییدشده کاربر", result);
+        }
+
+        [Fact]
+        public void ResolveEffectiveTemplate_RejectedSystemOverride_FallsBackToAdminDefault()
+        {
+            var occasion = new SpecialOccasion { IsSystem = true, DefaultMessage = "قالب پیش‌فرض ادمین" };
+            var preference = new UserOccasionPreference
+            {
+                CustomMessage = "قالب ردشده کاربر",
+                TemplateApprovalStatus = AdminApprovalStatuses.Rejected
+            };
+
+            var result = OccasionMessagePersonalizer.ResolveEffectiveTemplate(occasion, preference);
+
+            Assert.Equal("قالب پیش‌فرض ادمین", result);
         }
     }
 }

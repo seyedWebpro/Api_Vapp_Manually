@@ -50,6 +50,7 @@ namespace Api_Vapp.Services
                 var category = string.IsNullOrWhiteSpace(createDto.Category)
                     ? OccasionTypeCodes.ToCategory(type)
                     : OccasionCategories.Normalize(createDto.Category);
+                var customMessage = NormalizeMessage(createDto.DefaultMessage);
 
                 if (!OccasionCategories.IsKnown(category))
                     return ApiResponse<SpecialOccasionResponseDto>.BadRequest("دسته‌بندی مناسبت نامعتبر است", errorCode: ErrorCodes.InvalidInput);
@@ -64,7 +65,9 @@ namespace Api_Vapp.Services
                     Month = (byte)month,
                     Day = (byte)day,
                     OccasionDate = occasionDate,
-                    DefaultMessage = NormalizeMessage(createDto.DefaultMessage),
+                    // DefaultMessage فقط قالب مورد تأیید ادمین/سیستم است؛ متن واردشده
+                    // توسط کاربر تا زمان تأیید باید صرفاً در Preference نگهداری شود.
+                    DefaultMessage = null,
                     IsSystem = false,
                     IsActive = true,
                     IsDeleted = false,
@@ -74,17 +77,30 @@ namespace Api_Vapp.Services
 
                 await _specialOccasionRepository.AddAsync(occasion);
 
-                await _preferenceRepository.AddAsync(new UserOccasionPreference
+                var preference = new UserOccasionPreference
                 {
                     UserId = userId,
                     SpecialOccasionId = occasion.Id,
                     IsEnabled = true,
-                    CustomMessage = occasion.DefaultMessage,
-                    TemplateApprovalStatus = string.IsNullOrWhiteSpace(occasion.DefaultMessage)
+                    CustomMessage = customMessage,
+                    TemplateApprovalStatus = string.IsNullOrWhiteSpace(customMessage)
                         ? AdminApprovalStatuses.Approved
                         : AdminApprovalStatuses.Pending,
                     CreatedAt = DateTime.UtcNow
-                });
+                };
+
+                await _preferenceRepository.AddAsync(preference);
+
+                // قالب سفارشیِ زمان ساخت نیز باید مانند ویرایش قالب وارد صف تأیید ادمین شود.
+                if (!string.IsNullOrWhiteSpace(customMessage))
+                {
+                    await UpsertOccasionMessageTemplateAsync(
+                        userId,
+                        occasion,
+                        preference,
+                        customMessage);
+                    await _preferenceRepository.UpdateAsync(preference);
+                }
 
                 await _audit.WriteAsync(new AuditEntry
                 {
