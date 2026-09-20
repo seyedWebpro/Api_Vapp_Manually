@@ -115,8 +115,8 @@ jobs:
           PY
 
   package:
-    name: Package API image
-    runs-on: ubuntu-latest
+    name: Build API image on production runner
+    runs-on: [self-hosted, vapp-prod]
     needs: ci
     if: >
       (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'))
@@ -126,32 +126,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build API image (GHA layer cache)
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ${{ env.DOCKERFILE }}
-          push: false
-          load: true
-          tags: ${{ env.API_IMAGE }}
-          cache-from: type=gha,scope=vapp-api
-          cache-to: type=gha,mode=max,scope=vapp-api
-
-      - name: Export compressed image artifact
+      - name: Build API image locally
         run: |
           set -euo pipefail
-          docker save "${{ env.API_IMAGE }}" | gzip -1 > api-image.tar.gz
-          ls -lh api-image.tar.gz
-
-      - name: Upload image artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: api-docker-image
-          path: api-image.tar.gz
-          retention-days: 1
+          docker build -f "${{ env.DOCKERFILE }}" -t "${{ env.API_IMAGE }}" .
 
   deploy:
     name: Deploy API → Production
@@ -166,11 +144,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download API image artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: api-docker-image
-
       - name: Sync devops scripts on server
         run: |
           set -euo pipefail
@@ -179,8 +152,7 @@ jobs:
       - name: Load image + restart API (local)
         run: |
           set -euo pipefail
-          echo "Loading API image on VPS..."
-          gunzip -c api-image.tar.gz | docker load
+          echo "Restarting locally built API image on VPS..."
           cd "${{ env.REMOTE_API_DIR }}"
           export COMPOSE_HTTP_TIMEOUT=300 DOCKER_CLIENT_TIMEOUT=300
           docker compose -f "${{ env.COMPOSE_FILE }}" stop api 2>/dev/null || true
