@@ -12,7 +12,7 @@ namespace Api_Vapp.Models
         public int SpecialOccasionId { get; set; }
 
         /// <summary>فعال بودن این مناسبت برای کاربر</summary>
-        public bool IsEnabled { get; set; } = true;
+        public bool IsEnabled { get; set; }
 
         /// <summary>
         /// متن قالب اختصاصی کاربر.

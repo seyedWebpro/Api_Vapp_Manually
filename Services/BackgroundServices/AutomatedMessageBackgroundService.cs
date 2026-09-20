@@ -394,9 +394,12 @@ namespace Api_Vapp.Services.BackgroundServices
                     && occasionIds.Contains(p.SpecialOccasionId))
                 .ToDictionaryAsync(p => p.SpecialOccasionId, cancellationToken);
 
-            // مناسبت‌هایی که کاربر صریحاً غیرفعال کرده حذف شوند (پیش‌فرض: فعال)
+            // مناسبت‌های سیستمی opt-in هستند: نبود Preference یعنی هنوز خاموش‌اند.
+            // مناسبت سفارشی قدیمی بدون Preference برای سازگاری فعال باقی می‌ماند.
             occasionsToday = occasionsToday
-                .Where(o => !preferences.TryGetValue(o.Id, out var pref) || pref.IsEnabled)
+                .Where(o => OccasionMessagePersonalizer.IsEnabledForUser(
+                    o,
+                    preferences.GetValueOrDefault(o.Id)))
                 .ToList();
 
             if (occasionsToday.Count == 0)
@@ -440,9 +443,6 @@ namespace Api_Vapp.Services.BackgroundServices
             {
                 preferences.TryGetValue(occasion.Id, out var pref);
                 var template = OccasionMessagePersonalizer.ResolveEffectiveTemplate(occasion, pref);
-                if (string.IsNullOrWhiteSpace(template) && !string.IsNullOrWhiteSpace(occasion.DefaultMessage))
-                    template = occasion.DefaultMessage;
-
                 if (string.IsNullOrWhiteSpace(template))
                 {
                     _logger.LogWarning(
@@ -451,7 +451,6 @@ namespace Api_Vapp.Services.BackgroundServices
                     continue;
                 }
 
-                // اگر قالب سفارشی Pending باشد ولی Default موجود است، Default استفاده می‌شود (ResolveEffectiveTemplate)
                 var contentForQueue = OccasionMessagePersonalizer.ApplyForQueuePreview(
                     template, businessName, occasion.Name);
 
@@ -470,7 +469,8 @@ namespace Api_Vapp.Services.BackgroundServices
                     cancellationToken,
                     specialOccasionId: occasion.Id,
                     overrideMessageContent: contentForQueue,
-                    campaignTitleSuffix: occasion.Name);
+                    campaignTitleSuffix: occasion.Name,
+                    sendAfterApprovedTemplate: true);
 
                 totalQueued += queued;
                 foreach (var c in contactsToQueue)
@@ -643,7 +643,8 @@ namespace Api_Vapp.Services.BackgroundServices
             CancellationToken cancellationToken,
             int? specialOccasionId = null,
             string? overrideMessageContent = null,
-            string? campaignTitleSuffix = null)
+            string? campaignTitleSuffix = null,
+            bool sendAfterApprovedTemplate = false)
         {
             if (contacts.Count == 0)
                 return 0;
@@ -816,8 +817,10 @@ namespace Api_Vapp.Services.BackgroundServices
                         AutomatedMessageId = automatedMessage.Id,
                         RecipientsCount = 0,
                         PartsCount = message.PartsCount,
-                        Status = "PendingApproval",
-                        AdminApprovalStatus = AdminApprovalStatuses.Pending,
+                        Status = sendAfterApprovedTemplate ? "Pending" : "PendingApproval",
+                        AdminApprovalStatus = sendAfterApprovedTemplate
+                            ? AdminApprovalStatuses.Approved
+                            : AdminApprovalStatuses.Pending,
                         IsActive = true,
                         CreatedAt = now
                     };
@@ -852,33 +855,36 @@ namespace Api_Vapp.Services.BackgroundServices
                 automatedMessage.LastExecutedAt = now;
                 await context.SaveChangesAsync(cancellationToken);
 
-                var approvalRequest = await context.SmsApprovalRequests
-                    .FirstOrDefaultAsync(r => r.MessageCampaignId == campaign.Id
-                        && r.Status == AdminApprovalStatuses.Pending
-                        && !r.IsDeleted,
-                        cancellationToken);
+                if (!sendAfterApprovedTemplate)
+                {
+                    var approvalRequest = await context.SmsApprovalRequests
+                        .FirstOrDefaultAsync(r => r.MessageCampaignId == campaign.Id
+                            && r.Status == AdminApprovalStatuses.Pending
+                            && !r.IsDeleted,
+                            cancellationToken);
 
-                if (approvalRequest != null)
-                {
-                    approvalRequest.ContentPreview = previewContent;
-                    approvalRequest.TitlePreview = campaign.Title;
-                    approvalRequest.RecipientsCount = campaign.RecipientsCount;
-                    approvalRequest.UpdatedAt = now;
-                }
-                else
-                {
-                    await context.SmsApprovalRequests.AddAsync(new SmsApprovalRequest
+                    if (approvalRequest != null)
                     {
-                        UserId = automatedMessage.UserId,
-                        RequestType = SmsApprovalRequestTypes.Campaign,
-                        MessageCampaignId = campaign.Id,
-                        MessageId = message.Id,
-                        ContentPreview = previewContent,
-                        TitlePreview = campaign.Title,
-                        RecipientsCount = campaign.RecipientsCount,
-                        Status = AdminApprovalStatuses.Pending,
-                        CreatedAt = now
-                    }, cancellationToken);
+                        approvalRequest.ContentPreview = previewContent;
+                        approvalRequest.TitlePreview = campaign.Title;
+                        approvalRequest.RecipientsCount = campaign.RecipientsCount;
+                        approvalRequest.UpdatedAt = now;
+                    }
+                    else
+                    {
+                        await context.SmsApprovalRequests.AddAsync(new SmsApprovalRequest
+                        {
+                            UserId = automatedMessage.UserId,
+                            RequestType = SmsApprovalRequestTypes.Campaign,
+                            MessageCampaignId = campaign.Id,
+                            MessageId = message.Id,
+                            ContentPreview = previewContent,
+                            TitlePreview = campaign.Title,
+                            RecipientsCount = campaign.RecipientsCount,
+                            Status = AdminApprovalStatuses.Pending,
+                            CreatedAt = now
+                        }, cancellationToken);
+                    }
                 }
 
                 await context.SaveChangesAsync(cancellationToken);
@@ -901,9 +907,33 @@ namespace Api_Vapp.Services.BackgroundServices
                     }
                 }, cancellationToken);
 
+                if (sendAfterApprovedTemplate)
+                {
+                    await using var sendScope = _serviceProvider.CreateAsyncScope();
+                    var messageService = sendScope.ServiceProvider.GetRequiredService<IMessageService>();
+                    var sendResult = await messageService.ConfirmAndSendCampaignAsync(
+                        campaign.Id,
+                        automatedMessage.UserId,
+                        bypassAdminApproval: true);
+
+                    if (!sendResult.Success)
+                    {
+                        _logger.LogWarning(
+                            "Approved occasion campaign {CampaignId} could not be sent — UserId: {UserId}, ErrorCode: {ErrorCode}",
+                            campaign.Id,
+                            automatedMessage.UserId,
+                            sendResult.ErrorCode);
+                    }
+                }
+
                 _logger.LogInformation(
-                    "Queued automated message {AutomationId} occasion {OccasionId} as campaign {CampaignId} (+{Added} recipients, total {Total}) for admin approval",
-                    automatedMessage.Id, specialOccasionId, campaign.Id, contacts.Count, campaign.RecipientsCount);
+                    "Queued automated message {AutomationId} occasion {OccasionId} as campaign {CampaignId} (+{Added} recipients, total {Total}), send-after-template-approval: {SendAfterApprovedTemplate}",
+                    automatedMessage.Id,
+                    specialOccasionId,
+                    campaign.Id,
+                    contacts.Count,
+                    campaign.RecipientsCount,
+                    sendAfterApprovedTemplate);
 
                 return contacts.Count;
             }

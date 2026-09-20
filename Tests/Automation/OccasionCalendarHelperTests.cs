@@ -155,7 +155,7 @@ namespace Api_Vapp.Tests.Automation
         }
 
         [Fact]
-        public void ResolveEffectiveTemplate_RejectedSystemOverride_FallsBackToAdminDefault()
+        public void ResolveEffectiveTemplate_RejectedSystemOverride_ReturnsEmpty()
         {
             var occasion = new SpecialOccasion { IsSystem = true, DefaultMessage = "قالب پیش‌فرض ادمین" };
             var preference = new UserOccasionPreference
@@ -166,7 +166,39 @@ namespace Api_Vapp.Tests.Automation
 
             var result = OccasionMessagePersonalizer.ResolveEffectiveTemplate(occasion, preference);
 
-            Assert.Equal("قالب پیش‌فرض ادمین", result);
+            Assert.Empty(result);
+        }
+
+        [Fact]
+        public void ResolveEffectiveTemplate_PendingSystemOverride_ReturnsEmpty()
+        {
+            var occasion = new SpecialOccasion { IsSystem = true, DefaultMessage = "قالب پیش‌فرض ادمین" };
+            var preference = new UserOccasionPreference
+            {
+                CustomMessage = "قالب در انتظار تأیید کاربر",
+                TemplateApprovalStatus = AdminApprovalStatuses.Pending
+            };
+
+            var result = OccasionMessagePersonalizer.ResolveEffectiveTemplate(occasion, preference);
+
+            Assert.Empty(result);
+        }
+
+        [Fact]
+        public void IsEnabledForUser_SystemOccasionWithoutPreference_IsOff()
+        {
+            var occasion = new SpecialOccasion { IsSystem = true };
+
+            Assert.False(OccasionMessagePersonalizer.IsEnabledForUser(occasion, preference: null));
+        }
+
+        [Fact]
+        public void IsEnabledForUser_SystemOccasionWithEnabledPreference_IsOn()
+        {
+            var occasion = new SpecialOccasion { IsSystem = true };
+            var preference = new UserOccasionPreference { IsEnabled = true };
+
+            Assert.True(OccasionMessagePersonalizer.IsEnabledForUser(occasion, preference));
         }
     }
 }

@@ -9,6 +9,15 @@ namespace Api_Vapp.Utilities
     /// </summary>
     public static class OccasionMessagePersonalizer
     {
+        /// <summary>
+        /// مناسبت‌های سیستمی فقط با فعال‌سازی صریح کاربر روشن می‌شوند.
+        /// مناسبت سفارشی قدیمی بدون Preference برای سازگاری فعال باقی می‌ماند.
+        /// </summary>
+        public static bool IsEnabledForUser(
+            SpecialOccasion occasion,
+            UserOccasionPreference? preference) =>
+            preference?.IsEnabled ?? !occasion.IsSystem;
+
         public static string Apply(
             string template,
             string? contactName,
@@ -76,11 +85,15 @@ namespace Api_Vapp.Utilities
             SpecialOccasion occasion,
             UserOccasionPreference? preference)
         {
-            if (preference != null
-                && !string.IsNullOrWhiteSpace(preference.CustomMessage)
-                && string.Equals(preference.TemplateApprovalStatus, AdminApprovalStatuses.Approved, StringComparison.OrdinalIgnoreCase))
+            if (preference != null && !string.IsNullOrWhiteSpace(preference.CustomMessage))
             {
-                return preference.CustomMessage!;
+                // بعد از تغییر متن، تا تأیید ادمین نباید حتی متن پیش‌فرض ارسال شود.
+                return string.Equals(
+                    preference.TemplateApprovalStatus,
+                    AdminApprovalStatuses.Approved,
+                    StringComparison.OrdinalIgnoreCase)
+                        ? preference.CustomMessage!
+                        : string.Empty;
             }
 
             return occasion.DefaultMessage ?? string.Empty;

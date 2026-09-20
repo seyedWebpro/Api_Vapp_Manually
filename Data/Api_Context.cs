@@ -687,7 +687,8 @@ namespace Api_Vapp.Data
                 entity.Property(p => p.CustomMessage).HasColumnType("nvarchar(max)");
                 entity.Property(p => p.TemplateApprovalStatus).HasMaxLength(20).HasDefaultValue("Approved");
                 entity.Property(p => p.TemplateRejectionReason).HasMaxLength(500);
-                entity.Property(p => p.IsEnabled).HasDefaultValue(true);
+                // مناسبت‌ها opt-in هستند و تا فعال‌سازی صریح کاربر نباید ارسال شوند.
+                entity.Property(p => p.IsEnabled).HasDefaultValue(false);
                 entity.Property(p => p.IsDeleted).HasDefaultValue(false);
                 entity.Property(p => p.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
 

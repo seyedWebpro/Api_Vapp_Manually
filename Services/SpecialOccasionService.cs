@@ -645,7 +645,7 @@ namespace Api_Vapp.Services
             {
                 UserId = userId,
                 SpecialOccasionId = occasionId,
-                IsEnabled = true,
+                IsEnabled = false,
                 TemplateApprovalStatus = AdminApprovalStatuses.Approved,
                 CreatedAt = DateTime.UtcNow
             };
@@ -721,18 +721,13 @@ namespace Api_Vapp.Services
             UserOccasionPreference? preference,
             OccasionCalendarHelper.CalendarDayParts today)
         {
-            var isEnabled = preference?.IsEnabled ?? true;
+            // مناسبت سیستمی بدون Preference یعنی کاربر هنوز آن را روشن نکرده است.
+            // مناسبت سفارشی قدیمی بدون Preference برای سازگاری فعال باقی می‌ماند.
+            var isEnabled = OccasionMessagePersonalizer.IsEnabledForUser(occasion, preference);
             var approval = preference?.TemplateApprovalStatus ?? AdminApprovalStatuses.Approved;
             var effective = OccasionMessagePersonalizer.ResolveEffectiveTemplate(occasion, preference);
             var canSend = !string.IsNullOrWhiteSpace(effective)
                 && string.Equals(approval, AdminApprovalStatuses.Approved, StringComparison.OrdinalIgnoreCase);
-
-            // اگر قالب سفارشی Pending است ولی Default وجود دارد، ارسال با Default مجاز است
-            if (!canSend && !string.IsNullOrWhiteSpace(occasion.DefaultMessage))
-            {
-                effective = occasion.DefaultMessage;
-                canSend = true;
-            }
 
             return new OccasionTableItemDto
             {
