@@ -12,6 +12,7 @@ namespace Api_Vapp.Models
         public int? MessageId { get; set; }
         public int? MessageSessionId { get; set; }
         public int? ReferralProgramId { get; set; }
+        public int? ProfessionalCampaignStepId { get; set; }
         public string ContentPreview { get; set; } = string.Empty;
         public string? TitlePreview { get; set; }
         public int RecipientsCount { get; set; }
@@ -29,6 +30,7 @@ namespace Api_Vapp.Models
         public virtual Message? Message { get; set; }
         public virtual MessageSession? MessageSession { get; set; }
         public virtual ReferralProgram? ReferralProgram { get; set; }
+        public virtual ProfessionalCampaignStep? ProfessionalCampaignStep { get; set; }
         public virtual User? ReviewedByUser { get; set; }
     }
 }

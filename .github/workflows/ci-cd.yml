@@ -62,7 +62,7 @@ jobs:
           mkdir -p TestResults
           dotnet test Tests/Api_Vapp.Tests.csproj \
             -c Release --no-build --no-restore \
-            --filter "FullyQualifiedName~SmsProviderErrorMapperTests|FullyQualifiedName~EducationalVideoPlaybackHelperTests|FullyQualifiedName~SmsDeliveryRefundCopyAndFinanceTests" \
+            --filter "FullyQualifiedName~SmsProviderErrorMapperTests|FullyQualifiedName~EducationalVideoPlaybackHelperTests|FullyQualifiedName~SmsDeliveryRefundCopyAndFinanceTests|FullyQualifiedName~ProfessionalCampaign" \
             --logger "trx;LogFileName=ci-smoke.trx" \
             --results-directory TestResults
 

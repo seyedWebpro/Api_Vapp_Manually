@@ -19,6 +19,9 @@ namespace Api_Vapp.Data
         public DbSet<MessageCampaign> MessageCampaigns { get; set; }
         public DbSet<MessageRecipient> MessageRecipients { get; set; }
         public DbSet<MessageSession> MessageSessions { get; set; }
+        public DbSet<ProfessionalCampaign> ProfessionalCampaigns { get; set; }
+        public DbSet<ProfessionalCampaignStep> ProfessionalCampaignSteps { get; set; }
+        public DbSet<ProfessionalCampaignRecipient> ProfessionalCampaignRecipients { get; set; }
         public DbSet<AutomatedMessage> AutomatedMessages { get; set; }
         public DbSet<AutomationExecution> AutomationExecutions { get; set; }
         public DbSet<SpecialOccasion> SpecialOccasions { get; set; }
@@ -1492,6 +1495,54 @@ namespace Api_Vapp.Data
             });
 
             // تنظیمات SmsApprovalRequest
+            modelBuilder.Entity<ProfessionalCampaign>(entity =>
+            {
+                entity.HasKey(c => c.Id);
+                entity.Property(c => c.Title).IsRequired().HasMaxLength(200);
+                entity.Property(c => c.TargetType).IsRequired().HasMaxLength(30);
+                entity.Property(c => c.TargetIdsJson).IsRequired().HasColumnType("nvarchar(max)");
+                entity.Property(c => c.Status).IsRequired().HasMaxLength(50).HasDefaultValue("PendingApproval");
+                entity.Property(c => c.IsActive).HasDefaultValue(false);
+                entity.Property(c => c.IsDeleted).HasDefaultValue(false);
+                entity.Property(c => c.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+                entity.HasOne(c => c.User).WithMany().HasForeignKey(c => c.UserId).OnDelete(DeleteBehavior.NoAction);
+                entity.HasIndex(c => new { c.UserId, c.IsDeleted, c.CreatedAt });
+                entity.HasIndex(c => new { c.Status, c.IsActive });
+            });
+
+            modelBuilder.Entity<ProfessionalCampaignStep>(entity =>
+            {
+                entity.HasKey(s => s.Id);
+                entity.Property(s => s.Content).IsRequired().HasMaxLength(4000);
+                entity.Property(s => s.Status).IsRequired().HasMaxLength(50).HasDefaultValue("PendingApproval");
+                entity.Property(s => s.ApprovalStatus).IsRequired().HasMaxLength(50).HasDefaultValue("Pending");
+                entity.Property(s => s.RejectionReason).HasMaxLength(1000);
+                entity.Property(s => s.LastError).HasMaxLength(1000);
+                entity.Property(s => s.IsDeleted).HasDefaultValue(false);
+                entity.Property(s => s.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+                entity.HasOne(s => s.ProfessionalCampaign).WithMany(c => c.Steps)
+                    .HasForeignKey(s => s.ProfessionalCampaignId).OnDelete(DeleteBehavior.Cascade);
+                entity.HasOne(s => s.ReviewedByUser).WithMany()
+                    .HasForeignKey(s => s.ReviewedByUserId).OnDelete(DeleteBehavior.NoAction);
+                entity.HasIndex(s => new { s.ProfessionalCampaignId, s.StepOrder }).IsUnique();
+                entity.HasIndex(s => new { s.Status, s.ScheduledAtUtc });
+                entity.HasIndex(s => s.ApprovalStatus);
+            });
+
+            modelBuilder.Entity<ProfessionalCampaignRecipient>(entity =>
+            {
+                entity.HasKey(r => r.Id);
+                entity.Property(r => r.MobileNumber).IsRequired().HasMaxLength(20);
+                entity.Property(r => r.FullName).HasMaxLength(300);
+                entity.Property(r => r.IsDeleted).HasDefaultValue(false);
+                entity.Property(r => r.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+                entity.HasOne(r => r.ProfessionalCampaign).WithMany(c => c.Recipients)
+                    .HasForeignKey(r => r.ProfessionalCampaignId).OnDelete(DeleteBehavior.Cascade);
+                entity.HasOne(r => r.Contact).WithMany()
+                    .HasForeignKey(r => r.ContactId).OnDelete(DeleteBehavior.NoAction);
+                entity.HasIndex(r => new { r.ProfessionalCampaignId, r.MobileNumber }).IsUnique();
+            });
+
             modelBuilder.Entity<SmsApprovalRequest>(entity =>
             {
                 entity.HasKey(r => r.Id);
@@ -1508,11 +1559,13 @@ namespace Api_Vapp.Data
                 entity.HasOne(r => r.Message).WithMany().HasForeignKey(r => r.MessageId).IsRequired(false).OnDelete(DeleteBehavior.NoAction);
                 entity.HasOne(r => r.MessageSession).WithMany().HasForeignKey(r => r.MessageSessionId).OnDelete(DeleteBehavior.NoAction);
                 entity.HasOne(r => r.ReferralProgram).WithMany().HasForeignKey(r => r.ReferralProgramId).IsRequired(false).OnDelete(DeleteBehavior.NoAction);
+                entity.HasOne(r => r.ProfessionalCampaignStep).WithMany().HasForeignKey(r => r.ProfessionalCampaignStepId).IsRequired(false).OnDelete(DeleteBehavior.NoAction);
                 entity.HasOne(r => r.ReviewedByUser).WithMany().HasForeignKey(r => r.ReviewedByUserId).OnDelete(DeleteBehavior.NoAction);
                 entity.HasIndex(r => r.Status);
                 entity.HasIndex(r => r.UserId);
                 entity.HasIndex(r => r.MessageCampaignId);
                 entity.HasIndex(r => r.ReferralProgramId);
+                entity.HasIndex(r => r.ProfessionalCampaignStepId);
             });
 
             // فیلدهای تأیید ادمین روی MessageTemplate

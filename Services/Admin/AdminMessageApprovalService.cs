@@ -107,6 +107,7 @@ namespace Api_Vapp.Services.Admin
 
         public async Task<ApiResponse<bool>> ApproveAsync(int id, int adminUserId)
         {
+            var professionalCampaignStepApproved = false;
             try
             {
                 var claimed = await _context.SmsApprovalRequests
@@ -309,6 +310,37 @@ namespace Api_Vapp.Services.Admin
                                 ControlledErrorHelper.SendFailed));
                     }
                 }
+                else if (request.RequestType == SmsApprovalRequestTypes.ProfessionalCampaignStep
+                    && request.ProfessionalCampaignStepId.HasValue)
+                {
+                    var step = await _context.ProfessionalCampaignSteps
+                        .Include(s => s.ProfessionalCampaign)
+                        .FirstOrDefaultAsync(s => s.Id == request.ProfessionalCampaignStepId.Value && !s.IsDeleted);
+                    if (step == null || step.ProfessionalCampaign.IsDeleted)
+                    {
+                        await RevertToPendingAsync(request);
+                        return ApiResponse<bool>.NotFound("مرحله کمپین حرفه‌ای یافت نشد");
+                    }
+
+                    step.ApprovalStatus = AdminApprovalStatuses.Approved;
+                    step.Status = ProfessionalCampaignStepStatuses.Pending;
+                    step.ReviewedByUserId = adminUserId;
+                    step.ReviewedAt = DateTime.UtcNow;
+                    step.RejectionReason = null;
+                    step.UpdatedAt = DateTime.UtcNow;
+
+                    var hasOtherUnapproved = await _context.ProfessionalCampaignSteps.AnyAsync(s =>
+                        s.ProfessionalCampaignId == step.ProfessionalCampaignId
+                        && s.Id != step.Id
+                        && !s.IsDeleted
+                        && s.ApprovalStatus != AdminApprovalStatuses.Approved);
+                    if (!hasOtherUnapproved)
+                    {
+                        step.ProfessionalCampaign.Status = ProfessionalCampaignStatuses.Ready;
+                        step.ProfessionalCampaign.UpdatedAt = DateTime.UtcNow;
+                    }
+                    professionalCampaignStepApproved = true;
+                }
                 else if (request.RequestType == SmsApprovalRequestTypes.ReferralInvite)
                 {
                     if (!request.ReferralProgramId.HasValue)
@@ -377,7 +409,11 @@ namespace Api_Vapp.Services.Admin
 
                 await NotifyMessageDecisionAsync(request, approved: true, scheduled: false);
 
-                return ApiResponse<bool>.CreateSuccess(true, "درخواست تأیید و ارسال انجام شد");
+                return ApiResponse<bool>.CreateSuccess(
+                    true,
+                    professionalCampaignStepApproved
+                        ? "متن مرحله کمپین تأیید شد"
+                        : "درخواست تأیید و ارسال انجام شد");
             }
             catch (Exception ex)
             {
@@ -466,6 +502,26 @@ namespace Api_Vapp.Services.Admin
                         program.InviteSmsApprovalStatus = AdminApprovalStatuses.Rejected;
                         program.InviteSmsRejectionReason = dto.Reason.Trim();
                         program.UpdatedAt = DateTime.UtcNow;
+                    }
+                }
+
+                if (request.RequestType == SmsApprovalRequestTypes.ProfessionalCampaignStep
+                    && request.ProfessionalCampaignStepId.HasValue)
+                {
+                    var step = await _context.ProfessionalCampaignSteps
+                        .Include(s => s.ProfessionalCampaign)
+                        .FirstOrDefaultAsync(s => s.Id == request.ProfessionalCampaignStepId.Value && !s.IsDeleted);
+                    if (step != null)
+                    {
+                        step.ApprovalStatus = AdminApprovalStatuses.Rejected;
+                        step.Status = ProfessionalCampaignStepStatuses.Rejected;
+                        step.ReviewedByUserId = adminUserId;
+                        step.ReviewedAt = DateTime.UtcNow;
+                        step.RejectionReason = dto.Reason.Trim();
+                        step.UpdatedAt = DateTime.UtcNow;
+                        step.ProfessionalCampaign.Status = ProfessionalCampaignStatuses.Rejected;
+                        step.ProfessionalCampaign.IsActive = false;
+                        step.ProfessionalCampaign.UpdatedAt = DateTime.UtcNow;
                     }
                 }
 
@@ -753,6 +809,7 @@ namespace Api_Vapp.Services.Admin
             MessageId = request.MessageId,
             MessageSessionId = request.MessageSessionId,
             ReferralProgramId = request.ReferralProgramId,
+            ProfessionalCampaignStepId = request.ProfessionalCampaignStepId,
             ContentPreview = request.ContentPreview,
             TitlePreview = request.TitlePreview,
             RecipientsCount = request.RecipientsCount,

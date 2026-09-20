@@ -440,6 +440,7 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.IBusinessCardPublicService, Api_V
 
 // ثبت سرویس‌های مدیریت پیام و اتوماسیون
 builder.Services.AddScoped<Api_Vapp.Interfaces.IMessageService, Api_Vapp.Services.MessageService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IProfessionalCampaignService, Api_Vapp.Services.ProfessionalCampaignService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAutomatedMessageService, Api_Vapp.Services.AutomatedMessageService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.ISpecialOccasionService, Api_Vapp.Services.SpecialOccasionService>();
 
@@ -512,6 +513,7 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminUserInventoryService, Api_V
 builder.Services.AddHostedService<Api_Vapp.Services.BackgroundServices.AutomatedMessageBackgroundService>();
 builder.Services.AddHostedService<Api_Vapp.Services.BackgroundServices.ScheduledCampaignBackgroundService>();
 builder.Services.AddHostedService<Api_Vapp.Services.BackgroundServices.ScheduledMessageBackgroundService>();
+builder.Services.AddHostedService<Api_Vapp.Services.BackgroundServices.ProfessionalCampaignBackgroundService>();
 builder.Services.AddHostedService<Api_Vapp.Services.BackgroundServices.ScheduledCashbackBackgroundService>();
 builder.Services.AddHostedService<Api_Vapp.Services.BackgroundServices.SmsDeliverySyncBackgroundService>();
 builder.Services.AddHostedService<Api_Vapp.Services.BackgroundServices.BookingReminderBackgroundService>();

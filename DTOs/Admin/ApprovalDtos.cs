@@ -14,6 +14,7 @@ namespace Api_Vapp.DTOs.Admin
         public int? MessageId { get; set; }
         public int? MessageSessionId { get; set; }
         public int? ReferralProgramId { get; set; }
+        public int? ProfessionalCampaignStepId { get; set; }
         public string ContentPreview { get; set; } = string.Empty;
         public string? TitlePreview { get; set; }
         public int RecipientsCount { get; set; }
