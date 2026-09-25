@@ -454,7 +454,9 @@ namespace Api_Vapp.Services.BackgroundServices
                 var contentForQueue = OccasionMessagePersonalizer.ApplyForQueuePreview(
                     template, businessName, occasion.Name);
 
+                // محدوده گیرندگان این مناسبت (اولویت با انتخاب مخاطب همین مناسبت)
                 var contactsToQueue = contacts
+                    .Where(c => OccasionAudienceHelper.IsContactInAudience(c, pref))
                     .Where(c => !handledSet.Contains((occasion.Id, c.Id)))
                     .ToList();
 

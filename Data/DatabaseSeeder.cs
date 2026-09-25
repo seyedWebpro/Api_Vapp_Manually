@@ -386,47 +386,86 @@ namespace Api_Vapp.Data
 
         private static async Task SeedSystemOccasionsAsync(Api_Context context, ILogger logger)
         {
-            var existingCodes = await context.SpecialOccasions
+            var existing = await context.SpecialOccasions
                 .Where(o => o.IsSystem && o.Code != null)
-                .Select(o => o.Code!)
                 .ToListAsync();
-            var existingSet = existingCodes.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var byCode = existing.ToDictionary(o => o.Code!, StringComparer.OrdinalIgnoreCase);
 
             var added = 0;
+            var updated = 0;
+            var now = DateTime.UtcNow;
+
             foreach (var item in SystemOccasionCatalog.All)
             {
-                if (existingSet.Contains(item.Code))
-                    continue;
-
-                context.SpecialOccasions.Add(new SpecialOccasion
+                if (byCode.TryGetValue(item.Code, out var row))
                 {
-                    Code = item.Code,
-                    Name = item.Name,
-                    Type = item.Type,
-                    Category = item.Category,
-                    CalendarType = item.CalendarType,
-                    Month = item.Month,
-                    Day = item.Day,
-                    OccasionDate = OccasionCalendarHelper.BuildReferenceOccasionDateUtc(item.CalendarType, item.Month, item.Day),
-                    DefaultMessage = item.DefaultMessage,
-                    SortOrder = item.SortOrder,
-                    IsSystem = true,
-                    IsActive = true,
-                    IsDeleted = false,
-                    UserId = null,
-                    CreatedAt = DateTime.UtcNow
-                });
-                added++;
+                    var changed =
+                        row.Name != item.Name
+                        || row.Type != item.Type
+                        || row.Category != item.Category
+                        || row.CalendarType != item.CalendarType
+                        || row.Month != item.Month
+                        || row.Day != item.Day
+                        || row.DefaultMessage != item.DefaultMessage
+                        || row.SortOrder != item.SortOrder
+                        || row.IsDeleted
+                        || !row.IsActive;
+
+                    if (!changed)
+                        continue;
+
+                    row.Name = item.Name;
+                    row.Type = item.Type;
+                    row.Category = item.Category;
+                    row.CalendarType = item.CalendarType;
+                    row.Month = item.Month;
+                    row.Day = item.Day;
+                    row.OccasionDate = OccasionCalendarHelper.BuildReferenceOccasionDateUtc(item.CalendarType, item.Month, item.Day);
+                    row.DefaultMessage = item.DefaultMessage;
+                    row.SortOrder = item.SortOrder;
+                    row.IsSystem = true;
+                    row.IsActive = true;
+                    row.IsDeleted = false;
+                    row.UserId = null;
+                    row.UpdatedAt = now;
+                    updated++;
+                }
+                else
+                {
+                    context.SpecialOccasions.Add(new SpecialOccasion
+                    {
+                        Code = item.Code,
+                        Name = item.Name,
+                        Type = item.Type,
+                        Category = item.Category,
+                        CalendarType = item.CalendarType,
+                        Month = item.Month,
+                        Day = item.Day,
+                        OccasionDate = OccasionCalendarHelper.BuildReferenceOccasionDateUtc(item.CalendarType, item.Month, item.Day),
+                        DefaultMessage = item.DefaultMessage,
+                        SortOrder = item.SortOrder,
+                        IsSystem = true,
+                        IsActive = true,
+                        IsDeleted = false,
+                        UserId = null,
+                        CreatedAt = now
+                    });
+                    added++;
+                }
             }
 
-            if (added > 0)
+            if (added > 0 || updated > 0)
             {
                 await context.SaveChangesAsync();
-                logger.LogInformation("System occasions seeded — Added: {Count}", added);
+                logger.LogInformation(
+                    "System occasions seeded — Added: {Added}, Updated: {Updated}, Catalog: {Total}",
+                    added, updated, SystemOccasionCatalog.All.Count);
             }
             else
             {
-                logger.LogInformation("System occasions already present.");
+                logger.LogInformation(
+                    "System occasions already up to date — Catalog: {Total}",
+                    SystemOccasionCatalog.All.Count);
             }
         }
 

@@ -119,6 +119,20 @@ namespace Api_Vapp.Controller
         }
 
         /// <summary>
+        /// انتخاب مخاطبین هدف همین مناسبت (همه / دفترچه / مخاطب مشخص)
+        /// </summary>
+        [HttpPost("{id:int}/audience/update")]
+        public async Task<ActionResult<ApiResponse<OccasionTableItemDto>>> UpdateAudience(int id, [FromBody] UpdateOccasionAudienceDto dto)
+        {
+            var invalid = InvalidModelStateResponse<OccasionTableItemDto>();
+            if (invalid != null) return invalid;
+
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _specialOccasionService.UpdateAudienceAsync(userId, id, dto);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        /// <summary>
         /// دریافت لیست مناسبت‌ها (سازگاری با API قبلی)
         /// </summary>
         [HttpGet]

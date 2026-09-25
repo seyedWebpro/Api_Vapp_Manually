@@ -18,5 +18,6 @@ namespace Api_Vapp.Interfaces
         Task<ApiResponse<UserOccasionProfileDto>> ToggleCategoryAsync(int userId, ToggleOccasionCategoryDto dto);
         Task<ApiResponse<OccasionTableItemDto>> UpdateTemplateAsync(int userId, int occasionId, UpdateOccasionTemplateDto dto);
         Task<ApiResponse<OccasionTableItemDto>> ResetTemplateAsync(int userId, int occasionId);
+        Task<ApiResponse<OccasionTableItemDto>> UpdateAudienceAsync(int userId, int occasionId, UpdateOccasionAudienceDto dto);
     }
 }

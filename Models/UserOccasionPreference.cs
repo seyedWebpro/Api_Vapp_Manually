@@ -15,6 +15,21 @@ namespace Api_Vapp.Models
         public bool IsEnabled { get; set; }
 
         /// <summary>
+        /// اگر true باشد برای همه مخاطبین کاربر (به‌جز Excluded) ارسال می‌شود.
+        /// پیش‌فرض true برای سازگاری با رفتار قبلی.
+        /// </summary>
+        public bool ApplyToAllContacts { get; set; } = true;
+
+        /// <summary>JSON آرایه شناسه دفترچه‌ها — وقتی ApplyToAllContacts=false</summary>
+        public string? ContactNotebookIdsJson { get; set; }
+
+        /// <summary>JSON آرایه شناسه مخاطبین انتخاب‌شده — وقتی ApplyToAllContacts=false</summary>
+        public string? ContactIdsJson { get; set; }
+
+        /// <summary>JSON آرایه شناسه مخاطبینی که نباید پیام بگیرند</summary>
+        public string? ExcludedContactIdsJson { get; set; }
+
+        /// <summary>
         /// متن قالب اختصاصی کاربر.
         /// اگر خالی باشد از DefaultMessage مناسبت استفاده می‌شود.
         /// با ویرایش → Pending و نیاز به تأیید ادمین.

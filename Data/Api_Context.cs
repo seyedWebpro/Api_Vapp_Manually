@@ -689,6 +689,10 @@ namespace Api_Vapp.Data
                 entity.Property(p => p.TemplateRejectionReason).HasMaxLength(500);
                 // مناسبت‌ها opt-in هستند و تا فعال‌سازی صریح کاربر نباید ارسال شوند.
                 entity.Property(p => p.IsEnabled).HasDefaultValue(false);
+                entity.Property(p => p.ApplyToAllContacts).HasDefaultValue(true);
+                entity.Property(p => p.ContactNotebookIdsJson).HasMaxLength(2000);
+                entity.Property(p => p.ContactIdsJson).HasMaxLength(4000);
+                entity.Property(p => p.ExcludedContactIdsJson).HasMaxLength(4000);
                 entity.Property(p => p.IsDeleted).HasDefaultValue(false);
                 entity.Property(p => p.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
 

@@ -90,6 +90,64 @@ else
   docker compose -f "$COMPOSE_FILE" build api
 fi
 
+# Wait for an existing PID, or run a command, with a wall-clock timeout.
+run_with_timeout() {
+  local max_secs="$1"
+  shift
+  local cmd_pid=""
+  if [[ $# -eq 1 && "$1" =~ ^[0-9]+$ ]]; then
+    cmd_pid="$1"
+  else
+    "$@" &
+    cmd_pid=$!
+  fi
+  local start=$SECONDS
+  while kill -0 "$cmd_pid" 2>/dev/null; do
+    if (( SECONDS - start >= max_secs )); then
+      deploy_log "⚠ TIMEOUT after ${max_secs}s — killing pid $cmd_pid"
+      kill "$cmd_pid" 2>/dev/null || true
+      sleep 2
+      kill -9 "$cmd_pid" 2>/dev/null || true
+      wait "$cmd_pid" 2>/dev/null || true
+      return 124
+    fi
+    sleep 5
+  done
+  wait "$cmd_pid"
+}
+
+# Free RAM before docker load on tiny VPS (SQL + scraper + load = OOM lock).
+prepare_server_for_image_load() {
+  deploy_log "Preparing server RAM (stop nonessential containers + ensure swap)..."
+  ssh "${SSH_OPTS[@]}" "$SERVER" 'set +e
+    docker stop phonescraper_api_prod vapp-admin 2>/dev/null
+    if [ ! -f /swapfile ]; then
+      fallocate -l 2G /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=2048 status=none
+      chmod 600 /swapfile
+      mkswap /swapfile >/dev/null
+      swapon /swapfile
+      grep -q "/swapfile" /etc/fstab || echo "/swapfile none swap sw 0 0" >> /etc/fstab
+    else
+      swapon /swapfile 2>/dev/null
+    fi
+    free -h
+    avail_mb=$(awk "/Mem:/ {print \$7}" <(free -m) 2>/dev/null || echo 0)
+    swap_mb=$(awk "/Swap:/ {print \$4}" <(free -m) 2>/dev/null || echo 0)
+    echo "avail_mb=${avail_mb:-0} swap_free_mb=${swap_mb:-0}"
+    if [ "${avail_mb:-0}" -lt 80 ] && [ "${swap_mb:-0}" -lt 200 ]; then
+      echo "ERROR: server too low on memory for docker load (need reboot or more RAM)"
+      exit 42
+    fi
+  ' || {
+    local rc=$?
+    if [[ "$rc" -eq 42 ]]; then
+      deploy_log "ERROR: server OOM — hard-reboot from VPS panel, then re-run this script"
+      exit 1
+    fi
+    deploy_log "WARN: prepare step returned $rc — continuing cautiously"
+  }
+}
+
 # Choose the fastest available compression method.
 # Priority: zstd > pigz > gzip — level 1 default (fast; see DEPLOY-TIMING.md)
 if [[ -n "$HAS_ZSTD" ]]; then
@@ -178,66 +236,9 @@ start_watchdog() {
 }
 
 # Wait for an existing PID, or run a command, with a wall-clock timeout.
-# Usage: run_with_timeout SECS PID
-#        run_with_timeout SECS command args...
-run_with_timeout() {
-  local max_secs="$1"
-  shift
-  local cmd_pid=""
-  if [[ $# -eq 1 && "$1" =~ ^[0-9]+$ ]]; then
-    cmd_pid="$1"
-  else
-    "$@" &
-    cmd_pid=$!
-  fi
-  local start=$SECONDS
-  while kill -0 "$cmd_pid" 2>/dev/null; do
-    if (( SECONDS - start >= max_secs )); then
-      deploy_log "⚠ TIMEOUT after ${max_secs}s — killing pid $cmd_pid"
-      kill "$cmd_pid" 2>/dev/null || true
-      sleep 2
-      kill -9 "$cmd_pid" 2>/dev/null || true
-      wait "$cmd_pid" 2>/dev/null || true
-      return 124
-    fi
-    sleep 5
-  done
-  wait "$cmd_pid"
-}
+# (defined earlier for STREAM_UPLOAD path)
 
-# Free RAM before docker load on tiny VPS (SQL + scraper + load = OOM lock).
-prepare_server_for_image_load() {
-  deploy_log "Preparing server RAM (stop nonessential containers + ensure swap)..."
-  ssh "${SSH_OPTS[@]}" "$SERVER" 'set +e
-    # Optional scraper / leftover admin container — keep SQL + API running if possible
-    docker stop phonescraper_api_prod vapp-admin 2>/dev/null
-    if [ ! -f /swapfile ]; then
-      fallocate -l 2G /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=2048 status=none
-      chmod 600 /swapfile
-      mkswap /swapfile >/dev/null
-      swapon /swapfile
-      grep -q "/swapfile" /etc/fstab || echo "/swapfile none swap sw 0 0" >> /etc/fstab
-    else
-      swapon /swapfile 2>/dev/null
-    fi
-    free -h
-    # Abort early if essentially no memory left for docker load
-    avail_mb=$(awk "/Mem:/ {print \$7}" <(free -m) 2>/dev/null || echo 0)
-    swap_mb=$(awk "/Swap:/ {print \$4}" <(free -m) 2>/dev/null || echo 0)
-    echo "avail_mb=${avail_mb:-0} swap_free_mb=${swap_mb:-0}"
-    if [ "${avail_mb:-0}" -lt 80 ] && [ "${swap_mb:-0}" -lt 200 ]; then
-      echo "ERROR: server too low on memory for docker load (need reboot or more RAM)"
-      exit 42
-    fi
-  ' || {
-    local rc=$?
-    if [[ "$rc" -eq 42 ]]; then
-      deploy_log "ERROR: server OOM — hard-reboot from VPS panel, then re-run this script"
-      exit 1
-    fi
-    deploy_log "WARN: prepare step returned $rc — continuing cautiously"
-  }
-}
+# prepare_server_for_image_load defined earlier
 
 load_image_on_server() {
   local load_timeout="${DOCKER_LOAD_TIMEOUT_SECS:-600}"

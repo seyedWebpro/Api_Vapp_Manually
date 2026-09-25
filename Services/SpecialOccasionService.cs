@@ -82,6 +82,7 @@ namespace Api_Vapp.Services
                     UserId = userId,
                     SpecialOccasionId = occasion.Id,
                     IsEnabled = true,
+                    ApplyToAllContacts = true,
                     CustomMessage = customMessage,
                     TemplateApprovalStatus = string.IsNullOrWhiteSpace(customMessage)
                         ? AdminApprovalStatuses.Approved
@@ -115,8 +116,10 @@ namespace Api_Vapp.Services
                 _logger.LogInformation("Custom occasion created — UserId: {UserId}, OccasionId: {OccasionId}", userId, occasion.Id);
 
                 return ApiResponse<SpecialOccasionResponseDto>.CreateSuccess(
-                    MapToDto(occasion),
-                    "مناسبت با موفقیت ایجاد شد",
+                    MapToDto(occasion, preference),
+                    string.IsNullOrWhiteSpace(customMessage)
+                        ? "مناسبت با موفقیت ایجاد شد"
+                        : "مناسبت ایجاد شد و متن برای تأیید ارسال شد",
                     201);
             }
             catch (Exception ex)
@@ -134,7 +137,9 @@ namespace Api_Vapp.Services
                     return ApiResponse<List<SpecialOccasionResponseDto>>.Unauthorized(ControlledErrorHelper.Unauthorized, ErrorCodes.Unauthorized);
 
                 var catalog = await _specialOccasionRepository.GetCatalogForUserAsync(userId.Value);
-                return ApiResponse<List<SpecialOccasionResponseDto>>.CreateSuccess(catalog.Select(MapToDto).ToList());
+                var prefs = await _preferenceRepository.GetMapByUserIdAsync(userId.Value);
+                return ApiResponse<List<SpecialOccasionResponseDto>>.CreateSuccess(
+                    catalog.Select(o => MapToDto(o, prefs.GetValueOrDefault(o.Id))).ToList());
             }
             catch (Exception ex)
             {
@@ -205,7 +210,25 @@ namespace Api_Vapp.Services
                 }
 
                 if (updateDto.DefaultMessage != null)
-                    occasion.DefaultMessage = NormalizeMessage(updateDto.DefaultMessage);
+                {
+                    // متن مناسبت هرگز مستقیم روی DefaultMessage ادمین نوشته نمی‌شود؛
+                    // باید از مسیر Preference + صف تأیید متن برود.
+                    var message = NormalizeMessage(updateDto.DefaultMessage);
+                    var preference = await GetOrCreatePreferenceAsync(userId!.Value, occasion.Id);
+                    if (string.IsNullOrWhiteSpace(message))
+                    {
+                        preference.CustomMessage = null;
+                        preference.TemplateApprovalStatus = AdminApprovalStatuses.Approved;
+                        preference.TemplateApprovedAt = DateTime.UtcNow;
+                        preference.TemplateRejectionReason = null;
+                        preference.UpdatedAt = DateTime.UtcNow;
+                        await _preferenceRepository.UpdateAsync(preference);
+                    }
+                    else
+                    {
+                        await ApplyCustomTemplateAsync(userId.Value, occasion, preference, message);
+                    }
+                }
                 if (updateDto.IsActive.HasValue)
                     occasion.IsActive = updateDto.IsActive.Value;
 
@@ -222,7 +245,12 @@ namespace Api_Vapp.Services
                     After = new { name = occasion.Name, type = occasion.Type, isActive = occasion.IsActive }
                 });
 
-                return ApiResponse<SpecialOccasionResponseDto>.CreateSuccess(MapToDto(occasion), "مناسبت با موفقیت به‌روزرسانی شد");
+                var prefAfter = await _preferenceRepository.GetByUserAndOccasionAsync(userId!.Value, occasion.Id);
+                return ApiResponse<SpecialOccasionResponseDto>.CreateSuccess(
+                    MapToDto(occasion, prefAfter),
+                    updateDto.DefaultMessage != null && !string.IsNullOrWhiteSpace(NormalizeMessage(updateDto.DefaultMessage))
+                        ? "مناسبت به‌روزرسانی شد و متن برای تأیید ارسال شد"
+                        : "مناسبت با موفقیت به‌روزرسانی شد");
             }
             catch (Exception ex)
             {
@@ -505,27 +533,7 @@ namespace Api_Vapp.Services
                     return ApiResponse<OccasionTableItemDto>.BadRequest("متن قالب الزامی است", errorCode: ErrorCodes.ValidationFailed);
 
                 var preference = await GetOrCreatePreferenceAsync(userId, occasionId);
-                var unchangedApproved = string.Equals(preference.CustomMessage, message, StringComparison.Ordinal)
-                    && string.Equals(preference.TemplateApprovalStatus, AdminApprovalStatuses.Approved, StringComparison.OrdinalIgnoreCase);
-
-                // اگر همان متن پیش‌فرض ادمین باشد و تغییری نکرده، Approved بماند
-                var isSameAsDefault = string.Equals(message, occasion.DefaultMessage?.Trim(), StringComparison.Ordinal);
-
-                preference.CustomMessage = message;
-                if (!unchangedApproved)
-                {
-                    preference.TemplateApprovalStatus = isSameAsDefault
-                        ? AdminApprovalStatuses.Approved
-                        : AdminApprovalStatuses.Pending;
-                    preference.TemplateApprovedAt = isSameAsDefault ? DateTime.UtcNow : null;
-                    preference.TemplateApprovedByUserId = null;
-                    preference.TemplateRejectionReason = null;
-                }
-
-                // ثبت/به‌روزرسانی قالب در MessageTemplates برای صف تأیید متن
-                await UpsertOccasionMessageTemplateAsync(userId, occasion, preference, message);
-
-                await _preferenceRepository.UpdateAsync(preference);
+                await ApplyCustomTemplateAsync(userId, occasion, preference, message);
 
                 await _audit.WriteAsync(new AuditEntry
                 {
@@ -552,6 +560,36 @@ namespace Api_Vapp.Services
             }
         }
 
+        /// <summary>
+        /// ذخیره متن سفارشی کاربر و ارسال به صف تأیید در صورت تفاوت با پیش‌فرض ادمین.
+        /// </summary>
+        private async Task ApplyCustomTemplateAsync(
+            int userId,
+            SpecialOccasion occasion,
+            UserOccasionPreference preference,
+            string message)
+        {
+            var unchangedApproved = string.Equals(preference.CustomMessage, message, StringComparison.Ordinal)
+                && string.Equals(preference.TemplateApprovalStatus, AdminApprovalStatuses.Approved, StringComparison.OrdinalIgnoreCase);
+
+            var isSameAsDefault = string.Equals(message, occasion.DefaultMessage?.Trim(), StringComparison.Ordinal);
+
+            preference.CustomMessage = message;
+            if (!unchangedApproved)
+            {
+                preference.TemplateApprovalStatus = isSameAsDefault
+                    ? AdminApprovalStatuses.Approved
+                    : AdminApprovalStatuses.Pending;
+                preference.TemplateApprovedAt = isSameAsDefault ? DateTime.UtcNow : null;
+                preference.TemplateApprovedByUserId = null;
+                preference.TemplateRejectionReason = null;
+            }
+
+            preference.UpdatedAt = DateTime.UtcNow;
+            await UpsertOccasionMessageTemplateAsync(userId, occasion, preference, message);
+            await _preferenceRepository.UpdateAsync(preference);
+        }
+
         public async Task<ApiResponse<OccasionTableItemDto>> ResetTemplateAsync(int userId, int occasionId)
         {
             try
@@ -574,6 +612,114 @@ namespace Api_Vapp.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "خطا در بازنشانی قالب — UserId: {UserId}, OccasionId: {OccasionId}", userId, occasionId);
+                return ApiResponse<OccasionTableItemDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
+        public async Task<ApiResponse<OccasionTableItemDto>> UpdateAudienceAsync(int userId, int occasionId, UpdateOccasionAudienceDto dto)
+        {
+            try
+            {
+                var occasion = await EnsureAccessibleOccasionAsync(userId, occasionId);
+                if (occasion == null)
+                    return ApiResponse<OccasionTableItemDto>.NotFound("مناسبت مورد نظر یافت نشد", ErrorCodes.NotFound);
+
+                var notebookIds = NotebookIdSelectionHelper.Normalize(dto.ContactNotebookIds);
+                var contactIds = (dto.ContactIds ?? [])
+                    .Where(id => id > 0)
+                    .Distinct()
+                    .ToList();
+                var excludedIds = (dto.ExcludedContactIds ?? [])
+                    .Where(id => id > 0)
+                    .Distinct()
+                    .ToList();
+
+                if (!dto.ApplyToAllContacts && notebookIds.Count == 0 && contactIds.Count == 0)
+                {
+                    return ApiResponse<OccasionTableItemDto>.BadRequest(
+                        "برای انتخاب محدود، حداقل یک دفترچه یا مخاطب را مشخص کنید",
+                        errorCode: ErrorCodes.ValidationFailed);
+                }
+
+                if (notebookIds.Count > 0)
+                {
+                    var validNotebookCount = await _context.ContactNotebooks.AsNoTracking()
+                        .CountAsync(n => notebookIds.Contains(n.Id) && n.UserId == userId && !n.IsDeleted);
+                    if (validNotebookCount != notebookIds.Count)
+                    {
+                        return ApiResponse<OccasionTableItemDto>.BadRequest(
+                            "یک یا چند دفترچه انتخاب‌شده معتبر نیست",
+                            errorCode: ErrorCodes.InvalidInput);
+                    }
+                }
+
+                if (contactIds.Count > 0)
+                {
+                    var validContactCount = await _context.Contacts.AsNoTracking()
+                        .CountAsync(c => contactIds.Contains(c.Id)
+                            && !c.IsDeleted
+                            && c.ContactNotebook.UserId == userId
+                            && !c.ContactNotebook.IsDeleted);
+                    if (validContactCount != contactIds.Count)
+                    {
+                        return ApiResponse<OccasionTableItemDto>.BadRequest(
+                            "یک یا چند مخاطب انتخاب‌شده معتبر نیست",
+                            errorCode: ErrorCodes.InvalidInput);
+                    }
+                }
+
+                if (excludedIds.Count > 0)
+                {
+                    var validExcludedCount = await _context.Contacts.AsNoTracking()
+                        .CountAsync(c => excludedIds.Contains(c.Id)
+                            && !c.IsDeleted
+                            && c.ContactNotebook.UserId == userId
+                            && !c.ContactNotebook.IsDeleted);
+                    if (validExcludedCount != excludedIds.Count)
+                    {
+                        return ApiResponse<OccasionTableItemDto>.BadRequest(
+                            "یک یا چند مخاطب حذف‌شده از لیست معتبر نیست",
+                            errorCode: ErrorCodes.InvalidInput);
+                    }
+                }
+
+                var preference = await GetOrCreatePreferenceAsync(userId, occasionId);
+                preference.ApplyToAllContacts = dto.ApplyToAllContacts;
+                preference.ContactNotebookIdsJson = dto.ApplyToAllContacts
+                    ? null
+                    : OccasionAudienceHelper.SerializeIds(notebookIds);
+                preference.ContactIdsJson = dto.ApplyToAllContacts
+                    ? null
+                    : OccasionAudienceHelper.SerializeIds(contactIds);
+                preference.ExcludedContactIdsJson = OccasionAudienceHelper.SerializeIds(excludedIds);
+                preference.UpdatedAt = DateTime.UtcNow;
+
+                await _preferenceRepository.UpdateAsync(preference);
+
+                await _audit.WriteAsync(new AuditEntry
+                {
+                    Category = AuditCategories.Message,
+                    Action = AuditActions.OccasionAudienceUpdated,
+                    EntityType = AuditEntityTypes.UserOccasionPreference,
+                    EntityId = preference.Id.ToString(),
+                    ActorUserId = userId,
+                    After = new
+                    {
+                        occasionId,
+                        applyToAllContacts = preference.ApplyToAllContacts,
+                        notebookCount = notebookIds.Count,
+                        contactCount = contactIds.Count,
+                        excludedCount = excludedIds.Count
+                    }
+                });
+
+                return ApiResponse<OccasionTableItemDto>.CreateSuccess(
+                    MapToTableItem(occasion, preference, OccasionCalendarHelper.GetTodayParts()),
+                    "مخاطبین این مناسبت ذخیره شد");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "خطا در به‌روزرسانی مخاطبین مناسبت — UserId: {UserId}, OccasionId: {OccasionId}", userId, occasionId);
                 return ApiResponse<OccasionTableItemDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
@@ -646,6 +792,7 @@ namespace Api_Vapp.Services
                 UserId = userId,
                 SpecialOccasionId = occasionId,
                 IsEnabled = false,
+                ApplyToAllContacts = true,
                 TemplateApprovalStatus = AdminApprovalStatuses.Approved,
                 CreatedAt = DateTime.UtcNow
             };
@@ -697,24 +844,40 @@ namespace Api_Vapp.Services
         private static string? NormalizeMessage(string? message) =>
             string.IsNullOrWhiteSpace(message) ? null : message.Trim();
 
-        private static SpecialOccasionResponseDto MapToDto(SpecialOccasion occasion) => new()
+        private static SpecialOccasionResponseDto MapToDto(
+            SpecialOccasion occasion,
+            UserOccasionPreference? preference = null)
         {
-            Id = occasion.Id,
-            Code = occasion.Code,
-            Name = occasion.Name,
-            Type = occasion.Type,
-            Category = OccasionCategories.Normalize(occasion.Category),
-            CategoryPersian = OccasionCategories.ToPersian(occasion.Category),
-            CalendarType = OccasionCalendarTypes.Normalize(occasion.CalendarType),
-            Month = occasion.Month,
-            Day = occasion.Day,
-            OccasionDate = occasion.OccasionDate,
-            DefaultMessage = occasion.DefaultMessage,
-            IsSystem = occasion.IsSystem,
-            IsActive = occasion.IsActive,
-            SortOrder = occasion.SortOrder,
-            CreatedAt = occasion.CreatedAt
-        };
+            var isEnabled = OccasionMessagePersonalizer.IsEnabledForUser(occasion, preference);
+            var approval = preference?.TemplateApprovalStatus ?? AdminApprovalStatuses.Approved;
+            var effective = OccasionMessagePersonalizer.ResolveEffectiveTemplate(occasion, preference);
+            var canSend = !string.IsNullOrWhiteSpace(effective)
+                && string.Equals(approval, AdminApprovalStatuses.Approved, StringComparison.OrdinalIgnoreCase);
+
+            return new SpecialOccasionResponseDto
+            {
+                Id = occasion.Id,
+                Code = occasion.Code,
+                Name = occasion.Name,
+                Type = occasion.Type,
+                Category = OccasionCategories.Normalize(occasion.Category),
+                CategoryPersian = OccasionCategories.ToPersian(occasion.Category),
+                CalendarType = OccasionCalendarTypes.Normalize(occasion.CalendarType),
+                Month = occasion.Month,
+                Day = occasion.Day,
+                OccasionDate = occasion.OccasionDate,
+                DefaultMessage = occasion.DefaultMessage,
+                IsSystem = occasion.IsSystem,
+                IsActive = occasion.IsActive,
+                SortOrder = occasion.SortOrder,
+                CreatedAt = occasion.CreatedAt,
+                IsEnabled = isEnabled,
+                CustomMessage = preference?.CustomMessage,
+                TemplateApprovalStatus = approval,
+                CanSendWithCurrentTemplate = canSend,
+                Audience = MapAudience(preference)
+            };
+        }
 
         private static OccasionTableItemDto MapToTableItem(
             SpecialOccasion occasion,
@@ -751,7 +914,24 @@ namespace Api_Vapp.Services
                 TemplateApprovalStatus = approval,
                 TemplateRejectionReason = preference?.TemplateRejectionReason,
                 MessageTemplateId = preference?.MessageTemplateId,
-                CanSendWithCurrentTemplate = canSend
+                CanSendWithCurrentTemplate = canSend,
+                Audience = MapAudience(preference)
+            };
+        }
+
+        private static OccasionAudienceDto MapAudience(UserOccasionPreference? preference)
+        {
+            if (preference == null)
+            {
+                return new OccasionAudienceDto { ApplyToAllContacts = true };
+            }
+
+            return new OccasionAudienceDto
+            {
+                ApplyToAllContacts = preference.ApplyToAllContacts,
+                ContactNotebookIds = OccasionAudienceHelper.ParseIds(preference.ContactNotebookIdsJson),
+                ContactIds = OccasionAudienceHelper.ParseIds(preference.ContactIdsJson),
+                ExcludedContactIds = OccasionAudienceHelper.ParseIds(preference.ExcludedContactIdsJson)
             };
         }
 

@@ -5115,6 +5115,19 @@ namespace Api_Vapp.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<bool>("ApplyToAllContacts")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
+                    b.Property<string>("ContactIdsJson")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<string>("ContactNotebookIdsJson")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetime2")
@@ -5122,6 +5135,10 @@ namespace Api_Vapp.Migrations
 
                     b.Property<string>("CustomMessage")
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ExcludedContactIdsJson")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
 
                     b.Property<bool>("IsDeleted")
                         .ValueGeneratedOnAdd()

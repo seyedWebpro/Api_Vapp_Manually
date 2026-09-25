@@ -90,6 +90,19 @@ namespace Api_Vapp.DTOs.Automation
         public bool IsActive { get; set; }
         public int SortOrder { get; set; }
         public DateTime CreatedAt { get; set; }
+
+        /// <summary>فعال بودن برای کاربر (از Preference)</summary>
+        public bool IsEnabled { get; set; }
+
+        /// <summary>متن سفارشی کاربر (ممکن است Pending باشد)</summary>
+        public string? CustomMessage { get; set; }
+
+        /// <summary>Pending | Approved | Rejected</summary>
+        public string TemplateApprovalStatus { get; set; } = AdminApprovalStatuses.Approved;
+
+        public bool CanSendWithCurrentTemplate { get; set; }
+
+        public OccasionAudienceDto Audience { get; set; } = new();
     }
 
     /// <summary>
@@ -127,6 +140,27 @@ namespace Api_Vapp.DTOs.Automation
         public string? TemplateRejectionReason { get; set; }
         public int? MessageTemplateId { get; set; }
         public bool CanSendWithCurrentTemplate { get; set; }
+
+        /// <summary>محدوده مخاطبین همین مناسبت</summary>
+        public OccasionAudienceDto Audience { get; set; } = new();
+    }
+
+    /// <summary>
+    /// محدوده گیرندگان یک مناسبت برای کاربر
+    /// </summary>
+    public class OccasionAudienceDto
+    {
+        /// <summary>true = همه مخاطبین (به‌جز excluded)</summary>
+        public bool ApplyToAllContacts { get; set; } = true;
+
+        /// <summary>دفترچه‌های انتخاب‌شده وقتی ApplyToAllContacts=false</summary>
+        public List<int> ContactNotebookIds { get; set; } = new();
+
+        /// <summary>مخاطبین انتخاب‌شده وقتی ApplyToAllContacts=false</summary>
+        public List<int> ContactIds { get; set; } = new();
+
+        /// <summary>مخاطبینی که نباید پیام بگیرند</summary>
+        public List<int> ExcludedContactIds { get; set; } = new();
     }
 
     /// <summary>
@@ -200,5 +234,23 @@ namespace Api_Vapp.DTOs.Automation
 
         [Required(ErrorMessage = "وضعیت فعال بودن الزامی است")]
         public bool IsEnabled { get; set; }
+    }
+
+    /// <summary>
+    /// به‌روزرسانی مخاطبین هدف یک مناسبت
+    /// </summary>
+    public class UpdateOccasionAudienceDto
+    {
+        /// <summary>true = همه مخاطبین کاربر</summary>
+        public bool ApplyToAllContacts { get; set; } = true;
+
+        /// <summary>دفترچه‌ها — وقتی ApplyToAllContacts=false و ContactIds خالی باشد</summary>
+        public List<int>? ContactNotebookIds { get; set; }
+
+        /// <summary>مخاطبین مشخص — وقتی ApplyToAllContacts=false</summary>
+        public List<int>? ContactIds { get; set; }
+
+        /// <summary>مخاطبین حذف‌شده از ارسال</summary>
+        public List<int>? ExcludedContactIds { get; set; }
     }
 }

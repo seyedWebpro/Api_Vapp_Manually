@@ -200,5 +200,39 @@ namespace Api_Vapp.Tests.Automation
 
             Assert.True(OccasionMessagePersonalizer.IsEnabledForUser(occasion, preference));
         }
+
+        [Fact]
+        public void OccasionAudience_ApplyToAll_ExcludesListedContacts()
+        {
+            var contact = new Contact { Id = 5, ContactNotebookId = 1 };
+            Assert.True(OccasionAudienceHelper.IsContactInAudience(
+                contact, applyToAllContacts: true, notebookIds: [], contactIds: [], excludedContactIds: []));
+            Assert.False(OccasionAudienceHelper.IsContactInAudience(
+                contact, applyToAllContacts: true, notebookIds: [], contactIds: [], excludedContactIds: [5]));
+        }
+
+        [Fact]
+        public void OccasionAudience_ExplicitContactIds_OnlySelected()
+        {
+            var selected = new Contact { Id = 10, ContactNotebookId = 1 };
+            var other = new Contact { Id = 11, ContactNotebookId = 1 };
+
+            Assert.True(OccasionAudienceHelper.IsContactInAudience(
+                selected, applyToAllContacts: false, notebookIds: [], contactIds: [10], excludedContactIds: []));
+            Assert.False(OccasionAudienceHelper.IsContactInAudience(
+                other, applyToAllContacts: false, notebookIds: [], contactIds: [10], excludedContactIds: []));
+        }
+
+        [Fact]
+        public void OccasionAudience_NotebookFilter_Works()
+        {
+            var inNotebook = new Contact { Id = 1, ContactNotebookId = 7 };
+            var outNotebook = new Contact { Id = 2, ContactNotebookId = 8 };
+
+            Assert.True(OccasionAudienceHelper.IsContactInAudience(
+                inNotebook, applyToAllContacts: false, notebookIds: [7], contactIds: [], excludedContactIds: []));
+            Assert.False(OccasionAudienceHelper.IsContactInAudience(
+                outNotebook, applyToAllContacts: false, notebookIds: [7], contactIds: [], excludedContactIds: []));
+        }
     }
 }
