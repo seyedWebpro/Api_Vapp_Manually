@@ -12,7 +12,7 @@ namespace Api_Vapp.Repositories
         {
         }
 
-        public async Task<IEnumerable<ReferralProgram>> GetByUserIdAsync(int userId, int pageNumber = 1, int pageSize = 10, bool? isActive = null)
+        public async Task<IEnumerable<ReferralProgram>> GetByUserIdAsync(int userId, int pageNumber = 1, int pageSize = 20, bool? isActive = null)
         {
             var query = _dbSet.Where(r => r.UserId == userId && !r.IsDeleted);
 

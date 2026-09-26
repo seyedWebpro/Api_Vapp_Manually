@@ -63,6 +63,7 @@ namespace Api_Vapp.Controller
         /// <response code="409">شماره موبایل یا کد ملی قبلاً ثبت شده است</response>
         /// <response code="500">خطای سرور</response>
         [HttpPost]
+        [Authorize(Policy = "AdminOnly")]
         [ProducesResponseType(typeof(ApiResponse<UserResponseDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<UserResponseDto>), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(typeof(ApiResponse<UserResponseDto>), StatusCodes.Status409Conflict)]
@@ -95,6 +96,7 @@ namespace Api_Vapp.Controller
         /// <response code="404">کاربر یافت نشد</response>
         /// <response code="500">خطای سرور</response>
         [HttpGet("{id}")]
+        [Authorize(Policy = "AdminOnly")]
         [ProducesResponseType(typeof(ApiResponse<UserResponseDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<UserResponseDto>), StatusCodes.Status404NotFound)]
         [ProducesResponseType(typeof(ApiResponse<UserResponseDto>), StatusCodes.Status500InternalServerError)]
@@ -123,12 +125,13 @@ namespace Api_Vapp.Controller
         /// <response code="400">پارامترهای ورودی نامعتبر است</response>
         /// <response code="500">خطای سرور</response>
         [HttpGet]
+        [Authorize(Policy = "AdminOnly")]
         [ProducesResponseType(typeof(ApiResponse<UserListResponseDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<UserListResponseDto>), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(typeof(ApiResponse<UserListResponseDto>), StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<ApiResponse<UserListResponseDto>>> GetUsers(
             [FromQuery] int pageNumber = 1,
-            [FromQuery] int pageSize = 10,
+            [FromQuery] int pageSize = 20,
             [FromQuery] bool? isActive = null,
             [FromQuery] bool? isDeleted = null)
         {
@@ -155,6 +158,7 @@ namespace Api_Vapp.Controller
         /// <response code="409">شماره موبایل یا کد ملی قبلاً ثبت شده است</response>
         /// <response code="500">خطای سرور</response>
         [HttpPost("{id}/update")]
+        [Authorize(Policy = "AdminOnly")]
         [ProducesResponseType(typeof(ApiResponse<UserResponseDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<UserResponseDto>), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(typeof(ApiResponse<UserResponseDto>), StatusCodes.Status404NotFound)]
@@ -179,6 +183,7 @@ namespace Api_Vapp.Controller
         /// <param name="dto">فایل تصویر پروفایل</param>
         /// <returns>پاسخ شامل URL عکس پروفایل آپلود شده</returns>
         [HttpPost("{id}/upload-profile-image")]
+        [Authorize(Policy = "AdminOnly")]
         [Consumes("multipart/form-data")]
         [ProducesResponseType(typeof(ApiResponse<string>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<string>), StatusCodes.Status400BadRequest)]
@@ -218,6 +223,7 @@ namespace Api_Vapp.Controller
         /// <response code="404">کاربر یافت نشد</response>
         /// <response code="500">خطای سرور</response>
         [HttpPost("{id}/delete")]
+        [Authorize(Policy = "AdminOnly")]
         [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status404NotFound)]
         [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status500InternalServerError)]
@@ -244,6 +250,7 @@ namespace Api_Vapp.Controller
         /// <response code="404">کاربر یافت نشد</response>
         /// <response code="500">خطای سرور</response>
         [HttpPost("{id}/hard-delete")]
+        [Authorize(Policy = "AdminOnly")]
         [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status404NotFound)]
         [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status500InternalServerError)]
@@ -271,6 +278,7 @@ namespace Api_Vapp.Controller
         /// <response code="404">کاربر یافت نشد</response>
         /// <response code="500">خطای سرور</response>
         [HttpPost("{id}/ban")]
+        [Authorize(Policy = "AdminOnly")]
         [ProducesResponseType(typeof(ApiResponse<UserResponseDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<UserResponseDto>), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(typeof(ApiResponse<UserResponseDto>), StatusCodes.Status404NotFound)]
@@ -305,6 +313,7 @@ namespace Api_Vapp.Controller
         /// <response code="404">کاربر یافت نشد</response>
         /// <response code="500">خطای سرور</response>
         [HttpPost("{id}/toggle-active")]
+        [Authorize(Policy = "AdminOnly")]
         [ProducesResponseType(typeof(ApiResponse<UserResponseDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<UserResponseDto>), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(typeof(ApiResponse<UserResponseDto>), StatusCodes.Status404NotFound)]

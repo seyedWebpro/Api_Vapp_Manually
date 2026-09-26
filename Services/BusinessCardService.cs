@@ -554,7 +554,7 @@ namespace Api_Vapp.Services
             }
         }
 
-        public async Task<ApiResponse<BusinessCardListResponseDto>> GetCardsAsync(int userId, int pageNumber = 1, int pageSize = 10, bool? isActive = null)
+        public async Task<ApiResponse<BusinessCardListResponseDto>> GetCardsAsync(int userId, int pageNumber = 1, int pageSize = 20, bool? isActive = null)
         {
             try
             {

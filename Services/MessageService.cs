@@ -202,12 +202,12 @@ namespace Api_Vapp.Services
             }
         }
 
-        public async Task<ApiResponse<MessageListResponseDto>> GetMessagesAsync(int userId, int pageNumber = 1, int pageSize = 10, string? searchTerm = null)
+        public async Task<ApiResponse<MessageListResponseDto>> GetMessagesAsync(int userId, int pageNumber = 1, int pageSize = 20, string? searchTerm = null)
         {
             try
             {
                 if (pageNumber < 1) pageNumber = 1;
-                if (pageSize < 1 || pageSize > 100) pageSize = 10;
+                if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
                 IEnumerable<Message> messages;
                 if (!string.IsNullOrWhiteSpace(searchTerm))
@@ -1249,12 +1249,12 @@ namespace Api_Vapp.Services
             }
         }
 
-        public async Task<ApiResponse<CampaignListResponseDto>> GetCampaignsAsync(int userId, int pageNumber = 1, int pageSize = 10, string? status = null)
+        public async Task<ApiResponse<CampaignListResponseDto>> GetCampaignsAsync(int userId, int pageNumber = 1, int pageSize = 20, string? status = null)
         {
             try
             {
                 if (pageNumber < 1) pageNumber = 1;
-                if (pageSize < 1 || pageSize > 100) pageSize = 10;
+                if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
                 IEnumerable<MessageCampaign> campaigns;
                 if (!string.IsNullOrWhiteSpace(status))
@@ -2777,7 +2777,7 @@ namespace Api_Vapp.Services
             }
         }
 
-        public async Task<ApiResponse<MessageTagListResponseDto>> GetTagsAsync(int userId, int pageNumber = 1, int pageSize = 10)
+        public async Task<ApiResponse<MessageTagListResponseDto>> GetTagsAsync(int userId, int pageNumber = 1, int pageSize = 20)
         {
             try
             {
@@ -2800,7 +2800,7 @@ namespace Api_Vapp.Services
                 }
 
                 if (pageNumber < 1) pageNumber = 1;
-                if (pageSize < 1 || pageSize > 100) pageSize = 10;
+                if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
                 var query = _context.MessageTags
                     .Where(t => t.UserId == userId && !t.IsDeleted && t.IsActive);
@@ -2931,12 +2931,12 @@ namespace Api_Vapp.Services
             }
         }
 
-        public async Task<ApiResponse<MessageTagWithContactCountListResponseDto>> GetTagsWithContactCountAsync(int userId, int pageNumber = 1, int pageSize = 10)
+        public async Task<ApiResponse<MessageTagWithContactCountListResponseDto>> GetTagsWithContactCountAsync(int userId, int pageNumber = 1, int pageSize = 20)
         {
             try
             {
                 if (pageNumber < 1) pageNumber = 1;
-                if (pageSize < 1 || pageSize > 100) pageSize = 10;
+                if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
                 // دریافت تمام دفترچه‌های کاربر
                 var notebookIds = await _context.ContactNotebooks

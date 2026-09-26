@@ -327,17 +327,20 @@ if [[ "${ADMIN_PHONE:-}" != "" ]]; then
   fi
 else
   echo "Approve occasion templates via SQL ..."
-  approve_sql() {
-    local sa_password
-    sa_password="$(grep -E '^SA_PASSWORD=' /root/Api_Vapp_Manually/docker/.env 2>/dev/null | cut -d= -f2- || true)"
-    [[ -n "$sa_password" ]] || return 1
-    local sqlcmd
-    if docker exec vapp_sqlserver_prod test -x /opt/mssql-tools/bin/sqlcmd 2>/dev/null; then
-      sqlcmd=/opt/mssql-tools/bin/sqlcmd
-    else
-      sqlcmd=/opt/mssql-tools18/bin/sqlcmd
+  SQL_CONTAINER="${SQL_CONTAINER:-}"
+  SA_PASSWORD_LOCAL="${SA_PASSWORD:-Vapp@Secure2025!}"
+  if [[ -z "$SQL_CONTAINER" ]]; then
+    if docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^vapp_sqlserver_dev$'; then
+      SQL_CONTAINER=vapp_sqlserver_dev
+    elif docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^vapp_sqlserver_prod$'; then
+      SQL_CONTAINER=vapp_sqlserver_prod
     fi
-    docker exec vapp_sqlserver_prod "$sqlcmd" -S localhost -U sa -P "$sa_password" -C -d DbVapp -Q "
+  fi
+  approve_sql_local() {
+    local container="$1" password="$2"
+    local sqlcmd=/opt/mssql-tools18/bin/sqlcmd
+    docker exec "$container" test -x /opt/mssql-tools/bin/sqlcmd 2>/dev/null && sqlcmd=/opt/mssql-tools/bin/sqlcmd
+    docker exec "$container" "$sqlcmd" -S localhost -U sa -P "$password" -C -d DbVapp -Q "
 SET QUOTED_IDENTIFIER ON;
 SET ANSI_NULLS ON;
 UPDATE MessageTemplates
@@ -350,8 +353,12 @@ WHERE IsDeleted = 0 AND TemplateApprovalStatus = N'Pending';
 SELECT 'templates_and_prefs_approved' AS Result;
 "
   }
-  if command -v docker >/dev/null 2>&1 && docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^vapp_sqlserver_prod$'; then
-    approve_sql || true
+  if [[ "$SQL_CONTAINER" == "vapp_sqlserver_dev" ]]; then
+    approve_sql_local "$SQL_CONTAINER" "$SA_PASSWORD_LOCAL" || true
+  elif [[ "$SQL_CONTAINER" == "vapp_sqlserver_prod" ]]; then
+    sa_password="$(grep -E '^SA_PASSWORD=' /root/Api_Vapp_Manually/docker/.env 2>/dev/null | cut -d= -f2- || true)"
+    [[ -n "$sa_password" ]] || sa_password="$SA_PASSWORD_LOCAL"
+    approve_sql_local "$SQL_CONTAINER" "$sa_password" || true
   else
     ssh -o BatchMode=yes -o ConnectTimeout=20 vapp-prod 'bash -s' <<'REMOTE' || true
 SA_PASSWORD="$(grep -E '^SA_PASSWORD=' /root/Api_Vapp_Manually/docker/.env | cut -d= -f2-)"

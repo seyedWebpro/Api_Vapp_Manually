@@ -18,6 +18,7 @@ namespace Api_Vapp.Utilities
                 "nshan" => "نشان",
                 "balad" => "بلد",
                 "googlemaps" => "گوگل مپ",
+                "manual" => "دستی",
                 _ => source?.Trim() ?? string.Empty
             };
 

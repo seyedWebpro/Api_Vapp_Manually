@@ -59,7 +59,7 @@ namespace Api_Vapp.Controller
         [ProducesResponseType(typeof(ApiResponse<QuickActionListResponseDto>), StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<ApiResponse<QuickActionListResponseDto>>> GetQuickActions(
             [FromQuery] int pageNumber = 1,
-            [FromQuery] int pageSize = 10)
+            [FromQuery] int pageSize = 20)
         {
             var userId = await GetCurrentUserIdAsync();
             var result = await _quickActionService.GetQuickActionsAsync(userId, pageNumber, pageSize);

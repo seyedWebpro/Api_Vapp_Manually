@@ -330,7 +330,8 @@ builder.Services.AddAuthentication(option =>
 #region Authorization Policy (برای غیرفعال کردن Auth در Development از appsettings.json)
 builder.Services.AddAuthorization(options =>
 {
-    // بررسی تنظیمات برای غیرفعال کردن Auth در Development
+    // DisableAuth فقط احراز هویت پیش‌فرض را برای تست محلی شل می‌کند؛
+    // سیاست AdminOnly همیشه نقش Admin می‌خواهد تا endpointهای حساس باز نمانند.
     var disableAuth = builder.Configuration.GetValue<bool>("Development:DisableAuth", false);
     var isDevelopment = builder.Environment.IsDevelopment();
 
@@ -339,19 +340,16 @@ builder.Services.AddAuthorization(options =>
         options.DefaultPolicy = new AuthorizationPolicyBuilder()
             .RequireAssertion(_ => true)
             .Build();
-
-        options.AddPolicy("AdminOnly", policy =>
-            policy.RequireAssertion(_ => true));
     }
     else
     {
         options.DefaultPolicy = new AuthorizationPolicyBuilder()
             .RequireAuthenticatedUser()
             .Build();
-
-        options.AddPolicy("AdminOnly", policy =>
-            policy.RequireRole("Admin"));
     }
+
+    options.AddPolicy("AdminOnly", policy =>
+        policy.RequireRole("Admin"));
 });
 #endregion
 
@@ -441,6 +439,7 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.IBusinessCardPublicService, Api_V
 // ثبت سرویس‌های مدیریت پیام و اتوماسیون
 builder.Services.AddScoped<Api_Vapp.Interfaces.IMessageService, Api_Vapp.Services.MessageService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IProfessionalCampaignService, Api_Vapp.Services.ProfessionalCampaignService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IProfessionalCampaignRepository, Api_Vapp.Repositories.ProfessionalCampaignRepository>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAutomatedMessageService, Api_Vapp.Services.AutomatedMessageService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.ISpecialOccasionService, Api_Vapp.Services.SpecialOccasionService>();
 
@@ -463,12 +462,14 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.IReferralProgramService, Api_Vapp
 builder.Services.AddScoped<Api_Vapp.Interfaces.IBookingSystemService, Api_Vapp.Services.BookingSystemService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IBookingAppointmentService, Api_Vapp.Services.BookingAppointmentService>();
 
-// شماره‌جو — اتصال به Python Number Scraper
+// شماره‌جو — اتصال به Python Number Scraper + بانک آماده شماره
 builder.Services.Configure<NumberSeekerOptions>(builder.Configuration.GetSection(NumberSeekerOptions.SectionName));
 builder.Services.AddScoped<Api_Vapp.Interfaces.INumberSeekerTaskRepository, Api_Vapp.Repositories.NumberSeekerTaskRepository>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.INumberSeekerPhoneBankRepository, Api_Vapp.Repositories.NumberSeekerPhoneBankRepository>();
 builder.Services.AddSingleton<Api_Vapp.Interfaces.INumberSeekerRateLimiter, Api_Vapp.Services.NumberSeekerRateLimiter>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.INumberSeekerPhoneAccessService, Api_Vapp.Services.NumberSeekerPhoneAccessService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.INumberSeekerService, Api_Vapp.Services.NumberSeekerService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminPhoneBankService, Api_Vapp.Services.AdminPhoneBankService>();
 
 // ثبت سرویس تنظیمات اعلان‌ها و FCM
 builder.Services.Configure<Api_Vapp.Configuration.FirebaseOptions>(

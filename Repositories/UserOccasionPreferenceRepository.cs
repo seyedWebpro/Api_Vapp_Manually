@@ -48,6 +48,16 @@ namespace Api_Vapp.Repositories
             _context.UserOccasionPreferences.Update(preference);
             await _context.SaveChangesAsync();
         }
+
+        public async Task SoftDeleteByOccasionIdAsync(int occasionId)
+        {
+            var now = DateTime.UtcNow;
+            await _context.UserOccasionPreferences
+                .Where(p => p.SpecialOccasionId == occasionId && !p.IsDeleted)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(p => p.IsDeleted, true)
+                    .SetProperty(p => p.UpdatedAt, now));
+        }
     }
 
     public class UserOccasionProfileRepository : IUserOccasionProfileRepository

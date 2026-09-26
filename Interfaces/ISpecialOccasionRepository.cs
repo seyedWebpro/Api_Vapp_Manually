@@ -21,6 +21,7 @@ namespace Api_Vapp.Interfaces
         Task<Dictionary<int, UserOccasionPreference>> GetMapByUserIdAsync(int userId);
         Task AddAsync(UserOccasionPreference preference);
         Task UpdateAsync(UserOccasionPreference preference);
+        Task SoftDeleteByOccasionIdAsync(int occasionId);
     }
 
     public interface IUserOccasionProfileRepository

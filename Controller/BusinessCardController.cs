@@ -69,7 +69,7 @@ namespace Api_Vapp.Controller
         [ProducesResponseType(typeof(ApiResponse<BusinessCardListResponseDto>), StatusCodes.Status400BadRequest)]
         public async Task<ActionResult<ApiResponse<BusinessCardListResponseDto>>> GetCards(
             [FromQuery] int pageNumber = 1,
-            [FromQuery] int pageSize = 10,
+            [FromQuery] int pageSize = 20,
             [FromQuery] bool? isActive = null)
         {
             var userId = await GetCurrentUserIdAsync();

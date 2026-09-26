@@ -63,12 +63,12 @@ namespace Api_Vapp.Services
             _phoneAccess = phoneAccess;
         }
 
-        public async Task<ApiResponse<CashbackListDto>> GetCashbacksAsync(int userId, int pageNumber = 1, int pageSize = 10, bool? isActive = null)
+        public async Task<ApiResponse<CashbackListDto>> GetCashbacksAsync(int userId, int pageNumber = 1, int pageSize = 20, bool? isActive = null)
         {
             try
             {
                 if (pageNumber < 1) pageNumber = 1;
-                if (pageSize < 1 || pageSize > 100) pageSize = 10;
+                if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
                 var cashbacks = await _cashbackRepository.GetByUserIdAsync(userId, pageNumber, pageSize, isActive);
                 var totalCount = await _cashbackRepository.GetCountByUserIdAsync(userId, isActive);
@@ -370,39 +370,42 @@ namespace Api_Vapp.Services
                     CreatedAt = now
                 };
 
-                await _context.Cashbacks.AddAsync(cashback);
-                await _context.SaveChangesAsync();
-
-                _logger.LogInformation("کش‌بک جدید با شناسه {CashbackId} برای کاربر {UserId} ایجاد شد", cashback.Id, userId);
-
-                // حذف draft بعد از ایجاد موفق کش‌بک
-                if (!string.IsNullOrEmpty(createDto.DraftId))
+                await using var transaction = await _context.Database.BeginTransactionAsync();
+                try
                 {
-                    await _audit.WriteAsync(new AuditEntry
-                    {
-                        Category = AuditCategories.Cashback,
-                        Action = AuditActions.CashbackDraftApproved,
-                        EntityType = AuditEntityTypes.CashbackDraft,
-                        EntityId = createDto.DraftId,
-                        TargetUserId = userId,
-                        After = new
-                        {
-                            draftId = createDto.DraftId,
-                            cashbackId = cashback.Id,
-                            userId
-                        }
-                    });
+                    await _context.Cashbacks.AddAsync(cashback);
+                    await _context.SaveChangesAsync();
 
-                    try
+                    _logger.LogInformation("کش‌بک جدید با شناسه {CashbackId} برای کاربر {UserId} ایجاد شد", cashback.Id, userId);
+
+                    // حذف draft بعد از ایجاد موفق کش‌بک
+                    if (!string.IsNullOrEmpty(createDto.DraftId))
                     {
+                        await _audit.WriteAsync(new AuditEntry
+                        {
+                            Category = AuditCategories.Cashback,
+                            Action = AuditActions.CashbackDraftApproved,
+                            EntityType = AuditEntityTypes.CashbackDraft,
+                            EntityId = createDto.DraftId,
+                            TargetUserId = userId,
+                            After = new
+                            {
+                                draftId = createDto.DraftId,
+                                cashbackId = cashback.Id,
+                                userId
+                            }
+                        });
+
                         await _cashbackDraftRepository.DeleteAsync(createDto.DraftId, userId);
                         _logger.LogInformation("Draft با شناسه {DraftId} بعد از ایجاد کش‌بک حذف شد", createDto.DraftId);
                     }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "خطا در حذف draft بعد از ایجاد کش‌بک - DraftId: {DraftId}", createDto.DraftId);
-                        // خطا نمی‌دهیم، فقط لاگ می‌کنیم
-                    }
+
+                    await transaction.CommitAsync();
+                }
+                catch
+                {
+                    await transaction.RollbackAsync();
+                    throw;
                 }
 
                 return ApiResponse<CashbackDto>.CreateSuccess(await MapToCashbackDtoAsync(cashback), "کش‌بک با موفقیت ایجاد شد", 201);
@@ -970,7 +973,7 @@ namespace Api_Vapp.Services
             }
         }
 
-        public async Task<ApiResponse<List<CashbackTransactionDto>>> GetCashbackTransactionsAsync(int cashbackId, int userId, int pageNumber = 1, int pageSize = 10)
+        public async Task<ApiResponse<List<CashbackTransactionDto>>> GetCashbackTransactionsAsync(int cashbackId, int userId, int pageNumber = 1, int pageSize = 20)
         {
             try
             {
@@ -2783,7 +2786,7 @@ namespace Api_Vapp.Services
             int userId, 
             int contactId, 
             int pageNumber = 1, 
-            int pageSize = 10)
+            int pageSize = 20)
         {
             try
             {
@@ -2805,7 +2808,7 @@ namespace Api_Vapp.Services
 
                 // اعتبارسنجی پارامترهای صفحه‌بندی
                 if (pageNumber < 1) pageNumber = 1;
-                if (pageSize < 1 || pageSize > 100) pageSize = 10;
+                if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
                 var query = _context.ManualCashbackTransactions
                     .Where(t => t.ContactId == contactId && t.UserId == userId)

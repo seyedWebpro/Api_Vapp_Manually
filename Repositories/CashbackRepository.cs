@@ -15,7 +15,7 @@ namespace Api_Vapp.Repositories
         {
         }
 
-        public async Task<IEnumerable<Cashback>> GetByUserIdAsync(int userId, int pageNumber = 1, int pageSize = 10, bool? isActive = null)
+        public async Task<IEnumerable<Cashback>> GetByUserIdAsync(int userId, int pageNumber = 1, int pageSize = 20, bool? isActive = null)
         {
             var query = _dbSet
                 .AsNoTracking()
@@ -97,7 +97,7 @@ namespace Api_Vapp.Repositories
         {
         }
 
-        public async Task<IEnumerable<CashbackTransaction>> GetByCashbackIdAsync(int cashbackId, int pageNumber = 1, int pageSize = 10)
+        public async Task<IEnumerable<CashbackTransaction>> GetByCashbackIdAsync(int cashbackId, int pageNumber = 1, int pageSize = 20)
         {
             return await _dbSet
                 .Include(ct => ct.Contact)
@@ -108,7 +108,7 @@ namespace Api_Vapp.Repositories
                 .ToListAsync();
         }
 
-        public async Task<IEnumerable<CashbackTransaction>> GetByContactIdAsync(int contactId, int pageNumber = 1, int pageSize = 10)
+        public async Task<IEnumerable<CashbackTransaction>> GetByContactIdAsync(int contactId, int pageNumber = 1, int pageSize = 20)
         {
             return await _dbSet
                 .Include(ct => ct.Cashback)

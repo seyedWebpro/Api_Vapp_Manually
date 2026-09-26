@@ -16,7 +16,7 @@ namespace Api_Vapp.Interfaces
         /// <summary>
         /// دریافت تراکنش‌های کیف پول کاربر
         /// </summary>
-        Task<ApiResponse<WalletTransactionListDto>> GetTransactionsAsync(int userId, int pageNumber = 1, int pageSize = 10);
+        Task<ApiResponse<WalletTransactionListDto>> GetTransactionsAsync(int userId, int pageNumber = 1, int pageSize = 20);
 
         /// <summary>
         /// دریافت آخرین تراکنش‌های کاربر

@@ -21,7 +21,7 @@ namespace Api_Vapp.Interfaces
         /// <summary>
         /// دریافت لیست کاربران با pagination
         /// </summary>
-        Task<ApiResponse<UserListResponseDto>> GetUsersAsync(int pageNumber = 1, int pageSize = 10, bool? isActive = null, bool? isDeleted = null);
+        Task<ApiResponse<UserListResponseDto>> GetUsersAsync(int pageNumber = 1, int pageSize = 20, bool? isActive = null, bool? isDeleted = null);
 
         /// <summary>
         /// به‌روزرسانی اطلاعات کاربر

@@ -43,16 +43,11 @@ namespace Api_Vapp.Services
             "اراک", "بوشهر", "خرم‌آباد", "سمنان", "شهرکرد", "یاسوج", "ایلام", "بجنورد"
         };
 
-        private static readonly string[] KnownCategories =
-        {
-            "رستوران", "کافه", "کافه رستوران", "فست‌فود", "شیرینی‌فروشی",
-            "آرایشگاه", "سالن زیبایی", "پوشاک", "موبایل فروشی", "لوازم خانگی",
-            "املاک", "خودرو", "کلینیک", "داروخانه", "سوپرمارکت",
-            "میوه و تره‌بار", "نانوایی", "آموزشگاه", "باشگاه ورزشی", "هتل"
-        };
+        private static readonly string[] KnownCategories = NumberSeekerCategoryHelper.KnownCategories;
 
         private readonly INumberScraperClient _scraperClient;
         private readonly INumberSeekerTaskRepository _taskRepository;
+        private readonly INumberSeekerPhoneBankRepository _phoneBankRepository;
         private readonly IContactService _contactService;
         private readonly INumberSeekerRateLimiter _rateLimiter;
         private readonly INumberSeekerPhoneAccessService _phoneAccess;
@@ -63,6 +58,7 @@ namespace Api_Vapp.Services
         public NumberSeekerService(
             INumberScraperClient scraperClient,
             INumberSeekerTaskRepository taskRepository,
+            INumberSeekerPhoneBankRepository phoneBankRepository,
             IContactService contactService,
             INumberSeekerRateLimiter rateLimiter,
             INumberSeekerPhoneAccessService phoneAccess,
@@ -72,6 +68,7 @@ namespace Api_Vapp.Services
         {
             _scraperClient = scraperClient;
             _taskRepository = taskRepository;
+            _phoneBankRepository = phoneBankRepository;
             _contactService = contactService;
             _rateLimiter = rateLimiter;
             _phoneAccess = phoneAccess;
@@ -84,14 +81,6 @@ namespace Api_Vapp.Services
             int userId,
             StartNumberSeekerScrapeDto request)
         {
-            if (!_scraperClient.IsEnabled)
-            {
-                return ApiResponse<NumberSeekerTaskCreatedDto>.Error(
-                    NumberSeekerUserMessages.ServiceDisabled,
-                    503,
-                    errorCode: "SCRAPER_DISABLED");
-            }
-
             if (!NumberSeekerCategoryHelper.TryNormalize(request.Category, out var category, out var categoryError))
             {
                 var message = categoryError ?? NumberSeekerUserMessages.InvalidInput;
@@ -111,7 +100,15 @@ namespace Api_Vapp.Services
                     ErrorCodes.ValidationFailed);
             }
 
-            var (allowed, retryAfter) = await _rateLimiter.CheckScrapeAsync(userId);
+            var source = (request.Source ?? string.Empty).Trim().ToLowerInvariant();
+            if (string.IsNullOrWhiteSpace(source))
+            {
+                return ApiResponse<NumberSeekerTaskCreatedDto>.BadRequest(
+                    NumberSeekerUserMessages.InvalidInput,
+                    errorCode: ErrorCodes.InvalidInput);
+            }
+
+            var (allowed, _) = await _rateLimiter.CheckScrapeAsync(userId);
             if (!allowed)
             {
                 return ApiResponse<NumberSeekerTaskCreatedDto>.Error(
@@ -122,103 +119,86 @@ namespace Api_Vapp.Services
 
             try
             {
-                var created = await _scraperClient.StartScrapeAsync(request);
+                var phones = await _phoneBankRepository.AllocateAsync(
+                    request.City,
+                    category,
+                    source,
+                    request.MaxPhones);
 
+                if (phones.Count == 0)
+                {
+                    return ApiResponse<NumberSeekerTaskCreatedDto>.Error(
+                        NumberSeekerUserMessages.BankEmpty,
+                        404,
+                        errorCode: "BANK_EMPTY");
+                }
+
+                var taskId = $"bank-{Guid.NewGuid():N}";
+                var isPartial = phones.Count < request.MaxPhones;
+                var status = isPartial ? "partial" : "completed";
+                var now = DateTime.UtcNow;
                 var ownedTask = new NumberSeekerTask
                 {
                     UserId = userId,
-                    ScraperTaskId = created.TaskId,
-                    Source = created.Source,
+                    ScraperTaskId = taskId,
+                    Source = source,
                     City = request.City,
                     Category = category,
                     TargetCount = request.MaxPhones,
-                    Status = created.Status,
-                    CurrentCount = 0,
-                    Message = NumberSeekerUserMessages.SanitizeIncomingUserMessage(
-                        created.Message,
-                        "درخواست شما ثبت شد و در حال پردازش است."),
-                    CreatedAt = DateTime.UtcNow
+                    Status = status,
+                    CurrentCount = phones.Count,
+                    ResultCode = isPartial ? "partial" : "success",
+                    Message = NumberSeekerUserMessages.ForTaskStatus(status, isPartial ? "partial" : "success", phones.Count),
+                    CreatedAt = now,
+                    UpdatedAt = now,
+                    CompletedAt = now
                 };
+                PersistPhones(ownedTask, phones);
 
-                try
-                {
-                    await _taskRepository.AddAsync(ownedTask);
-                }
-                catch (Exception dbEx)
-                {
-                    _logger.LogError(dbEx, "DB save failed after scraper task {TaskId} — attempting cancel", created.TaskId);
-                    try
-                    {
-                        await _scraperClient.CancelTaskAsync(created.TaskId);
-                    }
-                    catch (Exception cancelEx)
-                    {
-                        _logger.LogWarning(cancelEx, "Failed to cancel orphan scraper task {TaskId}", created.TaskId);
-                    }
-
-                    throw;
-                }
-
+                await _taskRepository.AddAsync(ownedTask);
                 await _rateLimiter.RecordScrapeAsync(userId);
 
                 await _audit.WriteAsync(new AuditEntry
                 {
                     Category = AuditCategories.NumberSeeker,
-                    Action = AuditActions.NumberSeekerTaskCreated,
+                    Action = AuditActions.NumberSeekerBankServed,
                     EntityType = AuditEntityTypes.NumberSeekerTask,
                     EntityId = ownedTask.ScraperTaskId,
                     ActorUserId = userId,
-                    After = new { source = ownedTask.Source, city = ownedTask.City, category = ownedTask.Category, targetCount = ownedTask.TargetCount }
+                    After = new
+                    {
+                        source = ownedTask.Source,
+                        city = ownedTask.City,
+                        category = ownedTask.Category,
+                        targetCount = ownedTask.TargetCount,
+                        servedCount = phones.Count,
+                        status
+                    }
                 });
 
-                created.PollUrl = $"/api/NumberSeeker/task/{created.TaskId}";
-                created.SourceDisplayName = NumberSeekerUiMapper.GetSourceDisplayName(created.Source);
-                created.StatusDisplayName = NumberSeekerUiMapper.GetStatusDisplayName(created.Status);
-                created.Message = ownedTask.Message;
+                var created = new NumberSeekerTaskCreatedDto
+                {
+                    TaskId = taskId,
+                    Source = source,
+                    SourceDisplayName = NumberSeekerUiMapper.GetSourceDisplayName(source),
+                    Status = status,
+                    StatusDisplayName = NumberSeekerUiMapper.GetStatusDisplayName(status),
+                    Message = ownedTask.Message ?? string.Empty,
+                    PollUrl = $"/api/NumberSeeker/task/{taskId}"
+                };
 
                 return ApiResponse<NumberSeekerTaskCreatedDto>.CreateSuccess(
                     created,
                     created.Message,
                     StatusCodes.Status201Created);
             }
-            catch (UnauthorizedAccessException ex)
-            {
-                _logger.LogError(ex, "Scraper API key rejected for user {UserId}", userId);
-                return ApiResponse<NumberSeekerTaskCreatedDto>.Error(
-                    NumberSeekerUserMessages.ExtractionFailed,
-                    503,
-                    errorCode: "SCRAPER_AUTH_FAILED");
-            }
-            catch (ArgumentException ex)
-            {
-                _logger.LogWarning(ex, "Invalid scrape input for user {UserId}", userId);
-                return ApiResponse<NumberSeekerTaskCreatedDto>.BadRequest(
-                    NumberSeekerUserMessages.InvalidInput,
-                    errorCode: ErrorCodes.InvalidInput);
-            }
-            catch (InvalidOperationException ex) when (
-                ex.Message.Contains("RATE_LIMITED", StringComparison.Ordinal) ||
-                ex.Message.Contains("محدودیت", StringComparison.Ordinal))
-            {
-                return ApiResponse<NumberSeekerTaskCreatedDto>.Error(
-                    NumberSeekerUserMessages.RateLimited,
-                    429,
-                    errorCode: "RATE_LIMITED");
-            }
-            catch (InvalidOperationException ex) when (ex.Message.Contains("SCRAPER_DISABLED", StringComparison.Ordinal))
-            {
-                return ApiResponse<NumberSeekerTaskCreatedDto>.Error(
-                    NumberSeekerUserMessages.ServiceDisabled,
-                    503,
-                    errorCode: "SCRAPER_DISABLED");
-            }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to start number seeker scrape for user {UserId}", userId);
+                _logger.LogError(ex, "Failed to serve number seeker phones from bank for user {UserId}", userId);
                 return ApiResponse<NumberSeekerTaskCreatedDto>.Error(
                     NumberSeekerUserMessages.ExtractionFailed,
                     503,
-                    errorCode: "SCRAPER_UNAVAILABLE");
+                    errorCode: "BANK_UNAVAILABLE");
             }
         }
 
@@ -247,6 +227,15 @@ namespace Api_Vapp.Services
                 EnrichStatusForUi(cachedStatus, ownedTask.CreatedAt);
                 await ApplyPhoneVisibilityAsync(userId, cachedStatus);
                 return ApiResponse<NumberSeekerTaskStatusDto>.CreateSuccess(cachedStatus);
+            }
+
+            // تسک‌های بانک‌محور هرگز به اسکرپر نمی‌روند
+            if (taskId.Trim().StartsWith("bank-", StringComparison.OrdinalIgnoreCase))
+            {
+                var localStatus = BuildStatusFromOwnedTask(ownedTask, cachedPhones);
+                EnrichStatusForUi(localStatus, ownedTask.CreatedAt);
+                await ApplyPhoneVisibilityAsync(userId, localStatus);
+                return ApiResponse<NumberSeekerTaskStatusDto>.CreateSuccess(localStatus);
             }
 
             try
@@ -562,6 +551,26 @@ namespace Api_Vapp.Services
                     "Webhook persisted {PhoneCount} phones for task {TaskId}",
                     webhook.Phones.Count,
                     webhook.TaskId);
+
+                try
+                {
+                    var inserted = await _phoneBankRepository.UpsertPhonesAsync(
+                        webhook.Phones,
+                        ownedTask.Source,
+                        ownedTask.City,
+                        ownedTask.Category);
+                    _logger.LogInformation(
+                        "Webhook upserted bank phones for task {TaskId} — inserted {Inserted}",
+                        webhook.TaskId,
+                        inserted);
+                }
+                catch (Exception bankEx)
+                {
+                    _logger.LogError(
+                        bankEx,
+                        "Failed to upsert phones into bank for task {TaskId}",
+                        webhook.TaskId);
+                }
             }
 
             if (TerminalStatuses.Contains(webhook.Status) && ownedTask.CompletedAt == null)
@@ -676,8 +685,8 @@ namespace Api_Vapp.Services
             {
                 Categories = categories,
                 Placeholder = NumberSeekerCategoryHelper.Placeholder,
-                AllowCustomCategory = true,
-                CustomCategoryHint = NumberSeekerCategoryHelper.CustomAllowedHint
+                AllowCustomCategory = false,
+                CustomCategoryHint = NumberSeekerCategoryHelper.CustomDisabledHint
             });
         }
 
@@ -694,11 +703,11 @@ namespace Api_Vapp.Services
                     .ToList(),
                 DefaultCity = "تهران",
                 CategoryPlaceholder = NumberSeekerCategoryHelper.Placeholder,
-                AllowCustomCategory = true,
-                CustomCategoryHint = NumberSeekerCategoryHelper.CustomAllowedHint,
+                AllowCustomCategory = false,
+                CustomCategoryHint = NumberSeekerCategoryHelper.CustomDisabledHint,
                 MinPhones = 1,
                 MaxPhones = 1000,
-                DefaultPhones = 50
+                DefaultPhones = 100
             });
         }
 
@@ -940,6 +949,22 @@ namespace Api_Vapp.Services
             {
                 PersistPhones(ownedTask, status.Phones);
                 changed = true;
+
+                try
+                {
+                    await _phoneBankRepository.UpsertPhonesAsync(
+                        status.Phones,
+                        ownedTask.Source,
+                        ownedTask.City,
+                        ownedTask.Category);
+                }
+                catch (Exception bankEx)
+                {
+                    _logger.LogError(
+                        bankEx,
+                        "Failed to upsert phones into bank while syncing task {TaskId}",
+                        ownedTask.ScraperTaskId);
+                }
             }
 
             if (TerminalStatuses.Contains(status.Status) && ownedTask.CompletedAt == null)

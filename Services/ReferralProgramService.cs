@@ -53,10 +53,10 @@ namespace Api_Vapp.Services
             _forbiddenWords = forbiddenWords;
         }
 
-        public async Task<ApiResponse<ReferralProgramListDto>> GetProgramsAsync(int userId, int pageNumber = 1, int pageSize = 10, bool? isActive = null)
+        public async Task<ApiResponse<ReferralProgramListDto>> GetProgramsAsync(int userId, int pageNumber = 1, int pageSize = 20, bool? isActive = null)
         {
             if (pageNumber < 1) pageNumber = 1;
-            if (pageSize < 1 || pageSize > 100) pageSize = 10;
+            if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
             var programs = await _programRepository.GetByUserIdAsync(userId, pageNumber, pageSize, isActive);
             var totalCount = await _programRepository.GetCountByUserIdAsync(userId, isActive);
@@ -1162,7 +1162,7 @@ namespace Api_Vapp.Services
             int programId,
             int userId,
             int pageNumber = 1,
-            int pageSize = 10,
+            int pageSize = 20,
             DateTime? fromDate = null,
             DateTime? toDate = null)
         {
@@ -1175,7 +1175,7 @@ namespace Api_Vapp.Services
                 }
 
                 if (pageNumber < 1) pageNumber = 1;
-                if (pageSize < 1 || pageSize > 100) pageSize = 10;
+                if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
                 var normalizedFromDate = EnsureUtc(fromDate);
                 var normalizedToDate = EnsureUtc(toDate);

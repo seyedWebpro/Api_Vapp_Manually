@@ -12,7 +12,7 @@ namespace Api_Vapp.Interfaces
         // Message operations
         Task<ApiResponse<MessageResponseDto>> CreateMessageAsync(int userId, CreateMessageDto createDto);
         Task<ApiResponse<MessageResponseDto>> GetMessageByIdAsync(int messageId, int userId);
-        Task<ApiResponse<MessageListResponseDto>> GetMessagesAsync(int userId, int pageNumber = 1, int pageSize = 10, string? searchTerm = null);
+        Task<ApiResponse<MessageListResponseDto>> GetMessagesAsync(int userId, int pageNumber = 1, int pageSize = 20, string? searchTerm = null);
         Task<ApiResponse<MessageResponseDto>> UpdateMessageAsync(int messageId, int userId, UpdateMessageDto updateDto);
         Task<ApiResponse<bool>> DeleteMessageAsync(int messageId, int userId);
 
@@ -22,7 +22,7 @@ namespace Api_Vapp.Interfaces
         Task<ApiResponse<DirectSendResultDto>> ConfirmAndSendMessageAsync(int userId, int messageId, string? idempotencyKey = null);
         Task<ApiResponse<CampaignResponseDto>> CreateCampaignAsync(int userId, CreateCampaignDto createDto);
         Task<ApiResponse<CampaignResponseDto>> GetCampaignByIdAsync(int campaignId, int userId);
-        Task<ApiResponse<CampaignListResponseDto>> GetCampaignsAsync(int userId, int pageNumber = 1, int pageSize = 10, string? status = null);
+        Task<ApiResponse<CampaignListResponseDto>> GetCampaignsAsync(int userId, int pageNumber = 1, int pageSize = 20, string? status = null);
         Task<ApiResponse<bool>> ConfirmAndSendCampaignAsync(int campaignId, int userId, bool bypassAdminApproval = false);
         Task<ApiResponse<bool>> CancelCampaignAsync(int campaignId, int userId);
         Task<ApiResponse<bool>> ToggleCampaignStatusAsync(int campaignId, int userId, bool isActive);
@@ -65,7 +65,7 @@ namespace Api_Vapp.Interfaces
 
         // Tag operations
         Task<ApiResponse<MessageTagResponseDto>> CreateTagAsync(int userId, CreateMessageTagDto createDto);
-        Task<ApiResponse<MessageTagListResponseDto>> GetTagsAsync(int userId, int pageNumber = 1, int pageSize = 10);
-        Task<ApiResponse<MessageTagWithContactCountListResponseDto>> GetTagsWithContactCountAsync(int userId, int pageNumber = 1, int pageSize = 10);
+        Task<ApiResponse<MessageTagListResponseDto>> GetTagsAsync(int userId, int pageNumber = 1, int pageSize = 20);
+        Task<ApiResponse<MessageTagWithContactCountListResponseDto>> GetTagsWithContactCountAsync(int userId, int pageNumber = 1, int pageSize = 20);
     }
 }

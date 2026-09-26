@@ -570,7 +570,7 @@ namespace Api_Vapp.Services
             }
         }
 
-        public async Task<ApiResponse<LuckyWheelListResponseDto>> GetWheelsAsync(int userId, int pageNumber = 1, int pageSize = 10, bool? isActive = null)
+        public async Task<ApiResponse<LuckyWheelListResponseDto>> GetWheelsAsync(int userId, int pageNumber = 1, int pageSize = 20, bool? isActive = null)
         {
             try
             {
@@ -653,7 +653,7 @@ namespace Api_Vapp.Services
             int id,
             int userId,
             int pageNumber = 1,
-            int pageSize = 10,
+            int pageSize = 20,
             string? searchTerm = null)
         {
             try

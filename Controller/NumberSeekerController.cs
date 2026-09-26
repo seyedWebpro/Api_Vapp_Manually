@@ -42,7 +42,7 @@ namespace Api_Vapp.Controller
 
         /// <summary>
         /// متادیتای فرم جستجوی جدید (پلتفرم + شهر + دسته + محدودیت تعداد).
-        /// allowCustomCategory=true یعنی فیلد دسته Combobox است (پیشنهاد + تایپ آزاد).
+        /// allowCustomCategory=false یعنی فیلد دسته فقط دراپ‌داون از فهرست ثابت است.
         /// </summary>
         [HttpGet("form-meta")]
         [ProducesResponseType(typeof(ApiResponse<NumberSeekerFormMetaDto>), StatusCodes.Status200OK)]
@@ -73,7 +73,7 @@ namespace Api_Vapp.Controller
 
         /// <summary>
         /// پیشنهاد دسته‌ها / نوع کسب‌وکار.
-        /// اگر allowCustomCategory=true باشد، لیست فقط suggestion است و کاربر می‌تواند متن دلخواه بفرستد.
+        /// allowCustomCategory=false: فقط مقادیر موجود در همین لیست پذیرفته می‌شوند.
         /// </summary>
         [HttpGet("categories")]
         [ProducesResponseType(typeof(ApiResponse<NumberSeekerCategoriesDto>), StatusCodes.Status200OK)]

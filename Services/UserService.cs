@@ -150,12 +150,12 @@ namespace Api_Vapp.Services
             }
         }
 
-        public async Task<ApiResponse<UserListResponseDto>> GetUsersAsync(int pageNumber = 1, int pageSize = 10, bool? isActive = null, bool? isDeleted = null)
+        public async Task<ApiResponse<UserListResponseDto>> GetUsersAsync(int pageNumber = 1, int pageSize = 20, bool? isActive = null, bool? isDeleted = null)
         {
             try
             {
                 if (pageNumber < 1) pageNumber = 1;
-                if (pageSize < 1 || pageSize > 100) pageSize = 10;
+                if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
                 // استفاده از Query برای فیلتر و pagination
                 var query = _context.Users.AsQueryable();
@@ -797,13 +797,6 @@ namespace Api_Vapp.Services
                 var cachedOtp = cached.OtpCode?.Trim() ?? string.Empty;
                 var userOtp = dto.OtpCode?.Trim() ?? string.Empty;
 
-                // DEV ONLY — TODO(production): قبل از release حذف شود (جستجو: DEV-OTP-VERIFY)
-                _logger.LogInformation(
-                    "[DEV-OTP-VERIFY] ChangePhone Cached OTP: {CachedOtp}, User Input: {UserOtp}, UserId: {UserId}",
-                    cachedOtp,
-                    userOtp,
-                    userId);
-
                 if (!string.Equals(cachedOtp, userOtp, StringComparison.Ordinal))
                 {
                     attemptData ??= new OtpAttemptCacheDto
@@ -1003,7 +996,7 @@ namespace Api_Vapp.Services
                     newPhone);
             }
 
-            DevOtpLogger.Write(_logger, newPhone, otpCode, "ChangePhone");
+            DevOtpLogger.Write(_logger, newPhone, otpCode, "ChangePhone", _environment.IsDevelopment());
 
             _logger.LogInformation(
                 "Change-phone OTP ready for user {UserId}, phone {PhoneNumber}, smsSent {SmsSent}, from IP {IpAddress}",
@@ -1017,7 +1010,7 @@ namespace Api_Vapp.Services
                 {
                     ExpiresInSeconds = ChangePhoneOtpExpirationMinutes * 60,
                     RetryAfterSeconds = ChangePhoneOtpRateLimitMinutes * 60,
-                    OtpCode = otpCode
+                    OtpCode = _environment.IsDevelopment() ? otpCode : null
                 },
                 sent ? "کد تایید به شماره جدید ارسال شد" : "کد تایید آماده است (پیامک در Development ارسال نشد)");
         }

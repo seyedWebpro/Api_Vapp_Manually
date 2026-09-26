@@ -19,13 +19,13 @@ namespace Api_Vapp.Repositories
         public async Task<User?> GetByPhoneNumberAsync(string phoneNumber)
         {
             return await _dbSet
-                .FirstOrDefaultAsync(u => u.PhoneNumber == phoneNumber);
+                .FirstOrDefaultAsync(u => u.PhoneNumber == phoneNumber && !u.IsDeleted);
         }
 
         public async Task<User?> GetByNationalIdAsync(string nationalId)
         {
             return await _dbSet
-                .FirstOrDefaultAsync(u => u.NationalId == nationalId);
+                .FirstOrDefaultAsync(u => u.NationalId == nationalId && !u.IsDeleted);
         }
 
         public async Task<bool> ExistsByPhoneNumberAsync(string phoneNumber)

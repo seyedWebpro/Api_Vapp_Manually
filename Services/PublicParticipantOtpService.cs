@@ -240,7 +240,7 @@ namespace Api_Vapp.Services
                         mobile);
                 }
 
-                DevOtpLogger.Write(_logger, mobile, otpCode, purpose);
+                DevOtpLogger.Write(_logger, mobile, otpCode, purpose, _environment.IsDevelopment());
 
                 var responseMessage = sendResult.SkippedInsufficientBalance
                     ? "ثبت انجام شد؛ ارسال پیامک به‌خاطر کمبود موجودی کیف پول کسب‌وکار انجام نشد"
@@ -268,7 +268,7 @@ namespace Api_Vapp.Services
                         ExpiresInSeconds = OtpExpirationMinutes * 60,
                         RetryAfterSeconds = OtpRateLimitMinutes * 60,
                         IsPhoneVerified = false,
-                        OtpCode = otpCode
+                        OtpCode = _environment.IsDevelopment() ? otpCode : null
                     },
                     responseMessage);
             }

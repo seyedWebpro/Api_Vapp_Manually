@@ -1,8 +1,11 @@
+using Api_Vapp.Constants;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.DTOs.Sms;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Utilities;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using System.Security.Cryptography;
 using System.Text;
@@ -19,6 +22,8 @@ namespace Api_Vapp.Services
         private readonly ILogger<SmsService> _logger;
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IConfiguration _configuration;
+        private readonly IHostEnvironment _environment;
+        private readonly IServiceProvider _serviceProvider;
         private readonly string _apiKey;
         private readonly string _baseUrl;
         private readonly string _senderNumber;
@@ -28,11 +33,15 @@ namespace Api_Vapp.Services
         public SmsService(
             ILogger<SmsService> logger,
             IHttpClientFactory httpClientFactory,
-            IConfiguration configuration)
+            IConfiguration configuration,
+            IHostEnvironment environment,
+            IServiceProvider serviceProvider)
         {
             _logger = logger;
             _httpClientFactory = httpClientFactory;
             _configuration = configuration;
+            _environment = environment;
+            _serviceProvider = serviceProvider;
             
             // خواندن تنظیمات از appsettings.json
             _apiKey = _configuration["Sms:ApiKey"] ?? throw new InvalidOperationException("SMS ApiKey is not configured");
@@ -76,21 +85,43 @@ namespace Api_Vapp.Services
                     _otpAutofillDomain,
                     _androidAppHash);
                 
-                // DEV ONLY — TODO(production): لاگ‌های زیر که شامل کد OTP هستند را قبل از release حذف کنید.
-                _logger.LogInformation("Sending OTP via SMS - Template: {TemplateType}, OTP Code: {OtpCode}, Phone: {PhoneNumber}", 
-                    templateType, otpCode, normalizedPhone);
+                // فقط Development — در Production کد OTP در لاگ نوشته نمی‌شود
+                if (_environment.IsDevelopment())
+                {
+                    _logger.LogInformation(
+                        "Sending OTP via SMS - Template: {TemplateType}, OTP Code: {OtpCode}, Phone: {PhoneNumber}",
+                        templateType, otpCode, normalizedPhone);
+                }
+                else
+                {
+                    _logger.LogInformation(
+                        "Sending OTP via SMS - Template: {TemplateType}, Phone: {PhoneNumber}",
+                        templateType, normalizedPhone);
+                }
 
                 var result = await SendSmsInternalAsync(normalizedPhone, message);
-                
-                // لاگ کامل Response برای بررسی کد OTP برگشتی از API
-                _logger.LogInformation("SMS API Result - Status: {Status}, Message: {Message}, Sid: {Sid}, Expected OTP: {ExpectedOtp}", 
-                    result.Status, result.Message, result.Sid, otpCode);
-                
+
+                if (_environment.IsDevelopment())
+                {
+                    _logger.LogInformation(
+                        "SMS API Result - Status: {Status}, Message: {Message}, Sid: {Sid}, Expected OTP: {ExpectedOtp}",
+                        result.Status, result.Message, result.Sid, otpCode);
+                }
+                else
+                {
+                    _logger.LogInformation(
+                        "SMS API Result - Status: {Status}, Sid: {Sid}",
+                        result.Status, result.Sid);
+                }
+
                 if (IsSmsSendSuccessful(result.Sid, result.Status))
                 {
-                    if (!string.IsNullOrEmpty(result.Message) && result.Message.Contains(otpCode))
+                    if (_environment.IsDevelopment()
+                        && !string.IsNullOrEmpty(result.Message)
+                        && result.Message.Contains(otpCode))
                     {
-                        _logger.LogInformation("OTP code confirmed in API response - Phone: {PhoneNumber}, OTP: {OtpCode}",
+                        _logger.LogInformation(
+                            "OTP code confirmed in API response - Phone: {PhoneNumber}, OTP: {OtpCode}",
                             normalizedPhone, otpCode);
                     }
                 }
@@ -103,14 +134,25 @@ namespace Api_Vapp.Services
 
                 if (IsSmsSendSuccessful(result.Sid, result.Status))
                 {
-                    _logger.LogInformation("OTP sent successfully - Phone: {PhoneNumber}, OTP: {OtpCode}, Sid: {Sid}, Status: {Status}", 
-                        normalizedPhone, otpCode, result.Sid, result.Status);
+                    if (_environment.IsDevelopment())
+                    {
+                        _logger.LogInformation(
+                            "OTP sent successfully - Phone: {PhoneNumber}, OTP: {OtpCode}, Sid: {Sid}, Status: {Status}",
+                            normalizedPhone, otpCode, result.Sid, result.Status);
+                    }
+                    else
+                    {
+                        _logger.LogInformation(
+                            "OTP sent successfully - Phone: {PhoneNumber}, Sid: {Sid}, Status: {Status}",
+                            normalizedPhone, result.Sid, result.Status);
+                    }
                     return true;
                 }
                 else
                 {
-                    _logger.LogError("Failed to send OTP - Phone: {PhoneNumber}, Sid: {Sid}, Status: {Status}, Message: {Message}", 
-                        normalizedPhone, result.Sid, result.Status, result.Message);
+                    _logger.LogError(
+                        "Failed to send OTP - Phone: {PhoneNumber}, Sid: {Sid}, Status: {Status}",
+                        normalizedPhone, result.Sid, result.Status);
                     return false;
                 }
             }
@@ -391,6 +433,60 @@ namespace Api_Vapp.Services
                 _logger.LogError(ex, "Error sending array SMS — ErrorCode: {ErrorCode}", mapped.ErrorCode);
                 return ApiResponse<SendArrayResponseDto>.InternalServerError(mapped.UserMessage, mapped.ErrorCode);
             }
+        }
+
+        public async Task<ApiResponse<SendSmsResponseDto>> SendManualSmsAsync(int userId, SendSmsRequestDto request)
+        {
+            var result = await SendSmsAsync(request);
+            if (result.Success && result.Data != null && IsSmsSendSuccessful(result.Data.Sid, result.Data.Status))
+            {
+                await TrackManualSendAsync(userId, request.Mobile, result.Data.Sid, request.Message);
+            }
+            return result;
+        }
+
+        public async Task<ApiResponse<SendBulkResponseDto>> SendManualBulkSmsAsync(int userId, SendBulkRequestDto request)
+        {
+            var result = await SendBulkSmsAsync(request);
+            if (result.Success && result.Data != null && IsSmsSendSuccessful(result.Data.Sid, result.Data.Status))
+            {
+                foreach (var mobile in request.Mobiles)
+                {
+                    await TrackManualSendAsync(userId, mobile, result.Data.Sid, request.Message, "ارسال گروهی");
+                }
+            }
+            return result;
+        }
+
+        public async Task<ApiResponse<SendArrayResponseDto>> SendManualArraySmsAsync(int userId, SendArrayRequestDto request)
+        {
+            var result = await SendArraySmsAsync(request);
+            if (result.Success && result.Data != null && IsSmsSendSuccessful(result.Data.Sid, result.Data.Status))
+            {
+                for (var i = 0; i < request.Mobiles.Count; i++)
+                {
+                    var mobile = request.Mobiles[i];
+                    var messageText = i < request.Message.Count ? request.Message[i] : null;
+                    await TrackManualSendAsync(userId, mobile, result.Data.Sid, messageText, "ارسال نظیر به نظیر");
+                }
+            }
+            return result;
+        }
+
+        private Task TrackManualSendAsync(int userId, string mobile, long sid, string? messageText = null, string? label = null)
+        {
+            // Lazy resolve — جلوگیری از وابستگی دایره‌ای SmsService ↔ SmsDeliveryTrackingService
+            var deliveryTracking = _serviceProvider.GetRequiredService<ISmsDeliveryTrackingService>();
+            return deliveryTracking.TrackSuccessfulSendAsync(new SmsDeliveryTrackRequestDto
+            {
+                UserId = userId,
+                SourceModule = SmsSourceModules.Manual,
+                SourceEntityLabel = label ?? "ارسال دستی",
+                Mobile = mobile,
+                Sid = sid,
+                MessageText = messageText,
+                SentAt = DateTime.UtcNow
+            });
         }
 
         /// <summary>

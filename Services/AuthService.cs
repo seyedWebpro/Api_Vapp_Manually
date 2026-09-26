@@ -2,6 +2,7 @@ using Api_Vapp.Constants;
 using Api_Vapp.Data;
 using Api_Vapp.DTOs.Auth;
 using Api_Vapp.DTOs.Common;
+using Api_Vapp.DTOs.User;
 using Api_Vapp.DTOs.Zohal;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
@@ -14,6 +15,8 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Caching;
+using Microsoft.IdentityModel.Tokens;
+using System.Security.Claims;
 
 namespace Api_Vapp.Services
 {
@@ -146,19 +149,18 @@ namespace Api_Vapp.Services
             _cache.Set(key, data, cacheOptions);
         }
 
-        // DEV ONLY — TODO(production): قبل از release برای کاربران نهایی این متد را حذف کنید (جستجو: LogDevOtpForDevelopment)
+        // DEV ONLY — فقط وقتی محیط Development است
         private void LogDevOtpForDevelopment(string phoneNumber, string otpCode, string purpose)
         {
-            DevOtpLogger.Write(_logger, phoneNumber, otpCode, purpose);
+            DevOtpLogger.Write(_logger, phoneNumber, otpCode, purpose, _environment.IsDevelopment());
         }
 
-        // TODO(remove-before-production) REMOVE_DEV_OTP
-        // این متد otpCode را در پاسخ می‌گذارد تا برنامه‌نویس موبایل کد تایید را ببیند.
-        // قبل از انتشار نهایی: پارامتر otpCode را حذف کنید و SendOtpResponseDto.OtpCode را بردارید.
+        // در Production مقدار OtpCode در پاسخ null است تا نشت نشود؛ Development برای کراول/تست محلی نگه داشته می‌شود.
         private SendOtpResponseDto CreateSuccessOtpResponse(string message, string otpCode, int expiresInSeconds)
-            => AuthOtpResponseFactory.Success(
+            => AuthOtpResponseFactory.SuccessForEnvironment(
                 message,
                 otpCode,
+                includeOtpInResponse: _environment.IsDevelopment(),
                 expiresInSeconds,
                 OtpRateLimitMinutes * 60);
 
@@ -640,11 +642,7 @@ namespace Api_Vapp.Services
                 // بررسی صحت کد تایید
                 var cachedOtpCode = cachedData.OtpCode?.Trim() ?? string.Empty;
                 var userOtpCode = verifyOtpDto.OtpCode?.Trim() ?? string.Empty;
-                
-                // DEV ONLY — TODO(production): قبل از release برای کاربران نهایی این لاگ را حذف کنید (جستجو: DEV-OTP-VERIFY)
-                _logger.LogInformation("[DEV-OTP-VERIFY] Cached OTP: {CachedOtp}, User Input: {UserOtp}, Phone: {PhoneNumber}",
-                    cachedOtpCode, userOtpCode, verifyOtpDto.PhoneNumber);
-                
+
                 if (cachedOtpCode != userOtpCode)
                 {
                     // افزایش تعداد تلاش‌های ناموفق
@@ -972,11 +970,7 @@ namespace Api_Vapp.Services
                 // بررسی صحت کد تایید
                 var cachedOtpCode = cachedOtp?.ToString()?.Trim() ?? string.Empty;
                 var userOtpCode = verifyOtpDto.OtpCode?.Trim() ?? string.Empty;
-                
-                // DEV ONLY — TODO(production): قبل از release برای کاربران نهایی این لاگ را حذف کنید (جستجو: DEV-OTP-VERIFY)
-                _logger.LogInformation("[DEV-OTP-VERIFY] Cached OTP: {CachedOtp}, User Input: {UserOtp}, Phone: {PhoneNumber}",
-                    cachedOtpCode, userOtpCode, verifyOtpDto.PhoneNumber);
-                
+
                 if (cachedOtpCode != userOtpCode)
                 {
                     // افزایش تعداد تلاش‌های ناموفق
@@ -1572,6 +1566,59 @@ namespace Api_Vapp.Services
             {
                 _logger.LogError(ex, "Error in LogoutAsync for user {UserId}", userId);
                 throw; // اجازه می‌دهیم Global Exception Handler آن را مدیریت کند
+            }
+        }
+
+        public async Task<ApiResponse<UserResponseDto>> GetUserByTokenAsync(string token)
+        {
+            try
+            {
+                var raw = (token ?? string.Empty).Trim();
+                if (raw.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+                    raw = raw[7..].Trim();
+
+                if (string.IsNullOrWhiteSpace(raw))
+                    return ApiResponse<UserResponseDto>.BadRequest("توکن الزامی است", errorCode: ErrorCodes.ValidationFailed);
+
+                var principal = _jwtService.ValidateAccessToken(raw);
+                var userIdClaim = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+                    return ApiResponse<UserResponseDto>.Unauthorized("توکن معتبر نیست - شناسه کاربر یافت نشد", ErrorCodes.InvalidUserId);
+
+                var user = await _userRepository.GetByIdAsync(userId);
+                if (user == null || user.IsDeleted)
+                    return ApiResponse<UserResponseDto>.NotFound(ControlledErrorHelper.NotFound);
+
+                if (!user.IsActive)
+                    return ApiResponse<UserResponseDto>.Forbidden(ControlledErrorHelper.InactiveUserAccount);
+
+                return ApiResponse<UserResponseDto>.CreateSuccess(new UserResponseDto
+                {
+                    Id = user.Id,
+                    PhoneNumber = user.PhoneNumber,
+                    FullName = user.FullName,
+                    NationalId = user.NationalId,
+                    Email = user.Email,
+                    IsActive = user.IsActive,
+                    IsPhoneVerified = user.IsPhoneVerified,
+                    IsDeleted = user.IsDeleted,
+                    CreatedAt = user.CreatedAt,
+                    UpdatedAt = user.UpdatedAt,
+                    LastLoginAt = user.LastLoginAt
+                });
+            }
+            catch (SecurityTokenExpiredException)
+            {
+                return ApiResponse<UserResponseDto>.Unauthorized("توکن منقضی شده است", ErrorCodes.TokenExpired);
+            }
+            catch (SecurityTokenException)
+            {
+                return ApiResponse<UserResponseDto>.Unauthorized(ControlledErrorHelper.InvalidToken, ErrorCodes.TokenInvalid);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error resolving user from token");
+                return ApiResponse<UserResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
     }

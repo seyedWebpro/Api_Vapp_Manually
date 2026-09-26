@@ -168,12 +168,12 @@ namespace Api_Vapp.Services
             }
         }
 
-        public async Task<ApiResponse<QuickActionListResponseDto>> GetQuickActionsAsync(int userId, int pageNumber = 1, int pageSize = 10)
+        public async Task<ApiResponse<QuickActionListResponseDto>> GetQuickActionsAsync(int userId, int pageNumber = 1, int pageSize = 20)
         {
             try
             {
                 if (pageNumber < 1) pageNumber = 1;
-                if (pageSize < 1 || pageSize > 100) pageSize = 10;
+                if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
                 var actions = await _quickActionRepository.GetByUserIdAsync(userId);
                 var actionsList = actions.ToList();

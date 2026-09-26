@@ -1,17 +1,10 @@
 using Api_Vapp.DTOs.Auth;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.DTOs.User;
-using Api_Vapp.Exceptions;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Services;
-using Api_Vapp.Utilities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Configuration;
-using Microsoft.IdentityModel.Tokens;
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
-using System.Text;
 
 namespace Api_Vapp.Controller
 {
@@ -634,86 +627,11 @@ namespace Api_Vapp.Controller
         [ProducesResponseType(typeof(ApiResponse<UserResponseDto>), StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<ApiResponse<UserResponseDto>>> GetUserByToken([FromBody] GetUserByTokenDto tokenDto)
         {
-            if (!ModelState.IsValid)
-            {
-                 var errors = ExtractModelStateErrors();
-                return StatusCode(400, ApiResponse<UserResponseDto>.BadRequest("داده‌های ورودی نامعتبر است", errors));
-            }
+            var invalid = InvalidModelStateResponse<UserResponseDto>();
+            if (invalid != null) return invalid;
 
-            try
-            {
-                var token = tokenDto.Token.Trim();
-                if (token.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
-                {
-                    token = token.Substring(7).Trim();
-                }
-
-                var secretKey = Configuration["Jwt:Secret"] ?? throw AppException.Internal(ErrorCodes.TokenProcessFailed, ControlledErrorHelper.TokenProcessFailed);
-                var issuer = Configuration["Jwt:Issuer"] ?? throw AppException.Internal(ErrorCodes.TokenProcessFailed, ControlledErrorHelper.TokenProcessFailed);
-                var audience = Configuration["Jwt:Audience"] ?? throw AppException.Internal(ErrorCodes.TokenProcessFailed, ControlledErrorHelper.TokenProcessFailed);
-
-                var tokenValidationParameters = new TokenValidationParameters
-                {
-                    ValidateIssuer = true,
-                    ValidateAudience = true,
-                    ValidateLifetime = true,
-                    ValidateIssuerSigningKey = true,
-                    ValidIssuer = issuer,
-                    ValidAudience = audience,
-                    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey))
-                };
-
-                var tokenHandler = new JwtSecurityTokenHandler();
-                var principal = tokenHandler.ValidateToken(token, tokenValidationParameters, out SecurityToken validatedToken);
-
-                if (validatedToken is not JwtSecurityToken jwtSecurityToken ||
-                    !jwtSecurityToken.Header.Alg.Equals(SecurityAlgorithms.HmacSha256, StringComparison.InvariantCultureIgnoreCase))
-                {
-                    throw AppException.Unauthorized(ErrorCodes.TokenInvalid, ControlledErrorHelper.InvalidToken);
-                }
-
-                var userIdClaim = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
-                {
-                    throw AppException.Unauthorized(ErrorCodes.InvalidUserId, "توکن معتبر نیست - شناسه کاربر یافت نشد");
-                }
-
-                var user = await UserRepository.GetByIdAsync(userId);
-                if (user == null || user.IsDeleted)
-                {
-                    throw AppException.NotFound(ErrorCodes.NotFound, ControlledErrorHelper.NotFound);
-                }
-
-                if (!user.IsActive)
-                {
-                    throw AppException.Forbidden(ErrorCodes.Forbidden, ControlledErrorHelper.InactiveUserAccount);
-                }
-
-                var userDto = new UserResponseDto
-                {
-                    Id = user.Id,
-                    PhoneNumber = user.PhoneNumber,
-                    FullName = user.FullName,
-                    NationalId = user.NationalId,
-                    Email = user.Email,
-                    IsActive = user.IsActive,
-                    IsPhoneVerified = user.IsPhoneVerified,
-                    IsDeleted = user.IsDeleted,
-                    CreatedAt = user.CreatedAt,
-                    UpdatedAt = user.UpdatedAt,
-                    LastLoginAt = user.LastLoginAt
-                };
-
-                return StatusCode(200, ApiResponse<UserResponseDto>.CreateSuccess(userDto));
-            }
-            catch (SecurityTokenExpiredException)
-            {
-                throw AppException.Unauthorized(ErrorCodes.TokenExpired, "توکن منقضی شده است");
-            }
-            catch (SecurityTokenException)
-            {
-                throw AppException.Unauthorized(ErrorCodes.TokenInvalid, ControlledErrorHelper.InvalidToken);
-            }
+            var result = await _authService.GetUserByTokenAsync(tokenDto.Token);
+            return StatusCode(result.StatusCode, result);
         }
     }
 }

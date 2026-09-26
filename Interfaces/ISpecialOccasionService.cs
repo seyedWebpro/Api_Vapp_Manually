@@ -6,12 +6,12 @@ namespace Api_Vapp.Interfaces
     public interface ISpecialOccasionService
     {
         Task<ApiResponse<SpecialOccasionResponseDto>> CreateSpecialOccasionAsync(int userId, CreateSpecialOccasionDto createDto);
-        Task<ApiResponse<List<SpecialOccasionResponseDto>>> GetSpecialOccasionsAsync(int? userId);
-        Task<ApiResponse<SpecialOccasionResponseDto>> GetSpecialOccasionByIdAsync(int id);
+        Task<ApiResponse<List<SpecialOccasionResponseDto>>> GetSpecialOccasionsAsync(int? userId, int pageNumber = 1, int pageSize = 100);
+        Task<ApiResponse<SpecialOccasionResponseDto>> GetSpecialOccasionByIdAsync(int id, int userId);
         Task<ApiResponse<SpecialOccasionResponseDto>> UpdateSpecialOccasionAsync(int id, int? userId, UpdateSpecialOccasionDto updateDto);
         Task<ApiResponse<bool>> DeleteSpecialOccasionAsync(int id, int? userId);
 
-        Task<ApiResponse<OccasionTableResponseDto>> GetOccasionTableAsync(int userId, string? category = null);
+        Task<ApiResponse<OccasionTableResponseDto>> GetOccasionTableAsync(int userId, string? category = null, int pageNumber = 1, int pageSize = 100);
         Task<ApiResponse<UserOccasionProfileDto>> GetProfileAsync(int userId);
         Task<ApiResponse<UserOccasionProfileDto>> UpdateProfileAsync(int userId, UpdateUserOccasionProfileDto dto);
         Task<ApiResponse<OccasionTableItemDto>> TogglePreferenceAsync(int userId, int occasionId, ToggleOccasionPreferenceDto dto);

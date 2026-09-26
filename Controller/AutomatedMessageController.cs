@@ -73,7 +73,7 @@ namespace Api_Vapp.Controller
         [ProducesResponseType(typeof(ApiResponse<AutomationTypeListResponseDto>), StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<ApiResponse<AutomationTypeListResponseDto>>> GetAutomationTypes(
             [FromQuery] int pageNumber = 1,
-            [FromQuery] int pageSize = 10)
+            [FromQuery] int pageSize = 20)
         {
             var result = await _automatedMessageService.GetAutomationTypesAsync(pageNumber, pageSize);
             return StatusCode(result.StatusCode, result);
@@ -254,7 +254,7 @@ namespace Api_Vapp.Controller
         [ProducesResponseType(typeof(ApiResponse<AutomatedMessageListResponseDto>), StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<ApiResponse<AutomatedMessageListResponseDto>>> GetAutomatedMessages(
             [FromQuery] int pageNumber = 1,
-            [FromQuery] int pageSize = 10,
+            [FromQuery] int pageSize = 20,
             [FromQuery] string? filter = null)
         {
             var userId = await GetCurrentUserIdAsync();

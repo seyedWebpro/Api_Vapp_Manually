@@ -5,7 +5,7 @@ namespace Api_Vapp.Interfaces
 {
     public interface IReferralProgramRepository : IBaseRepository<ReferralProgram>
     {
-        Task<IEnumerable<ReferralProgram>> GetByUserIdAsync(int userId, int pageNumber = 1, int pageSize = 10, bool? isActive = null);
+        Task<IEnumerable<ReferralProgram>> GetByUserIdAsync(int userId, int pageNumber = 1, int pageSize = 20, bool? isActive = null);
 
         Task<int> GetCountByUserIdAsync(int userId, bool? isActive = null);
 

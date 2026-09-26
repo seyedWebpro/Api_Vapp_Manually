@@ -11,7 +11,7 @@ namespace Api_Vapp.Interfaces
         /// <summary>
         /// دریافت کش‌بک‌های کاربر با صفحه‌بندی
         /// </summary>
-        Task<IEnumerable<Cashback>> GetByUserIdAsync(int userId, int pageNumber = 1, int pageSize = 10, bool? isActive = null);
+        Task<IEnumerable<Cashback>> GetByUserIdAsync(int userId, int pageNumber = 1, int pageSize = 20, bool? isActive = null);
 
         /// <summary>
         /// دریافت تعداد کش‌بک‌های کاربر
@@ -42,12 +42,12 @@ namespace Api_Vapp.Interfaces
         /// <summary>
         /// دریافت تراکنش‌های یک کش‌بک
         /// </summary>
-        Task<IEnumerable<CashbackTransaction>> GetByCashbackIdAsync(int cashbackId, int pageNumber = 1, int pageSize = 10);
+        Task<IEnumerable<CashbackTransaction>> GetByCashbackIdAsync(int cashbackId, int pageNumber = 1, int pageSize = 20);
 
         /// <summary>
         /// دریافت تراکنش‌های یک مخاطب
         /// </summary>
-        Task<IEnumerable<CashbackTransaction>> GetByContactIdAsync(int contactId, int pageNumber = 1, int pageSize = 10);
+        Task<IEnumerable<CashbackTransaction>> GetByContactIdAsync(int contactId, int pageNumber = 1, int pageSize = 20);
 
         /// <summary>
         /// دریافت تراکنش‌های در انتظار واریز

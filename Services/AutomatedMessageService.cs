@@ -79,12 +79,12 @@ namespace Api_Vapp.Services
             _forbiddenWords = forbiddenWords;
         }
 
-        public async Task<ApiResponse<AutomationTypeListResponseDto>> GetAutomationTypesAsync(int pageNumber = 1, int pageSize = 10)
+        public async Task<ApiResponse<AutomationTypeListResponseDto>> GetAutomationTypesAsync(int pageNumber = 1, int pageSize = 20)
         {
             try
             {
                 if (pageNumber < 1) pageNumber = 1;
-                if (pageSize < 1 || pageSize > 100) pageSize = 10;
+                if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
                 // منبع حقیقت: فقط انواع فعال مدیریت‌شده از پنل ادمین (کش‌شده)
                 var allTypes = await GetActiveTypesCachedAsync();
@@ -573,12 +573,12 @@ namespace Api_Vapp.Services
             }
         }
 
-        public async Task<ApiResponse<AutomatedMessageListResponseDto>> GetAutomatedMessagesAsync(int userId, int pageNumber = 1, int pageSize = 10, string? filter = null)
+        public async Task<ApiResponse<AutomatedMessageListResponseDto>> GetAutomatedMessagesAsync(int userId, int pageNumber = 1, int pageSize = 20, string? filter = null)
         {
             try
             {
                 if (pageNumber < 1) pageNumber = 1;
-                if (pageSize < 1 || pageSize > 100) pageSize = 10;
+                if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
                 IEnumerable<AutomatedMessage> automatedMessages;
 

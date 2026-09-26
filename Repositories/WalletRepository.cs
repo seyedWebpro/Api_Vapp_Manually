@@ -15,7 +15,7 @@ namespace Api_Vapp.Repositories
         {
         }
 
-        public async Task<IEnumerable<WalletTransaction>> GetByUserIdAsync(int userId, int pageNumber = 1, int pageSize = 10)
+        public async Task<IEnumerable<WalletTransaction>> GetByUserIdAsync(int userId, int pageNumber = 1, int pageSize = 20)
         {
             return await _dbSet
                 .Where(wt => wt.UserId == userId)
@@ -32,7 +32,7 @@ namespace Api_Vapp.Repositories
                 .CountAsync();
         }
 
-        public async Task<IEnumerable<WalletTransaction>> GetByTypeAsync(int userId, string transactionType, int pageNumber = 1, int pageSize = 10)
+        public async Task<IEnumerable<WalletTransaction>> GetByTypeAsync(int userId, string transactionType, int pageNumber = 1, int pageSize = 20)
         {
             return await _dbSet
                 .Where(wt => wt.UserId == userId && wt.TransactionType == transactionType)

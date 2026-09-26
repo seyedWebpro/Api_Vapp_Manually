@@ -24,7 +24,7 @@ namespace Api_Vapp.DTOs.NumberSeeker
         public string Category { get; set; } = string.Empty;
 
         [Range(1, 1000, ErrorMessage = "تعداد شماره باید بین ۱ تا ۱۰۰۰ باشد")]
-        public int MaxPhones { get; set; } = 50;
+        public int MaxPhones { get; set; } = 100;
 
         public bool? Headless { get; set; }
     }
@@ -229,19 +229,18 @@ namespace Api_Vapp.DTOs.NumberSeeker
 
     public class NumberSeekerCategoriesDto
     {
-        /// <summary>پیشنهادهای دسته — اگر AllowCustomCategory=true فقط suggestion هستند</summary>
+        /// <summary>فهرست ثابت دسته‌ها برای دراپ‌داون</summary>
         public List<NumberSeekerCategoryDto> Categories { get; set; } = new();
 
         public string Placeholder { get; set; } = NumberSeekerCategoryHelper.Placeholder;
 
         /// <summary>
-        /// true = کاربر می‌تواند متن دلخواه بفرستد (Combobox).
-        /// false = فقط یکی از Categories مجاز است.
+        /// false = فقط انتخاب از لیست؛ تایپ آزاد مجاز نیست.
         /// </summary>
-        public bool AllowCustomCategory { get; set; } = true;
+        public bool AllowCustomCategory { get; set; } = false;
 
-        /// <summary>راهنمای کوتاه برای UI Combobox</summary>
-        public string CustomCategoryHint { get; set; } = NumberSeekerCategoryHelper.CustomAllowedHint;
+        /// <summary>راهنمای کوتاه برای UI</summary>
+        public string CustomCategoryHint { get; set; } = NumberSeekerCategoryHelper.CustomDisabledHint;
     }
 
     public class NumberSeekerCategoryDto
@@ -256,23 +255,23 @@ namespace Api_Vapp.DTOs.NumberSeeker
         public List<NumberSeekerSourceInfoDto> Sources { get; set; } = new();
         public List<NumberSeekerCityDto> Cities { get; set; } = new();
 
-        /// <summary>پیشنهادهای دسته — اگر AllowCustomCategory=true فقط suggestion هستند</summary>
+        /// <summary>فهرست ثابت دسته‌ها برای دراپ‌داون</summary>
         public List<NumberSeekerCategoryDto> Categories { get; set; } = new();
 
         public string DefaultCity { get; set; } = "تهران";
         public string CategoryPlaceholder { get; set; } = NumberSeekerCategoryHelper.Placeholder;
 
         /// <summary>
-        /// true = فیلد دسته Combobox است (انتخاب از لیست یا تایپ آزاد).
+        /// false = فقط انتخاب از لیست؛ تایپ آزاد مجاز نیست.
         /// </summary>
-        public bool AllowCustomCategory { get; set; } = true;
+        public bool AllowCustomCategory { get; set; } = false;
 
-        /// <summary>راهنمای کوتاه برای UI Combobox</summary>
-        public string CustomCategoryHint { get; set; } = NumberSeekerCategoryHelper.CustomAllowedHint;
+        /// <summary>راهنمای کوتاه برای UI</summary>
+        public string CustomCategoryHint { get; set; } = NumberSeekerCategoryHelper.CustomDisabledHint;
 
         public int MinPhones { get; set; } = 1;
         public int MaxPhones { get; set; } = 1000;
-        public int DefaultPhones { get; set; } = 50;
+        public int DefaultPhones { get; set; } = 100;
 
         /// <summary>کاربر جاری مجاز به دیدن شماره کامل شماره‌جو است</summary>
         public bool CanViewPhones { get; set; }

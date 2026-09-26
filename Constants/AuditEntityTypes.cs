@@ -30,6 +30,7 @@ namespace Api_Vapp.Constants
         public const string ReferralProgram = "ReferralProgram";
         public const string LuckyWheel = "LuckyWheel";
         public const string NumberSeekerTask = "NumberSeekerTask";
+        public const string NumberSeekerPhoneBank = "NumberSeekerPhoneBank";
         public const string Contact = "Contact";
         public const string ContactNotebook = "ContactNotebook";
         public const string QuickAction = "QuickAction";

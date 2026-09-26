@@ -88,6 +88,7 @@ namespace Api_Vapp.Data
         public DbSet<BookingAppointment> BookingAppointments { get; set; }
         public DbSet<BookingSlotBlock> BookingSlotBlocks { get; set; }
         public DbSet<NumberSeekerTask> NumberSeekerTasks { get; set; }
+        public DbSet<NumberSeekerPhoneBank> NumberSeekerPhoneBanks { get; set; }
         public DbSet<BusinessCard> BusinessCards { get; set; }
         public DbSet<BusinessCardSliderImage> BusinessCardSliderImages { get; set; }
         public DbSet<BusinessCardServiceItem> BusinessCardServiceItems { get; set; }
@@ -2311,6 +2312,45 @@ namespace Api_Vapp.Data
                 entity.HasIndex(t => t.ScraperTaskId).IsUnique();
                 entity.HasIndex(t => new { t.UserId, t.CreatedAt });
                 entity.HasIndex(t => t.Status);
+            });
+
+            modelBuilder.Entity<NumberSeekerPhoneBank>(entity =>
+            {
+                entity.ToTable("NumberSeekerPhoneBanks");
+                entity.HasKey(p => p.Id);
+                entity.Property(p => p.Id).ValueGeneratedOnAdd();
+
+                entity.Property(p => p.PhoneNumber)
+                    .IsRequired()
+                    .HasMaxLength(20);
+
+                entity.Property(p => p.Source)
+                    .IsRequired()
+                    .HasMaxLength(32);
+
+                entity.Property(p => p.City)
+                    .IsRequired()
+                    .HasMaxLength(100);
+
+                entity.Property(p => p.Category)
+                    .IsRequired()
+                    .HasMaxLength(200);
+
+                entity.Property(p => p.IsAvailable)
+                    .HasDefaultValue(true);
+
+                entity.Property(p => p.ServedCount)
+                    .HasDefaultValue(0);
+
+                entity.Property(p => p.IsDeleted)
+                    .HasDefaultValue(false);
+
+                entity.Property(p => p.CreatedAt)
+                    .HasDefaultValueSql("GETUTCDATE()");
+
+                entity.HasIndex(p => p.PhoneNumber).IsUnique();
+                entity.HasIndex(p => new { p.City, p.Category, p.Source, p.IsDeleted, p.IsAvailable });
+                entity.HasIndex(p => p.IsDeleted);
             });
 
             // Audit — immutable append-only trail

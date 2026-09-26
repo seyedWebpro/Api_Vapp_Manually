@@ -87,12 +87,14 @@ namespace Api_Vapp.Services
             }
         }
 
-        public async Task<ApiResponse<WalletTransactionListDto>> GetTransactionsAsync(int userId, int pageNumber = 1, int pageSize = 10)
+        public async Task<ApiResponse<WalletTransactionListDto>> GetTransactionsAsync(int userId, int pageNumber = 1, int pageSize = 20)
         {
             try
             {
                 if (pageNumber < 1) pageNumber = 1;
-                if (pageSize < 1 || pageSize > 100) pageSize = 10;
+                if (pageNumber < 1) pageNumber = 1;
+                if (pageSize < 1) pageSize = 20;
+                if (pageSize > 100) pageSize = 100;
 
                 var transactions = await _walletRepository.GetByUserIdAsync(userId, pageNumber, pageSize);
                 var totalCount = await _walletRepository.GetCountByUserIdAsync(userId);

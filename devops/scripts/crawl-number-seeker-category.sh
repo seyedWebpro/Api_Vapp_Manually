@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Crawl NumberSeeker custom-category / Combobox API behavior.
+# Crawl NumberSeeker fixed-category dropdown API behavior.
 set -euo pipefail
 export PATH="/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:${PATH:-}"
+export DOTNET_ROLL_FORWARD="${DOTNET_ROLL_FORWARD:-Major}"
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
@@ -13,13 +14,17 @@ echo "===== UNIT TESTS ====="
 dotnet test Tests/Api_Vapp.Tests.csproj --nologo --filter "FullyQualifiedName~NumberSeeker" --logger "console;verbosity=minimal"
 echo "UNIT_OK"
 
+echo "===== BUILD API ====="
+dotnet build Api_Vapp.csproj -v q
+echo "BUILD_OK"
+
 echo "===== RESTART API ====="
 for p in $(lsof -t -iTCP:5054 -sTCP:LISTEN 2>/dev/null || true); do kill "$p" 2>/dev/null || true; done
 sleep 2
 for p in $(lsof -t -iTCP:5054 -sTCP:LISTEN 2>/dev/null || true); do kill -9 "$p" 2>/dev/null || true; done
 sleep 1
 
-nohup env ASPNETCORE_ENVIRONMENT=Development \
+nohup env DOTNET_ROLL_FORWARD=Major ASPNETCORE_ENVIRONMENT=Development DatabaseProvider=LocalDocker \
   dotnet exec bin/Debug/net8.0/Api_Vapp.dll --urls http://127.0.0.1:5054 \
   > "$LOG" 2>&1 &
 echo $! > "$PIDFILE"
@@ -122,30 +127,30 @@ def flag(name, cond, detail=""):
 http, c = req("GET", "/api/NumberSeeker/categories")
 d = c.get("data") or {}
 check("GET categories", 200, None, "GET", "/api/NumberSeeker/categories")
-flag("categories.allowCustomCategory", d.get("allowCustomCategory") is True, str(d.get("allowCustomCategory")))
+flag("categories.allowCustomCategory", d.get("allowCustomCategory") is False, str(d.get("allowCustomCategory")))
 flag("categories.customCategoryHint", bool(d.get("customCategoryHint")))
 flag("categories.placeholder", bool(d.get("placeholder")))
 flag(
     "categories list",
-    len(d.get("categories") or []) >= 10
+    len(d.get("categories") or []) >= 60
     and any(x.get("name") == "رستوران" for x in (d.get("categories") or [])),
 )
 
 http, m = req("GET", "/api/NumberSeeker/form-meta")
 d = m.get("data") or {}
 check("GET form-meta", 200, None, "GET", "/api/NumberSeeker/form-meta")
-flag("form-meta.allowCustomCategory", d.get("allowCustomCategory") is True)
+flag("form-meta.allowCustomCategory", d.get("allowCustomCategory") is False)
 flag("form-meta.customCategoryHint", bool(d.get("customCategoryHint")))
 flag("form-meta.categoryPlaceholder", bool(d.get("categoryPlaceholder")))
 flag("form-meta.defaultCity", d.get("defaultCity") == "تهران")
 flag(
     "form-meta.phones",
-    d.get("minPhones") == 1 and d.get("maxPhones") == 1000 and d.get("defaultPhones") == 50,
+    d.get("minPhones") == 1 and d.get("maxPhones") == 1000 and d.get("defaultPhones") == 100,
 )
 flag("form-meta.canViewPhones", isinstance(d.get("canViewPhones"), bool))
 flag(
     "form-meta.lists",
-    len(d.get("categories") or []) >= 10
+    len(d.get("categories") or []) >= 60
     and len(d.get("cities") or []) >= 10
     and len(d.get("sources") or []) >= 1,
 )
@@ -205,7 +210,7 @@ http, d = req(
 flag(
     "punctuation message",
     http == 400
-    and d.get("message") == "دسته‌بندی نامعتبر است"
+    and d.get("message") == "دسته‌بندی باید از فهرست انتخاب شود"
     and d.get("errorCode") == "VALIDATION_FAILED",
     str(d.get("message")),
 )
@@ -221,8 +226,20 @@ def past(name, body):
         PASS += 1
         rows.append(f"PASS | {name} past validation | HTTP={http} code={code}")
 
-past("exact 200", {"source": "divar", "city": "تهران", "category": "ا" * 200, "maxPhones": 5})
-for cat in ["دندانپزشکی", "قالیشویی", "فست‌فود", "  کافه رستوران  ", "موبایل فروشی", "رستوران"]:
+def must_fail(name, body):
+    global PASS, FAIL
+    http, d = req("POST", "/api/NumberSeeker/scrape", body=body)
+    code = d.get("errorCode")
+    if http == 400 or code == "VALIDATION_FAILED":
+        PASS += 1
+        rows.append(f"PASS | {name} rejected | HTTP={http} code={code}")
+    else:
+        FAIL += 1
+        rows.append(f"FAIL | {name} should reject | HTTP={http} code={code} msg={d.get('message')}")
+
+must_fail("exact 200 unknown", {"source": "divar", "city": "تهران", "category": "ا" * 80, "maxPhones": 5})
+must_fail("unknown custom", {"source": "divar", "city": "تهران", "category": "قالیشویی", "maxPhones": 5})
+for cat in ["دندانپزشکی", "فست‌فود", "  کافه رستوران  ", "موبایل فروشی", "رستوران"]:
     past(f"cat={cat!r}", {"source": "divar", "city": "تهران", "category": cat, "maxPhones": 5})
 for source in ["divar", "sheypoor", "nshan", "balad", "googlemaps"]:
     past(f"source={source}", {"source": source, "city": "تهران", "category": "دندانپزشکی", "maxPhones": 3})

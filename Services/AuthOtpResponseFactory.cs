@@ -41,10 +41,25 @@ namespace Api_Vapp.Services
                 Message = message,
                 ExpiresInSeconds = expiresInSeconds,
                 RetryAfterSeconds = retryAfterSeconds,
-                // TODO(remove-before-production) REMOVE_DEV_OTP — کد تایید موقتی در پاسخ برای موبایل؛ قبل از release حذف شود
+                // TODO(remove-before-production) REMOVE_DEV_OTP — فقط Development
                 OtpCode = otpCode
             };
         }
+
+        /// <summary>
+        /// در Production کد OTP در پاسخ برنمی‌گردد؛ فقط در Development برای کراول/تست محلی.
+        /// </summary>
+        public static SendOtpResponseDto SuccessForEnvironment(
+            string message,
+            string otpCode,
+            bool includeOtpInResponse,
+            int expiresInSeconds = DefaultExpiresInSeconds,
+            int retryAfterSeconds = DefaultRetryAfterSeconds)
+            => Success(
+                message,
+                includeOtpInResponse ? otpCode : null,
+                expiresInSeconds,
+                retryAfterSeconds);
 
         public static SendOtpResponseDto RateLimited(int retryAfterSeconds)
         {

@@ -14,7 +14,7 @@ namespace Api_Vapp.Interfaces
 
         Task<ApiResponse<LuckyWheelResponseDto>> PublishAsync(int id, int userId, PublishLuckyWheelDto? publishDto = null);
 
-        Task<ApiResponse<LuckyWheelListResponseDto>> GetWheelsAsync(int userId, int pageNumber = 1, int pageSize = 10, bool? isActive = null);
+        Task<ApiResponse<LuckyWheelListResponseDto>> GetWheelsAsync(int userId, int pageNumber = 1, int pageSize = 20, bool? isActive = null);
 
         Task<ApiResponse<LuckyWheelResponseDto>> GetByIdAsync(int id, int userId);
 
@@ -22,7 +22,7 @@ namespace Api_Vapp.Interfaces
             int id,
             int userId,
             int pageNumber = 1,
-            int pageSize = 10,
+            int pageSize = 20,
             string? searchTerm = null);
 
         Task<ApiResponse<LuckyWheelParticipantVerifyDto>> VerifyParticipantAsync(

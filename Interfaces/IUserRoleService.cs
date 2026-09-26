@@ -31,7 +31,7 @@ namespace Api_Vapp.Interfaces
         /// <summary>
         /// دریافت لیست روابط کاربر-نقش با pagination
         /// </summary>
-        Task<ApiResponse<UserRoleListResponseDto>> GetUserRolesListAsync(int pageNumber = 1, int pageSize = 10, int? userId = null, int? roleId = null, bool? isActive = null);
+        Task<ApiResponse<UserRoleListResponseDto>> GetUserRolesListAsync(int pageNumber = 1, int pageSize = 20, int? userId = null, int? roleId = null, bool? isActive = null);
 
         /// <summary>
         /// به‌روزرسانی رابطه کاربر-نقش

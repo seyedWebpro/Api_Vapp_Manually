@@ -11,7 +11,7 @@ namespace Api_Vapp.Interfaces
         /// <summary>
         /// دریافت لیست کش‌بک‌های کاربر
         /// </summary>
-        Task<ApiResponse<CashbackListDto>> GetCashbacksAsync(int userId, int pageNumber = 1, int pageSize = 10, bool? isActive = null);
+        Task<ApiResponse<CashbackListDto>> GetCashbacksAsync(int userId, int pageNumber = 1, int pageSize = 20, bool? isActive = null);
 
         /// <summary>
         /// دریافت کش‌بک‌های فعال کاربر
@@ -51,7 +51,7 @@ namespace Api_Vapp.Interfaces
         /// <summary>
         /// دریافت تراکنش‌های کش‌بک
         /// </summary>
-        Task<ApiResponse<List<CashbackTransactionDto>>> GetCashbackTransactionsAsync(int cashbackId, int userId, int pageNumber = 1, int pageSize = 10);
+        Task<ApiResponse<List<CashbackTransactionDto>>> GetCashbackTransactionsAsync(int cashbackId, int userId, int pageNumber = 1, int pageSize = 20);
 
         /// <summary>
         /// اعتبارسنجی مرحله 1 ایجاد کش‌بک (نوع و تنظیمات اولیه)
@@ -139,7 +139,7 @@ namespace Api_Vapp.Interfaces
             int userId, 
             int contactId, 
             int pageNumber = 1, 
-            int pageSize = 10);
+            int pageSize = 20);
 
         #endregion
     }

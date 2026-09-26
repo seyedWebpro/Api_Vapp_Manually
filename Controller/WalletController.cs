@@ -145,7 +145,7 @@ namespace Api_Vapp.Controller
         [ProducesResponseType(typeof(ApiResponse<WalletTransactionListDto>), StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<ApiResponse<WalletTransactionListDto>>> GetTransactions(
             [FromQuery] int pageNumber = 1,
-            [FromQuery] int pageSize = 10)
+            [FromQuery] int pageSize = 20)
         {
             var userId = await GetCurrentUserIdAsync();
             var result = await _walletService.GetTransactionsAsync(userId, pageNumber, pageSize);

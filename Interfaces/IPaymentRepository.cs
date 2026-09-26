@@ -21,7 +21,7 @@ namespace Api_Vapp.Interfaces
         /// <summary>
         /// دریافت پرداخت‌های کاربر با صفحه‌بندی
         /// </summary>
-        Task<IEnumerable<Payment>> GetByUserIdAsync(int userId, int pageNumber = 1, int pageSize = 10);
+        Task<IEnumerable<Payment>> GetByUserIdAsync(int userId, int pageNumber = 1, int pageSize = 20);
 
         /// <summary>
         /// دریافت تعداد پرداخت‌های کاربر

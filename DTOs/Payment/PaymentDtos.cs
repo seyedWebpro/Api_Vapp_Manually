@@ -313,6 +313,18 @@ namespace Api_Vapp.DTOs.Payment
         public string? Message { get; set; }
     }
 
+    /// <summary>نمای سبک پرداخت برای ریدایرکت/کالبک درگاه</summary>
+    public class PaymentGatewayLookupDto
+    {
+        public int Id { get; set; }
+        public string? PaymentType { get; set; }
+        public string? Gateway { get; set; }
+        public string? RefId { get; set; }
+        public string? OrderId { get; set; }
+        public string? ReferenceNumber { get; set; }
+        public string? CardNumber { get; set; }
+    }
+
     #endregion
 }
 

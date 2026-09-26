@@ -13,16 +13,19 @@ namespace Api_Vapp.Controller
     [Route("api/Public/QuickSendPreview")]
     [Produces("application/json")]
     [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
-    public class QuickSendPreviewPublicController : ControllerBase
+    public class QuickSendPreviewPublicController : VappControllerBase
     {
         private readonly IQuickSendAdminPreviewService _previewService;
 
-        public QuickSendPreviewPublicController(IQuickSendAdminPreviewService previewService)
+        public QuickSendPreviewPublicController(
+            IQuickSendAdminPreviewService previewService,
+            IConfiguration configuration,
+            IUserRepository userRepository)
+            : base(configuration, userRepository)
         {
             _previewService = previewService;
         }
 
-        /// <summary>دریافت محتوای پیش‌نمایش با توکن</summary>
         [HttpGet("{token}")]
         [ProducesResponseType(typeof(ApiResponse<QuickSendPreviewContentDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<QuickSendPreviewContentDto>), StatusCodes.Status404NotFound)]

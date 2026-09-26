@@ -72,7 +72,7 @@ namespace Api_Vapp.Controller
         [ProducesResponseType(typeof(ApiResponse<CashbackListDto>), StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<ApiResponse<CashbackListDto>>> GetCashbacks(
             [FromQuery] int pageNumber = 1,
-            [FromQuery] int pageSize = 10,
+            [FromQuery] int pageSize = 20,
             [FromQuery] bool? isActive = null)
         {
             var userId = await GetCurrentUserIdAsync();
@@ -613,7 +613,7 @@ namespace Api_Vapp.Controller
         public async Task<ActionResult<ApiResponse<List<CashbackTransactionDto>>>> GetCashbackTransactions(
             int id,
             [FromQuery] int pageNumber = 1,
-            [FromQuery] int pageSize = 10)
+            [FromQuery] int pageSize = 20)
         {
             var userId = await GetCurrentUserIdAsync();
             var result = await _cashbackService.GetCashbackTransactionsAsync(id, userId, pageNumber, pageSize);
@@ -755,7 +755,7 @@ namespace Api_Vapp.Controller
         public async Task<ActionResult<ApiResponse<ManualCashbackTransactionListDto>>> GetManualCashbackTransactions(
             int contactId,
             [FromQuery] int pageNumber = 1,
-            [FromQuery] int pageSize = 10)
+            [FromQuery] int pageSize = 20)
         {
             var userId = await GetCurrentUserIdAsync();
             var result = await _cashbackService.GetManualCashbackTransactionsAsync(userId, contactId, pageNumber, pageSize);

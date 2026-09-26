@@ -16,6 +16,12 @@ namespace Api_Vapp.Interfaces
         Task<ApiResponse<SendSmsResponseDto>> SendSmsAsync(SendSmsRequestDto request);
         Task<ApiResponse<SendBulkResponseDto>> SendBulkSmsAsync(SendBulkRequestDto request);
         Task<ApiResponse<SendArrayResponseDto>> SendArraySmsAsync(SendArrayRequestDto request);
+
+        /// <summary>ارسال دستی از کنترلر SMS همراه ثبت delivery tracking</summary>
+        Task<ApiResponse<SendSmsResponseDto>> SendManualSmsAsync(int userId, SendSmsRequestDto request);
+        Task<ApiResponse<SendBulkResponseDto>> SendManualBulkSmsAsync(int userId, SendBulkRequestDto request);
+        Task<ApiResponse<SendArrayResponseDto>> SendManualArraySmsAsync(int userId, SendArrayRequestDto request);
+
         Task<ApiResponse<DeliveryResponseDto>> GetDeliveryStatusAsync(long sid);
         Task<ApiResponse<InboxResponseDto>> GetInboxAsync(InboxRequestDto request);
         Task<ApiResponse<InfoResponseDto>> GetWalletInfoAsync();

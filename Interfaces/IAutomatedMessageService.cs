@@ -8,12 +8,12 @@ namespace Api_Vapp.Interfaces
     /// </summary>
     public interface IAutomatedMessageService
     {
-        Task<ApiResponse<AutomationTypeListResponseDto>> GetAutomationTypesAsync(int pageNumber = 1, int pageSize = 10);
+        Task<ApiResponse<AutomationTypeListResponseDto>> GetAutomationTypesAsync(int pageNumber = 1, int pageSize = 20);
         Task<ApiResponse<AutomatedMessageResponseDto>> CreateAutomatedMessageDraftAsync(int userId, CreateAutomatedMessageDraftDto createDto);
         Task<ApiResponse<RecipientListForAutomatedMessageResponseDto>> SelectRecipientsForAutomatedMessageAsync(int userId, int automatedMessageId, SelectRecipientsForAutomatedMessageDto selectDto);
         Task<ApiResponse<AutomatedMessageResponseDto>> CreateAutomatedMessageAsync(int userId, CreateAutomatedMessageDto createDto);
         Task<ApiResponse<AutomatedMessageResponseDto>> GetAutomatedMessageByIdAsync(int id, int userId);
-        Task<ApiResponse<AutomatedMessageListResponseDto>> GetAutomatedMessagesAsync(int userId, int pageNumber = 1, int pageSize = 10, string? filter = null);
+        Task<ApiResponse<AutomatedMessageListResponseDto>> GetAutomatedMessagesAsync(int userId, int pageNumber = 1, int pageSize = 20, string? filter = null);
         Task<ApiResponse<AutomatedMessageResponseDto>> UpdateAutomatedMessageAsync(int id, int userId, UpdateAutomatedMessageDto updateDto);
 
         /// <summary>

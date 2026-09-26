@@ -551,6 +551,14 @@ public class PublicApiTests : IAsyncLifetime
         public Task<ApiResponse<SendArrayResponseDto>> SendArraySmsAsync(SendArrayRequestDto request) =>
             Task.FromResult(ApiResponse<SendArrayResponseDto>.CreateSuccess(new SendArrayResponseDto()));
 
+        public Task<ApiResponse<SendSmsResponseDto>> SendManualSmsAsync(int userId, SendSmsRequestDto request) =>
+            SendSmsAsync(request);
+        public Task<ApiResponse<SendBulkResponseDto>> SendManualBulkSmsAsync(int userId, SendBulkRequestDto request) =>
+            SendBulkSmsAsync(request);
+        public Task<ApiResponse<SendArrayResponseDto>> SendManualArraySmsAsync(int userId, SendArrayRequestDto request) =>
+            SendArraySmsAsync(request);
+
+
         public Task<ApiResponse<DeliveryResponseDto>> GetDeliveryStatusAsync(long sid) =>
             Task.FromResult(ApiResponse<DeliveryResponseDto>.CreateSuccess(new DeliveryResponseDto()));
 

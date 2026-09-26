@@ -42,7 +42,7 @@ namespace Api_Vapp.Controller
         [ProducesResponseType(typeof(ApiResponse<BankAccountListResponseDto>), StatusCodes.Status401Unauthorized)]
         public async Task<ActionResult<ApiResponse<BankAccountListResponseDto>>> GetBankAccounts(
             [FromQuery] int pageNumber = 1,
-            [FromQuery] int pageSize = 10)
+            [FromQuery] int pageSize = 20)
         {
             var userId = await GetCurrentUserIdAsync();
             var result = await _bankAccountService.GetBankAccountsAsync(userId, pageNumber, pageSize);

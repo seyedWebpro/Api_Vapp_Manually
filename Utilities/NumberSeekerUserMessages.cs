@@ -43,6 +43,9 @@ namespace Api_Vapp.Utilities
         public const string NoPhonesFound =
             "شماره‌ای یافت نشد. لطفاً شهر یا دسته را تغییر دهید و دوباره تلاش کنید.";
 
+        public const string BankEmpty =
+            "در حال حاضر شماره‌ای برای این شهر و دسته در بانک موجود نیست. لطفاً بعداً تلاش کنید یا شهر/دسته را تغییر دهید.";
+
         /// <summary>پیام وضعیت تسک برای UI — هرگز متن خام اسکرپر/Exception.</summary>
         public static string ForTaskStatus(string? status, string? resultCode, int phoneCount)
         {

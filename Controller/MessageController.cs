@@ -129,7 +129,7 @@ namespace Api_Vapp.Controller
         [ProducesResponseType(typeof(ApiResponse<MessageListResponseDto>), StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<ApiResponse<MessageListResponseDto>>> GetMessages(
             [FromQuery] int pageNumber = 1,
-            [FromQuery] int pageSize = 10,
+            [FromQuery] int pageSize = 20,
             [FromQuery] string? searchTerm = null)
         {
             var userId = await GetCurrentUserIdAsync();
@@ -516,7 +516,7 @@ namespace Api_Vapp.Controller
         [ProducesResponseType(typeof(ApiResponse<CampaignListResponseDto>), StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<ApiResponse<CampaignListResponseDto>>> GetCampaigns(
             [FromQuery] int pageNumber = 1,
-            [FromQuery] int pageSize = 10,
+            [FromQuery] int pageSize = 20,
             [FromQuery] string? status = null)
         {
             var userId = await GetCurrentUserIdAsync();
@@ -678,7 +678,7 @@ namespace Api_Vapp.Controller
         [ProducesResponseType(typeof(ApiResponse<MessageTagListResponseDto>), StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<ApiResponse<MessageTagListResponseDto>>> GetTags(
             [FromQuery] int pageNumber = 1,
-            [FromQuery] int pageSize = 10)
+            [FromQuery] int pageSize = 20)
         {
             var userId = await GetCurrentUserIdAsync();
             var result = await _messageService.GetTagsAsync(userId, pageNumber, pageSize);
@@ -711,7 +711,7 @@ namespace Api_Vapp.Controller
         [ProducesResponseType(typeof(ApiResponse<MessageTagWithContactCountListResponseDto>), StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<ApiResponse<MessageTagWithContactCountListResponseDto>>> GetTagsWithContactCount(
             [FromQuery] int pageNumber = 1,
-            [FromQuery] int pageSize = 10)
+            [FromQuery] int pageSize = 20)
         {
             var userId = await GetCurrentUserIdAsync();
             var result = await _messageService.GetTagsWithContactCountAsync(userId, pageNumber, pageSize);

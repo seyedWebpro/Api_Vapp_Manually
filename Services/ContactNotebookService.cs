@@ -178,12 +178,12 @@ namespace Api_Vapp.Services
             }
         }
 
-        public async Task<ApiResponse<ContactNotebookListResponseDto>> GetNotebooksAsync(int userId, int pageNumber = 1, int pageSize = 10, bool? isActive = null, string? searchTerm = null)
+        public async Task<ApiResponse<ContactNotebookListResponseDto>> GetNotebooksAsync(int userId, int pageNumber = 1, int pageSize = 20, bool? isActive = null, string? searchTerm = null)
         {
             try
             {
                 if (pageNumber < 1) pageNumber = 1;
-                if (pageSize < 1 || pageSize > 100) pageSize = 10;
+                if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
                 var notebooks = await _notebookRepository.GetByUserIdAsync(userId, isActive);
                 var notebooksList = notebooks.ToList();

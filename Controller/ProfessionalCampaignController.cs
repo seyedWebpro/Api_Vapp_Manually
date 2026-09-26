@@ -28,11 +28,9 @@ namespace Api_Vapp.Controller
         public async Task<ActionResult<ApiResponse<ProfessionalCampaignResponseDto>>> Create(
             [FromBody] CreateProfessionalCampaignDto dto)
         {
-            if (!ModelState.IsValid)
-                return BadRequest(ApiResponse<ProfessionalCampaignResponseDto>.BadRequest(
-                    "داده‌های ورودی نامعتبر است",
-                    ExtractModelStateErrors(),
-                    ErrorCodes.ValidationFailed));
+            var invalid = InvalidModelStateResponse<ProfessionalCampaignResponseDto>();
+            if (invalid != null) return invalid;
+
             var result = await _service.CreateAsync(await GetCurrentUserIdAsync(), dto);
             return StatusCode(result.StatusCode, result);
         }

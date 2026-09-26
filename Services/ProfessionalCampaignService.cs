@@ -13,15 +13,18 @@ namespace Api_Vapp.Services
     public class ProfessionalCampaignService : IProfessionalCampaignService
     {
         private readonly Api_Context _context;
+        private readonly IProfessionalCampaignRepository _campaignRepository;
         private readonly IMessageService _messageService;
         private readonly ILogger<ProfessionalCampaignService> _logger;
 
         public ProfessionalCampaignService(
             Api_Context context,
+            IProfessionalCampaignRepository campaignRepository,
             IMessageService messageService,
             ILogger<ProfessionalCampaignService> logger)
         {
             _context = context;
+            _campaignRepository = campaignRepository;
             _messageService = messageService;
             _logger = logger;
         }
@@ -146,7 +149,7 @@ namespace Api_Vapp.Services
             await _context.SaveChangesAsync();
             await transaction.CommitAsync();
 
-            var created = await LoadOwnedAsync(userId, campaign.Id);
+            var created = await _campaignRepository.GetOwnedAsync(userId, campaign.Id);
             _logger.LogInformation("Professional campaign created — CampaignId: {CampaignId}, UserId: {UserId}", campaign.Id, userId);
             return ApiResponse<ProfessionalCampaignResponseDto>.CreateSuccess(
                 Map(created!),
@@ -158,7 +161,7 @@ namespace Api_Vapp.Services
 
         public async Task<ApiResponse<ProfessionalCampaignResponseDto>> GetByIdAsync(int userId, int id)
         {
-            var campaign = await LoadOwnedAsync(userId, id);
+            var campaign = await _campaignRepository.GetOwnedAsync(userId, id);
             return campaign == null
                 ? ApiResponse<ProfessionalCampaignResponseDto>.NotFound("کمپین یافت نشد")
                 : ApiResponse<ProfessionalCampaignResponseDto>.CreateSuccess(Map(campaign));
@@ -171,16 +174,7 @@ namespace Api_Vapp.Services
         {
             pageNumber = Math.Max(1, pageNumber);
             pageSize = Math.Clamp(pageSize, 1, 100);
-            var query = _context.ProfessionalCampaigns
-                .AsNoTracking()
-                .Include(c => c.Steps.Where(s => !s.IsDeleted))
-                .Where(c => c.UserId == userId && !c.IsDeleted);
-            var totalCount = await query.CountAsync();
-            var campaigns = await query
-                .OrderByDescending(c => c.CreatedAt)
-                .Skip((pageNumber - 1) * pageSize)
-                .Take(pageSize)
-                .ToListAsync();
+            var (campaigns, totalCount) = await _campaignRepository.GetPagedOwnedAsync(userId, pageNumber, pageSize);
 
             return ApiResponse<ProfessionalCampaignListResponseDto>.CreateSuccess(
                 new ProfessionalCampaignListResponseDto
@@ -194,7 +188,7 @@ namespace Api_Vapp.Services
 
         public async Task<ApiResponse<ProfessionalCampaignResponseDto>> ActivateAsync(int userId, int id)
         {
-            var campaign = await LoadOwnedAsync(userId, id, tracking: true);
+            var campaign = await _campaignRepository.GetOwnedAsync(userId, id, tracking: true);
             if (campaign == null)
                 return ApiResponse<ProfessionalCampaignResponseDto>.NotFound("کمپین یافت نشد");
             if (campaign.Status is ProfessionalCampaignStatuses.Completed or ProfessionalCampaignStatuses.Cancelled)
@@ -233,7 +227,7 @@ namespace Api_Vapp.Services
 
         public async Task<ApiResponse<bool>> CancelAsync(int userId, int id)
         {
-            var campaign = await LoadOwnedAsync(userId, id, tracking: true);
+            var campaign = await _campaignRepository.GetOwnedAsync(userId, id, tracking: true);
             if (campaign == null)
                 return ApiResponse<bool>.NotFound("کمپین یافت نشد");
             if (campaign.Steps.Any(s => s.Status == ProfessionalCampaignStepStatuses.Processing))
@@ -251,7 +245,7 @@ namespace Api_Vapp.Services
             int campaignId,
             int stepId)
         {
-            var campaign = await LoadOwnedAsync(userId, campaignId, tracking: true);
+            var campaign = await _campaignRepository.GetOwnedAsync(userId, campaignId, tracking: true);
             if (campaign == null)
                 return ApiResponse<ProfessionalCampaignResponseDto>.NotFound("کمپین یافت نشد");
 
@@ -322,100 +316,111 @@ namespace Api_Vapp.Services
 
         private async Task SendStepAsync(int stepId, CancellationToken cancellationToken)
         {
-            var step = await _context.ProfessionalCampaignSteps
-                .Include(s => s.ProfessionalCampaign)
-                .ThenInclude(c => c.Recipients.Where(r => !r.IsDeleted))
-                .FirstAsync(s => s.Id == stepId, cancellationToken);
-
-            var campaign = step.ProfessionalCampaign;
-            var recipientDtos = campaign.Recipients.Select(r => new RecipientItemDto
+            await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+            try
             {
-                ContactId = r.ContactId,
-                MobileNumber = r.MobileNumber,
-                FullName = r.FullName
-            }).ToList();
+                var step = await _context.ProfessionalCampaignSteps
+                    .Include(s => s.ProfessionalCampaign)
+                    .ThenInclude(c => c.Recipients.Where(r => !r.IsDeleted))
+                    .FirstAsync(s => s.Id == stepId, cancellationToken);
 
-            var message = new Message
-            {
-                UserId = campaign.UserId,
-                Title = $"{campaign.Title} - پیام {step.StepOrder}",
-                Content = step.Content,
-                IsPersonalized = step.Content.Contains('{') && step.Content.Contains('}'),
-                CreatedAt = DateTime.UtcNow
-            };
-            _context.Messages.Add(message);
-            await _context.SaveChangesAsync(cancellationToken);
-
-            var session = new MessageSession
-            {
-                MessageId = message.Id,
-                UserId = campaign.UserId,
-                SelectionCriteria = JsonSerializer.Serialize(new
+                var campaign = step.ProfessionalCampaign;
+                var recipientDtos = campaign.Recipients.Select(r => new RecipientItemDto
                 {
-                    SelectionType = campaign.TargetType,
-                    ProfessionalCampaignId = campaign.Id,
-                    ProfessionalCampaignStepId = step.Id
-                }),
-                RecipientsJson = JsonSerializer.Serialize(recipientDtos),
-                IsUsed = false,
-                ExpiresAt = DateTime.UtcNow.AddHours(24),
-                CreatedAt = DateTime.UtcNow
-            };
-            _context.MessageSessions.Add(session);
-            await _context.SaveChangesAsync(cancellationToken);
+                    ContactId = r.ContactId,
+                    MobileNumber = r.MobileNumber,
+                    FullName = r.FullName
+                }).ToList();
 
-            var result = await _messageService.SendDirectMessageAsync(
-                campaign.UserId,
-                message.Id,
-                new SendDirectMessageDto
+                var message = new Message
                 {
-                    SendType = CampaignSendType.Quick,
-                    PreventDuplicate = false,
-                    SendToSpecificTags = false
-                },
-                session,
-                bypassAdminApproval: true);
+                    UserId = campaign.UserId,
+                    Title = $"{campaign.Title} - پیام {step.StepOrder}",
+                    Content = step.Content,
+                    IsPersonalized = step.Content.Contains('{') && step.Content.Contains('}'),
+                    CreatedAt = DateTime.UtcNow
+                };
+                _context.Messages.Add(message);
+                await _context.SaveChangesAsync(cancellationToken);
 
-            if (!result.Success || result.Data == null || result.Data.SentCount == 0)
-            {
-                await MarkStepFailedAsync(
-                    step.Id,
-                    string.IsNullOrWhiteSpace(result.Message) ? "هیچ پیامکی ارسال نشد" : result.Message,
-                    cancellationToken,
-                    result.Data?.FailedCount ?? campaign.RecipientsCount);
-                return;
+                var session = new MessageSession
+                {
+                    MessageId = message.Id,
+                    UserId = campaign.UserId,
+                    SelectionCriteria = JsonSerializer.Serialize(new
+                    {
+                        SelectionType = campaign.TargetType,
+                        ProfessionalCampaignId = campaign.Id,
+                        ProfessionalCampaignStepId = step.Id
+                    }),
+                    RecipientsJson = JsonSerializer.Serialize(recipientDtos),
+                    IsUsed = false,
+                    ExpiresAt = DateTime.UtcNow.AddHours(24),
+                    CreatedAt = DateTime.UtcNow
+                };
+                _context.MessageSessions.Add(session);
+                await _context.SaveChangesAsync(cancellationToken);
+
+                var result = await _messageService.SendDirectMessageAsync(
+                    campaign.UserId,
+                    message.Id,
+                    new SendDirectMessageDto
+                    {
+                        SendType = CampaignSendType.Quick,
+                        PreventDuplicate = false,
+                        SendToSpecificTags = false
+                    },
+                    session,
+                    bypassAdminApproval: true);
+
+                if (!result.Success || result.Data == null || result.Data.SentCount == 0)
+                {
+                    await MarkStepFailedAsync(
+                        step.Id,
+                        string.IsNullOrWhiteSpace(result.Message) ? "هیچ پیامکی ارسال نشد" : result.Message,
+                        cancellationToken,
+                        result.Data?.FailedCount ?? campaign.RecipientsCount);
+                    await transaction.CommitAsync(cancellationToken);
+                    return;
+                }
+
+                step.Status = ProfessionalCampaignStepStatuses.Sent;
+                step.SentCount = result.Data.SentCount;
+                step.FailedCount = result.Data.FailedCount;
+                step.SentAtUtc = DateTime.UtcNow;
+                step.LastError = null;
+                step.UpdatedAt = DateTime.UtcNow;
+
+                var nextStep = await _context.ProfessionalCampaignSteps
+                    .Where(s => s.ProfessionalCampaignId == campaign.Id
+                        && !s.IsDeleted
+                        && s.StepOrder > step.StepOrder
+                        && s.Status == ProfessionalCampaignStepStatuses.Pending)
+                    .OrderBy(s => s.StepOrder)
+                    .FirstOrDefaultAsync(cancellationToken);
+                if (nextStep == null)
+                {
+                    campaign.Status = ProfessionalCampaignStatuses.Completed;
+                    campaign.IsActive = false;
+                    campaign.UpdatedAt = DateTime.UtcNow;
+                }
+                else
+                {
+                    // فاصله هر مرحله از زمان ارسال واقعی مرحله قبلی محاسبه می‌شود.
+                    nextStep.ScheduledAtUtc = ProfessionalCampaignSchedule.GetNextUtc(
+                        DateTime.SpecifyKind(step.SentAtUtc.Value, DateTimeKind.Utc),
+                        nextStep.DelayAfterPreviousMinutes);
+                    nextStep.UpdatedAt = DateTime.UtcNow;
+                }
+
+                await _context.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
             }
-
-            step.Status = ProfessionalCampaignStepStatuses.Sent;
-            step.SentCount = result.Data.SentCount;
-            step.FailedCount = result.Data.FailedCount;
-            step.SentAtUtc = DateTime.UtcNow;
-            step.LastError = null;
-            step.UpdatedAt = DateTime.UtcNow;
-
-            var nextStep = await _context.ProfessionalCampaignSteps
-                .Where(s => s.ProfessionalCampaignId == campaign.Id
-                    && !s.IsDeleted
-                    && s.StepOrder > step.StepOrder
-                    && s.Status == ProfessionalCampaignStepStatuses.Pending)
-                .OrderBy(s => s.StepOrder)
-                .FirstOrDefaultAsync(cancellationToken);
-            if (nextStep == null)
+            catch
             {
-                campaign.Status = ProfessionalCampaignStatuses.Completed;
-                campaign.IsActive = false;
-                campaign.UpdatedAt = DateTime.UtcNow;
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
             }
-            else
-            {
-                // فاصله هر مرحله از زمان ارسال واقعی مرحله قبلی محاسبه می‌شود.
-                nextStep.ScheduledAtUtc = ProfessionalCampaignSchedule.GetNextUtc(
-                    DateTime.SpecifyKind(step.SentAtUtc.Value, DateTimeKind.Utc),
-                    nextStep.DelayAfterPreviousMinutes);
-                nextStep.UpdatedAt = DateTime.UtcNow;
-            }
-
-            await _context.SaveChangesAsync(cancellationToken);
         }
 
         private async Task MarkStepFailedAsync(
@@ -444,7 +449,7 @@ namespace Api_Vapp.Services
             int id,
             bool resume)
         {
-            var campaign = await LoadOwnedAsync(userId, id, tracking: true);
+            var campaign = await _campaignRepository.GetOwnedAsync(userId, id, tracking: true);
             if (campaign == null)
                 return ApiResponse<ProfessionalCampaignResponseDto>.NotFound("کمپین یافت نشد");
 
@@ -520,15 +525,6 @@ namespace Api_Vapp.Services
                 })
                 .ToListAsync();
             return (DistinctRecipients(taggedRecipients), null);
-        }
-
-        private async Task<ProfessionalCampaign?> LoadOwnedAsync(int userId, int id, bool tracking = false)
-        {
-            IQueryable<ProfessionalCampaign> query = _context.ProfessionalCampaigns
-                .Include(c => c.Steps.Where(s => !s.IsDeleted));
-            if (!tracking)
-                query = query.AsNoTracking();
-            return await query.FirstOrDefaultAsync(c => c.Id == id && c.UserId == userId && !c.IsDeleted);
         }
 
         private static ProfessionalCampaignResponseDto Map(ProfessionalCampaign campaign) => new()

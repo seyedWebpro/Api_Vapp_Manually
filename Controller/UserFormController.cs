@@ -62,7 +62,7 @@ namespace Api_Vapp.Controller
         [ProducesResponseType(typeof(ApiResponse<UserFormListResponseDto>), StatusCodes.Status400BadRequest)]
         public async Task<ActionResult<ApiResponse<UserFormListResponseDto>>> GetForms(
             [FromQuery] int pageNumber = 1,
-            [FromQuery] int pageSize = 10,
+            [FromQuery] int pageSize = 20,
             [FromQuery] bool? isActive = null)
         {
             var userId = await GetCurrentUserIdAsync();
@@ -230,7 +230,7 @@ namespace Api_Vapp.Controller
         public async Task<ActionResult<ApiResponse<UserFormSubmissionsPageDto>>> GetSubmissions(
             int id,
             [FromQuery] int pageNumber = 1,
-            [FromQuery] int pageSize = 10,
+            [FromQuery] int pageSize = 20,
             [FromQuery] string? searchTerm = null,
             [FromQuery] DateTime? fromUtc = null,
             [FromQuery] DateTime? toUtc = null)

@@ -2,6 +2,7 @@ using System.Text.Json;
 using Api_Vapp.DTOs.Admin;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.Interfaces;
+using Api_Vapp.Utilities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -75,56 +76,38 @@ namespace Api_Vapp.Controller.Admin
             UpdateAppBannerDto dto;
             IFormFile? imageFile = null;
 
-            try
+            if (Request.HasFormContentType)
             {
-                if (Request.HasFormContentType)
-                {
-                    var form = await Request.ReadFormAsync();
-                    dto = new UpdateAppBannerDto
-                    {
-                        Title = form["Title"].ToString(),
-                        Description = form["Description"].ToString(),
-                        LinkType = form["LinkType"].ToString(),
-                        LinkUrl = form["LinkUrl"].ToString(),
-                        SortOrder = TryParseInt(form["SortOrder"]),
-                        IsActive = TryParseBool(form["IsActive"], defaultValue: true),
-                        ClearImage = TryParseBool(form["ClearImage"], defaultValue: false) == true
-                    };
-                    imageFile = form.Files.GetFile("ImageFile");
-                }
-                else
-                {
-                    using var reader = new StreamReader(Request.Body);
-                    var raw = await reader.ReadToEndAsync();
-                    if (string.IsNullOrWhiteSpace(raw))
-                    {
-                        return StatusCode(
-                            StatusCodes.Status400BadRequest,
-                            ApiResponse<AppBannerResponseDto>.BadRequest(
-                                "بدنه درخواست خالی است",
-                                errorCode: ErrorCodes.ValidationFailed));
-                    }
+                var (form, formError) = await RequestBodyReader.TryReadFormAsync<AppBannerResponseDto>(
+                    Request,
+                    "خواندن اطلاعات بنر ناموفق بود. صفحه را تازه کنید و دوباره ذخیره کنید");
+                if (formError != null)
+                    return StatusCode(formError.StatusCode, formError);
 
-                    var parsed = JsonSerializer.Deserialize<UpdateAppBannerDto>(raw, JsonOptions);
-                    if (parsed == null)
-                    {
-                        return StatusCode(
-                            StatusCodes.Status400BadRequest,
-                            ApiResponse<AppBannerResponseDto>.BadRequest(
-                                "فرمت اطلاعات بنر نامعتبر است",
-                                errorCode: ErrorCodes.ValidationFailed));
-                    }
-
-                    dto = parsed;
-                }
+                dto = new UpdateAppBannerDto
+                {
+                    Title = form!["Title"].ToString(),
+                    Description = form["Description"].ToString(),
+                    LinkType = form["LinkType"].ToString(),
+                    LinkUrl = form["LinkUrl"].ToString(),
+                    SortOrder = TryParseInt(form["SortOrder"]),
+                    IsActive = TryParseBool(form["IsActive"], defaultValue: true),
+                    ClearImage = TryParseBool(form["ClearImage"], defaultValue: false) == true
+                };
+                imageFile = form.Files.GetFile("ImageFile");
             }
-            catch (Exception)
+            else
             {
-                return StatusCode(
-                    StatusCodes.Status400BadRequest,
-                    ApiResponse<AppBannerResponseDto>.BadRequest(
-                        "خواندن اطلاعات بنر ناموفق بود. صفحه را تازه کنید و دوباره ذخیره کنید",
-                        errorCode: ErrorCodes.ValidationFailed));
+                var (parsed, jsonError) = await RequestBodyReader.TryReadJsonAsync<UpdateAppBannerDto, AppBannerResponseDto>(
+                    Request,
+                    JsonOptions,
+                    emptyMessage: "بدنه درخواست خالی است",
+                    invalidFormatMessage: "فرمت اطلاعات بنر نامعتبر است",
+                    failureMessage: "خواندن اطلاعات بنر ناموفق بود. صفحه را تازه کنید و دوباره ذخیره کنید");
+                if (jsonError != null)
+                    return StatusCode(jsonError.StatusCode, jsonError);
+
+                dto = parsed!;
             }
 
             var result = await _service.UpdateAsync(id, dto);
@@ -157,21 +140,13 @@ namespace Api_Vapp.Controller.Admin
                         errorCode: ErrorCodes.ValidationFailed));
             }
 
-            IFormCollection form;
-            try
-            {
-                form = await Request.ReadFormAsync();
-            }
-            catch (Exception)
-            {
-                return StatusCode(
-                    StatusCodes.Status400BadRequest,
-                    ApiResponse<AppBannerResponseDto>.BadRequest(
-                        "خواندن فایل تصویر ناموفق بود",
-                        errorCode: ErrorCodes.ValidationFailed));
-            }
+            var (form, formError) = await RequestBodyReader.TryReadFormAsync<AppBannerResponseDto>(
+                Request,
+                "خواندن فایل تصویر ناموفق بود");
+            if (formError != null)
+                return StatusCode(formError.StatusCode, formError);
 
-            var clearImage = TryParseBool(form["ClearImage"], defaultValue: false) == true;
+            var clearImage = TryParseBool(form!["ClearImage"], defaultValue: false) == true;
             var imageFile = form.Files.GetFile("ImageFile");
 
             var result = await _service.UpdateImageAsync(id, imageFile, clearImage);

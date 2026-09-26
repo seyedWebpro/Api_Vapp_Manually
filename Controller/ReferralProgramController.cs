@@ -90,7 +90,7 @@ namespace Api_Vapp.Controller
         [ProducesResponseType(typeof(ApiResponse<ReferralProgramListDto>), StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<ApiResponse<ReferralProgramListDto>>> GetPrograms(
             [FromQuery] int pageNumber = 1,
-            [FromQuery] int pageSize = 10,
+            [FromQuery] int pageSize = 20,
             [FromQuery] bool? isActive = null)
         {
             var userId = await GetCurrentUserIdAsync();
@@ -244,7 +244,7 @@ namespace Api_Vapp.Controller
         public async Task<ActionResult<ApiResponse<ReferralUsageHistoryListDto>>> GetHistory(
             int id,
             [FromQuery] int pageNumber = 1,
-            [FromQuery] int pageSize = 10,
+            [FromQuery] int pageSize = 20,
             [FromQuery] DateTime? fromDate = null,
             [FromQuery] DateTime? toDate = null)
         {

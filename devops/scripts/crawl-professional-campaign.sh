@@ -157,6 +157,51 @@ HTTP="$(request POST "/api/professional-campaigns/${CAMPAIGN_ID}/pause" "$TMP_DI
 assert_eq 'pause HTTP' '200' "$HTTP"
 HTTP="$(request POST "/api/professional-campaigns/${CAMPAIGN_ID}/resume" "$TMP_DIR/resume.json")"
 assert_eq 'resume HTTP' '200' "$HTTP"
+
+echo '===== PAGINATION + OWNERSHIP ====='
+HTTP="$(request GET '/api/professional-campaigns?pageNumber=1&pageSize=500' "$TMP_DIR/list_clamp.json")"
+assert_eq 'list pageSize=500 HTTP' '200' "$HTTP"
+assert_eq 'list pageSize clamped to 100' '100' "$(json_get "$TMP_DIR/list_clamp.json" data.pageSize)"
+
+HTTP="$(request GET "/api/professional-campaigns/${CAMPAIGN_ID}" "$TMP_DIR/own.json")"
+assert_eq 'get own campaign HTTP' '200' "$HTTP"
+
+SQL_CONTAINER="${SQL_CONTAINER:-vapp_sqlserver_dev}"
+SA_PASSWORD="${SA_PASSWORD:-Vapp@Secure2025!}"
+OWNER_UID="$(docker exec "$SQL_CONTAINER" /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$SA_PASSWORD" -C -d DbVapp -h -1 -W -Q "SET NOCOUNT ON; SET QUOTED_IDENTIFIER ON; SELECT TOP 1 CAST(UserId AS NVARCHAR(20)) FROM ProfessionalCampaigns WHERE Id=${CAMPAIGN_ID};" 2>/dev/null | tr -d '\r' | sed '/^$/d' | head -1 | tr -d ' ')"
+OTHER_UID="$(docker exec "$SQL_CONTAINER" /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$SA_PASSWORD" -C -d DbVapp -h -1 -W -Q "SET NOCOUNT ON; SET QUOTED_IDENTIFIER ON; SELECT TOP 1 CAST(Id AS NVARCHAR(20)) FROM Users WHERE IsDeleted=0 AND Id<>${OWNER_UID:-0} ORDER BY Id;" 2>/dev/null | tr -d '\r' | sed '/^$/d' | head -1 | tr -d ' ')"
+if [[ -z "$OTHER_UID" || ! "$OTHER_UID" =~ ^[0-9]+$ ]]; then
+  OTHER_UID="$(docker exec "$SQL_CONTAINER" /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$SA_PASSWORD" -C -d DbVapp -h -1 -W -Q "
+SET NOCOUNT ON; SET QUOTED_IDENTIFIER ON;
+IF NOT EXISTS (SELECT 1 FROM Users WHERE PhoneNumber=N'09000000002')
+BEGIN
+  INSERT INTO Users (PhoneNumber, PasswordHash, FullName, IsActive, IsPhoneVerified, IsDeleted, CreatedAt, WalletBalance, CanViewNumberSeekerPhones)
+  VALUES (N'09000000002', N'x', N'pc-idor', 1, 1, 0, SYSUTCDATETIME(), 0, 0);
+END
+SELECT CAST(Id AS NVARCHAR(20)) FROM Users WHERE PhoneNumber=N'09000000002';
+" 2>/dev/null | tr -d '\r' | sed '/^$/d' | head -1 | tr -d ' ')"
+fi
+FOREIGN_CAMPAIGN=""
+if [[ -n "$OTHER_UID" && "$OTHER_UID" =~ ^[0-9]+$ && "$OTHER_UID" != "$OWNER_UID" ]]; then
+  FOREIGN_CAMPAIGN="$(docker exec "$SQL_CONTAINER" /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$SA_PASSWORD" -C -d DbVapp -h -1 -W -Q "
+SET NOCOUNT ON; SET QUOTED_IDENTIFIER ON;
+DECLARE @id INT;
+INSERT INTO ProfessionalCampaigns (UserId, Title, TargetType, TargetIdsJson, Status, RecipientsCount, IsActive, IsDeleted, CreatedAt)
+VALUES (${OTHER_UID}, N'foreign-campaign-crawl', N'Notebooks', N'[0]', N'Cancelled', 0, 0, 0, SYSUTCDATETIME());
+SET @id = SCOPE_IDENTITY();
+SELECT CAST(@id AS NVARCHAR(20));
+" 2>/dev/null | tr -d '\r' | sed '/^$/d' | head -1 | tr -d ' ')"
+  if [[ -n "$FOREIGN_CAMPAIGN" && "$FOREIGN_CAMPAIGN" =~ ^[0-9]+$ ]]; then
+    HTTP="$(request GET "/api/professional-campaigns/${FOREIGN_CAMPAIGN}" "$TMP_DIR/foreign.json")"
+    assert_eq 'IDOR foreign campaign NotFound' '404' "$HTTP"
+    docker exec "$SQL_CONTAINER" /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$SA_PASSWORD" -C -d DbVapp -Q "SET QUOTED_IDENTIFIER ON; UPDATE ProfessionalCampaigns SET IsDeleted=1 WHERE Id=${FOREIGN_CAMPAIGN};" >/dev/null 2>&1 || true
+  else
+    echo "FAIL: seed foreign professional campaign"; FAIL=$((FAIL+1))
+  fi
+else
+  echo "SKIP: no second user for professional IDOR (owner=$OWNER_UID other=$OTHER_UID)"
+fi
+
 HTTP="$(request POST "/api/professional-campaigns/${CAMPAIGN_ID}/cancel" "$TMP_DIR/cancel.json")"
 assert_eq 'cancel HTTP' '200' "$HTTP"
 

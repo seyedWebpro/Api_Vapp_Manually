@@ -100,12 +100,12 @@ namespace Api_Vapp.Services
             }
         }
 
-        public async Task<ApiResponse<RoleListResponseDto>> GetRolesAsync(int pageNumber = 1, int pageSize = 10, bool? isActive = null, bool? isDeleted = null)
+        public async Task<ApiResponse<RoleListResponseDto>> GetRolesAsync(int pageNumber = 1, int pageSize = 20, bool? isActive = null, bool? isDeleted = null)
         {
             try
             {
                 if (pageNumber < 1) pageNumber = 1;
-                if (pageSize < 1 || pageSize > 100) pageSize = 10;
+                if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
                 var query = _context.Roles.AsQueryable();
 

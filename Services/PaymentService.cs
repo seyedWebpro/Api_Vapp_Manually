@@ -671,12 +671,12 @@ namespace Api_Vapp.Services
             }
         }
 
-        public async Task<ApiResponse<PaymentListDto>> GetPaymentsAsync(int userId, int pageNumber = 1, int pageSize = 10)
+        public async Task<ApiResponse<PaymentListDto>> GetPaymentsAsync(int userId, int pageNumber = 1, int pageSize = 20)
         {
             try
             {
                 if (pageNumber < 1) pageNumber = 1;
-                if (pageSize < 1 || pageSize > 100) pageSize = 10;
+                if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
                 var payments = await _paymentRepository.GetByUserIdAsync(userId, pageNumber, pageSize);
                 var totalCount = await _paymentRepository.GetCountByUserIdAsync(userId);
@@ -700,6 +700,24 @@ namespace Api_Vapp.Services
                 _logger.LogError(ex, "خطا در دریافت لیست پرداخت‌های کاربر {UserId}", userId);
                 throw;
             }
+        }
+
+        public async Task<PaymentGatewayLookupDto?> GetGatewayLookupAsync(int paymentId)
+        {
+            var payment = await _paymentRepository.GetByIdAsync(paymentId);
+            if (payment == null)
+                return null;
+
+            return new PaymentGatewayLookupDto
+            {
+                Id = payment.Id,
+                PaymentType = payment.PaymentType,
+                Gateway = payment.Gateway,
+                RefId = payment.RefId,
+                OrderId = payment.OrderId,
+                ReferenceNumber = payment.ReferenceNumber,
+                CardNumber = payment.CardNumber
+            };
         }
 
         public async Task<ApiResponse<List<PaymentGatewayInfoDto>>> GetAvailableGatewaysAsync()
@@ -743,7 +761,7 @@ namespace Api_Vapp.Services
             return await Task.FromResult(ApiResponse<List<PaymentGatewayInfoDto>>.CreateSuccess(gateways));
         }
 
-        public async Task<ApiResponse<PaymentResultDto>> SimulateGatewayPaymentAsync(int paymentId)
+        public async Task<ApiResponse<PaymentResultDto>> SimulateGatewayPaymentAsync(int paymentId, int userId)
         {
             try
             {
@@ -754,7 +772,7 @@ namespace Api_Vapp.Services
                 }
 
                 var payment = await _paymentRepository.GetByIdAsync(paymentId);
-                if (payment == null)
+                if (payment == null || payment.UserId != userId)
                 {
                     return ApiResponse<PaymentResultDto>.NotFound("پرداخت یافت نشد");
                 }

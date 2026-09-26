@@ -503,5 +503,8 @@ dist
 tmp/
 temp/
 
+# Runtime user uploads (never commit)
+wwwroot/uploads/
+
 # Local secrets (توکن زحل، JWT و ...)
 appsettings.Development.Local.json

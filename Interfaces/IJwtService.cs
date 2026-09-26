@@ -9,7 +9,10 @@ namespace Api_Vapp.Interfaces
         string GenerateAccessToken(User user, IEnumerable<string>? roleNames = null);
         string GenerateRefreshToken();
         ClaimsPrincipal? GetPrincipalFromExpiredToken(string token);
-        
+
+        /// <summary>اعتبارسنجی توکن فعال (با lifetime) و برگرداندن ClaimsPrincipal</summary>
+        ClaimsPrincipal ValidateAccessToken(string token);
+
         /// <summary>
         /// استخراج اطلاعات کاربر از ClaimsPrincipal (JWT Token)
         /// </summary>

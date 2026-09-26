@@ -10,20 +10,15 @@ namespace Api_Vapp.Interfaces
     {
         Task<ApiResponse<ContactResponseDto>> CreateContactAsync(int userId, CreateContactDto createDto);
         Task<ApiResponse<ContactResponseDto>> GetContactByIdAsync(int id, int userId);
-        Task<ApiResponse<ContactListResponseDto>> GetContactsAsync(int notebookId, int userId, int pageNumber = 1, int pageSize = 10, string? searchTerm = null);
+        Task<ApiResponse<ContactListResponseDto>> GetContactsAsync(int notebookId, int userId, int pageNumber = 1, int pageSize = 20, string? searchTerm = null);
         Task<ApiResponse<ContactResponseDto>> UpdateContactAsync(int id, int userId, UpdateContactDto updateDto);
         Task<ApiResponse<bool>> DeleteContactAsync(int id, int userId);
         Task<ApiResponse<bool>> TransferContactAsync(int contactId, int fromNotebookId, int toNotebookId, int userId);
         Task<ApiResponse<ImportExcelResultDto>> ImportFromExcelAsync(int userId, ImportContactsFromExcelDto importDto);
         Task<ApiResponse<ImportExcelResultDto>> ImportFromListAsync(int userId, ImportContactsFromListDto importDto);
         Task<ApiResponse<ExportExcelResultDto>> GetImportExcelTemplateAsync();
-        Task<ApiResponse<ExportExcelResultDto>> ExportToExcelAsync(int notebookId, int userId, int pageNumber = 1, int pageSize = 10);
+        Task<ApiResponse<ExportExcelResultDto>> ExportToExcelAsync(int notebookId, int userId, int pageNumber = 1, int pageSize = 20);
         Task<ApiResponse<string>> UploadProfileImageAsync(int contactId, int userId, Microsoft.AspNetCore.Http.IFormFile imageFile);
-        
-        /// <summary>
-        /// آپلود عکس پروفایل مخاطب (بدون نیاز به احراز هویت)
-        /// </summary>
-        Task<ApiResponse<string>> UploadProfileImageAsync(int contactId, Microsoft.AspNetCore.Http.IFormFile imageFile);
         
         Task<ApiResponse<bool>> DeleteProfileImageAsync(int contactId, int userId);
         Task<ApiResponse<List<string>>> UploadAttachmentFilesAsync(int contactId, int userId, List<Microsoft.AspNetCore.Http.IFormFile> files);
@@ -31,9 +26,9 @@ namespace Api_Vapp.Interfaces
         Task<ApiResponse<List<string>>> GetAttachmentFilesAsync(int contactId, int userId);
         
         /// <summary>
-        /// دریافت لیست تمام مخاطبین (بدون نیاز به احراز هویت)
+        /// دریافت لیست تمام مخاطبین (فقط ادمین از طریق کنترلر)
         /// </summary>
-        Task<ApiResponse<ContactListResponseDto>> GetAllContactsAsync(int pageNumber = 1, int pageSize = 10, string? searchTerm = null);
+        Task<ApiResponse<ContactListResponseDto>> GetAllContactsAsync(int pageNumber = 1, int pageSize = 20, string? searchTerm = null);
 
         /// <summary>
         /// دریافت لیست مخاطبین کاربر جاری از تمام دفترچه‌ها (برای انتخاب دستی گیرندگان پیامک)
@@ -41,7 +36,7 @@ namespace Api_Vapp.Interfaces
         Task<ApiResponse<ContactListResponseDto>> GetMyContactsAsync(
             int userId,
             int pageNumber = 1,
-            int pageSize = 10,
+            int pageSize = 20,
             string? searchTerm = null);
         
         /// <summary>

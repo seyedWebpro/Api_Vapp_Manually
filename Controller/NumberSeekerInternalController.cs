@@ -13,21 +13,27 @@ namespace Api_Vapp.Controller
     [Route("api/NumberSeeker/internal")]
     [ServiceApiKey]
     [Produces("application/json")]
-    public class NumberSeekerInternalController : ControllerBase
+    public class NumberSeekerInternalController : VappControllerBase
     {
         private readonly INumberSeekerService _numberSeekerService;
 
-        public NumberSeekerInternalController(INumberSeekerService numberSeekerService)
+        public NumberSeekerInternalController(
+            INumberSeekerService numberSeekerService,
+            IConfiguration configuration,
+            IUserRepository userRepository)
+            : base(configuration, userRepository)
         {
             _numberSeekerService = numberSeekerService;
         }
 
-        /// <summary>Webhook اتمام تسک از ربات پایتون — کاهش نیاز به poll</summary>
         [HttpPost("webhook/task-completed")]
         [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
         public async Task<ActionResult<ApiResponse<bool>>> TaskCompleted(
             [FromBody] NumberSeekerWebhookDto webhook)
         {
+            var invalid = InvalidModelStateResponse<bool>();
+            if (invalid != null) return invalid;
+
             var result = await _numberSeekerService.HandleWebhookAsync(webhook);
             return StatusCode(result.StatusCode, result);
         }

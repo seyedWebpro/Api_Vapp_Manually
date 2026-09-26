@@ -31,7 +31,14 @@ namespace Api_Vapp.DTOs.Common
                 StatusCode = statusCode,
                 Success = false,
                 Message = message,
-                ErrorCode = errorCode,
+                ErrorCode = errorCode ?? statusCode switch
+                {
+                    401 => ErrorCodes.Unauthorized,
+                    403 => ErrorCodes.Forbidden,
+                    404 => ErrorCodes.NotFound,
+                    >= 500 => ErrorCodes.Unexpected,
+                    _ => ErrorCodes.InvalidInput
+                },
                 Errors = errors
             };
         }

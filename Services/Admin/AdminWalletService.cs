@@ -111,7 +111,9 @@ namespace Api_Vapp.Services.Admin
                 return ApiResponse<WalletTransactionListDto>.NotFound("کاربر یافت نشد");
 
             if (pageNumber < 1) pageNumber = 1;
-            if (pageSize < 1 || pageSize > 100) pageSize = 20;
+            if (pageNumber < 1) pageNumber = 1;
+            if (pageSize < 1) pageSize = 20;
+            if (pageSize > 100) pageSize = 100;
 
             return await _walletService.GetTransactionsAsync(userId, pageNumber, pageSize);
         }

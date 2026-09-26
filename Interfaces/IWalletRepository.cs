@@ -11,7 +11,7 @@ namespace Api_Vapp.Interfaces
         /// <summary>
         /// دریافت تراکنش‌های کاربر با صفحه‌بندی
         /// </summary>
-        Task<IEnumerable<WalletTransaction>> GetByUserIdAsync(int userId, int pageNumber = 1, int pageSize = 10);
+        Task<IEnumerable<WalletTransaction>> GetByUserIdAsync(int userId, int pageNumber = 1, int pageSize = 20);
 
         /// <summary>
         /// دریافت تعداد تراکنش‌های کاربر
@@ -21,7 +21,7 @@ namespace Api_Vapp.Interfaces
         /// <summary>
         /// دریافت تراکنش‌های کاربر بر اساس نوع
         /// </summary>
-        Task<IEnumerable<WalletTransaction>> GetByTypeAsync(int userId, string transactionType, int pageNumber = 1, int pageSize = 10);
+        Task<IEnumerable<WalletTransaction>> GetByTypeAsync(int userId, string transactionType, int pageNumber = 1, int pageSize = 20);
 
         /// <summary>
         /// دریافت تراکنش‌های کاربر در بازه زمانی

@@ -1,4 +1,6 @@
 using Api_Vapp.DTOs.Auth;
+using Api_Vapp.DTOs.Common;
+using Api_Vapp.DTOs.User;
 
 namespace Api_Vapp.Interfaces
 {
@@ -15,6 +17,7 @@ namespace Api_Vapp.Interfaces
         Task<SendOtpResponseDto> ResendForgotPasswordOtpAsync(LoginDto loginDto, string? ipAddress = null);
         Task<AuthResponseDto> RefreshTokenAsync(RefreshTokenDto refreshTokenDto, string? ipAddress = null);
         Task<LogoutResponseDto> LogoutAsync(int userId, string? jti, string? ipAddress = null);
+        Task<ApiResponse<UserResponseDto>> GetUserByTokenAsync(string token);
     }
 }
 

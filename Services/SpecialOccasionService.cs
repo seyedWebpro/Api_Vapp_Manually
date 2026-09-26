@@ -16,6 +16,10 @@ namespace Api_Vapp.Services
     /// </summary>
     public class SpecialOccasionService : ISpecialOccasionService
     {
+        /// <summary>پیام یکسان وقتی متن مناسبت (سیستمی یا سفارشی) به صف تأیید ادمین می‌رود.</summary>
+        private const string OccasionTemplatePendingMessage =
+            "متن شما برای تأیید ادمین ارسال شد و پس از تأیید، در این مناسبت اعمال می‌شود.";
+
         private readonly ISpecialOccasionRepository _specialOccasionRepository;
         private readonly IUserOccasionPreferenceRepository _preferenceRepository;
         private readonly IUserOccasionProfileRepository _profileRepository;
@@ -75,52 +79,63 @@ namespace Api_Vapp.Services
                     CreatedAt = DateTime.UtcNow
                 };
 
-                await _specialOccasionRepository.AddAsync(occasion);
-
-                var preference = new UserOccasionPreference
+                await using var transaction = await _context.Database.BeginTransactionAsync();
+                try
                 {
-                    UserId = userId,
-                    SpecialOccasionId = occasion.Id,
-                    IsEnabled = true,
-                    ApplyToAllContacts = true,
-                    CustomMessage = customMessage,
-                    TemplateApprovalStatus = string.IsNullOrWhiteSpace(customMessage)
-                        ? AdminApprovalStatuses.Approved
-                        : AdminApprovalStatuses.Pending,
-                    CreatedAt = DateTime.UtcNow
-                };
+                    await _specialOccasionRepository.AddAsync(occasion);
 
-                await _preferenceRepository.AddAsync(preference);
+                    var preference = new UserOccasionPreference
+                    {
+                        UserId = userId,
+                        SpecialOccasionId = occasion.Id,
+                        IsEnabled = true,
+                        ApplyToAllContacts = true,
+                        CustomMessage = customMessage,
+                        TemplateApprovalStatus = string.IsNullOrWhiteSpace(customMessage)
+                            ? AdminApprovalStatuses.Approved
+                            : AdminApprovalStatuses.Pending,
+                        CreatedAt = DateTime.UtcNow
+                    };
 
-                // قالب سفارشیِ زمان ساخت نیز باید مانند ویرایش قالب وارد صف تأیید ادمین شود.
-                if (!string.IsNullOrWhiteSpace(customMessage))
-                {
-                    await UpsertOccasionMessageTemplateAsync(
-                        userId,
-                        occasion,
-                        preference,
-                        customMessage);
-                    await _preferenceRepository.UpdateAsync(preference);
+                    await _preferenceRepository.AddAsync(preference);
+
+                    // قالب سفارشیِ زمان ساخت نیز باید مانند ویرایش قالب وارد صف تأیید ادمین شود.
+                    if (!string.IsNullOrWhiteSpace(customMessage))
+                    {
+                        await UpsertOccasionMessageTemplateAsync(
+                            userId,
+                            occasion,
+                            preference,
+                            customMessage);
+                        await _preferenceRepository.UpdateAsync(preference);
+                    }
+
+                    await transaction.CommitAsync();
+
+                    await _audit.WriteAsync(new AuditEntry
+                    {
+                        Category = AuditCategories.Message,
+                        Action = AuditActions.SpecialOccasionCreated,
+                        EntityType = AuditEntityTypes.SpecialOccasion,
+                        EntityId = occasion.Id.ToString(),
+                        ActorUserId = userId,
+                        After = new { name = occasion.Name, type = occasion.Type, category = occasion.Category, month, day, calendarType }
+                    });
+
+                    _logger.LogInformation("Custom occasion created — UserId: {UserId}, OccasionId: {OccasionId}", userId, occasion.Id);
+
+                    return ApiResponse<SpecialOccasionResponseDto>.CreateSuccess(
+                        MapToDto(occasion, preference),
+                        string.IsNullOrWhiteSpace(customMessage)
+                            ? "مناسبت با موفقیت ایجاد شد"
+                            : OccasionTemplatePendingMessage,
+                        201);
                 }
-
-                await _audit.WriteAsync(new AuditEntry
+                catch
                 {
-                    Category = AuditCategories.Message,
-                    Action = AuditActions.SpecialOccasionCreated,
-                    EntityType = AuditEntityTypes.SpecialOccasion,
-                    EntityId = occasion.Id.ToString(),
-                    ActorUserId = userId,
-                    After = new { name = occasion.Name, type = occasion.Type, category = occasion.Category, month, day, calendarType }
-                });
-
-                _logger.LogInformation("Custom occasion created — UserId: {UserId}, OccasionId: {OccasionId}", userId, occasion.Id);
-
-                return ApiResponse<SpecialOccasionResponseDto>.CreateSuccess(
-                    MapToDto(occasion, preference),
-                    string.IsNullOrWhiteSpace(customMessage)
-                        ? "مناسبت با موفقیت ایجاد شد"
-                        : "مناسبت ایجاد شد و متن برای تأیید ارسال شد",
-                    201);
+                    await transaction.RollbackAsync();
+                    throw;
+                }
             }
             catch (Exception ex)
             {
@@ -129,17 +144,27 @@ namespace Api_Vapp.Services
             }
         }
 
-        public async Task<ApiResponse<List<SpecialOccasionResponseDto>>> GetSpecialOccasionsAsync(int? userId)
+        public async Task<ApiResponse<List<SpecialOccasionResponseDto>>> GetSpecialOccasionsAsync(
+            int? userId,
+            int pageNumber = 1,
+            int pageSize = 100)
         {
             try
             {
                 if (!userId.HasValue)
                     return ApiResponse<List<SpecialOccasionResponseDto>>.Unauthorized(ControlledErrorHelper.Unauthorized, ErrorCodes.Unauthorized);
 
+                pageNumber = Math.Max(1, pageNumber);
+                pageSize = Math.Clamp(pageSize, 1, 100);
+
                 var catalog = await _specialOccasionRepository.GetCatalogForUserAsync(userId.Value);
                 var prefs = await _preferenceRepository.GetMapByUserIdAsync(userId.Value);
-                return ApiResponse<List<SpecialOccasionResponseDto>>.CreateSuccess(
-                    catalog.Select(o => MapToDto(o, prefs.GetValueOrDefault(o.Id))).ToList());
+                var page = catalog
+                    .Skip((pageNumber - 1) * pageSize)
+                    .Take(pageSize)
+                    .Select(o => MapToDto(o, prefs.GetValueOrDefault(o.Id)))
+                    .ToList();
+                return ApiResponse<List<SpecialOccasionResponseDto>>.CreateSuccess(page);
             }
             catch (Exception ex)
             {
@@ -148,15 +173,22 @@ namespace Api_Vapp.Services
             }
         }
 
-        public async Task<ApiResponse<SpecialOccasionResponseDto>> GetSpecialOccasionByIdAsync(int id)
+        public async Task<ApiResponse<SpecialOccasionResponseDto>> GetSpecialOccasionByIdAsync(int id, int userId)
         {
             try
             {
                 var occasion = await _specialOccasionRepository.GetByIdAsync(id);
-                if (occasion == null)
+                if (occasion == null || !occasion.IsActive)
                     return ApiResponse<SpecialOccasionResponseDto>.NotFound("مناسبت مورد نظر یافت نشد", ErrorCodes.NotFound);
 
-                return ApiResponse<SpecialOccasionResponseDto>.CreateSuccess(MapToDto(occasion));
+                // سیستمی برای همه؛ سفارشی فقط برای مالک
+                if (!occasion.IsSystem && occasion.UserId != userId)
+                    return ApiResponse<SpecialOccasionResponseDto>.Forbidden(
+                        "شما مجاز به مشاهده این مناسبت نیستید",
+                        ErrorCodes.Forbidden);
+
+                var preference = await _preferenceRepository.GetByUserAndOccasionAsync(userId, occasion.Id);
+                return ApiResponse<SpecialOccasionResponseDto>.CreateSuccess(MapToDto(occasion, preference));
             }
             catch (Exception ex)
             {
@@ -209,31 +241,42 @@ namespace Api_Vapp.Services
                     occasion.Day = (byte)day;
                 }
 
-                if (updateDto.DefaultMessage != null)
+                await using var transaction = await _context.Database.BeginTransactionAsync();
+                try
                 {
-                    // متن مناسبت هرگز مستقیم روی DefaultMessage ادمین نوشته نمی‌شود؛
-                    // باید از مسیر Preference + صف تأیید متن برود.
-                    var message = NormalizeMessage(updateDto.DefaultMessage);
-                    var preference = await GetOrCreatePreferenceAsync(userId!.Value, occasion.Id);
-                    if (string.IsNullOrWhiteSpace(message))
+                    if (updateDto.DefaultMessage != null)
                     {
-                        preference.CustomMessage = null;
-                        preference.TemplateApprovalStatus = AdminApprovalStatuses.Approved;
-                        preference.TemplateApprovedAt = DateTime.UtcNow;
-                        preference.TemplateRejectionReason = null;
-                        preference.UpdatedAt = DateTime.UtcNow;
-                        await _preferenceRepository.UpdateAsync(preference);
+                        // متن مناسبت هرگز مستقیم روی DefaultMessage ادمین نوشته نمی‌شود؛
+                        // باید از مسیر Preference + صف تأیید متن برود.
+                        var message = NormalizeMessage(updateDto.DefaultMessage);
+                        var preference = await GetOrCreatePreferenceAsync(userId!.Value, occasion.Id);
+                        if (string.IsNullOrWhiteSpace(message))
+                        {
+                            preference.CustomMessage = null;
+                            preference.TemplateApprovalStatus = AdminApprovalStatuses.Approved;
+                            preference.TemplateApprovedAt = DateTime.UtcNow;
+                            preference.TemplateRejectionReason = null;
+                            preference.UpdatedAt = DateTime.UtcNow;
+                            await _preferenceRepository.UpdateAsync(preference);
+                        }
+                        else
+                        {
+                            await ApplyCustomTemplateAsync(userId.Value, occasion, preference, message);
+                        }
                     }
-                    else
-                    {
-                        await ApplyCustomTemplateAsync(userId.Value, occasion, preference, message);
-                    }
-                }
-                if (updateDto.IsActive.HasValue)
-                    occasion.IsActive = updateDto.IsActive.Value;
 
-                occasion.UpdatedAt = DateTime.UtcNow;
-                await _specialOccasionRepository.UpdateAsync(occasion);
+                    if (updateDto.IsActive.HasValue)
+                        occasion.IsActive = updateDto.IsActive.Value;
+
+                    occasion.UpdatedAt = DateTime.UtcNow;
+                    await _specialOccasionRepository.UpdateAsync(occasion);
+                    await transaction.CommitAsync();
+                }
+                catch
+                {
+                    await transaction.RollbackAsync();
+                    throw;
+                }
 
                 await _audit.WriteAsync(new AuditEntry
                 {
@@ -246,10 +289,16 @@ namespace Api_Vapp.Services
                 });
 
                 var prefAfter = await _preferenceRepository.GetByUserAndOccasionAsync(userId!.Value, occasion.Id);
+                var messagePending = updateDto.DefaultMessage != null
+                    && !string.IsNullOrWhiteSpace(NormalizeMessage(updateDto.DefaultMessage))
+                    && string.Equals(
+                        prefAfter?.TemplateApprovalStatus,
+                        AdminApprovalStatuses.Pending,
+                        StringComparison.OrdinalIgnoreCase);
                 return ApiResponse<SpecialOccasionResponseDto>.CreateSuccess(
                     MapToDto(occasion, prefAfter),
-                    updateDto.DefaultMessage != null && !string.IsNullOrWhiteSpace(NormalizeMessage(updateDto.DefaultMessage))
-                        ? "مناسبت به‌روزرسانی شد و متن برای تأیید ارسال شد"
+                    messagePending
+                        ? OccasionTemplatePendingMessage
                         : "مناسبت با موفقیت به‌روزرسانی شد");
             }
             catch (Exception ex)
@@ -275,7 +324,19 @@ namespace Api_Vapp.Services
 
                 occasion.IsDeleted = true;
                 occasion.UpdatedAt = DateTime.UtcNow;
-                await _specialOccasionRepository.UpdateAsync(occasion);
+
+                await using var transaction = await _context.Database.BeginTransactionAsync();
+                try
+                {
+                    await _specialOccasionRepository.UpdateAsync(occasion);
+                    await _preferenceRepository.SoftDeleteByOccasionIdAsync(occasion.Id);
+                    await transaction.CommitAsync();
+                }
+                catch
+                {
+                    await transaction.RollbackAsync();
+                    throw;
+                }
 
                 await _audit.WriteAsync(new AuditEntry
                 {
@@ -295,10 +356,17 @@ namespace Api_Vapp.Services
             }
         }
 
-        public async Task<ApiResponse<OccasionTableResponseDto>> GetOccasionTableAsync(int userId, string? category = null)
+        public async Task<ApiResponse<OccasionTableResponseDto>> GetOccasionTableAsync(
+            int userId,
+            string? category = null,
+            int pageNumber = 1,
+            int pageSize = 100)
         {
             try
             {
+                pageNumber = Math.Max(1, pageNumber);
+                pageSize = Math.Clamp(pageSize, 1, 100);
+
                 var profile = await _profileRepository.GetOrCreateAsync(userId);
                 var catalog = await _specialOccasionRepository.GetCatalogForUserAsync(userId);
                 var prefMap = await _preferenceRepository.GetMapByUserIdAsync(userId);
@@ -310,18 +378,23 @@ namespace Api_Vapp.Services
                     catalog = catalog.Where(o => string.Equals(o.Category, normalized, StringComparison.OrdinalIgnoreCase)).ToList();
                 }
 
-                var items = catalog.Select(o =>
+                var allItems = catalog.Select(o =>
                 {
                     prefMap.TryGetValue(o.Id, out var pref);
                     return MapToTableItem(o, pref, today);
                 }).ToList();
 
+                var pageItems = allItems
+                    .Skip((pageNumber - 1) * pageSize)
+                    .Take(pageSize)
+                    .ToList();
+
                 var response = new OccasionTableResponseDto
                 {
                     Profile = MapProfile(profile),
-                    Items = items,
-                    TotalCount = items.Count,
-                    EnabledCount = items.Count(i => i.IsEnabled),
+                    Items = pageItems,
+                    TotalCount = allItems.Count,
+                    EnabledCount = allItems.Count(i => i.IsEnabled),
                     Today = MapToday(today)
                 };
 
@@ -381,46 +454,58 @@ namespace Api_Vapp.Services
                     profile.ScheduledTimeTehran = sendTime;
                 }
 
-                if (dto.AutomatedMessageId.HasValue)
+                await using var transaction = await _context.Database.BeginTransactionAsync();
+                try
                 {
-                    if (dto.AutomatedMessageId.Value == 0)
+                    if (dto.AutomatedMessageId.HasValue)
                     {
-                        profile.AutomatedMessageId = null;
+                        if (dto.AutomatedMessageId.Value == 0)
+                        {
+                            profile.AutomatedMessageId = null;
+                        }
+                        else
+                        {
+                            var am = await _context.AutomatedMessages.AsNoTracking()
+                                .FirstOrDefaultAsync(a => a.Id == dto.AutomatedMessageId.Value
+                                    && a.UserId == userId
+                                    && !a.IsDeleted
+                                    && a.AutomationType == AutomationTypeCodes.SpecialOccasion);
+
+                            if (am == null)
+                            {
+                                await transaction.RollbackAsync();
+                                return ApiResponse<UserOccasionProfileDto>.BadRequest(
+                                    "پیام خودکار مناسبتی معتبر یافت نشد",
+                                    errorCode: ErrorCodes.InvalidInput);
+                            }
+
+                            profile.AutomatedMessageId = am.Id;
+
+                            var tracked = await _context.AutomatedMessages.FirstAsync(a => a.Id == am.Id);
+                            tracked.ScheduledTime = profile.ScheduledTimeTehran;
+                            tracked.UpdatedAt = DateTime.UtcNow;
+                        }
                     }
-                    else
+                    else if (profile.AutomatedMessageId.HasValue && dto.ScheduledTimeTehran != null)
                     {
-                        var am = await _context.AutomatedMessages.AsNoTracking()
-                            .FirstOrDefaultAsync(a => a.Id == dto.AutomatedMessageId.Value
-                                && a.UserId == userId
-                                && !a.IsDeleted
-                                && a.AutomationType == AutomationTypeCodes.SpecialOccasion);
-
-                        if (am == null)
-                            return ApiResponse<UserOccasionProfileDto>.BadRequest(
-                                "پیام خودکار مناسبتی معتبر یافت نشد",
-                                errorCode: ErrorCodes.InvalidInput);
-
-                        profile.AutomatedMessageId = am.Id;
-
-                        // همگام‌سازی زمان ارسال روی AutomatedMessage (برای سازگاری با بک‌گراند)
-                        var tracked = await _context.AutomatedMessages.FirstAsync(a => a.Id == am.Id);
-                        tracked.ScheduledTime = profile.ScheduledTimeTehran;
-                        tracked.UpdatedAt = DateTime.UtcNow;
+                        var tracked = await _context.AutomatedMessages
+                            .FirstOrDefaultAsync(a => a.Id == profile.AutomatedMessageId.Value && a.UserId == userId && !a.IsDeleted);
+                        if (tracked != null)
+                        {
+                            tracked.ScheduledTime = profile.ScheduledTimeTehran;
+                            tracked.UpdatedAt = DateTime.UtcNow;
+                        }
                     }
+
+                    await _profileRepository.UpdateAsync(profile);
+                    await _context.SaveChangesAsync();
+                    await transaction.CommitAsync();
                 }
-                else if (profile.AutomatedMessageId.HasValue && dto.ScheduledTimeTehran != null)
+                catch
                 {
-                    var tracked = await _context.AutomatedMessages
-                        .FirstOrDefaultAsync(a => a.Id == profile.AutomatedMessageId.Value && a.UserId == userId && !a.IsDeleted);
-                    if (tracked != null)
-                    {
-                        tracked.ScheduledTime = profile.ScheduledTimeTehran;
-                        tracked.UpdatedAt = DateTime.UtcNow;
-                    }
+                    await transaction.RollbackAsync();
+                    throw;
                 }
-
-                await _profileRepository.UpdateAsync(profile);
-                await _context.SaveChangesAsync();
 
                 await _audit.WriteAsync(new AuditEntry
                 {
@@ -546,8 +631,8 @@ namespace Api_Vapp.Services
                 });
 
                 var msg = string.Equals(preference.TemplateApprovalStatus, AdminApprovalStatuses.Pending, StringComparison.OrdinalIgnoreCase)
-                    ? "قالب ذخیره شد و برای تأیید متن ارسال شد"
-                    : "قالب با موفقیت ذخیره شد";
+                    ? OccasionTemplatePendingMessage
+                    : "متن مناسبت با موفقیت ذخیره شد";
 
                 return ApiResponse<OccasionTableItemDto>.CreateSuccess(
                     MapToTableItem(occasion, preference, OccasionCalendarHelper.GetTodayParts()),
@@ -586,8 +671,25 @@ namespace Api_Vapp.Services
             }
 
             preference.UpdatedAt = DateTime.UtcNow;
-            await UpsertOccasionMessageTemplateAsync(userId, occasion, preference, message);
-            await _preferenceRepository.UpdateAsync(preference);
+
+            // اگر فراخواننده (مثل UpdateSpecialOccasion) تراکنش باز دارد، از همان استفاده می‌کنیم.
+            var ownsTransaction = _context.Database.CurrentTransaction == null;
+            await using var transaction = ownsTransaction
+                ? await _context.Database.BeginTransactionAsync()
+                : null;
+            try
+            {
+                await UpsertOccasionMessageTemplateAsync(userId, occasion, preference, message);
+                await _preferenceRepository.UpdateAsync(preference);
+                if (ownsTransaction && transaction != null)
+                    await transaction.CommitAsync();
+            }
+            catch
+            {
+                if (ownsTransaction && transaction != null)
+                    await transaction.RollbackAsync();
+                throw;
+            }
         }
 
         public async Task<ApiResponse<OccasionTableItemDto>> ResetTemplateAsync(int userId, int occasionId)

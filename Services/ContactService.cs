@@ -430,13 +430,13 @@ namespace Api_Vapp.Services
             int notebookId, 
             int userId, 
             int pageNumber = 1, 
-            int pageSize = 10, 
+            int pageSize = 20, 
             string? searchTerm = null)
         {
             try
             {
                 if (pageNumber < 1) pageNumber = 1;
-                if (pageSize < 1 || pageSize > 100) pageSize = 10;
+                if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
                 // بررسی وجود دفترچه و مالکیت
                 var notebook = await _notebookRepository.GetByIdAsync(notebookId);
@@ -504,13 +504,13 @@ namespace Api_Vapp.Services
 
         public async Task<ApiResponse<ContactListResponseDto>> GetAllContactsAsync(
             int pageNumber = 1, 
-            int pageSize = 10, 
+            int pageSize = 20, 
             string? searchTerm = null)
         {
             try
             {
                 if (pageNumber < 1) pageNumber = 1;
-                if (pageSize < 1 || pageSize > 100) pageSize = 10;
+                if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
                 // دریافت تمام مخاطبین
                 IEnumerable<Contact> contacts;
@@ -561,13 +561,13 @@ namespace Api_Vapp.Services
         public async Task<ApiResponse<ContactListResponseDto>> GetMyContactsAsync(
             int userId,
             int pageNumber = 1,
-            int pageSize = 10,
+            int pageSize = 20,
             string? searchTerm = null)
         {
             try
             {
                 if (pageNumber < 1) pageNumber = 1;
-                if (pageSize < 1 || pageSize > 100) pageSize = 10;
+                if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
                 var (contacts, totalCount) = await _contactRepository.GetByUserIdPagedAsync(
                     userId, pageNumber, pageSize, searchTerm);
@@ -1526,7 +1526,7 @@ namespace Api_Vapp.Services
             }
         }
 
-        public async Task<ApiResponse<ExportExcelResultDto>> ExportToExcelAsync(int notebookId, int userId, int pageNumber = 1, int pageSize = 10)
+        public async Task<ApiResponse<ExportExcelResultDto>> ExportToExcelAsync(int notebookId, int userId, int pageNumber = 1, int pageSize = 20)
         {
             try
             {
@@ -1837,90 +1837,6 @@ namespace Api_Vapp.Services
                     var imageUrl = _fileUploadService.GetFileUrl(relativePath);
 
                     _logger.LogInformation("عکس پروفایل برای مخاطب {ContactId} با موفقیت آپلود شد", contactId);
-
-                    return ApiResponse<string>.CreateSuccess(imageUrl, "عکس پروفایل با موفقیت آپلود شد");
-                }
-                catch (Exception ex)
-                {
-                    // Rollback transaction در صورت خطا
-                    await transaction.RollbackAsync();
-                    _logger.LogError(ex, "خطا در آپلود عکس پروفایل برای مخاطب {ContactId}", contactId);
-                    
-                    if (ex is ArgumentException)
-                    {
-                        return ApiResponse<string>.BadRequest(ControlledErrorHelper.SanitizeArgumentMessage(ex.Message, ControlledErrorHelper.FileUploadFailed));
-                    }
-                    
-                    throw;
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "خطا در آپلود عکس پروفایل برای مخاطب {ContactId}", contactId);
-                throw;
-            }
-        }
-
-        /// <summary>
-        /// آپلود عکس پروفایل مخاطب (بدون نیاز به احراز هویت)
-        /// </summary>
-        public async Task<ApiResponse<string>> UploadProfileImageAsync(int contactId, Microsoft.AspNetCore.Http.IFormFile imageFile)
-        {
-            try
-            {
-                var contact = await _contactRepository.GetByIdAsync(contactId);
-                if (contact == null)
-                {
-                    return ApiResponse<string>.NotFound("مخاطب یافت نشد");
-                }
-
-                // اعتبارسنجی فایل عکس
-                var validationError = ValidateProfileImage(imageFile);
-                if (validationError != null)
-                {
-                    return ApiResponse<string>.BadRequest(validationError);
-                }
-
-                // استفاده از Transaction برای اطمینان از یکپارچگی داده‌ها
-                using var transaction = await _context.Database.BeginTransactionAsync();
-                try
-                {
-                    // حذف عکس قبلی در صورت وجود
-                    if (!string.IsNullOrWhiteSpace(contact.ProfileImagePath))
-                    {
-                        try
-                        {
-                            await _fileUploadService.DeleteFileAsync(
-                                contact.ProfileImagePath, 
-                                FileUploadConstants.EntityType_Contact, 
-                                contactId, 
-                                FileUploadConstants.SubFolder_Profile);
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogWarning(ex, "خطا در حذف عکس قبلی مخاطب {ContactId}", contactId);
-                            // ادامه می‌دهیم حتی اگر حذف عکس قبلی با خطا مواجه شود
-                        }
-                    }
-
-                    // آپلود عکس جدید
-                    var relativePath = await _fileUploadService.UploadFileAsync(
-                        imageFile, 
-                        FileUploadConstants.EntityType_Contact, 
-                        contactId, 
-                        FileUploadConstants.SubFolder_Profile);
-
-                    // به‌روزرسانی مسیر عکس در دیتابیس
-                    contact.ProfileImagePath = relativePath;
-                    contact.UpdatedAt = DateTime.UtcNow;
-                    await _context.SaveChangesAsync();
-
-                    // Commit transaction
-                    await transaction.CommitAsync();
-
-                    var imageUrl = _fileUploadService.GetFileUrl(relativePath);
-
-                    _logger.LogInformation("عکس پروفایل برای مخاطب {ContactId} با موفقیت آپلود شد (بدون احراز هویت)", contactId);
 
                     return ApiResponse<string>.CreateSuccess(imageUrl, "عکس پروفایل با موفقیت آپلود شد");
                 }

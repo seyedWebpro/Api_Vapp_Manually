@@ -37,7 +37,7 @@ namespace Api_Vapp.Controller
         [ProducesResponseType(typeof(ApiResponse<BookingSystemListDto>), StatusCodes.Status200OK)]
         public async Task<ActionResult<ApiResponse<BookingSystemListDto>>> GetSystems(
             [FromQuery] int pageNumber = 1,
-            [FromQuery] int pageSize = 10,
+            [FromQuery] int pageSize = 20,
             [FromQuery] bool? isActive = null)
         {
             var userId = await GetCurrentUserIdAsync();
@@ -304,7 +304,7 @@ namespace Api_Vapp.Controller
         public async Task<ActionResult<ApiResponse<BookingAppointmentListDto>>> GetAppointments(
             int id,
             [FromQuery] int pageNumber = 1,
-            [FromQuery] int pageSize = 10,
+            [FromQuery] int pageSize = 20,
             [FromQuery] string? status = null,
             [FromQuery] DateTime? fromUtc = null,
             [FromQuery] DateTime? toUtc = null,
@@ -317,6 +317,7 @@ namespace Api_Vapp.Controller
             return StatusCode(result.StatusCode, result);
         }
 
+        /// <param name="id">شناسه سیستم رزرو</param>
         /// <param name="date">روز تقویم تهران (yyyy-MM-dd). اگر خالی باشد، امروز تهران.</param>
         [HttpGet("{id}/dashboard")]
         [ProducesResponseType(typeof(ApiResponse<BookingDashboardDto>), StatusCodes.Status200OK)]

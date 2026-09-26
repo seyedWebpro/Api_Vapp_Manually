@@ -39,7 +39,7 @@ namespace Api_Vapp.Repositories
             int programId,
             int userId,
             int pageNumber = 1,
-            int pageSize = 10,
+            int pageSize = 20,
             DateTime? fromDate = null,
             DateTime? toDate = null)
         {

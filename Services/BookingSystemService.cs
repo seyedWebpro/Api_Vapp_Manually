@@ -57,7 +57,7 @@ namespace Api_Vapp.Services
         public async Task<ApiResponse<BookingSystemListDto>> GetSystemsAsync(int userId, int pageNumber, int pageSize, bool? isActive)
         {
             if (pageNumber < 1) pageNumber = 1;
-            if (pageSize < 1 || pageSize > 100) pageSize = 10;
+            if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
             var systems = await _systemRepository.GetByUserIdAsync(userId, pageNumber, pageSize, isActive);
             var totalCount = await _systemRepository.GetCountByUserIdAsync(userId, isActive);

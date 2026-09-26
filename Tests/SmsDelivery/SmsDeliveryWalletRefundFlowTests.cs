@@ -394,6 +394,14 @@ public class SmsDeliveryWalletRefundFlowTests
         public Task<ApiResponse<SendSmsResponseDto>> SendSmsAsync(SendSmsRequestDto request) => throw new NotImplementedException();
         public Task<ApiResponse<SendBulkResponseDto>> SendBulkSmsAsync(SendBulkRequestDto request) => throw new NotImplementedException();
         public Task<ApiResponse<SendArrayResponseDto>> SendArraySmsAsync(SendArrayRequestDto request) => throw new NotImplementedException();
+
+        public Task<ApiResponse<SendSmsResponseDto>> SendManualSmsAsync(int userId, SendSmsRequestDto request) =>
+            SendSmsAsync(request);
+        public Task<ApiResponse<SendBulkResponseDto>> SendManualBulkSmsAsync(int userId, SendBulkRequestDto request) =>
+            SendBulkSmsAsync(request);
+        public Task<ApiResponse<SendArrayResponseDto>> SendManualArraySmsAsync(int userId, SendArrayRequestDto request) =>
+            SendArraySmsAsync(request);
+
         public Task<ApiResponse<InboxResponseDto>> GetInboxAsync(InboxRequestDto request) => throw new NotImplementedException();
         public Task<ApiResponse<InfoResponseDto>> GetWalletInfoAsync() => throw new NotImplementedException();
     }

@@ -31,12 +31,17 @@ namespace Api_Vapp.Interfaces
         /// <summary>
         /// تکمیل پرداخت در حالت شبیه‌سازی درگاه (توسعه / تا آماده‌شدن درگاه واقعی)
         /// </summary>
-        Task<ApiResponse<PaymentResultDto>> SimulateGatewayPaymentAsync(int paymentId);
+        Task<ApiResponse<PaymentResultDto>> SimulateGatewayPaymentAsync(int paymentId, int userId);
 
         /// <summary>
         /// دریافت لیست پرداخت‌های کاربر
         /// </summary>
-        Task<ApiResponse<PaymentListDto>> GetPaymentsAsync(int userId, int pageNumber = 1, int pageSize = 10);
+        Task<ApiResponse<PaymentListDto>> GetPaymentsAsync(int userId, int pageNumber = 1, int pageSize = 20);
+
+        /// <summary>
+        /// اطلاعات لازم برای ریدایرکت/کالبک درگاه (بدون منطق مالی)
+        /// </summary>
+        Task<PaymentGatewayLookupDto?> GetGatewayLookupAsync(int paymentId);
 
         /// <summary>
         /// دریافت درگاه‌های پرداخت فعال

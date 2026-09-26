@@ -99,31 +99,21 @@ namespace Api_Vapp.Controller
         }
 
         /// <summary>
-        /// دریافت لیست تمام مخاطبین (بدون نیاز به احراز هویت)
+        /// دریافت لیست تمام مخاطبین سیستم (فقط ادمین)
         /// </summary>
-        /// <param name="pageNumber">شماره صفحه (پیش‌فرض: 1)</param>
-        /// <param name="pageSize">تعداد آیتم در هر صفحه (پیش‌فرض: 10، حداکثر: 100)</param>
-        /// <param name="searchTerm">عبارت جستجو برای فیلتر کردن بر اساس نام یا شماره موبایل (اختیاری)</param>
-        /// <returns>پاسخ شامل لیست مخاطبین و اطلاعات pagination</returns>
         /// <remarks>
-        /// این endpoint برای دریافت لیست تمام مخاطبین بدون نیاز به احراز هویت استفاده می‌شود.
-        /// 
-        /// **نکات مهم:**
-        /// - این endpoint نیاز به توکن ندارد (AllowAnonymous)
-        /// - تمام مخاطبین تمام کاربران را برمی‌گرداند
-        /// - برای دریافت مخاطبین یک دفترچه خاص از endpoint /notebook/{notebookId} استفاده کنید
+        /// برای مخاطبین کاربر جاری از <c>GET /api/Contact/mine</c> استفاده کنید.
         /// </remarks>
-        /// <response code="200">لیست مخاطبین با موفقیت برگردانده شد</response>
-        /// <response code="400">پارامترهای ورودی نامعتبر است</response>
-        /// <response code="500">خطای سرور</response>
         [HttpGet("all")]
-        [AllowAnonymous]
+        [Authorize(Policy = "AdminOnly")]
         [ProducesResponseType(typeof(ApiResponse<ContactListResponseDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<ContactListResponseDto>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(ApiResponse<ContactListResponseDto>), StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(typeof(ApiResponse<ContactListResponseDto>), StatusCodes.Status403Forbidden)]
         [ProducesResponseType(typeof(ApiResponse<ContactListResponseDto>), StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<ApiResponse<ContactListResponseDto>>> GetAllContacts(
             [FromQuery] int pageNumber = 1,
-            [FromQuery] int pageSize = 10,
+            [FromQuery] int pageSize = 20,
             [FromQuery] string? searchTerm = null)
         {
             var result = await _contactService.GetAllContactsAsync(pageNumber, pageSize, searchTerm);
@@ -152,7 +142,7 @@ namespace Api_Vapp.Controller
         [ProducesResponseType(typeof(ApiResponse<ContactListResponseDto>), StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<ApiResponse<ContactListResponseDto>>> GetMyContacts(
             [FromQuery] int pageNumber = 1,
-            [FromQuery] int pageSize = 10,
+            [FromQuery] int pageSize = 20,
             [FromQuery] string? searchTerm = null)
         {
             var userId = await GetCurrentUserIdAsync();
@@ -187,7 +177,7 @@ namespace Api_Vapp.Controller
         public async Task<ActionResult<ApiResponse<ContactListResponseDto>>> GetContacts(
             int notebookId,
             [FromQuery] int pageNumber = 1,
-            [FromQuery] int pageSize = 10,
+            [FromQuery] int pageSize = 20,
             [FromQuery] string? searchTerm = null)
         {
             var userId = await GetCurrentUserIdAsync();
@@ -514,41 +504,23 @@ namespace Api_Vapp.Controller
         }
 
         /// <summary>
-        /// آپلود عکس پروفایل مخاطب (بدون نیاز به احراز هویت)
+        /// آپلود عکس پروفایل مخاطب (فقط مالک دفترچه)
         /// </summary>
-        /// <param name="id">شناسه مخاطب</param>
-        /// <param name="dto">فایل تصویر پروفایل</param>
-        /// <returns>پاسخ شامل URL عکس پروفایل آپلود شده</returns>
-        /// <remarks>
-        /// این endpoint برای آپلود عکس پروفایل مخاطب استفاده می‌شود.
-        /// 
-        /// **نکات مهم:**
-        /// - این endpoint نیاز به احراز هویت ندارد (AllowAnonymous)
-        /// - فرمت‌های مجاز: JPG, JPEG, PNG, GIF
-        /// - حداکثر حجم فایل: 5 مگابایت
-        /// - نسبت تصویر توصیه می‌شود 1:1 (مربع) باشد
-        /// - در صورت آپلود عکس جدید، عکس قبلی جایگزین می‌شود
-        /// </remarks>
-        /// <response code="200">عکس پروفایل با موفقیت آپلود شد</response>
-        /// <response code="400">فایل ارسال نشده یا فرمت/حجم نامعتبر است</response>
-        /// <response code="404">مخاطب یافت نشد</response>
-        /// <response code="500">خطای سرور</response>
         [HttpPost("{id}/upload-profile-image")]
-        [AllowAnonymous]
         [Consumes("multipart/form-data")]
         [ProducesResponseType(typeof(ApiResponse<string>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<string>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(ApiResponse<string>), StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(typeof(ApiResponse<string>), StatusCodes.Status403Forbidden)]
         [ProducesResponseType(typeof(ApiResponse<string>), StatusCodes.Status404NotFound)]
         [ProducesResponseType(typeof(ApiResponse<string>), StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<ApiResponse<string>>> UploadProfileImage(int id, [FromForm] UploadProfileImageDto dto)
         {
-            if (!ModelState.IsValid)
-            {
-                var errors = ExtractModelStateErrors();
-                return StatusCode(400, ApiResponse<string>.BadRequest("داده‌های ورودی نامعتبر است", errors));
-            }
+            var invalid = InvalidModelStateResponse<string>();
+            if (invalid != null) return invalid;
 
-            var result = await _contactService.UploadProfileImageAsync(id, dto.ImageFile);
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _contactService.UploadProfileImageAsync(id, userId, dto.ImageFile);
             return StatusCode(result.StatusCode, result);
         }
 

@@ -125,6 +125,10 @@ namespace Api_Vapp.Constants
         public const string NumberSeekerTaskFailed = "NumberSeeker.TaskFailed";
         public const string NumberSeekerTaskCancelled = "NumberSeeker.TaskCancelled";
         public const string NumberSeekerTaskImported = "NumberSeeker.TaskImported";
+        public const string NumberSeekerBankFillStarted = "NumberSeeker.BankFillStarted";
+        public const string NumberSeekerBankServed = "NumberSeeker.BankServed";
+        public const string NumberSeekerBankImported = "NumberSeeker.BankImported";
+        public const string NumberSeekerBankPhonesDeleted = "NumberSeeker.BankPhonesDeleted";
 
         // —— Subscription feature / discount (فاز ۳)
         public const string SubscriptionFeatureCreated = "SubscriptionFeature.Created";

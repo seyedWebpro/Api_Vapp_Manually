@@ -21,7 +21,7 @@ namespace Api_Vapp.Interfaces
         /// <summary>
         /// دریافت لیست نقش‌ها با pagination
         /// </summary>
-        Task<ApiResponse<RoleListResponseDto>> GetRolesAsync(int pageNumber = 1, int pageSize = 10, bool? isActive = null, bool? isDeleted = null);
+        Task<ApiResponse<RoleListResponseDto>> GetRolesAsync(int pageNumber = 1, int pageSize = 20, bool? isActive = null, bool? isDeleted = null);
 
         /// <summary>
         /// دریافت نقش‌های فعال

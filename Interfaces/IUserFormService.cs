@@ -15,7 +15,7 @@ namespace Api_Vapp.Interfaces
 
         Task<ApiResponse<UserFormResponseDto>> PublishAsync(int id, int userId, PublishUserFormDto? publishDto = null);
 
-        Task<ApiResponse<UserFormListResponseDto>> GetFormsAsync(int userId, int pageNumber = 1, int pageSize = 10, bool? isActive = null);
+        Task<ApiResponse<UserFormListResponseDto>> GetFormsAsync(int userId, int pageNumber = 1, int pageSize = 20, bool? isActive = null);
 
         Task<ApiResponse<UserFormResponseDto>> GetByIdAsync(int id, int userId);
 
@@ -29,7 +29,7 @@ namespace Api_Vapp.Interfaces
             int id,
             int userId,
             int pageNumber = 1,
-            int pageSize = 10,
+            int pageSize = 20,
             string? searchTerm = null,
             DateTime? fromUtc = null,
             DateTime? toUtc = null);

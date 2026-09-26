@@ -32,11 +32,15 @@ namespace Api_Vapp.Controller
         /// <summary>
         /// دریافت جدول کامل مناسبت‌ها (سیستمی + سفارشی) با وضعیت فعال/غیرفعال و قالب
         /// </summary>
+        /// <remarks>pageSize پیش‌فرض ۱۰۰ است تا کاتالوگ مناسبت‌ها برای کلاینت‌های فعلی کامل بماند (بدون شکست قرارداد).</remarks>
         [HttpGet("table")]
-        public async Task<ActionResult<ApiResponse<OccasionTableResponseDto>>> GetOccasionTable([FromQuery] string? category = null)
+        public async Task<ActionResult<ApiResponse<OccasionTableResponseDto>>> GetOccasionTable(
+            [FromQuery] string? category = null,
+            [FromQuery] int pageNumber = 1,
+            [FromQuery] int pageSize = 100)
         {
             var userId = await GetCurrentUserIdAsync();
-            var result = await _specialOccasionService.GetOccasionTableAsync(userId, category);
+            var result = await _specialOccasionService.GetOccasionTableAsync(userId, category, pageNumber, pageSize);
             return StatusCode(result.StatusCode, result);
         }
 
@@ -136,17 +140,20 @@ namespace Api_Vapp.Controller
         /// دریافت لیست مناسبت‌ها (سازگاری با API قبلی)
         /// </summary>
         [HttpGet]
-        public async Task<ActionResult<ApiResponse<List<SpecialOccasionResponseDto>>>> GetSpecialOccasions()
+        public async Task<ActionResult<ApiResponse<List<SpecialOccasionResponseDto>>>> GetSpecialOccasions(
+            [FromQuery] int pageNumber = 1,
+            [FromQuery] int pageSize = 100)
         {
             var userId = await GetCurrentUserIdAsync();
-            var result = await _specialOccasionService.GetSpecialOccasionsAsync(userId);
+            var result = await _specialOccasionService.GetSpecialOccasionsAsync(userId, pageNumber, pageSize);
             return StatusCode(result.StatusCode, result);
         }
 
         [HttpGet("{id:int}")]
         public async Task<ActionResult<ApiResponse<SpecialOccasionResponseDto>>> GetSpecialOccasionById(int id)
         {
-            var result = await _specialOccasionService.GetSpecialOccasionByIdAsync(id);
+            var userId = await GetCurrentUserIdAsync();
+            var result = await _specialOccasionService.GetSpecialOccasionByIdAsync(id, userId);
             return StatusCode(result.StatusCode, result);
         }
 

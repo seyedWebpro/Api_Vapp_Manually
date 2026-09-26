@@ -378,7 +378,8 @@ GET {{Api_Vapp_HostAddress}}/api/NumberSeeker/tasks?limit=20
 Authorization: Bearer {{token}}
 
 ### متادیتای فرم جستجوی جدید (پلتفرم+شهر+دسته+حد تعداد)
-### allowCustomCategory=true → فیلد دسته Combobox (پیشنهاد + تایپ آزاد)
+### allowCustomCategory=false → فیلد دسته فقط دراپ‌داون از فهرست ثابت
+### دسته‌ها (فهرست ثابت؛ allowCustomCategory=false)
 GET {{Api_Vapp_HostAddress}}/api/NumberSeeker/form-meta
 Authorization: Bearer {{token}}
 
@@ -390,11 +391,11 @@ Authorization: Bearer {{token}}
 GET {{Api_Vapp_HostAddress}}/api/NumberSeeker/cities
 Authorization: Bearer {{token}}
 
-### دسته‌ها (پیشنهادها؛ allowCustomCategory=true)
+### دسته‌ها (فهرست ثابت؛ allowCustomCategory=false)
 GET {{Api_Vapp_HostAddress}}/api/NumberSeeker/categories
 Authorization: Bearer {{token}}
 
-### شروع اسکرپ — دسته از لیست پیشنهاد
+### شروع اسکرپ — دسته از فهرست ثابت
 POST {{Api_Vapp_HostAddress}}/api/NumberSeeker/scrape
 Content-Type: application/json
 Authorization: Bearer {{token}}

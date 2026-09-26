@@ -170,12 +170,12 @@ namespace Api_Vapp.Services
         public async Task<ApiResponse<BankAccountListResponseDto>> GetBankAccountsAsync(
             int userId,
             int pageNumber = 1,
-            int pageSize = 10)
+            int pageSize = 20)
         {
             try
             {
                 if (pageNumber < 1) pageNumber = 1;
-                if (pageSize < 1 || pageSize > 100) pageSize = 10;
+                if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
                 var cacheKey = BuildListCacheKey(userId, pageNumber, pageSize);
                 if (_cache.TryGetValue(cacheKey, out BankAccountListResponseDto? cached) && cached != null)

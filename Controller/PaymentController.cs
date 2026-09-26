@@ -38,17 +38,14 @@ namespace Api_Vapp.Controller
     public class PaymentController : VappControllerBase
     {
         private readonly IPaymentService _paymentService;
-        private readonly IPaymentRepository _paymentRepository;
 
         public PaymentController(
             IPaymentService paymentService,
-            IPaymentRepository paymentRepository,
             IConfiguration configuration,
             IUserRepository userRepository)
             : base(configuration, userRepository)
         {
             _paymentService = paymentService;
-            _paymentRepository = paymentRepository;
         }
 
         /// <summary>
@@ -105,7 +102,7 @@ namespace Api_Vapp.Controller
         [ProducesResponseType(typeof(ApiResponse<PaymentListDto>), StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<ApiResponse<PaymentListDto>>> GetPayments(
             [FromQuery] int pageNumber = 1,
-            [FromQuery] int pageSize = 10)
+            [FromQuery] int pageSize = 20)
         {
             var userId = await GetCurrentUserIdAsync();
             var result = await _paymentService.GetPaymentsAsync(userId, pageNumber, pageSize);
@@ -267,7 +264,7 @@ namespace Api_Vapp.Controller
             string? paymentType = null;
             if (PaymentId.HasValue)
             {
-                var payment = await _paymentRepository.GetByIdAsync(PaymentId.Value);
+                var payment = await _paymentService.GetGatewayLookupAsync(PaymentId.Value);
                 paymentType = payment?.PaymentType;
             }
 
@@ -368,24 +365,18 @@ namespace Api_Vapp.Controller
         public async Task<ActionResult<ApiResponse<PaymentResultDto>>> SimulatePayment(int paymentId)
         {
             var userId = await GetCurrentUserIdAsync();
-            var payment = await _paymentRepository.GetByIdAsync(paymentId);
-            if (payment == null || payment.UserId != userId)
-            {
-                return StatusCode(404, ApiResponse<PaymentResultDto>.NotFound("پرداخت یافت نشد"));
-            }
-
-            var result = await _paymentService.SimulateGatewayPaymentAsync(paymentId);
+            var result = await _paymentService.SimulateGatewayPaymentAsync(paymentId, userId);
             return StatusCode(result.StatusCode, result);
         }
 
         /// <summary>
-        /// ریدایرکت به درگاه پرداخت (در حالت شبیه‌سازی: تأیید خودکار و بازگشت به فرانت)
+        /// ریدایرکت به درگاه پرداخت (فقط هدایت؛ شبیه‌سازی ناشناس مجاز نیست)
         /// </summary>
         [HttpGet("redirect/{paymentId}")]
         [AllowAnonymous]
         public async Task<ActionResult> RedirectToGateway(int paymentId)
         {
-            var payment = await _paymentRepository.GetByIdAsync(paymentId);
+            var payment = await _paymentService.GetGatewayLookupAsync(paymentId);
             if (payment == null)
             {
                 return NotFound("پرداخت یافت نشد");
@@ -403,34 +394,32 @@ namespace Api_Vapp.Controller
             }
 
             var useSimulation = Configuration.GetValue("Payment:UseSimulation", false);
-            if (!useSimulation)
+            if (useSimulation)
             {
-                if (string.IsNullOrEmpty(payment.RefId))
-                {
-                    return NotFound("پرداخت یافت نشد");
-                }
-
-                var paymentUrl = Configuration["Payment:Behpardakht:PaymentUrl"]
-                    ?? "https://bpm.shaparak.ir/pgwchannel/startpay.mellat";
-                return Content(
-                    $"<html><body onload=\"document.forms[0].submit()\">" +
-                    $"<form method=\"post\" action=\"{paymentUrl}\">" +
-                    $"<input type=\"hidden\" name=\"RefId\" value=\"{System.Net.WebUtility.HtmlEncode(payment.RefId)}\" />" +
-                    $"</form>در حال انتقال به درگاه...</body></html>",
-                    "text/html");
+                // تکمیل پرداخت شبیه‌سازی‌شده فقط از POST /{id}/simulate با احراز هویت مالک
+                return Redirect(BuildFrontendCallbackUrl(
+                    paymentId,
+                    payment.PaymentType,
+                    payment.RefId,
+                    "SIM_AUTH_REQUIRED",
+                    payment.OrderId,
+                    payment.ReferenceNumber,
+                    payment.CardNumber));
             }
 
-            var result = await _paymentService.SimulateGatewayPaymentAsync(paymentId);
-            var paymentInfo = result.Data?.Payment;
+            if (string.IsNullOrEmpty(payment.RefId))
+            {
+                return NotFound("پرداخت یافت نشد");
+            }
 
-            return Redirect(BuildFrontendCallbackUrl(
-                paymentId,
-                paymentInfo?.PaymentType,
-                paymentInfo?.RefId,
-                result.Data?.Success == true ? "0" : "15",
-                paymentInfo?.OrderId,
-                paymentInfo?.ReferenceNumber,
-                paymentInfo?.CardNumber));
+            var paymentUrl = Configuration["Payment:Behpardakht:PaymentUrl"]
+                ?? "https://bpm.shaparak.ir/pgwchannel/startpay.mellat";
+            return Content(
+                $"<html><body onload=\"document.forms[0].submit()\">" +
+                $"<form method=\"post\" action=\"{paymentUrl}\">" +
+                $"<input type=\"hidden\" name=\"RefId\" value=\"{System.Net.WebUtility.HtmlEncode(payment.RefId)}\" />" +
+                $"</form>در حال انتقال به درگاه...</body></html>",
+                "text/html");
         }
 
         private string BuildFrontendCallbackUrl(

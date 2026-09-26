@@ -43,7 +43,7 @@ namespace Api_Vapp.Controller
         [ProducesResponseType(typeof(ApiResponse<SocialMediaLinkListResponseDto>), StatusCodes.Status401Unauthorized)]
         public async Task<ActionResult<ApiResponse<SocialMediaLinkListResponseDto>>> GetSocialMediaLinks(
             [FromQuery] int pageNumber = 1,
-            [FromQuery] int pageSize = 10)
+            [FromQuery] int pageSize = 20)
         {
             var userId = await GetCurrentUserIdAsync();
             var result = await _socialMediaLinkService.GetSocialMediaLinksAsync(userId, pageNumber, pageSize);

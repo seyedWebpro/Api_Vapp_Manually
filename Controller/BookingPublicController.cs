@@ -3,6 +3,7 @@ using System.Text.Json;
 using Api_Vapp.DTOs.BookingSystem;
 using Api_Vapp.DTOs.Common;
 using Api_Vapp.Interfaces;
+using Api_Vapp.Utilities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -76,21 +77,13 @@ namespace Api_Vapp.Controller
 
             if (Request.HasFormContentType)
             {
-                IFormCollection form;
-                try
-                {
-                    form = await Request.ReadFormAsync();
-                }
-                catch (Exception)
-                {
-                    return StatusCode(
-                        StatusCodes.Status400BadRequest,
-                        ApiResponse<CreatePublicBookingResponseDto>.BadRequest(
-                            "خواندن اطلاعات رزرو ناموفق بود. صفحه را تازه کنید و دوباره تلاش کنید",
-                            errorCode: ErrorCodes.ValidationFailed));
-                }
+                var (form, formError) = await RequestBodyReader.TryReadFormAsync<CreatePublicBookingResponseDto>(
+                    Request,
+                    "خواندن اطلاعات رزرو ناموفق بود. صفحه را تازه کنید و دوباره تلاش کنید");
+                if (formError != null)
+                    return StatusCode(formError.StatusCode, formError);
 
-                if (!TryParseFormInt(form, out var serviceId, "ServiceId", "serviceId") || serviceId <= 0)
+                if (!TryParseFormInt(form!, out var serviceId, "ServiceId", "serviceId") || serviceId <= 0)
                 {
                     return StatusCode(
                         StatusCodes.Status400BadRequest,
@@ -100,7 +93,7 @@ namespace Api_Vapp.Controller
                             errorCode: ErrorCodes.ValidationFailed));
                 }
 
-                if (!TryParseFormDateTime(form, out var startUtc, "StartUtc", "startUtc"))
+                if (!TryParseFormDateTime(form!, out var startUtc, "StartUtc", "startUtc"))
                 {
                     return StatusCode(
                         StatusCodes.Status400BadRequest,
@@ -110,8 +103,8 @@ namespace Api_Vapp.Controller
                             errorCode: ErrorCodes.ValidationFailed));
                 }
 
-                var fullName = GetFormValue(form, "CustomerFullName", "customerFullName");
-                var mobile = GetFormValue(form, "CustomerMobile", "customerMobile");
+                var fullName = GetFormValue(form!, "CustomerFullName", "customerFullName");
+                var mobile = GetFormValue(form!, "CustomerMobile", "customerMobile");
                 if (string.IsNullOrWhiteSpace(fullName))
                 {
                     return StatusCode(
@@ -138,56 +131,30 @@ namespace Api_Vapp.Controller
                     StartUtc = startUtc,
                     CustomerFullName = fullName,
                     CustomerMobile = mobile,
-                    CustomerNote = NullIfWhiteSpace(GetFormValue(form, "CustomerNote", "customerNote")),
-                    RemindersEnabled = TryParseFormBool(form, "RemindersEnabled", "remindersEnabled")
+                    CustomerNote = NullIfWhiteSpace(GetFormValue(form!, "CustomerNote", "customerNote")),
+                    RemindersEnabled = TryParseFormBool(form!, "RemindersEnabled", "remindersEnabled")
                 };
 
                 paymentReceiptFile =
-                    form.Files.GetFile("PaymentReceiptFile")
+                    form!.Files.GetFile("PaymentReceiptFile")
                     ?? form.Files.GetFile("paymentReceiptFile");
             }
             else
             {
-                try
-                {
-                    using var reader = new StreamReader(Request.Body);
-                    var raw = await reader.ReadToEndAsync();
-                    if (string.IsNullOrWhiteSpace(raw))
-                    {
-                        return StatusCode(
-                            StatusCodes.Status400BadRequest,
-                            ApiResponse<CreatePublicBookingResponseDto>.BadRequest(
-                                "بدنه درخواست خالی است",
-                                errorCode: ErrorCodes.ValidationFailed));
-                    }
+                var (parsed, jsonError) = await RequestBodyReader.TryReadJsonAsync<CreatePublicBookingDto, CreatePublicBookingResponseDto>(
+                    Request,
+                    JsonOptions,
+                    emptyMessage: "بدنه درخواست خالی است",
+                    invalidFormatMessage: "فرمت اطلاعات رزرو نامعتبر است",
+                    failureMessage: "خواندن اطلاعات رزرو ناموفق بود. صفحه را تازه کنید و دوباره تلاش کنید");
+                if (jsonError != null)
+                    return StatusCode(jsonError.StatusCode, jsonError);
 
-                    var parsed = JsonSerializer.Deserialize<CreatePublicBookingDto>(raw, JsonOptions);
-                    if (parsed == null)
-                    {
-                        return StatusCode(
-                            StatusCodes.Status400BadRequest,
-                            ApiResponse<CreatePublicBookingResponseDto>.BadRequest(
-                                "فرمت اطلاعات رزرو نامعتبر است",
-                                errorCode: ErrorCodes.ValidationFailed));
-                    }
-
-                    dto = parsed;
-                }
-                catch (Exception)
-                {
-                    return StatusCode(
-                        StatusCodes.Status400BadRequest,
-                        ApiResponse<CreatePublicBookingResponseDto>.BadRequest(
-                            "خواندن اطلاعات رزرو ناموفق بود. صفحه را تازه کنید و دوباره تلاش کنید",
-                            errorCode: ErrorCodes.ValidationFailed));
-                }
-
+                dto = parsed!;
                 TryValidateModel(dto);
                 var invalid = InvalidModelStateResponse<CreatePublicBookingResponseDto>();
                 if (invalid != null)
-                {
                     return invalid;
-                }
             }
 
             var result = await _appointmentService.CreatePublicBookingAsync(slug, dto, paymentReceiptFile);

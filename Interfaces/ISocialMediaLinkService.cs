@@ -10,7 +10,7 @@ namespace Api_Vapp.Interfaces
     public interface ISocialMediaLinkService
     {
         Task<ApiResponse<SocialMediaLinkResponseDto>> CreateSocialMediaLinkAsync(int userId, CreateSocialMediaLinkDto createDto);
-        Task<ApiResponse<SocialMediaLinkListResponseDto>> GetSocialMediaLinksAsync(int userId, int pageNumber = 1, int pageSize = 10);
+        Task<ApiResponse<SocialMediaLinkListResponseDto>> GetSocialMediaLinksAsync(int userId, int pageNumber = 1, int pageSize = 20);
         Task<ApiResponse<SocialMediaLinkResponseDto>> GetSocialMediaLinkByIdAsync(int id, int userId);
         Task<ApiResponse<SocialMediaLinkResponseDto>> UpdateSocialMediaLinkAsync(int id, int userId, UpdateSocialMediaLinkDto updateDto);
         Task<ApiResponse<bool>> DeleteSocialMediaLinkAsync(int id, int userId);

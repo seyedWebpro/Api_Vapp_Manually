@@ -207,7 +207,7 @@ public class ReferralProgramServiceTests : IAsyncLifetime
         var (programId, _, _) = await _ctx.CreateConfirmedProgramAsync(
             configureStep3: s => s.InviteSmsClosingText = customClosing);
 
-        Assert.Equal(0, _ctx.FakeSms.SentMessages.Count);
+        Assert.Empty(_ctx.FakeSms.SentMessages);
 
         var result = await _ctx.Service.UpdateProgramAsync(
             programId,

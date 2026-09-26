@@ -122,7 +122,7 @@ namespace Api_Vapp.Controller
         [ProducesResponseType(typeof(ApiResponse<ContactNotebookListResponseDto>), StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<ApiResponse<ContactNotebookListResponseDto>>> GetNotebooks(
             [FromQuery] int pageNumber = 1,
-            [FromQuery] int pageSize = 10,
+            [FromQuery] int pageSize = 20,
             [FromQuery] bool? isActive = null,
             [FromQuery] string? searchTerm = null)
         {

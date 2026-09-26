@@ -10,7 +10,7 @@ namespace Api_Vapp.Interfaces
     public interface IQuickActionService
     {
         Task<ApiResponse<QuickActionResponseDto>> CreateQuickActionAsync(int userId, CreateQuickActionDto createDto);
-        Task<ApiResponse<QuickActionListResponseDto>> GetQuickActionsAsync(int userId, int pageNumber = 1, int pageSize = 10);
+        Task<ApiResponse<QuickActionListResponseDto>> GetQuickActionsAsync(int userId, int pageNumber = 1, int pageSize = 20);
         Task<ApiResponse<QuickActionResponseDto>> GetQuickActionByIdAsync(int id, int userId);
         Task<ApiResponse<QuickActionResponseDto>> UpdateQuickActionAsync(int id, int userId, UpdateQuickActionDto updateDto);
         Task<ApiResponse<bool>> DeleteQuickActionAsync(int id, int userId);

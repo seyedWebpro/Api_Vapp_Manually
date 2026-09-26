@@ -11,7 +11,7 @@ namespace Api_Vapp.Interfaces
     {
         Task<ApiResponse<BankAccountResponseDto>> CreateBankAccountAsync(int userId, CreateBankAccountDto createDto);
 
-        Task<ApiResponse<BankAccountListResponseDto>> GetBankAccountsAsync(int userId, int pageNumber = 1, int pageSize = 10);
+        Task<ApiResponse<BankAccountListResponseDto>> GetBankAccountsAsync(int userId, int pageNumber = 1, int pageSize = 20);
 
         Task<ApiResponse<BankAccountResponseDto>> GetBankAccountByIdAsync(int id, int userId);
 
