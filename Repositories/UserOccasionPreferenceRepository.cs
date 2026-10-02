@@ -86,7 +86,7 @@ namespace Api_Vapp.Repositories
                 UserId = userId,
                 CongratulationsEnabled = true,
                 CondolencesEnabled = true,
-                ScheduledTimeTehran = new TimeSpan(10, 0, 0),
+                ScheduledTimeTehran = Utilities.OccasionGreetingPlanner.DefaultSendTimeTehran,
                 CreatedAt = DateTime.UtcNow
             };
 

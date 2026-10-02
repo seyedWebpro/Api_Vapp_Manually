@@ -629,7 +629,6 @@ namespace Api_Vapp.Data
                 entity.HasKey(ae => ae.Id);
                 entity.Property(ae => ae.Id).ValueGeneratedOnAdd();
 
-                entity.Property(ae => ae.AutomatedMessageId).IsRequired();
                 entity.Property(ae => ae.Status).HasMaxLength(50).HasDefaultValue("Pending");
                 entity.Property(ae => ae.MessageContent).HasMaxLength(2000);
                 entity.Property(ae => ae.ExecutedAt).HasDefaultValueSql("GETUTCDATE()");
@@ -637,6 +636,7 @@ namespace Api_Vapp.Data
                 entity.HasOne(ae => ae.AutomatedMessage)
                     .WithMany(am => am.Executions)
                     .HasForeignKey(ae => ae.AutomatedMessageId)
+                    .IsRequired(false)
                     .OnDelete(DeleteBehavior.Cascade);
 
                 entity.HasOne(ae => ae.Contact)
@@ -648,6 +648,7 @@ namespace Api_Vapp.Data
                 entity.HasIndex(ae => ae.ContactId);
                 entity.HasIndex(ae => ae.ExecutedAt);
                 entity.HasIndex(ae => new { ae.AutomatedMessageId, ae.SpecialOccasionId, ae.ContactId, ae.ExecutedAt });
+                entity.HasIndex(ae => new { ae.SpecialOccasionId, ae.ContactId, ae.ExecutedAt });
             });
 
             // تنظیمات SpecialOccasion

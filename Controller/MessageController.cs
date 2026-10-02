@@ -35,14 +35,43 @@ namespace Api_Vapp.Controller
     public class MessageController : VappControllerBase
     {
         private readonly IMessageService _messageService;
+        private readonly ISmsPricingService _smsPricingService;
 
-        public MessageController(IMessageService messageService, IConfiguration configuration, IUserRepository userRepository)
+        public MessageController(
+            IMessageService messageService,
+            ISmsPricingService smsPricingService,
+            IConfiguration configuration,
+            IUserRepository userRepository)
             : base(configuration, userRepository)
         {
             _messageService = messageService;
+            _smsPricingService = smsPricingService;
         }
 
         #region Message Operations
+
+        /// <summary>
+        /// تخمین دقیق کاراکتر وزن‌دار و تعداد صفحه/پارت پیامک (همان موتور پنل ادمین)
+        /// </summary>
+        /// <remarks>
+        /// برای شمارنده زنده در اپ موبایل: با debounce (مثلاً ۳۰۰–۵۰۰ms) متن فعلی را بفرستید.
+        /// متن خالی مجاز است. شمارش محلی با text.length درست نیست — از weightedCharacterCount و partsCount استفاده کنید.
+        /// پسوند لغو (مثل لغو11) در محاسبه لحاظ می‌شود.
+        /// </remarks>
+        [HttpPost("estimate-parts")]
+        [ProducesResponseType(typeof(ApiResponse<SmsPartsEstimateResponseDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<SmsPartsEstimateResponseDto>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(ApiResponse<SmsPartsEstimateResponseDto>), StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<ApiResponse<SmsPartsEstimateResponseDto>>> EstimateParts(
+            [FromBody] SmsPartsEstimateRequestDto dto)
+        {
+            var invalid = InvalidModelStateResponse<SmsPartsEstimateResponseDto>();
+            if (invalid != null) return invalid;
+
+            _ = await GetCurrentUserIdAsync();
+            var result = await _smsPricingService.EstimatePartsForUserAsync(dto ?? new SmsPartsEstimateRequestDto());
+            return StatusCode(result.StatusCode, result);
+        }
 
         /// <summary>
         /// ایجاد پیام جدید

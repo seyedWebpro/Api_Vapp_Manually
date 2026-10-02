@@ -1,6 +1,7 @@
 using Api_Vapp.Constants;
 using Api_Vapp.DTOs.Admin;
 using Api_Vapp.DTOs.Common;
+using Api_Vapp.DTOs.Message;
 using Api_Vapp.DTOs.Sms;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
@@ -370,6 +371,9 @@ public class SmsReportServiceTests
 
         public Task<ApiResponse<SmsPricingPreviewResponseDto>> PreviewAsync(SmsPricingPreviewRequestDto dto) =>
             Task.FromResult(ApiResponse<SmsPricingPreviewResponseDto>.CreateSuccess(new SmsPricingPreviewResponseDto()));
+
+        public Task<ApiResponse<SmsPartsEstimateResponseDto>> EstimatePartsForUserAsync(SmsPartsEstimateRequestDto dto) =>
+            Task.FromResult(ApiResponse<SmsPartsEstimateResponseDto>.CreateSuccess(new SmsPartsEstimateResponseDto()));
     }
 
     private sealed class FakeTrackingService : ISmsDeliveryTrackingService

@@ -60,8 +60,10 @@ namespace Api_Vapp.Services.Admin
                 query = AdminApprovalListFilters.ApplyTemplateFilters(query, search, userSearch);
 
                 var totalCount = await query.CountAsync();
+                // ویرایش نام/محتوا فقط UpdatedAt را بالا می‌برد؛ صف باید آخرین فعالیت را اول نشان دهد
                 var templates = await query
-                    .OrderByDescending(t => t.CreatedAt)
+                    .OrderByDescending(t => t.UpdatedAt ?? t.CreatedAt)
+                    .ThenByDescending(t => t.Id)
                     .Skip((page - 1) * pageSize)
                     .Take(pageSize)
                     .ToListAsync();

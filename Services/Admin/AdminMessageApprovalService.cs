@@ -68,8 +68,10 @@ namespace Api_Vapp.Services.Admin
                 query = AdminApprovalListFilters.ApplyMessageApprovalFilters(query, search, userSearch);
 
                 var totalCount = await query.CountAsync();
+                // ویرایش مجدد فقط UpdatedAt را بالا می‌برد؛ صف باید آخرین فعالیت را اول نشان دهد
                 var items = await query
-                    .OrderByDescending(r => r.CreatedAt)
+                    .OrderByDescending(r => r.UpdatedAt ?? r.CreatedAt)
+                    .ThenByDescending(r => r.Id)
                     .Skip((page - 1) * pageSize)
                     .Take(pageSize)
                     .ToListAsync();
@@ -817,7 +819,8 @@ namespace Api_Vapp.Services.Admin
             ReviewedByUserId = request.ReviewedByUserId,
             ReviewedAt = request.ReviewedAt,
             RejectionReason = request.RejectionReason,
-            CreatedAt = request.CreatedAt
+            CreatedAt = request.CreatedAt,
+            UpdatedAt = request.UpdatedAt
         };
 
         private static DateTime? NormalizeToUtc(DateTime? value)

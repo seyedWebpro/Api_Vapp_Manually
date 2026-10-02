@@ -384,87 +384,59 @@ namespace Api_Vapp.Data
             logger.LogInformation("Automation types seeded.");
         }
 
+        /// <summary>
+        /// مناسبت‌های کاتالوگ کد را فقط در صورت نبودن درج می‌کند.
+        /// ردیف‌های موجود (حتی soft-deleted) را بازنویسی یا احیا نمی‌کند تا تغییرات پنل ادمین حفظ شود.
+        /// </summary>
         private static async Task SeedSystemOccasionsAsync(Api_Context context, ILogger logger)
         {
-            var existing = await context.SpecialOccasions
+            var existingCodes = await context.SpecialOccasions
                 .Where(o => o.IsSystem && o.Code != null)
+                .Select(o => o.Code!)
                 .ToListAsync();
-            var byCode = existing.ToDictionary(o => o.Code!, StringComparer.OrdinalIgnoreCase);
+            var knownCodes = new HashSet<string>(existingCodes, StringComparer.OrdinalIgnoreCase);
 
             var added = 0;
-            var updated = 0;
             var now = DateTime.UtcNow;
 
             foreach (var item in SystemOccasionCatalog.All)
             {
-                if (byCode.TryGetValue(item.Code, out var row))
-                {
-                    var changed =
-                        row.Name != item.Name
-                        || row.Type != item.Type
-                        || row.Category != item.Category
-                        || row.CalendarType != item.CalendarType
-                        || row.Month != item.Month
-                        || row.Day != item.Day
-                        || row.DefaultMessage != item.DefaultMessage
-                        || row.SortOrder != item.SortOrder
-                        || row.IsDeleted
-                        || !row.IsActive;
+                if (knownCodes.Contains(item.Code))
+                    continue;
 
-                    if (!changed)
-                        continue;
-
-                    row.Name = item.Name;
-                    row.Type = item.Type;
-                    row.Category = item.Category;
-                    row.CalendarType = item.CalendarType;
-                    row.Month = item.Month;
-                    row.Day = item.Day;
-                    row.OccasionDate = OccasionCalendarHelper.BuildReferenceOccasionDateUtc(item.CalendarType, item.Month, item.Day);
-                    row.DefaultMessage = item.DefaultMessage;
-                    row.SortOrder = item.SortOrder;
-                    row.IsSystem = true;
-                    row.IsActive = true;
-                    row.IsDeleted = false;
-                    row.UserId = null;
-                    row.UpdatedAt = now;
-                    updated++;
-                }
-                else
+                context.SpecialOccasions.Add(new SpecialOccasion
                 {
-                    context.SpecialOccasions.Add(new SpecialOccasion
-                    {
-                        Code = item.Code,
-                        Name = item.Name,
-                        Type = item.Type,
-                        Category = item.Category,
-                        CalendarType = item.CalendarType,
-                        Month = item.Month,
-                        Day = item.Day,
-                        OccasionDate = OccasionCalendarHelper.BuildReferenceOccasionDateUtc(item.CalendarType, item.Month, item.Day),
-                        DefaultMessage = item.DefaultMessage,
-                        SortOrder = item.SortOrder,
-                        IsSystem = true,
-                        IsActive = true,
-                        IsDeleted = false,
-                        UserId = null,
-                        CreatedAt = now
-                    });
-                    added++;
-                }
+                    Code = item.Code,
+                    Name = item.Name,
+                    Type = item.Type,
+                    Category = item.Category,
+                    CalendarType = item.CalendarType,
+                    Month = item.Month,
+                    Day = item.Day,
+                    OccasionDate = OccasionCalendarHelper.BuildReferenceOccasionDateUtc(item.CalendarType, item.Month, item.Day),
+                    DefaultMessage = item.DefaultMessage,
+                    SortOrder = item.SortOrder,
+                    IsSystem = true,
+                    IsActive = true,
+                    IsDeleted = false,
+                    UserId = null,
+                    CreatedAt = now
+                });
+                knownCodes.Add(item.Code);
+                added++;
             }
 
-            if (added > 0 || updated > 0)
+            if (added > 0)
             {
                 await context.SaveChangesAsync();
                 logger.LogInformation(
-                    "System occasions seeded — Added: {Added}, Updated: {Updated}, Catalog: {Total}",
-                    added, updated, SystemOccasionCatalog.All.Count);
+                    "System occasions seeded — Added: {Added}, Catalog: {Total}",
+                    added, SystemOccasionCatalog.All.Count);
             }
             else
             {
                 logger.LogInformation(
-                    "System occasions already up to date — Catalog: {Total}",
+                    "System occasions already present — Catalog: {Total}",
                     SystemOccasionCatalog.All.Count);
             }
         }

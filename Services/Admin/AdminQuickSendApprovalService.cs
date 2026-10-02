@@ -81,8 +81,9 @@ namespace Api_Vapp.Services.Admin
 
                 var query = BuildUnifiedQuery(status, normalizedType);
                 var totalCount = await query.CountAsync();
+                // ویرایش محتوا فقط UpdatedAt را بالا می‌برد؛ صف باید آخرین فعالیت را اول نشان دهد
                 var items = await query
-                    .OrderByDescending(x => x.CreatedAt)
+                    .OrderByDescending(x => x.UpdatedAt ?? x.CreatedAt)
                     .ThenByDescending(x => x.Id)
                     .Skip((page - 1) * pageSize)
                     .Take(pageSize)

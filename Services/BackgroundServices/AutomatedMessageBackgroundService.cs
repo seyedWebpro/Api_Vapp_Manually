@@ -63,10 +63,12 @@ namespace Api_Vapp.Services.BackgroundServices
             var contactRepository = scope.ServiceProvider.GetRequiredService<IContactRepository>();
             var auditService = scope.ServiceProvider.GetRequiredService<IAuditService>();
 
-            // دریافت تمام پیام‌های خودکار فعال (فقط خواندنی - بدون Tracking)
+            // مناسبت‌ها توسط OccasionGreetingBackgroundService از جدول مناسبت‌های کاربر ارسال می‌شوند
             var allAutomatedMessages = await context.AutomatedMessages
                 .AsNoTracking()
-                .Where(am => am.IsActive && !am.IsDeleted)
+                .Where(am => am.IsActive
+                    && !am.IsDeleted
+                    && am.AutomationType != AutomationTypeCodes.SpecialOccasion)
                 .Select(am => new
                 {
                     am.Id,
@@ -130,10 +132,6 @@ namespace Api_Vapp.Services.BackgroundServices
 
                 case "PurchaseReminder":
                     await ProcessPurchaseReminderAutomationAsync(context, automatedMessage, contactRepository, today, cancellationToken);
-                    break;
-
-                case "SpecialOccasion":
-                    await ProcessSpecialOccasionAutomationAsync(context, automatedMessage, contactRepository, auditService, today, cancellationToken);
                     break;
 
                 case "Custom":
@@ -290,198 +288,6 @@ namespace Api_Vapp.Services.BackgroundServices
             _logger.LogInformation("Processing PurchaseReminder automation {Id} for date {ReminderDate}",
                 automatedMessage.Id, reminderDate);
             return Task.CompletedTask;
-        }
-
-        private async Task ProcessSpecialOccasionAutomationAsync(
-            Api_Context context,
-            AutomatedMessage automatedMessage,
-            IContactRepository contactRepository,
-            IAuditService auditService,
-            DateTime todayUtc,
-            CancellationToken cancellationToken)
-        {
-            var nowUtc = DateTime.UtcNow;
-            var todayParts = OccasionCalendarHelper.GetTodayParts(nowUtc);
-
-            var profile = await context.UserOccasionProfiles.AsNoTracking()
-                .FirstOrDefaultAsync(p => p.UserId == automatedMessage.UserId && !p.IsDeleted, cancellationToken);
-
-            // زمان ارسال: اول پروفایل (ساعت تهران)، وگرنه ScheduledTime اتوماسیون به‌عنوان تهران
-            var scheduledTehran = profile?.ScheduledTimeTehran ?? automatedMessage.ScheduledTime;
-            if (!OccasionCalendarHelper.HasReachedScheduledTimeTehran(scheduledTehran, nowUtc))
-            {
-                _logger.LogInformation(
-                    "SpecialOccasion automation {Id} scheduled for {ScheduledTime} Tehran, current Tehran {CurrentTehran} — too early, skipping",
-                    automatedMessage.Id,
-                    scheduledTehran?.ToString(@"hh\:mm"),
-                    OccasionCalendarHelper.ToTehran(nowUtc).ToString("HH:mm:ss"));
-                return;
-            }
-
-            if (profile != null && !profile.CongratulationsEnabled && !profile.CondolencesEnabled)
-            {
-                _logger.LogInformation("SpecialOccasion automation {Id} — both categories disabled for user {UserId}",
-                    automatedMessage.Id, automatedMessage.UserId);
-                return;
-            }
-
-            List<SpecialOccasion> occasionsToday;
-
-            if (automatedMessage.SpecialOccasionId.HasValue)
-            {
-                // مسیر سازگاری: یک مناسبت لینک‌شده
-                var single = await context.SpecialOccasions.AsNoTracking()
-                    .FirstOrDefaultAsync(so => so.Id == automatedMessage.SpecialOccasionId.Value
-                        && !so.IsDeleted
-                        && so.IsActive, cancellationToken);
-
-                occasionsToday = single != null
-                    && OccasionCalendarHelper.IsOccasionToday(single.CalendarType, single.Month, single.Day, todayParts)
-                        ? [single]
-                        : [];
-            }
-            else
-            {
-                // مسیر جدول مناسبتی: همه مناسبت‌های امروز (سیستمی + سفارشی کاربر)
-                var monthCandidates = new HashSet<byte>
-                {
-                    (byte)todayParts.JalaliMonth,
-                    (byte)todayParts.GregorianMonth,
-                    (byte)todayParts.HijriMonth
-                };
-
-                var candidates = await context.SpecialOccasions.AsNoTracking()
-                    .Where(so => !so.IsDeleted
-                        && so.IsActive
-                        && monthCandidates.Contains(so.Month)
-                        && (so.IsSystem || so.UserId == automatedMessage.UserId))
-                    .ToListAsync(cancellationToken);
-
-                occasionsToday = candidates
-                    .Where(so => OccasionCalendarHelper.IsOccasionToday(so.CalendarType, so.Month, so.Day, todayParts))
-                    .ToList();
-            }
-
-            if (occasionsToday.Count == 0)
-            {
-                _logger.LogInformation(
-                    "SpecialOccasion automation {Id} — no matching occasions for Tehran day {TehranDate}",
-                    automatedMessage.Id, todayParts.TehranDate);
-                return;
-            }
-
-            // فیلتر دسته تبریک/تسلیت
-            if (profile != null)
-            {
-                occasionsToday = occasionsToday
-                    .Where(o =>
-                    {
-                        var cat = OccasionCategories.Normalize(o.Category);
-                        if (cat == OccasionCategories.Condolence)
-                            return profile.CondolencesEnabled;
-                        return profile.CongratulationsEnabled;
-                    })
-                    .ToList();
-            }
-
-            if (occasionsToday.Count == 0)
-                return;
-
-            var occasionIds = occasionsToday.Select(o => o.Id).ToList();
-            var preferences = await context.UserOccasionPreferences.AsNoTracking()
-                .Where(p => p.UserId == automatedMessage.UserId
-                    && !p.IsDeleted
-                    && occasionIds.Contains(p.SpecialOccasionId))
-                .ToDictionaryAsync(p => p.SpecialOccasionId, cancellationToken);
-
-            // مناسبت‌های سیستمی opt-in هستند: نبود Preference یعنی هنوز خاموش‌اند.
-            // مناسبت سفارشی قدیمی بدون Preference برای سازگاری فعال باقی می‌ماند.
-            occasionsToday = occasionsToday
-                .Where(o => OccasionMessagePersonalizer.IsEnabledForUser(
-                    o,
-                    preferences.GetValueOrDefault(o.Id)))
-                .ToList();
-
-            if (occasionsToday.Count == 0)
-                return;
-
-            var selectedScope = await ResolveSelectedContactScopeAsync(context, automatedMessage, cancellationToken);
-
-            var contacts = await context.Contacts
-                .AsNoTracking()
-                .Include(c => c.ContactNotebook)
-                .Where(c => !c.IsDeleted && c.ContactNotebook.UserId == automatedMessage.UserId)
-                .ToListAsync(cancellationToken);
-
-            contacts = contacts.Where(c => IsContactInSelectedScope(c, selectedScope)).ToList();
-            if (contacts.Count == 0)
-            {
-                _logger.LogInformation("SpecialOccasion automation {Id} — no contacts in selected scope", automatedMessage.Id);
-                return;
-            }
-
-            var (dayStartUtc, dayEndUtc) = OccasionCalendarHelper.GetTehranDayUtcRange(todayParts.TehranDate);
-
-            var handledKeys = await context.AutomationExecutions
-                .AsNoTracking()
-                .Where(ae => ae.AutomatedMessageId == automatedMessage.Id
-                    && ae.ContactId.HasValue
-                    && ae.SpecialOccasionId.HasValue
-                    && ae.ExecutedAt >= dayStartUtc
-                    && ae.ExecutedAt < dayEndUtc)
-                .Select(ae => new { OccasionId = ae.SpecialOccasionId!.Value, ContactId = ae.ContactId!.Value })
-                .ToListAsync(cancellationToken);
-
-            var handledSet = handledKeys
-                .Select(x => (x.OccasionId, x.ContactId))
-                .ToHashSet();
-
-            var businessName = profile?.BusinessName;
-            var totalQueued = 0;
-
-            foreach (var occasion in occasionsToday)
-            {
-                preferences.TryGetValue(occasion.Id, out var pref);
-                var template = OccasionMessagePersonalizer.ResolveEffectiveTemplate(occasion, pref);
-                if (string.IsNullOrWhiteSpace(template))
-                {
-                    _logger.LogWarning(
-                        "SpecialOccasion automation {Id} occasion {OccasionId} has empty template — skipped",
-                        automatedMessage.Id, occasion.Id);
-                    continue;
-                }
-
-                var contentForQueue = OccasionMessagePersonalizer.ApplyForQueuePreview(
-                    template, businessName, occasion.Name);
-
-                // محدوده گیرندگان این مناسبت (اولویت با انتخاب مخاطب همین مناسبت)
-                var contactsToQueue = contacts
-                    .Where(c => OccasionAudienceHelper.IsContactInAudience(c, pref))
-                    .Where(c => !handledSet.Contains((occasion.Id, c.Id)))
-                    .ToList();
-
-                if (contactsToQueue.Count == 0)
-                    continue;
-
-                var queued = await EnqueueAutomatedBatchForAdminApprovalAsync(
-                    context,
-                    automatedMessage,
-                    contactsToQueue,
-                    auditService,
-                    cancellationToken,
-                    specialOccasionId: occasion.Id,
-                    overrideMessageContent: contentForQueue,
-                    campaignTitleSuffix: occasion.Name,
-                    sendAfterApprovedTemplate: true);
-
-                totalQueued += queued;
-                foreach (var c in contactsToQueue)
-                    handledSet.Add((occasion.Id, c.Id));
-            }
-
-            _logger.LogInformation(
-                "SpecialOccasion automation {Id} completed for Tehran {TehranDate}: {OccasionCount} occasions, {QueuedCount} recipients queued",
-                automatedMessage.Id, todayParts.TehranDate, occasionsToday.Count, totalQueued);
         }
 
         private Task ProcessCustomAutomationAsync(
@@ -642,11 +448,7 @@ namespace Api_Vapp.Services.BackgroundServices
             AutomatedMessage automatedMessage,
             List<Contact> contacts,
             IAuditService auditService,
-            CancellationToken cancellationToken,
-            int? specialOccasionId = null,
-            string? overrideMessageContent = null,
-            string? campaignTitleSuffix = null,
-            bool sendAfterApprovedTemplate = false)
+            CancellationToken cancellationToken)
         {
             if (contacts.Count == 0)
                 return 0;
@@ -657,7 +459,7 @@ namespace Api_Vapp.Services.BackgroundServices
                 var todayParts = OccasionCalendarHelper.GetTodayParts();
                 var (dayStartUtc, _) = OccasionCalendarHelper.GetTehranDayUtcRange(todayParts.TehranDate);
 
-                // کمپین بازِ امروز تهران برای همین اتوماسیون (+مناسبت) در صورت وجود
+                // کمپین بازِ امروز تهران برای همین اتوماسیون در صورت وجود
                 var existingCampaignQuery = context.MessageCampaigns
                     .Include(c => c.Recipients)
                     .Where(c => c.AutomatedMessageId == automatedMessage.Id
@@ -668,20 +470,10 @@ namespace Api_Vapp.Services.BackgroundServices
 
                 var existingCampaign = await existingCampaignQuery.FirstOrDefaultAsync(cancellationToken);
 
-                if (existingCampaign != null && !string.IsNullOrWhiteSpace(campaignTitleSuffix)
-                    && existingCampaign.Title != null
-                    && !existingCampaign.Title.Contains(campaignTitleSuffix, StringComparison.Ordinal))
-                {
-                    // برای مناسبت‌های مختلف کمپین جدا بساز تا متن متفاوت حفظ شود
-                    existingCampaign = null;
-                }
-
-                string messageContent = overrideMessageContent
-                    ?? automatedMessage.MessageContent
-                    ?? string.Empty;
+                string messageContent = automatedMessage.MessageContent ?? string.Empty;
                 Message? message = null;
 
-                if (string.IsNullOrWhiteSpace(overrideMessageContent) && automatedMessage.MessageId.HasValue)
+                if (automatedMessage.MessageId.HasValue)
                 {
                     message = await context.Messages
                         .FirstOrDefaultAsync(m => m.Id == automatedMessage.MessageId.Value && !m.IsDeleted, cancellationToken);
@@ -719,14 +511,10 @@ namespace Api_Vapp.Services.BackgroundServices
                         return 0;
                     }
 
-                    var title = automatedMessage.Title ?? $"پیام خودکار #{automatedMessage.Id}";
-                    if (!string.IsNullOrWhiteSpace(campaignTitleSuffix))
-                        title = $"{title} — {campaignTitleSuffix}";
-
                     message = new Message
                     {
                         UserId = automatedMessage.UserId,
-                        Title = title,
+                        Title = automatedMessage.Title ?? $"پیام خودکار #{automatedMessage.Id}",
                         Content = messageContent,
                         CharacterCount = SmsPartsCalculator.CountMessageCharacters(messageContent, pricing.Rules),
                         PartsCount = partsCount,
@@ -737,52 +525,12 @@ namespace Api_Vapp.Services.BackgroundServices
                     await context.Messages.AddAsync(message, cancellationToken);
                     await context.SaveChangesAsync(cancellationToken);
 
-                    // فقط وقتی override نداریم MessageId اتوماسیون را عوض کن
-                    if (string.IsNullOrWhiteSpace(overrideMessageContent))
-                        automatedMessage.MessageId = message.Id;
+                    automatedMessage.MessageId = message.Id;
                 }
                 else if (!message.IsPersonalized)
                 {
                     message.IsPersonalized = true;
                     message.UpdatedAt = DateTime.UtcNow;
-                }
-                else if (!string.IsNullOrWhiteSpace(overrideMessageContent))
-                {
-                    // برای هر مناسبت Message جدا با متن خودش
-                    await using var pricingScope = _serviceProvider.CreateAsyncScope();
-                    var pricing = await pricingScope.ServiceProvider
-                        .GetRequiredService<ISmsPricingService>()
-                        .GetRuntimeAsync(cancellationToken);
-
-                    int partsCount;
-                    try
-                    {
-                        partsCount = SmsPartsCalculator.CalculateParts(messageContent, pricing.Rules);
-                    }
-                    catch (ArgumentException ex)
-                    {
-                        _logger.LogWarning(ex, "Occasion message exceeds max pages — AutomatedMessageId: {Id}", automatedMessage.Id);
-                        await transaction.RollbackAsync(cancellationToken);
-                        return 0;
-                    }
-
-                    var title = automatedMessage.Title ?? $"پیام خودکار #{automatedMessage.Id}";
-                    if (!string.IsNullOrWhiteSpace(campaignTitleSuffix))
-                        title = $"{title} — {campaignTitleSuffix}";
-
-                    message = new Message
-                    {
-                        UserId = automatedMessage.UserId,
-                        Title = title,
-                        Content = messageContent,
-                        CharacterCount = SmsPartsCalculator.CountMessageCharacters(messageContent, pricing.Rules),
-                        PartsCount = partsCount,
-                        IsPersonalized = true,
-                        Status = "Ready",
-                        CreatedAt = DateTime.UtcNow
-                    };
-                    await context.Messages.AddAsync(message, cancellationToken);
-                    await context.SaveChangesAsync(cancellationToken);
                 }
 
                 var now = DateTime.UtcNow;
@@ -806,23 +554,17 @@ namespace Api_Vapp.Services.BackgroundServices
                 }
                 else
                 {
-                    var campaignTitle = automatedMessage.Title ?? $"خودکار — {automatedMessage.AutomationType} #{automatedMessage.Id}";
-                    if (!string.IsNullOrWhiteSpace(campaignTitleSuffix))
-                        campaignTitle = $"{campaignTitle} — {campaignTitleSuffix}";
-
                     campaign = new MessageCampaign
                     {
                         MessageId = message.Id,
                         UserId = automatedMessage.UserId,
-                        Title = campaignTitle,
+                        Title = automatedMessage.Title ?? $"خودکار — {automatedMessage.AutomationType} #{automatedMessage.Id}",
                         SendType = "Automated",
                         AutomatedMessageId = automatedMessage.Id,
                         RecipientsCount = 0,
                         PartsCount = message.PartsCount,
-                        Status = sendAfterApprovedTemplate ? "Pending" : "PendingApproval",
-                        AdminApprovalStatus = sendAfterApprovedTemplate
-                            ? AdminApprovalStatuses.Approved
-                            : AdminApprovalStatuses.Pending,
+                        Status = "PendingApproval",
+                        AdminApprovalStatus = AdminApprovalStatuses.Pending,
                         IsActive = true,
                         CreatedAt = now
                     };
@@ -844,7 +586,6 @@ namespace Api_Vapp.Services.BackgroundServices
                     {
                         AutomatedMessageId = automatedMessage.Id,
                         ContactId = contact.Id,
-                        SpecialOccasionId = specialOccasionId,
                         ExecutedAt = now,
                         Status = "PendingApproval",
                         MessageContent = previewContent,
@@ -857,36 +598,33 @@ namespace Api_Vapp.Services.BackgroundServices
                 automatedMessage.LastExecutedAt = now;
                 await context.SaveChangesAsync(cancellationToken);
 
-                if (!sendAfterApprovedTemplate)
-                {
-                    var approvalRequest = await context.SmsApprovalRequests
-                        .FirstOrDefaultAsync(r => r.MessageCampaignId == campaign.Id
-                            && r.Status == AdminApprovalStatuses.Pending
-                            && !r.IsDeleted,
-                            cancellationToken);
+                var approvalRequest = await context.SmsApprovalRequests
+                    .FirstOrDefaultAsync(r => r.MessageCampaignId == campaign.Id
+                        && r.Status == AdminApprovalStatuses.Pending
+                        && !r.IsDeleted,
+                        cancellationToken);
 
-                    if (approvalRequest != null)
+                if (approvalRequest != null)
+                {
+                    approvalRequest.ContentPreview = previewContent;
+                    approvalRequest.TitlePreview = campaign.Title;
+                    approvalRequest.RecipientsCount = campaign.RecipientsCount;
+                    approvalRequest.UpdatedAt = now;
+                }
+                else
+                {
+                    await context.SmsApprovalRequests.AddAsync(new SmsApprovalRequest
                     {
-                        approvalRequest.ContentPreview = previewContent;
-                        approvalRequest.TitlePreview = campaign.Title;
-                        approvalRequest.RecipientsCount = campaign.RecipientsCount;
-                        approvalRequest.UpdatedAt = now;
-                    }
-                    else
-                    {
-                        await context.SmsApprovalRequests.AddAsync(new SmsApprovalRequest
-                        {
-                            UserId = automatedMessage.UserId,
-                            RequestType = SmsApprovalRequestTypes.Campaign,
-                            MessageCampaignId = campaign.Id,
-                            MessageId = message.Id,
-                            ContentPreview = previewContent,
-                            TitlePreview = campaign.Title,
-                            RecipientsCount = campaign.RecipientsCount,
-                            Status = AdminApprovalStatuses.Pending,
-                            CreatedAt = now
-                        }, cancellationToken);
-                    }
+                        UserId = automatedMessage.UserId,
+                        RequestType = SmsApprovalRequestTypes.Campaign,
+                        MessageCampaignId = campaign.Id,
+                        MessageId = message.Id,
+                        ContentPreview = previewContent,
+                        TitlePreview = campaign.Title,
+                        RecipientsCount = campaign.RecipientsCount,
+                        Status = AdminApprovalStatuses.Pending,
+                        CreatedAt = now
+                    }, cancellationToken);
                 }
 
                 await context.SaveChangesAsync(cancellationToken);
@@ -903,39 +641,17 @@ namespace Api_Vapp.Services.BackgroundServices
                     After = new
                     {
                         automatedMessageId = automatedMessage.Id,
-                        specialOccasionId,
                         addedRecipients = contacts.Count,
                         totalRecipients = campaign.RecipientsCount
                     }
                 }, cancellationToken);
 
-                if (sendAfterApprovedTemplate)
-                {
-                    await using var sendScope = _serviceProvider.CreateAsyncScope();
-                    var messageService = sendScope.ServiceProvider.GetRequiredService<IMessageService>();
-                    var sendResult = await messageService.ConfirmAndSendCampaignAsync(
-                        campaign.Id,
-                        automatedMessage.UserId,
-                        bypassAdminApproval: true);
-
-                    if (!sendResult.Success)
-                    {
-                        _logger.LogWarning(
-                            "Approved occasion campaign {CampaignId} could not be sent — UserId: {UserId}, ErrorCode: {ErrorCode}",
-                            campaign.Id,
-                            automatedMessage.UserId,
-                            sendResult.ErrorCode);
-                    }
-                }
-
                 _logger.LogInformation(
-                    "Queued automated message {AutomationId} occasion {OccasionId} as campaign {CampaignId} (+{Added} recipients, total {Total}), send-after-template-approval: {SendAfterApprovedTemplate}",
+                    "Queued automated message {AutomationId} as campaign {CampaignId} (+{Added} recipients, total {Total})",
                     automatedMessage.Id,
-                    specialOccasionId,
                     campaign.Id,
                     contacts.Count,
-                    campaign.RecipientsCount,
-                    sendAfterApprovedTemplate);
+                    campaign.RecipientsCount);
 
                 return contacts.Count;
             }

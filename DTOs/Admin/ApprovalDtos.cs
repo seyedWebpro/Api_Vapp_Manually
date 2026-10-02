@@ -23,6 +23,7 @@ namespace Api_Vapp.DTOs.Admin
         public DateTime? ReviewedAt { get; set; }
         public string? RejectionReason { get; set; }
         public DateTime CreatedAt { get; set; }
+        public DateTime? UpdatedAt { get; set; }
     }
 
     public class TemplateApprovalResponseDto

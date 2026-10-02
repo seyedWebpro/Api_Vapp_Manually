@@ -271,6 +271,8 @@ namespace Api_Vapp.Services
 
         public async Task ProcessDueStepsAsync(CancellationToken cancellationToken)
         {
+            await RecoverStaleProcessingStepsAsync(cancellationToken);
+
             var now = DateTime.UtcNow;
             var dueStepIds = await _context.ProfessionalCampaignSteps
                 .AsNoTracking()
@@ -314,113 +316,165 @@ namespace Api_Vapp.Services
             }
         }
 
+        /// <summary>
+        /// اگر بعد از claim فرایند قطع شود، مرحله روی Processing می‌ماند و دیگر انتخاب نمی‌شود.
+        /// مراحل گیرکرده را Failed می‌کنیم تا کاربر بتواند Retry بزند (جلوگیری از ارسال دوباره خودکار).
+        /// </summary>
+        private async Task RecoverStaleProcessingStepsAsync(CancellationToken cancellationToken)
+        {
+            var staleBefore = DateTime.UtcNow.AddMinutes(-2);
+            var staleIds = await _context.ProfessionalCampaignSteps
+                .AsNoTracking()
+                .Where(s => !s.IsDeleted
+                    && s.Status == ProfessionalCampaignStepStatuses.Processing
+                    && s.UpdatedAt != null
+                    && s.UpdatedAt < staleBefore)
+                .Select(s => s.Id)
+                .Take(20)
+                .ToListAsync(cancellationToken);
+
+            foreach (var stepId in staleIds)
+            {
+                _logger.LogWarning(
+                    "Recovering stale professional campaign step — StepId: {StepId}",
+                    stepId);
+                await MarkStepFailedAsync(
+                    stepId,
+                    "ارسال پیام کمپین ناتمام ماند. لطفاً دوباره تلاش کنید.",
+                    cancellationToken);
+            }
+        }
+
         private async Task SendStepAsync(int stepId, CancellationToken cancellationToken)
         {
-            await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
-            try
+            // تراکنش محیطی دور SendDirectMessageAsync باز نمی‌شود:
+            // کسر کیف پول / ارسال SMS خودشان تراکنش دارند و BeginTransaction تو در تو می‌ترکد.
+            var step = await _context.ProfessionalCampaignSteps
+                .Include(s => s.ProfessionalCampaign)
+                .ThenInclude(c => c.Recipients.Where(r => !r.IsDeleted))
+                .FirstAsync(s => s.Id == stepId, cancellationToken);
+
+            var campaign = step.ProfessionalCampaign;
+            var recipientDtos = campaign.Recipients.Select(r => new RecipientItemDto
             {
-                var step = await _context.ProfessionalCampaignSteps
-                    .Include(s => s.ProfessionalCampaign)
-                    .ThenInclude(c => c.Recipients.Where(r => !r.IsDeleted))
-                    .FirstAsync(s => s.Id == stepId, cancellationToken);
+                ContactId = r.ContactId,
+                MobileNumber = r.MobileNumber,
+                FullName = r.FullName
+            }).ToList();
 
-                var campaign = step.ProfessionalCampaign;
-                var recipientDtos = campaign.Recipients.Select(r => new RecipientItemDto
-                {
-                    ContactId = r.ContactId,
-                    MobileNumber = r.MobileNumber,
-                    FullName = r.FullName
-                }).ToList();
-
-                var message = new Message
-                {
-                    UserId = campaign.UserId,
-                    Title = $"{campaign.Title} - پیام {step.StepOrder}",
-                    Content = step.Content,
-                    IsPersonalized = step.Content.Contains('{') && step.Content.Contains('}'),
-                    CreatedAt = DateTime.UtcNow
-                };
-                _context.Messages.Add(message);
-                await _context.SaveChangesAsync(cancellationToken);
-
-                var session = new MessageSession
-                {
-                    MessageId = message.Id,
-                    UserId = campaign.UserId,
-                    SelectionCriteria = JsonSerializer.Serialize(new
-                    {
-                        SelectionType = campaign.TargetType,
-                        ProfessionalCampaignId = campaign.Id,
-                        ProfessionalCampaignStepId = step.Id
-                    }),
-                    RecipientsJson = JsonSerializer.Serialize(recipientDtos),
-                    IsUsed = false,
-                    ExpiresAt = DateTime.UtcNow.AddHours(24),
-                    CreatedAt = DateTime.UtcNow
-                };
-                _context.MessageSessions.Add(session);
-                await _context.SaveChangesAsync(cancellationToken);
-
-                var result = await _messageService.SendDirectMessageAsync(
-                    campaign.UserId,
-                    message.Id,
-                    new SendDirectMessageDto
-                    {
-                        SendType = CampaignSendType.Quick,
-                        PreventDuplicate = false,
-                        SendToSpecificTags = false
-                    },
-                    session,
-                    bypassAdminApproval: true);
-
-                if (!result.Success || result.Data == null || result.Data.SentCount == 0)
-                {
-                    await MarkStepFailedAsync(
-                        step.Id,
-                        string.IsNullOrWhiteSpace(result.Message) ? "هیچ پیامکی ارسال نشد" : result.Message,
-                        cancellationToken,
-                        result.Data?.FailedCount ?? campaign.RecipientsCount);
-                    await transaction.CommitAsync(cancellationToken);
-                    return;
-                }
-
-                step.Status = ProfessionalCampaignStepStatuses.Sent;
-                step.SentCount = result.Data.SentCount;
-                step.FailedCount = result.Data.FailedCount;
-                step.SentAtUtc = DateTime.UtcNow;
-                step.LastError = null;
-                step.UpdatedAt = DateTime.UtcNow;
-
-                var nextStep = await _context.ProfessionalCampaignSteps
-                    .Where(s => s.ProfessionalCampaignId == campaign.Id
-                        && !s.IsDeleted
-                        && s.StepOrder > step.StepOrder
-                        && s.Status == ProfessionalCampaignStepStatuses.Pending)
-                    .OrderBy(s => s.StepOrder)
-                    .FirstOrDefaultAsync(cancellationToken);
-                if (nextStep == null)
-                {
-                    campaign.Status = ProfessionalCampaignStatuses.Completed;
-                    campaign.IsActive = false;
-                    campaign.UpdatedAt = DateTime.UtcNow;
-                }
-                else
-                {
-                    // فاصله هر مرحله از زمان ارسال واقعی مرحله قبلی محاسبه می‌شود.
-                    nextStep.ScheduledAtUtc = ProfessionalCampaignSchedule.GetNextUtc(
-                        DateTime.SpecifyKind(step.SentAtUtc.Value, DateTimeKind.Utc),
-                        nextStep.DelayAfterPreviousMinutes);
-                    nextStep.UpdatedAt = DateTime.UtcNow;
-                }
-
-                await _context.SaveChangesAsync(cancellationToken);
-                await transaction.CommitAsync(cancellationToken);
-            }
-            catch
+            var message = new Message
             {
-                await transaction.RollbackAsync(cancellationToken);
-                throw;
+                UserId = campaign.UserId,
+                Title = $"{campaign.Title} - پیام {step.StepOrder}",
+                Content = step.Content,
+                IsPersonalized = step.Content.Contains('{') && step.Content.Contains('}'),
+                CreatedAt = DateTime.UtcNow
+            };
+            _context.Messages.Add(message);
+            await _context.SaveChangesAsync(cancellationToken);
+
+            var session = new MessageSession
+            {
+                MessageId = message.Id,
+                UserId = campaign.UserId,
+                SelectionCriteria = JsonSerializer.Serialize(new
+                {
+                    SelectionType = campaign.TargetType,
+                    ProfessionalCampaignId = campaign.Id,
+                    ProfessionalCampaignStepId = step.Id
+                }),
+                RecipientsJson = JsonSerializer.Serialize(recipientDtos),
+                IsUsed = false,
+                ExpiresAt = DateTime.UtcNow.AddHours(24),
+                CreatedAt = DateTime.UtcNow
+            };
+            _context.MessageSessions.Add(session);
+            await _context.SaveChangesAsync(cancellationToken);
+
+            _logger.LogInformation(
+                "Professional campaign step send started — StepId: {StepId}, CampaignId: {CampaignId}, MessageId: {MessageId}",
+                step.Id, campaign.Id, message.Id);
+
+            var result = await _messageService.SendDirectMessageAsync(
+                campaign.UserId,
+                message.Id,
+                new SendDirectMessageDto
+                {
+                    SendType = CampaignSendType.Quick,
+                    PreventDuplicate = false,
+                    SendToSpecificTags = false
+                },
+                session,
+                bypassAdminApproval: true);
+
+            if (!result.Success || result.Data == null || result.Data.SentCount == 0)
+            {
+                var failureMessage = string.IsNullOrWhiteSpace(result.Message)
+                    ? "هیچ پیامکی ارسال نشد"
+                    : result.Message;
+                _logger.LogWarning(
+                    "Professional campaign step send returned no success — StepId: {StepId}, CampaignId: {CampaignId}, Message: {Message}, SentCount: {SentCount}",
+                    step.Id,
+                    campaign.Id,
+                    failureMessage,
+                    result.Data?.SentCount ?? 0);
+                await MarkStepFailedAsync(
+                    step.Id,
+                    failureMessage,
+                    cancellationToken,
+                    result.Data?.FailedCount ?? campaign.RecipientsCount);
+                return;
             }
+
+            // موجودیت‌های tracked قبلی را رها کن تا وضعیت claim از DB خوانده شود
+            _context.ChangeTracker.Clear();
+
+            step = await _context.ProfessionalCampaignSteps
+                .Include(s => s.ProfessionalCampaign)
+                .FirstAsync(s => s.Id == stepId, cancellationToken);
+            campaign = step.ProfessionalCampaign;
+
+            if (step.Status != ProfessionalCampaignStepStatuses.Processing)
+            {
+                _logger.LogWarning(
+                    "Professional campaign step status changed during send — StepId: {StepId}, Status: {Status}",
+                    step.Id, step.Status);
+                return;
+            }
+
+            step.Status = ProfessionalCampaignStepStatuses.Sent;
+            step.SentCount = result.Data.SentCount;
+            step.FailedCount = result.Data.FailedCount;
+            step.SentAtUtc = DateTime.UtcNow;
+            step.LastError = null;
+            step.UpdatedAt = DateTime.UtcNow;
+
+            var nextStep = await _context.ProfessionalCampaignSteps
+                .Where(s => s.ProfessionalCampaignId == campaign.Id
+                    && !s.IsDeleted
+                    && s.StepOrder > step.StepOrder
+                    && s.Status == ProfessionalCampaignStepStatuses.Pending)
+                .OrderBy(s => s.StepOrder)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (nextStep == null)
+            {
+                campaign.Status = ProfessionalCampaignStatuses.Completed;
+                campaign.IsActive = false;
+                campaign.UpdatedAt = DateTime.UtcNow;
+            }
+            else
+            {
+                // فاصله هر مرحله از زمان ارسال واقعی مرحله قبلی محاسبه می‌شود.
+                nextStep.ScheduledAtUtc = ProfessionalCampaignSchedule.GetNextUtc(
+                    DateTime.SpecifyKind(step.SentAtUtc.Value, DateTimeKind.Utc),
+                    nextStep.DelayAfterPreviousMinutes);
+                nextStep.UpdatedAt = DateTime.UtcNow;
+            }
+
+            await _context.SaveChangesAsync(cancellationToken);
+            _logger.LogInformation(
+                "Professional campaign step sent — StepId: {StepId}, CampaignId: {CampaignId}, SentCount: {SentCount}",
+                step.Id, campaign.Id, result.Data.SentCount);
         }
 
         private async Task MarkStepFailedAsync(
@@ -429,11 +483,20 @@ namespace Api_Vapp.Services
             CancellationToken cancellationToken,
             int failedCount = 0)
         {
+            _context.ChangeTracker.Clear();
             var step = await _context.ProfessionalCampaignSteps
                 .Include(s => s.ProfessionalCampaign)
                 .FirstOrDefaultAsync(s => s.Id == stepId, cancellationToken);
             if (step == null)
                 return;
+            if (step.Status == ProfessionalCampaignStepStatuses.Sent)
+            {
+                _logger.LogWarning(
+                    "Skip marking professional campaign step failed — already Sent. StepId: {StepId}",
+                    stepId);
+                return;
+            }
+
             step.Status = ProfessionalCampaignStepStatuses.Failed;
             step.FailedCount = failedCount;
             step.LastError = message.Length > 1000 ? message[..1000] : message;
@@ -442,6 +505,9 @@ namespace Api_Vapp.Services
             step.ProfessionalCampaign.IsActive = false;
             step.ProfessionalCampaign.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync(cancellationToken);
+            _logger.LogWarning(
+                "Professional campaign step marked failed — StepId: {StepId}, CampaignId: {CampaignId}",
+                step.Id, step.ProfessionalCampaignId);
         }
 
         private async Task<ApiResponse<ProfessionalCampaignResponseDto>> SetActiveStateAsync(

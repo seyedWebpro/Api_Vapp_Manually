@@ -1900,12 +1900,20 @@ namespace Api_Vapp.Services
                             "نام مناسبت و تاریخ مناسبت الزامی است");
                     }
 
+                    // تاریخ تقویمی مناسبت — نیمه‌شب UTC (بدون شیفت timezone محلی)
+                    var occasionDate = managementDto.OccasionDate.Value.EnsureDateOnlyUtc();
+                    // تطبیق سالانه فقط با Month/Day انجام می‌شود؛ کاربر تاریخ را شمسی وارد می‌کند
+                    var (occasionMonth, occasionDay) = OccasionCalendarHelper.ExtractMonthDayFromDate(
+                        occasionDate, OccasionCalendarTypes.Jalali);
+
                     var specialOccasion = new SpecialOccasion
                     {
                         UserId = userId,
                         Name = managementDto.OccasionName.Trim(),
-                        // تاریخ تقویمی مناسبت — نیمه‌شب UTC (بدون شیفت timezone محلی)
-                        OccasionDate = managementDto.OccasionDate.Value.EnsureDateOnlyUtc(),
+                        OccasionDate = occasionDate,
+                        CalendarType = OccasionCalendarTypes.Jalali,
+                        Month = (byte)occasionMonth,
+                        Day = (byte)occasionDay,
                         Type = "Custom",
                         IsSystem = false,
                         IsActive = true,

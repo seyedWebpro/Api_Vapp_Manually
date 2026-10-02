@@ -544,8 +544,14 @@ namespace Api_Vapp.Services
                     ? WalletTransactionTypes.Purchase
                     : transactionType;
 
-                using var transaction = await _context.Database.BeginTransactionAsync(
-                    System.Data.IsolationLevel.Serializable);
+                // اگر فراخوان‌کننده (مثلاً کمپین حرفه‌ای) قبلاً تراکنش باز کرده،
+                // BeginTransaction دوباره باعث InvalidOperationException می‌شود.
+                var ownsTransaction = _context.Database.CurrentTransaction == null;
+                IDbContextTransaction? transaction = null;
+                if (ownsTransaction)
+                    transaction = await _context.Database.BeginTransactionAsync(
+                        System.Data.IsolationLevel.Serializable);
+
                 try
                 {
                     // قفل سطح ردیف تا دو ارسال هم‌زمان باعث overdraw / پیامک رایگان نشوند
@@ -557,7 +563,8 @@ namespace Api_Vapp.Services
 
                     if (user == null)
                     {
-                        await transaction.RollbackAsync();
+                        if (ownsTransaction && transaction != null)
+                            await transaction.RollbackAsync();
                         return ApiResponse<WalletTransactionDto>.NotFound("کاربر یافت نشد");
                     }
 
@@ -572,7 +579,8 @@ namespace Api_Vapp.Services
 
                         if (existingByRef != null)
                         {
-                            await transaction.RollbackAsync();
+                            if (ownsTransaction && transaction != null)
+                                await transaction.RollbackAsync();
                             _logger.LogInformation(
                                 "Wallet debit skipped — duplicate ReferenceNumber. UserId={UserId}, Ref={Ref}, ExistingTxId={TxId}",
                                 userId, referenceNumber, existingByRef.Id);
@@ -585,7 +593,8 @@ namespace Api_Vapp.Services
 
                     if (user.WalletBalance < amount)
                     {
-                        await transaction.RollbackAsync();
+                        if (ownsTransaction && transaction != null)
+                            await transaction.RollbackAsync();
                         if (sendPushNotification)
                         {
                             var warn = PushNotificationCopy.InsufficientWallet(amount, user.WalletBalance);
@@ -622,7 +631,8 @@ namespace Api_Vapp.Services
                     user.UpdatedAt = DateTime.UtcNow;
 
                     await _context.SaveChangesAsync();
-                    await transaction.CommitAsync();
+                    if (ownsTransaction && transaction != null)
+                        await transaction.CommitAsync();
 
                     _logger.LogInformation(
                         "موجودی کیف پول کاربر {UserId} به مبلغ {Amount} تومان کاهش یافت. موجودی جدید: {NewBalance}",
@@ -670,8 +680,14 @@ namespace Api_Vapp.Services
                 }
                 catch
                 {
-                    await transaction.RollbackAsync();
+                    if (ownsTransaction && transaction != null)
+                        await transaction.RollbackAsync();
                     throw;
+                }
+                finally
+                {
+                    if (ownsTransaction)
+                        transaction?.Dispose();
                 }
             }
             catch (Exception ex)

@@ -13,6 +13,9 @@
 #   ADMIN_PHONE        اختیاری برای تأیید قالب (اگر خالی، از DB روی سرور تأیید می‌شود)
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
 BASE_URL="${BASE_URL:-${API:-http://127.0.0.1:8080}}"
 OWNER_PHONE="${OWNER_PHONE:-09920374397}"
 TARGET_PHONES="${TARGET_PHONES:-09920374397,09392615526}"
@@ -22,6 +25,11 @@ PASS=0
 FAIL=0
 CREATED_OCCASION_ID=""
 AUTH_HEADER=()
+SQL_CONTAINER=""
+SQLCMD_BIN=""
+SA_PASSWORD_LOCAL=""
+SYSTEM_ORIG_MD=""
+SYSTEM_ID=""
 
 KEEP_CREATED="${KEEP_CREATED:-1}"
 cleanup() {
@@ -84,20 +92,24 @@ http_json() {
 }
 
 get_token() {
-  local phone="$1" login otp verify wait_i
+  local phone="$1" login otp verify wait_i marker logf
+  logf="${ROOT_DIR:-.}/log/log-$(date +%Y%m%d).txt"
   for wait_i in 1 2 3 4 5; do
+    marker="OTP_MARK_${phone}_$(date +%s)_$wait_i"
+    [[ -d "$(dirname "$logf")" ]] && echo "$marker" >> "$logf" || true
     login=$(curl -sS -m 30 -X POST "$BASE_URL/api/Auth/login" \
       -H "Content-Type: application/json" \
       -d "{\"phoneNumber\":\"$phone\"}" || true)
     otp=$(echo "$login" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('otpCode') or (d.get('data') or {}).get('otpCode') or '')" 2>/dev/null || true)
+    if [[ -z "$otp" && -f "$logf" ]]; then
+      sleep 2
+      otp=$(awk -v m="$marker" 'f; $0~m{f=1}' "$logf" \
+        | grep -E "OTP sent successfully - Phone: ${phone}, OTP: [0-9]+|OTP: [0-9]+, Sid:" \
+        | tail -1 | sed -n 's/.*OTP: \([0-9]\+\).*/\1/p' || true)
+    fi
     if [[ -z "$otp" ]]; then
-      # روی خود سرور از لاگ داکر؛ در غیر این صورت از ssh
       if command -v docker >/dev/null 2>&1 && docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^vapp_api_prod$'; then
         otp=$(docker logs --tail 80 vapp_api_prod 2>&1 | grep 'DEV OTP' | tail -1 | sed -n 's/.*>>> \([0-9]*\) <<<.*/\1/p' || true)
-      else
-        otp=$(ssh -o BatchMode=yes -o ConnectTimeout=15 vapp-prod \
-          "docker logs --tail 80 vapp_api_prod 2>&1 | grep 'DEV OTP' | tail -1" \
-          | sed -n 's/.*>>> \([0-9]*\) <<<.*/\1/p' || true)
       fi
     fi
     [[ -n "$otp" ]] && break
@@ -109,6 +121,29 @@ get_token() {
     -H "Content-Type: application/json" \
     -d "{\"phoneNumber\":\"$phone\",\"otpCode\":\"$otp\"}")
   echo "$verify" | python3 -c "import sys,json; d=json.load(sys.stdin); print((d.get('tokens') or (d.get('data') or {}).get('tokens') or {}).get('accessToken') or '')"
+}
+
+resolve_sql() {
+  SQL_CONTAINER="${SQL_CONTAINER:-}"
+  SA_PASSWORD_LOCAL="${SA_PASSWORD:-Vapp@Secure2025!}"
+  if [[ -z "$SQL_CONTAINER" ]]; then
+    if docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^vapp_sqlserver_dev$'; then
+      SQL_CONTAINER=vapp_sqlserver_dev
+    elif docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^vapp_sqlserver_prod$'; then
+      SQL_CONTAINER=vapp_sqlserver_prod
+    fi
+  fi
+  SQLCMD_BIN=/opt/mssql-tools18/bin/sqlcmd
+  if [[ -n "$SQL_CONTAINER" ]] && docker exec "$SQL_CONTAINER" test -x /opt/mssql-tools/bin/sqlcmd 2>/dev/null; then
+    SQLCMD_BIN=/opt/mssql-tools/bin/sqlcmd
+  fi
+}
+
+run_sql() {
+  local sql="$1"
+  resolve_sql
+  [[ -n "${SQL_CONTAINER:-}" ]] || return 1
+  docker exec "$SQL_CONTAINER" "$SQLCMD_BIN" -S localhost -U sa -P "$SA_PASSWORD_LOCAL" -C -d DbVapp -h -1 -W -Q "SET NOCOUNT ON; SET QUOTED_IDENTIFIER ON; SET ANSI_NULLS ON; $sql"
 }
 
 echo "=== Occasion greeting crawl @ $BASE_URL ==="
@@ -327,22 +362,9 @@ if [[ "${ADMIN_PHONE:-}" != "" ]]; then
   fi
 else
   echo "Approve occasion templates via SQL ..."
-  SQL_CONTAINER="${SQL_CONTAINER:-}"
-  SA_PASSWORD_LOCAL="${SA_PASSWORD:-Vapp@Secure2025!}"
-  if [[ -z "$SQL_CONTAINER" ]]; then
-    if docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^vapp_sqlserver_dev$'; then
-      SQL_CONTAINER=vapp_sqlserver_dev
-    elif docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^vapp_sqlserver_prod$'; then
-      SQL_CONTAINER=vapp_sqlserver_prod
-    fi
-  fi
-  approve_sql_local() {
-    local container="$1" password="$2"
-    local sqlcmd=/opt/mssql-tools18/bin/sqlcmd
-    docker exec "$container" test -x /opt/mssql-tools/bin/sqlcmd 2>/dev/null && sqlcmd=/opt/mssql-tools/bin/sqlcmd
-    docker exec "$container" "$sqlcmd" -S localhost -U sa -P "$password" -C -d DbVapp -Q "
-SET QUOTED_IDENTIFIER ON;
-SET ANSI_NULLS ON;
+  resolve_sql
+  if [[ -n "${SQL_CONTAINER:-}" ]]; then
+    run_sql "
 UPDATE MessageTemplates
 SET ApprovalStatus = N'Approved', ApprovedAt = SYSUTCDATETIME(), UpdatedAt = SYSUTCDATETIME()
 WHERE IsDeleted = 0 AND ApprovalStatus = N'Pending'
@@ -351,27 +373,9 @@ UPDATE UserOccasionPreferences
 SET TemplateApprovalStatus = N'Approved', TemplateApprovedAt = SYSUTCDATETIME(), UpdatedAt = SYSUTCDATETIME()
 WHERE IsDeleted = 0 AND TemplateApprovalStatus = N'Pending';
 SELECT 'templates_and_prefs_approved' AS Result;
-"
-  }
-  if [[ "$SQL_CONTAINER" == "vapp_sqlserver_dev" ]]; then
-    approve_sql_local "$SQL_CONTAINER" "$SA_PASSWORD_LOCAL" || true
-  elif [[ "$SQL_CONTAINER" == "vapp_sqlserver_prod" ]]; then
-    sa_password="$(grep -E '^SA_PASSWORD=' /root/Api_Vapp_Manually/docker/.env 2>/dev/null | cut -d= -f2- || true)"
-    [[ -n "$sa_password" ]] || sa_password="$SA_PASSWORD_LOCAL"
-    approve_sql_local "$SQL_CONTAINER" "$sa_password" || true
+" || true
   else
-    ssh -o BatchMode=yes -o ConnectTimeout=20 vapp-prod 'bash -s' <<'REMOTE' || true
-SA_PASSWORD="$(grep -E '^SA_PASSWORD=' /root/Api_Vapp_Manually/docker/.env | cut -d= -f2-)"
-SQLCMD=/opt/mssql-tools/bin/sqlcmd
-docker exec vapp_sqlserver_prod test -x "$SQLCMD" || SQLCMD=/opt/mssql-tools18/bin/sqlcmd
-docker exec vapp_sqlserver_prod "$SQLCMD" -S localhost -U sa -P "$SA_PASSWORD" -C -d DbVapp -Q "
-SET QUOTED_IDENTIFIER ON; SET ANSI_NULLS ON;
-UPDATE MessageTemplates SET ApprovalStatus=N'Approved', ApprovedAt=SYSUTCDATETIME(), UpdatedAt=SYSUTCDATETIME()
-WHERE IsDeleted=0 AND ApprovalStatus=N'Pending' AND (Category LIKE N'%مناسبت%' OR Name LIKE N'%مناسبت%');
-UPDATE UserOccasionPreferences SET TemplateApprovalStatus=N'Approved', TemplateApprovedAt=SYSUTCDATETIME(), UpdatedAt=SYSUTCDATETIME()
-WHERE IsDeleted=0 AND TemplateApprovalStatus=N'Pending';
-"
-REMOTE
+    echo "SKIP  SQL approve (no SQL container)"
   fi
 fi
 
@@ -402,14 +406,11 @@ PY
 )
     http_json POST "/api/SpecialOccasion/${SYSTEM_ID}/audience/update" "$AUD_BODY" "$TMP_DIR/aud_sys.json" >/dev/null || true
   fi
-  # تاریخ سیستمی را موقتاً روی امروز جلالی بگذار
-  if command -v docker >/dev/null 2>&1 && docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^vapp_sqlserver_prod$'; then
-    SA_PASSWORD="$(grep -E '^SA_PASSWORD=' /root/Api_Vapp_Manually/docker/.env | cut -d= -f2-)"
-    SQLCMD=/opt/mssql-tools/bin/sqlcmd
-    docker exec vapp_sqlserver_prod test -x "$SQLCMD" || SQLCMD=/opt/mssql-tools18/bin/sqlcmd
-    SYSTEM_ORIG_MD="$(docker exec vapp_sqlserver_prod "$SQLCMD" -S localhost -U sa -P "$SA_PASSWORD" -C -d DbVapp -h -1 -W -Q "SET NOCOUNT ON; SELECT CONCAT(Month,'|',Day,'|',CalendarType) FROM SpecialOccasions WHERE Id=$SYSTEM_ID;" | tr -d '\r' | head -1 | xargs)"
-    docker exec vapp_sqlserver_prod "$SQLCMD" -S localhost -U sa -P "$SA_PASSWORD" -C -d DbVapp -Q \
-      "UPDATE SpecialOccasions SET Month=$J_M, Day=$J_D, CalendarType=N'Jalali', UpdatedAt=SYSUTCDATETIME() WHERE Id=$SYSTEM_ID AND IsSystem=1;" >/dev/null || true
+  # تاریخ سیستمی را موقتاً روی امروز جلالی بگذار (local یا prod)
+  resolve_sql
+  if [[ -n "${SQL_CONTAINER:-}" ]]; then
+    SYSTEM_ORIG_MD="$(run_sql "SELECT CONCAT(Month,'|',Day,'|',CalendarType) FROM SpecialOccasions WHERE Id=$SYSTEM_ID;" | tr -d '\r' | head -1 | xargs || true)"
+    run_sql "UPDATE SpecialOccasions SET Month=$J_M, Day=$J_D, CalendarType=N'Jalali', UpdatedAt=SYSUTCDATETIME() WHERE Id=$SYSTEM_ID AND IsSystem=1;" >/dev/null || true
     echo "      system occasion $SYSTEM_ID temporarily set to Jalali $J_M/$J_D (was $SYSTEM_ORIG_MD)"
   fi
 fi
@@ -424,31 +425,7 @@ print(json.dumps({"businessName":"تست Vapp","congratulationsEnabled":True,"co
 PY
 )
 http_json POST /api/SpecialOccasion/profile/update "$PROF_BODY" "$TMP_DIR/prof.json" >/dev/null
-
-# ensure SpecialOccasion automation active
-AM_OUT="$TMP_DIR/am.json"
-curl -sS -m 30 -o "$AM_OUT" "$BASE_URL/api/AutomatedMessage?page=1&pageSize=50" "${AUTH_HEADER[@]}" || true
-AM_ID="$(python3 - "$AM_OUT" <<'PY'
-import json,sys
-d=json.load(open(sys.argv[1],encoding='utf-8'))
-data=d.get('data')
-items=data if isinstance(data,list) else (data or {}).get('items') or []
-for it in items or []:
-  if (it.get('automationType') or '')=='SpecialOccasion':
-    print(it.get('id') or ''); break
-PY
-)"
-if [[ -z "$AM_ID" ]]; then
-  DRAFT="$TMP_DIR/am_draft.json"
-  http_json POST /api/AutomatedMessage/create-draft '{"automationType":"SpecialOccasion"}' "$DRAFT" >/dev/null
-  AM_ID="$(json_get "$DRAFT" data.id)"
-fi
-if [[ -n "$AM_ID" ]]; then
-  http_json POST "/api/AutomatedMessage/${AM_ID}/toggle-status" '{"isActive":true,"status":"Active"}' "$TMP_DIR/am_tog.json" >/dev/null || \
-  http_json POST "/api/AutomatedMessage/${AM_ID}/toggle-status" '{"status":"Active"}' "$TMP_DIR/am_tog2.json" >/dev/null || true
-  http_json POST /api/SpecialOccasion/profile/update "{\"automatedMessageId\":$AM_ID}" "$TMP_DIR/prof2.json" >/dev/null || true
-  echo "      automatedMessageId=$AM_ID"
-fi
+echo "      profile scheduled (no AutomatedMessage required — OccasionGreetingBackgroundService)"
 
 # 7) verify after approve: custom canSend true
 TABLE2="$TMP_DIR/table2.json"
@@ -477,35 +454,62 @@ check "custom after approve = Approved" "$([[ "$CUSTOM_STATUS" == "Approved" ]] 
 check "custom after approve canSend" "$([[ "$CUSTOM_CAN" == "true" ]] && echo 1 || echo 0)"
 
 if [[ "$SKIP_SMS" != "1" ]]; then
-  echo "Waiting up to ~95s for AutomatedMessageBackgroundService to queue/send ..."
-  sleep 95
-  if command -v docker >/dev/null 2>&1 && docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^vapp_sqlserver_prod$'; then
-    SA_PASSWORD="$(grep -E '^SA_PASSWORD=' /root/Api_Vapp_Manually/docker/.env | cut -d= -f2-)"
-    SQLCMD=/opt/mssql-tools/bin/sqlcmd
-    docker exec vapp_sqlserver_prod test -x "$SQLCMD" || SQLCMD=/opt/mssql-tools18/bin/sqlcmd
+  echo "Waiting up to ~100s for OccasionGreetingBackgroundService to queue/send ..."
+  CUSTOM_HIT=0
+  SYSTEM_HIT=0
+  DELIVERED_HIT=0
+  resolve_sql
+  for i in $(seq 1 20); do
+    if [[ -n "${SQL_CONTAINER:-}" && -n "$CREATED_OCCASION_ID" ]]; then
+      CUSTOM_HIT=$(run_sql "SELECT COUNT(*) FROM AutomationExecutions WHERE SpecialOccasionId=$CREATED_OCCASION_ID AND ExecutedAt >= DATEADD(MINUTE,-20,SYSUTCDATETIME());" | tr -d '[:space:]' || echo 0)
+      SUCCESS_HIT=$(run_sql "SELECT COUNT(*) FROM AutomationExecutions WHERE SpecialOccasionId=$CREATED_OCCASION_ID AND Status=N'Success' AND ExecutedAt >= DATEADD(MINUTE,-20,SYSUTCDATETIME());" | tr -d '[:space:]' || echo 0)
+      if [[ -n "$SYSTEM_ID" ]]; then
+        SYSTEM_HIT=$(run_sql "SELECT COUNT(*) FROM AutomationExecutions WHERE SpecialOccasionId=$SYSTEM_ID AND ExecutedAt >= DATEADD(MINUTE,-20,SYSUTCDATETIME());" | tr -d '[:space:]' || echo 0)
+      fi
+      DELIVERED_HIT=$(run_sql "SELECT COUNT(*) FROM SmsDeliveryRecords WHERE UserId IN (SELECT UserId FROM UserOccasionPreferences WHERE SpecialOccasionId=$CREATED_OCCASION_ID) AND SentAt >= DATEADD(MINUTE,-20,SYSUTCDATETIME()) AND SourceModule=N'MessageCampaign';" | tr -d '[:space:]' || echo 0)
+      echo "      t=$i customExec=$CUSTOM_HIT success=$SUCCESS_HIT systemExec=$SYSTEM_HIT smsRecords=$DELIVERED_HIT"
+      if [[ "${CUSTOM_HIT:-0}" =~ ^[1-9] ]]; then
+        break
+      fi
+    else
+      echo "      t=$i (no SQL — waiting)"
+    fi
+    sleep 5
+  done
+
+  if [[ -n "${SQL_CONTAINER:-}" ]]; then
     EXEC_OUT="$TMP_DIR/execs.txt"
-    docker exec vapp_sqlserver_prod "$SQLCMD" -S localhost -U sa -P "$SA_PASSWORD" -C -d DbVapp -h -1 -W -Q "
-SET NOCOUNT ON;
-SELECT TOP 20 CONCAT(ae.Id,'|',ISNULL(ae.SpecialOccasionId,0),'|',ISNULL(ae.ContactId,0),'|',ae.Status,'|',LEFT(ISNULL(ae.MessageContent,''),40))
+    run_sql "
+SELECT TOP 30 CONCAT(ae.Id,'|',ISNULL(CAST(ae.AutomatedMessageId AS varchar(12)),'NULL'),'|',ISNULL(ae.SpecialOccasionId,0),'|',ISNULL(ae.ContactId,0),'|',ae.Status,'|',LEFT(ISNULL(ae.MessageContent,''),40))
 FROM AutomationExecutions ae
 WHERE ae.ExecutedAt >= DATEADD(MINUTE,-30,SYSUTCDATETIME())
 ORDER BY ae.Id DESC;
 " > "$EXEC_OUT" 2>/dev/null || true
     echo "      recent AutomationExecutions:"
     sed 's/^/        /' "$EXEC_OUT" | head -25
-    CUSTOM_HIT=$(grep -c "|${CREATED_OCCASION_ID}|" "$EXEC_OUT" 2>/dev/null | tr -d '\n' || true)
-    CUSTOM_HIT=${CUSTOM_HIT:-0}
-    SYSTEM_HIT=0
+    CAMP_OUT="$TMP_DIR/camps.txt"
+    run_sql "
+SELECT TOP 10 CONCAT(Id,'|',LEFT(ISNULL(Title,''),50),'|',Status,'|',AdminApprovalStatus,'|',RecipientsCount,'|',SentCount)
+FROM MessageCampaigns
+WHERE CreatedAt >= DATEADD(MINUTE,-30,SYSUTCDATETIME()) AND Title LIKE N'%مناسبت%'
+ORDER BY Id DESC;
+" > "$CAMP_OUT" 2>/dev/null || true
+    echo "      recent occasion campaigns:"
+    sed 's/^/        /' "$CAMP_OUT" | head -15
+
+    check "SMS/queue custom occasion execution" "$([[ "${CUSTOM_HIT:-0}" =~ ^[1-9] ]] && echo 1 || echo 0)"
+    check "custom occasion AutomatedMessageId is NULL" "$(grep -E "\|NULL\|${CREATED_OCCASION_ID}\|" "$EXEC_OUT" >/dev/null && echo 1 || echo 0)"
     if [[ -n "$SYSTEM_ID" ]]; then
-      SYSTEM_HIT=$(grep -c "|${SYSTEM_ID}|" "$EXEC_OUT" 2>/dev/null | tr -d '\n' || true)
-      SYSTEM_HIT=${SYSTEM_HIT:-0}
+      check "SMS/queue system occasion execution" "$([[ "${SYSTEM_HIT:-0}" =~ ^[1-9] ]] && echo 1 || echo 0)"
     fi
-    check "SMS/queue custom occasion execution" "$([[ "$CUSTOM_HIT" -gt 0 ]] && echo 1 || echo 0)"
-    check "SMS/queue system occasion execution" "$([[ "$SYSTEM_HIT" -gt 0 ]] && echo 1 || echo 0)"
+    SUCCESS_HIT=$(run_sql "SELECT COUNT(*) FROM AutomationExecutions WHERE SpecialOccasionId=$CREATED_OCCASION_ID AND Status=N'Success' AND ExecutedAt >= DATEADD(MINUTE,-30,SYSUTCDATETIME());" | tr -d '[:space:]' || echo 0)
+    check "custom occasion execution Status=Success" "$([[ "${SUCCESS_HIT:-0}" =~ ^[1-9] ]] && echo 1 || echo 0)"
+    check "SmsDeliveryRecords created for campaign" "$([[ "${DELIVERED_HIT:-0}" =~ ^[1-9] ]] && echo 1 || echo 0)"
   else
     CAMP="$TMP_DIR/camp.json"
     curl -sS -m 30 -o "$CAMP" "$BASE_URL/api/Message/campaigns?page=1&pageSize=10" "${AUTH_HEADER[@]}" || true
     echo "      campaigns snapshot saved (no local SQL)"
+    check "campaigns API reachable after wait" "$([[ -s "$CAMP" ]] && echo 1 || echo 0)"
   fi
 fi
 
@@ -513,11 +517,8 @@ fi
 if [[ -n "${SYSTEM_ORIG_MD:-}" && -n "$SYSTEM_ID" ]]; then
   IFS='|' read -r OM OD OC <<< "$SYSTEM_ORIG_MD"
   if [[ -n "$OM" && -n "$OD" ]]; then
-    SA_PASSWORD="$(grep -E '^SA_PASSWORD=' /root/Api_Vapp_Manually/docker/.env | cut -d= -f2-)"
-    SQLCMD=/opt/mssql-tools/bin/sqlcmd
-    docker exec vapp_sqlserver_prod test -x "$SQLCMD" || SQLCMD=/opt/mssql-tools18/bin/sqlcmd
-    docker exec vapp_sqlserver_prod "$SQLCMD" -S localhost -U sa -P "$SA_PASSWORD" -C -d DbVapp -Q \
-      "UPDATE SpecialOccasions SET Month=$OM, Day=$OD, CalendarType=N'${OC:-Jalali}', UpdatedAt=SYSUTCDATETIME() WHERE Id=$SYSTEM_ID AND IsSystem=1;" >/dev/null || true
+    resolve_sql
+    run_sql "UPDATE SpecialOccasions SET Month=$OM, Day=$OD, CalendarType=N'${OC:-Jalali}', UpdatedAt=SYSUTCDATETIME() WHERE Id=$SYSTEM_ID AND IsSystem=1;" >/dev/null || true
     echo "      restored system occasion $SYSTEM_ID → $OM/$OD ($OC)"
   fi
 fi

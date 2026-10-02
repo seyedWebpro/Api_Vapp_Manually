@@ -2,6 +2,7 @@ using Api_Vapp.Constants;
 using Api_Vapp.Data;
 using Api_Vapp.DTOs.Admin;
 using Api_Vapp.DTOs.Common;
+using Api_Vapp.DTOs.Message;
 using Api_Vapp.Interfaces;
 using Api_Vapp.Models;
 using Api_Vapp.Services.Audit;
@@ -195,6 +196,75 @@ namespace Api_Vapp.Services
             {
                 _logger.LogError(ex, "خطا در پیش‌نمایش تعرفه پیامک");
                 return ApiResponse<SmsPricingPreviewResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
+            }
+        }
+
+        public async Task<ApiResponse<SmsPartsEstimateResponseDto>> EstimatePartsForUserAsync(SmsPartsEstimateRequestDto dto)
+        {
+            try
+            {
+                dto ??= new SmsPartsEstimateRequestDto();
+                if (dto.Content != null && dto.Content.Length > 5000)
+                {
+                    return ApiResponse<SmsPartsEstimateResponseDto>.BadRequest(
+                        "متن پیام نمی‌تواند بیشتر از ۵۰۰۰ کاراکتر باشد",
+                        errorCode: ErrorCodes.InvalidInput);
+                }
+
+                var runtime = await GetRuntimeAsync();
+                var rules = runtime.Rules;
+                var recipients = dto.RecipientsCount < 1 ? 1 : dto.RecipientsCount;
+
+                var analysis = SmsPartsCalculator.Analyze(
+                    dto.Content ?? string.Empty,
+                    rules,
+                    throwOnMaxPages: false);
+
+                var total = SmsPartsCalculator.CalculateCost(analysis.PartsCount, runtime.CostPerPart, recipients);
+                var preparedPreview = analysis.PreparedContent.Length > 400
+                    ? analysis.PreparedContent[..400] + "…"
+                    : analysis.PreparedContent;
+
+                var note = !runtime.IsBillingEnabled
+                    ? "صورتحساب در تنظیمات ادمین خاموش است؛ هزینه فقط به‌صورت تخمینی نمایش داده می‌شود."
+                    : runtime.ServerWalletCheckDisabled
+                        ? "صورتحساب ادمین روشن است اما kill-switch سرور (DisableWalletCheck) فعال است؛ کسر از کیف پول انجام نمی‌شود."
+                        : "صورتحساب فعال است؛ هنگام ارسال موفق، مبلغ از کیف پول کسر می‌شود.";
+
+                return ApiResponse<SmsPartsEstimateResponseDto>.CreateSuccess(new SmsPartsEstimateResponseDto
+                {
+                    Language = analysis.IsPersian ? "Persian" : "English",
+                    IsPersian = analysis.IsPersian,
+                    WeightedCharacterCount = analysis.WeightedCharacterCount,
+                    RawTextElementCount = analysis.RawTextElementCount,
+                    SpaceElementCount = analysis.SpaceElementCount,
+                    EmojiElementCount = analysis.EmojiElementCount,
+                    RegularElementCount = analysis.RegularElementCount,
+                    PartsCount = analysis.PartsCount,
+                    MaxPages = analysis.MaxPages,
+                    ExceedsMaxPages = analysis.ExceedsMaxPages,
+                    OptOutApplied = analysis.OptOutApplied,
+                    PreparedContentPreview = preparedPreview,
+                    CostPerPart = runtime.CostPerPart,
+                    RecipientsCount = recipients,
+                    EstimatedTotalCost = total,
+                    IsBillingEffectivelyEnabled = runtime.IsBillingEffectivelyEnabled,
+                    BillingNote = note,
+                    PersianFirstPageChars = rules.PersianFirstPageChars,
+                    PersianSecondPageChars = rules.PersianSecondPageChars,
+                    PersianOtherPagesChars = rules.PersianOtherPagesChars,
+                    EnglishFirstPageChars = rules.EnglishFirstPageChars,
+                    EnglishOtherPagesChars = rules.EnglishOtherPagesChars,
+                    RegularCharWeight = rules.RegularCharWeight,
+                    SpaceCharWeight = rules.SpaceCharWeight,
+                    EmojiCharWeight = rules.EmojiCharWeight,
+                    OptOutSuffix = rules.OptOutSuffix ?? "لغو11"
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "خطا در تخمین پارت پیامک برای کاربر");
+                return ApiResponse<SmsPartsEstimateResponseDto>.InternalServerError(ControlledErrorHelper.Unexpected);
             }
         }
 

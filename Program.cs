@@ -442,6 +442,7 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.IProfessionalCampaignService, Api
 builder.Services.AddScoped<Api_Vapp.Interfaces.IProfessionalCampaignRepository, Api_Vapp.Repositories.ProfessionalCampaignRepository>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAutomatedMessageService, Api_Vapp.Services.AutomatedMessageService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.ISpecialOccasionService, Api_Vapp.Services.SpecialOccasionService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IOccasionGreetingDispatchService, Api_Vapp.Services.OccasionGreetingDispatchService>();
 
 // ثبت سرویس‌های مالی و کیف پول
 builder.Services.AddScoped<Api_Vapp.Interfaces.IWalletService, Api_Vapp.Services.WalletService>();
@@ -495,6 +496,7 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminSupportTicketService, Api_V
 builder.Services.AddScoped<Api_Vapp.Interfaces.IUserSupportTicketService, Api_Vapp.Services.UserSupportTicketService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminEducationalVideoService, Api_Vapp.Services.Admin.AdminEducationalVideoService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminAutomationTypeService, Api_Vapp.Services.Admin.AdminAutomationTypeService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminSpecialOccasionService, Api_Vapp.Services.Admin.AdminSpecialOccasionService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminAppBannerService, Api_Vapp.Services.Admin.AdminAppBannerService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAppNewsTickerRepository, Api_Vapp.Repositories.AppNewsTickerRepository>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAppNewsTickerService, Api_Vapp.Services.Admin.AppNewsTickerService>();
@@ -512,6 +514,7 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.IAdminUserInventoryService, Api_V
 
 // ثبت Background Services برای پیام‌های خودکار و زمان‌دار
 builder.Services.AddHostedService<Api_Vapp.Services.BackgroundServices.AutomatedMessageBackgroundService>();
+builder.Services.AddHostedService<Api_Vapp.Services.BackgroundServices.OccasionGreetingBackgroundService>();
 builder.Services.AddHostedService<Api_Vapp.Services.BackgroundServices.ScheduledCampaignBackgroundService>();
 builder.Services.AddHostedService<Api_Vapp.Services.BackgroundServices.ScheduledMessageBackgroundService>();
 builder.Services.AddHostedService<Api_Vapp.Services.BackgroundServices.ProfessionalCampaignBackgroundService>();

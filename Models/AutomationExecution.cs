@@ -9,8 +9,8 @@ namespace Api_Vapp.Models
         // شناسه یکتای اجرا
         public int Id { get; set; }
 
-        // شناسه پیام خودکار
-        public int AutomatedMessageId { get; set; }
+        /// <summary>شناسه پیام خودکار — برای ارسال مناسبتی جدول مناسبت‌ها null است</summary>
+        public int? AutomatedMessageId { get; set; }
 
         // شناسه مخاطب (اختیاری - برای پیام‌های شخصی)
         public int? ContactId { get; set; }
@@ -42,7 +42,7 @@ namespace Api_Vapp.Models
         #region Navigation Properties
 
         // پیام خودکار مربوطه
-        public virtual AutomatedMessage AutomatedMessage { get; set; } = null!;
+        public virtual AutomatedMessage? AutomatedMessage { get; set; }
 
         // مخاطب مربوطه
         public virtual Contact? Contact { get; set; }
