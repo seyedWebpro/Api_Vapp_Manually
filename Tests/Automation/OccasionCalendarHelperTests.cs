@@ -78,6 +78,17 @@ namespace Api_Vapp.Tests.Automation
             Assert.Contains("نوروز", text);
         }
 
+        [Theory]
+        [InlineData("سلام {{نام شرکت}}", true)]
+        [InlineData("از {{نام برند}}", true)]
+        [InlineData("{{نام بیزنس}}", true)]
+        [InlineData("سلام {{نام}} عزیز", false)]
+        [InlineData("", false)]
+        public void OccasionMessagePersonalizer_NeedsBusinessName(string template, bool expected)
+        {
+            Assert.Equal(expected, OccasionMessagePersonalizer.NeedsBusinessName(template));
+        }
+
         [Fact]
         public void HasReachedScheduledTimeTehran_ExactMinute_ReturnsTrue()
         {

@@ -18,6 +18,40 @@ namespace Api_Vapp.Utilities
             UserOccasionPreference? preference) =>
             preference?.IsEnabled ?? !occasion.IsSystem;
 
+        /// <summary>آیا قالب به نام کسب‌وکار / شرکت / برند نیاز دارد؟</summary>
+        public static bool NeedsBusinessName(string? template)
+        {
+            if (string.IsNullOrWhiteSpace(template))
+                return false;
+
+            // همان placeholderهایی که Apply / ApplyForQueuePreview برای brand جایگزین می‌کنند
+            string[] markers =
+            [
+                "{{نام برند}}",
+                "{{نام شرکت}}",
+                "{{نام بیزنس}}",
+                "{{نام کسب و کار}}",
+                "{نام برند}",
+                "{نام شرکت}",
+                "{نام بیزنس}",
+                "{{brand name}}",
+                "{{brandname}}",
+                "{{business name}}",
+                "{{company name}}"
+            ];
+
+            foreach (var marker in markers)
+            {
+                if (template.Contains(marker, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            return false;
+        }
+
+        public static bool HasBusinessName(string? businessName) =>
+            !string.IsNullOrWhiteSpace(businessName);
+
         public static string Apply(
             string template,
             string? contactName,

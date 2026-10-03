@@ -24,6 +24,7 @@ namespace Api_Vapp.Utilities
 
         public const string SkipReasonCategoryDisabled = "CategoryDisabled";
         public const string SkipReasonEmptyTemplate = "EmptyTemplate";
+        public const string SkipReasonMissingBusinessName = "MissingBusinessName";
         public const string SkipReasonNoRecipients = "NoRecipients";
 
         /// <summary>
@@ -113,6 +114,14 @@ namespace Api_Vapp.Utilities
                 if (string.IsNullOrWhiteSpace(template))
                 {
                     skipped.Add(new SkippedOccasion(userId, occasion.Id, SkipReasonEmptyTemplate));
+                    continue;
+                }
+
+                // قالب‌های سیستمی تقریباً همیشه {{نام شرکت}} دارند؛ بدون BusinessName پیام ناقص می‌رود
+                if (OccasionMessagePersonalizer.NeedsBusinessName(template)
+                    && !OccasionMessagePersonalizer.HasBusinessName(profile?.BusinessName))
+                {
+                    skipped.Add(new SkippedOccasion(userId, occasion.Id, SkipReasonMissingBusinessName));
                     continue;
                 }
 

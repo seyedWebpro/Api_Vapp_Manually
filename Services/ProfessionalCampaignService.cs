@@ -159,6 +159,251 @@ namespace Api_Vapp.Services
                 201);
         }
 
+        public async Task<ApiResponse<ProfessionalCampaignResponseDto>> UpdateAsync(
+            int userId,
+            int id,
+            UpdateProfessionalCampaignDto dto)
+        {
+            _logger.LogInformation(
+                "Updating professional campaign — UserId: {UserId}, CampaignId: {CampaignId}, StepCount: {StepCount}",
+                userId, id, dto.Steps.Count);
+
+            var campaign = await _campaignRepository.GetOwnedAsync(userId, id, tracking: true, includeRecipients: true);
+            if (campaign == null)
+                return ApiResponse<ProfessionalCampaignResponseDto>.NotFound("کمپین یافت نشد");
+
+            if (campaign.TargetType == ProfessionalCampaignTargetTypes.QuickSend)
+            {
+                return ApiResponse<ProfessionalCampaignResponseDto>.BadRequest(
+                    "این کمپین قابل ویرایش نیست",
+                    errorCode: ErrorCodes.InvalidInput);
+            }
+
+            if (campaign.Status is ProfessionalCampaignStatuses.Completed or ProfessionalCampaignStatuses.Cancelled)
+            {
+                return ApiResponse<ProfessionalCampaignResponseDto>.BadRequest(
+                    "کمپین تکمیل‌شده یا لغوشده قابل ویرایش نیست",
+                    errorCode: ErrorCodes.InvalidInput);
+            }
+
+            if (campaign.Status == ProfessionalCampaignStatuses.Active)
+            {
+                return ApiResponse<ProfessionalCampaignResponseDto>.BadRequest(
+                    "برای ویرایش ابتدا کمپین را متوقف کنید",
+                    errorCode: ErrorCodes.InvalidInput);
+            }
+
+            if (campaign.Steps.Any(s =>
+                    s.Status is ProfessionalCampaignStepStatuses.Sent
+                        or ProfessionalCampaignStepStatuses.Processing))
+            {
+                return ApiResponse<ProfessionalCampaignResponseDto>.BadRequest(
+                    "پس از شروع ارسال، ویرایش کمپین مجاز نیست",
+                    errorCode: ErrorCodes.InvalidInput);
+            }
+
+            var inputError = ValidateCampaignInput(dto);
+            if (inputError != null)
+                return ApiResponse<ProfessionalCampaignResponseDto>.BadRequest(inputError);
+
+            var targetType = NormalizeTargetType(dto.TargetType)!;
+            var targetIds = dto.TargetIds.Where(tid => tid > 0).Distinct().ToList();
+            var startAtUtc = NormalizeToUtc(dto.StartAt);
+            if (startAtUtc.HasValue && startAtUtc.Value < DateTime.UtcNow.AddMinutes(-1))
+                return ApiResponse<ProfessionalCampaignResponseDto>.BadRequest("زمان شروع کمپین نمی‌تواند در گذشته باشد");
+
+            var recipientsResult = await ResolveRecipientsAsync(userId, targetType, targetIds);
+            if (recipientsResult.Error != null)
+                return ApiResponse<ProfessionalCampaignResponseDto>.BadRequest(recipientsResult.Error);
+            if (recipientsResult.Recipients.Count == 0)
+                return ApiResponse<ProfessionalCampaignResponseDto>.BadRequest("دفترچه‌ها یا تگ‌های انتخاب‌شده مخاطب فعالی ندارند");
+
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+
+            var now = DateTime.UtcNow;
+            // همه ردیف‌ها (حتی soft-deleted) را hard-remove می‌کنیم تا ایندکس یکتای
+            // (CampaignId, MobileNumber) و (CampaignId, StepOrder) آزاد شود.
+            var oldSteps = await _context.ProfessionalCampaignSteps
+                .Where(s => s.ProfessionalCampaignId == campaign.Id)
+                .ToListAsync();
+            var oldStepIds = oldSteps.Select(s => s.Id).ToList();
+            if (oldStepIds.Count > 0)
+            {
+                var openApprovals = await _context.SmsApprovalRequests
+                    .Where(r => r.ProfessionalCampaignStepId.HasValue
+                        && oldStepIds.Contains(r.ProfessionalCampaignStepId.Value)
+                        && !r.IsDeleted
+                        && (r.Status == AdminApprovalStatuses.Pending
+                            || r.Status == AdminApprovalStatuses.Processing))
+                    .ToListAsync();
+                foreach (var approval in openApprovals)
+                {
+                    approval.IsDeleted = true;
+                    approval.UpdatedAt = now;
+                }
+
+                // FK به Step؛ قبل از حذف مرحله، لینک تأییدهای باقی‌مانده را قطع کن
+                var linkedApprovals = await _context.SmsApprovalRequests
+                    .Where(r => r.ProfessionalCampaignStepId.HasValue
+                        && oldStepIds.Contains(r.ProfessionalCampaignStepId.Value))
+                    .ToListAsync();
+                foreach (var approval in linkedApprovals)
+                    approval.ProfessionalCampaignStepId = null;
+            }
+
+            var oldRecipients = await _context.ProfessionalCampaignRecipients
+                .Where(r => r.ProfessionalCampaignId == campaign.Id)
+                .ToListAsync();
+            _context.ProfessionalCampaignRecipients.RemoveRange(oldRecipients);
+            _context.ProfessionalCampaignSteps.RemoveRange(oldSteps);
+            await _context.SaveChangesAsync();
+
+            campaign.Title = dto.Title.Trim();
+            campaign.TargetType = targetType;
+            campaign.TargetIdsJson = JsonSerializer.Serialize(targetIds);
+            campaign.StartAtUtc = startAtUtc;
+            campaign.RecipientsCount = recipientsResult.Recipients.Count;
+            campaign.IsActive = false;
+            campaign.Status = ProfessionalCampaignStatuses.PendingApproval;
+            campaign.UpdatedAt = now;
+
+            _context.ProfessionalCampaignRecipients.AddRange(recipientsResult.Recipients.Select(r =>
+                new ProfessionalCampaignRecipient
+                {
+                    ProfessionalCampaignId = campaign.Id,
+                    ContactId = r.ContactId,
+                    MobileNumber = r.MobileNumber,
+                    FullName = r.FullName,
+                    CreatedAt = now
+                }));
+            await _context.SaveChangesAsync();
+
+            var normalizedContents = dto.Steps.Select(s => s.Content.Trim()).Distinct().ToList();
+            var approvedContents = await _context.MessageTemplates
+                .AsNoTracking()
+                .Where(t => t.UserId == userId
+                    && !t.IsDeleted
+                    && t.IsActive
+                    && t.ApprovalStatus == AdminApprovalStatuses.Approved
+                    && normalizedContents.Contains(t.Content))
+                .Select(t => t.Content)
+                .ToListAsync();
+            var approvedSet = approvedContents.ToHashSet(StringComparer.Ordinal);
+
+            for (var index = 0; index < dto.Steps.Count; index++)
+            {
+                var input = dto.Steps[index];
+                var content = input.Content.Trim();
+                var approved = approvedSet.Contains(content);
+                var step = new ProfessionalCampaignStep
+                {
+                    ProfessionalCampaignId = campaign.Id,
+                    StepOrder = index + 1,
+                    Content = content,
+                    DelayAfterPreviousMinutes = GetDelayMinutes(input),
+                    Status = approved
+                        ? ProfessionalCampaignStepStatuses.Pending
+                        : ProfessionalCampaignStepStatuses.PendingApproval,
+                    ApprovalStatus = approved
+                        ? AdminApprovalStatuses.Approved
+                        : AdminApprovalStatuses.Pending,
+                    CreatedAt = now
+                };
+                _context.ProfessionalCampaignSteps.Add(step);
+                await _context.SaveChangesAsync();
+
+                if (!approved)
+                {
+                    _context.SmsApprovalRequests.Add(new SmsApprovalRequest
+                    {
+                        UserId = userId,
+                        RequestType = SmsApprovalRequestTypes.ProfessionalCampaignStep,
+                        ProfessionalCampaignStepId = step.Id,
+                        ContentPreview = content,
+                        TitlePreview = $"{campaign.Title} - پیام {step.StepOrder}",
+                        RecipientsCount = campaign.RecipientsCount,
+                        Status = AdminApprovalStatuses.Pending,
+                        CreatedAt = now
+                    });
+                }
+            }
+
+            var hasPendingApproval = await _context.ProfessionalCampaignSteps.AnyAsync(
+                s => s.ProfessionalCampaignId == campaign.Id
+                    && !s.IsDeleted
+                    && s.ApprovalStatus != AdminApprovalStatuses.Approved);
+            campaign.Status = hasPendingApproval
+                ? ProfessionalCampaignStatuses.PendingApproval
+                : ProfessionalCampaignStatuses.Ready;
+
+            await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            var updated = await _campaignRepository.GetOwnedAsync(userId, campaign.Id);
+            _logger.LogInformation(
+                "Professional campaign updated — CampaignId: {CampaignId}, UserId: {UserId}, Status: {Status}",
+                campaign.Id, userId, campaign.Status);
+            return ApiResponse<ProfessionalCampaignResponseDto>.CreateSuccess(
+                Map(updated!),
+                campaign.Status == ProfessionalCampaignStatuses.Ready
+                    ? "کمپین ویرایش شد و آماده فعال‌سازی است"
+                    : "کمپین ویرایش شد و متن‌های جدید برای تأیید ادمین ارسال شدند");
+        }
+
+        public async Task<ApiResponse<bool>> DeleteAsync(int userId, int id)
+        {
+            _logger.LogInformation("Deleting professional campaign — UserId: {UserId}, CampaignId: {CampaignId}", userId, id);
+
+            var campaign = await _campaignRepository.GetOwnedAsync(userId, id, tracking: true, includeRecipients: true);
+            if (campaign == null)
+                return ApiResponse<bool>.NotFound("کمپین یافت نشد");
+
+            if (campaign.Steps.Any(s => s.Status == ProfessionalCampaignStepStatuses.Processing))
+            {
+                return ApiResponse<bool>.BadRequest(
+                    "در حال حاضر یکی از پیام‌های کمپین در حال ارسال است",
+                    errorCode: ErrorCodes.InvalidInput);
+            }
+
+            var now = DateTime.UtcNow;
+            var stepIds = campaign.Steps.Select(s => s.Id).ToList();
+            if (stepIds.Count > 0)
+            {
+                var openApprovals = await _context.SmsApprovalRequests
+                    .Where(r => r.ProfessionalCampaignStepId.HasValue
+                        && stepIds.Contains(r.ProfessionalCampaignStepId.Value)
+                        && !r.IsDeleted
+                        && (r.Status == AdminApprovalStatuses.Pending
+                            || r.Status == AdminApprovalStatuses.Processing))
+                    .ToListAsync();
+                foreach (var approval in openApprovals)
+                {
+                    approval.IsDeleted = true;
+                    approval.UpdatedAt = now;
+                }
+            }
+
+            foreach (var step in campaign.Steps)
+            {
+                step.IsDeleted = true;
+                step.UpdatedAt = now;
+            }
+
+            foreach (var recipient in campaign.Recipients)
+                recipient.IsDeleted = true;
+
+            campaign.Status = ProfessionalCampaignStatuses.Cancelled;
+            campaign.IsActive = false;
+            campaign.IsDeleted = true;
+            campaign.UpdatedAt = now;
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation(
+                "Professional campaign deleted — CampaignId: {CampaignId}, UserId: {UserId}",
+                id, userId);
+            return ApiResponse<bool>.CreateSuccess(true, "کمپین حذف شد");
+        }
+
         public async Task<ApiResponse<ProfessionalCampaignResponseDto>> GetByIdAsync(int userId, int id)
         {
             var campaign = await _campaignRepository.GetOwnedAsync(userId, id);
@@ -184,6 +429,201 @@ namespace Api_Vapp.Services
                     PageNumber = pageNumber,
                     PageSize = pageSize
                 });
+        }
+
+        public async Task<ApiResponse<ProfessionalCampaignListResponseDto>> GetQuickSendOptionsAsync(
+            int userId,
+            int pageNumber,
+            int pageSize)
+        {
+            pageNumber = Math.Max(1, pageNumber);
+            pageSize = Math.Clamp(pageSize, 1, 100);
+
+            // فقط کمپین قالب (نه اجرای ارسال سریع)، Ready یا Active، با همه متن‌های تأییدشده
+            var query = _context.ProfessionalCampaigns.AsNoTracking()
+                .Include(c => c.Steps.Where(s => !s.IsDeleted))
+                .Where(c => c.UserId == userId
+                    && !c.IsDeleted
+                    && c.TargetType != ProfessionalCampaignTargetTypes.QuickSend
+                    && (c.Status == ProfessionalCampaignStatuses.Ready
+                        || c.Status == ProfessionalCampaignStatuses.Active)
+                    && c.Steps.Count(s => !s.IsDeleted) >= 2
+                    && !c.Steps.Any(s =>
+                        !s.IsDeleted
+                        && s.ApprovalStatus != AdminApprovalStatuses.Approved))
+                .OrderByDescending(c => c.CreatedAt);
+
+            var totalCount = await query.CountAsync();
+            var campaigns = await query
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+
+            return ApiResponse<ProfessionalCampaignListResponseDto>.CreateSuccess(
+                new ProfessionalCampaignListResponseDto
+                {
+                    Items = campaigns.Select(Map).ToList(),
+                    TotalCount = totalCount,
+                    PageNumber = pageNumber,
+                    PageSize = pageSize
+                });
+        }
+
+        public async Task<ApiResponse<DirectSendResultDto>> QuickSendAsync(
+            int userId,
+            int campaignId,
+            QuickSendProfessionalCampaignDto dto)
+        {
+            _logger.LogInformation(
+                "Quick-send professional campaign — UserId: {UserId}, CampaignId: {CampaignId}, ContactId: {ContactId}",
+                userId,
+                campaignId,
+                dto.ContactId);
+
+            if (dto.ContactId <= 0)
+            {
+                return ApiResponse<DirectSendResultDto>.BadRequest(
+                    "شناسه مخاطب نامعتبر است",
+                    errorCode: ErrorCodes.InvalidInput);
+            }
+
+            var template = await _campaignRepository.GetOwnedAsync(userId, campaignId);
+            if (template == null)
+                return ApiResponse<DirectSendResultDto>.NotFound("کمپین یافت نشد");
+
+            if (template.TargetType == ProfessionalCampaignTargetTypes.QuickSend)
+            {
+                return ApiResponse<DirectSendResultDto>.BadRequest(
+                    "این کمپین قابل انتخاب در ارسال سریع نیست",
+                    errorCode: ErrorCodes.InvalidInput);
+            }
+
+            if (template.Status is not (ProfessionalCampaignStatuses.Ready or ProfessionalCampaignStatuses.Active))
+            {
+                return ApiResponse<DirectSendResultDto>.BadRequest(
+                    "فقط کمپین آماده یا فعال در ارسال سریع قابل انتخاب است",
+                    errorCode: ErrorCodes.InvalidInput);
+            }
+
+            var templateSteps = template.Steps
+                .Where(s => !s.IsDeleted)
+                .OrderBy(s => s.StepOrder)
+                .ToList();
+            if (templateSteps.Count < 2)
+            {
+                return ApiResponse<DirectSendResultDto>.BadRequest(
+                    "کمپین باید حداقل دو پیام داشته باشد",
+                    errorCode: ErrorCodes.InvalidInput);
+            }
+
+            if (templateSteps.Any(s => s.ApprovalStatus != AdminApprovalStatuses.Approved))
+            {
+                return ApiResponse<DirectSendResultDto>.BadRequest(
+                    "همه متن‌های کمپین هنوز تأیید نشده‌اند",
+                    errorCode: ErrorCodes.ContentPendingApproval);
+            }
+
+            var contact = await _context.Contacts.AsNoTracking()
+                .Include(c => c.ContactNotebook)
+                .FirstOrDefaultAsync(c => c.Id == dto.ContactId && !c.IsDeleted);
+            if (contact == null)
+                return ApiResponse<DirectSendResultDto>.NotFound("مخاطب یافت نشد");
+            if (contact.ContactNotebook == null
+                || contact.ContactNotebook.IsDeleted
+                || contact.ContactNotebook.UserId != userId)
+            {
+                return ApiResponse<DirectSendResultDto>.Forbidden("مخاطب متعلق به شما نیست");
+            }
+
+            if (string.IsNullOrWhiteSpace(contact.MobileNumber))
+            {
+                return ApiResponse<DirectSendResultDto>.BadRequest(
+                    "شماره موبایل مخاطب نامعتبر است",
+                    errorCode: ErrorCodes.InvalidInput);
+            }
+
+            var nowUtc = DateTime.UtcNow;
+            var delays = templateSteps.Select(s => s.DelayAfterPreviousMinutes).ToList();
+            if (delays[0] != 0)
+            {
+                return ApiResponse<DirectSendResultDto>.BadRequest(
+                    "پیام اول کمپین باید بدون تأخیر باشد",
+                    errorCode: ErrorCodes.InvalidInput);
+            }
+
+            var projected = ProfessionalCampaignSchedule.BuildProjectedUtc(
+                DateTime.SpecifyKind(nowUtc, DateTimeKind.Utc),
+                delays);
+
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+
+            var enrollment = new ProfessionalCampaign
+            {
+                UserId = userId,
+                Title = template.Title,
+                TargetType = ProfessionalCampaignTargetTypes.QuickSend,
+                TargetIdsJson = JsonSerializer.Serialize(new List<int> { contact.Id }),
+                Status = ProfessionalCampaignStatuses.Active,
+                StartAtUtc = nowUtc,
+                RecipientsCount = 1,
+                IsActive = true,
+                CreatedAt = nowUtc
+            };
+            _context.ProfessionalCampaigns.Add(enrollment);
+            await _context.SaveChangesAsync();
+
+            _context.ProfessionalCampaignRecipients.Add(new ProfessionalCampaignRecipient
+            {
+                ProfessionalCampaignId = enrollment.Id,
+                ContactId = contact.Id,
+                MobileNumber = contact.MobileNumber.Trim(),
+                FullName = contact.FullName,
+                CreatedAt = nowUtc
+            });
+
+            ProfessionalCampaignStep? firstStep = null;
+            for (var index = 0; index < templateSteps.Count; index++)
+            {
+                var source = templateSteps[index];
+                var step = new ProfessionalCampaignStep
+                {
+                    ProfessionalCampaignId = enrollment.Id,
+                    StepOrder = index + 1,
+                    Content = source.Content,
+                    DelayAfterPreviousMinutes = source.DelayAfterPreviousMinutes,
+                    ScheduledAtUtc = projected[index],
+                    // پیام اول را از قبل Processing می‌کنیم تا background همزمان claim نکند.
+                    Status = index == 0
+                        ? ProfessionalCampaignStepStatuses.Processing
+                        : ProfessionalCampaignStepStatuses.Pending,
+                    ApprovalStatus = AdminApprovalStatuses.Approved,
+                    CreatedAt = nowUtc,
+                    UpdatedAt = index == 0 ? nowUtc : null
+                };
+                _context.ProfessionalCampaignSteps.Add(step);
+                if (index == 0)
+                    firstStep = step;
+            }
+
+            await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            _logger.LogInformation(
+                "Professional campaign enrollment created for quick-send — SourceCampaignId: {SourceCampaignId}, EnrollmentId: {EnrollmentId}, ContactId: {ContactId}",
+                template.Id,
+                enrollment.Id,
+                contact.Id);
+
+            // پیام اول همان لحظه؛ مراحل بعدی را background از روی ScheduledAtUtc می‌فرستد
+            var sendResult = await SendStepAsync(firstStep!.Id, CancellationToken.None);
+            if (sendResult == null)
+            {
+                return ApiResponse<DirectSendResultDto>.BadRequest(
+                    "ارسال پیام اول کمپین انجام نشد",
+                    errorCode: ErrorCodes.SmsFailed);
+            }
+
+            return sendResult;
         }
 
         public async Task<ApiResponse<ProfessionalCampaignResponseDto>> ActivateAsync(int userId, int id)
@@ -316,6 +756,7 @@ namespace Api_Vapp.Services
             }
         }
 
+
         /// <summary>
         /// اگر بعد از claim فرایند قطع شود، مرحله روی Processing می‌ماند و دیگر انتخاب نمی‌شود.
         /// مراحل گیرکرده را Failed می‌کنیم تا کاربر بتواند Retry بزند (جلوگیری از ارسال دوباره خودکار).
@@ -345,7 +786,9 @@ namespace Api_Vapp.Services
             }
         }
 
-        private async Task SendStepAsync(int stepId, CancellationToken cancellationToken)
+        private async Task<ApiResponse<DirectSendResultDto>?> SendStepAsync(
+            int stepId,
+            CancellationToken cancellationToken)
         {
             // تراکنش محیطی دور SendDirectMessageAsync باز نمی‌شود:
             // کسر کیف پول / ارسال SMS خودشان تراکنش دارند و BeginTransaction تو در تو می‌ترکد.
@@ -353,6 +796,22 @@ namespace Api_Vapp.Services
                 .Include(s => s.ProfessionalCampaign)
                 .ThenInclude(c => c.Recipients.Where(r => !r.IsDeleted))
                 .FirstAsync(s => s.Id == stepId, cancellationToken);
+
+            // اگر هنوز Pending است (مثل مسیر ارسال سریع)، همین‌جا claim می‌کنیم.
+            if (step.Status == ProfessionalCampaignStepStatuses.Pending)
+            {
+                step.Status = ProfessionalCampaignStepStatuses.Processing;
+                step.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync(cancellationToken);
+            }
+            else if (step.Status != ProfessionalCampaignStepStatuses.Processing)
+            {
+                _logger.LogWarning(
+                    "Skip professional campaign step send — unexpected status. StepId: {StepId}, Status: {Status}",
+                    step.Id,
+                    step.Status);
+                return null;
+            }
 
             var campaign = step.ProfessionalCampaign;
             var recipientDtos = campaign.Recipients.Select(r => new RecipientItemDto
@@ -423,7 +882,11 @@ namespace Api_Vapp.Services
                     failureMessage,
                     cancellationToken,
                     result.Data?.FailedCount ?? campaign.RecipientsCount);
-                return;
+                return result.Success && result.Data != null
+                    ? result
+                    : ApiResponse<DirectSendResultDto>.BadRequest(
+                        failureMessage,
+                        errorCode: result.ErrorCode ?? ErrorCodes.SmsFailed);
             }
 
             // موجودیت‌های tracked قبلی را رها کن تا وضعیت claim از DB خوانده شود
@@ -439,7 +902,7 @@ namespace Api_Vapp.Services
                 _logger.LogWarning(
                     "Professional campaign step status changed during send — StepId: {StepId}, Status: {Status}",
                     step.Id, step.Status);
-                return;
+                return result;
             }
 
             step.Status = ProfessionalCampaignStepStatuses.Sent;
@@ -475,6 +938,7 @@ namespace Api_Vapp.Services
             _logger.LogInformation(
                 "Professional campaign step sent — StepId: {StepId}, CampaignId: {CampaignId}, SentCount: {SentCount}",
                 step.Id, campaign.Id, result.Data.SentCount);
+            return result;
         }
 
         private async Task MarkStepFailedAsync(
@@ -619,6 +1083,27 @@ namespace Api_Vapp.Services
                 SentAtUtc = s.SentAtUtc
             }).ToList()
         };
+
+        private static string? ValidateCampaignInput(CreateProfessionalCampaignDto dto)
+        {
+            var targetType = NormalizeTargetType(dto.TargetType);
+            if (targetType == null)
+                return "نوع مخاطبان فقط می‌تواند دفترچه تلفن یا تگ باشد";
+
+            if (dto.TargetIds.Count(id => id > 0) == 0)
+                return "حداقل یک دفترچه تلفن یا تگ معتبر انتخاب کنید";
+
+            if (dto.Steps.Count < 2 || dto.Steps.Count > 20)
+                return "کمپین حرفه‌ای باید بین ۲ تا ۲۰ پیام داشته باشد";
+
+            if (dto.Steps.Any(s => string.IsNullOrWhiteSpace(s.Content)))
+                return "متن همه پیام‌ها الزامی است";
+
+            if (GetDelayMinutes(dto.Steps[0]) != 0)
+                return "پیام اول باید بدون تأخیر باشد";
+
+            return null;
+        }
 
         private static List<RecipientItemDto> DistinctRecipients(IEnumerable<RecipientItemDto> recipients) =>
             recipients

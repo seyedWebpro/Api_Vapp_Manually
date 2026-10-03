@@ -155,6 +155,32 @@ namespace Api_Vapp.Tests.Automation
         }
 
         [Fact]
+        public void PlanUserBatches_MissingBusinessName_IsSkippedWhenTemplateNeedsIt()
+        {
+            var enabled = OccasionGreetingPlanner.ResolveEnabledOccasions(
+                [System(3)], [Pref(OwnerId, 3, customMessage: null)]);
+
+            var (batches, skipped) = OccasionGreetingPlanner.PlanUserBatches(
+                OwnerId, enabled, profile: null, [ContactOf(1)], NoneHandled);
+
+            Assert.Empty(batches);
+            Assert.Equal(OccasionGreetingPlanner.SkipReasonMissingBusinessName, Assert.Single(skipped).Reason);
+        }
+
+        [Fact]
+        public void PlanUserBatches_TemplateWithoutCompanyPlaceholder_SendsWithoutBusinessName()
+        {
+            var enabled = OccasionGreetingPlanner.ResolveEnabledOccasions(
+                [Custom(1040, OwnerId)], [Pref(OwnerId, 1040, customMessage: "سلام {{نام}}")]);
+
+            var (batches, skipped) = OccasionGreetingPlanner.PlanUserBatches(
+                OwnerId, enabled, profile: null, [ContactOf(1)], NoneHandled);
+
+            Assert.Empty(skipped);
+            Assert.Equal("سلام {{نام}}", Assert.Single(batches).Content);
+        }
+
+        [Fact]
         public void PlanUserBatches_PendingCustomTemplate_IsSkippedAsEmptyTemplate()
         {
             var enabled = OccasionGreetingPlanner.ResolveEnabledOccasions(

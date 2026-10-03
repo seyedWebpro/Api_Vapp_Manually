@@ -191,7 +191,12 @@ namespace Api_Vapp.DTOs.Automation
 
     public class UserOccasionProfileDto
     {
+        /// <summary>نام کسب‌وکار برای جایگذاری {{نام شرکت}} / {{نام برند}} / {{نام بیزنس}}</summary>
         public string? BusinessName { get; set; }
+
+        /// <summary>true اگر BusinessName پر باشد — موبایل برای هشدار UI استفاده کند</summary>
+        public bool HasBusinessName { get; set; }
+
         public bool CongratulationsEnabled { get; set; } = true;
         public bool CondolencesEnabled { get; set; } = true;
         public string? ScheduledTimeTehran { get; set; }
@@ -200,6 +205,9 @@ namespace Api_Vapp.DTOs.Automation
 
     public class UpdateUserOccasionProfileDto
     {
+        /// <summary>
+        /// نام کسب‌وکار. null = بدون تغییر؛ رشته خالی = پاک کردن؛ مقدار غیرخالی = ذخیره (۲ تا ۲۰۰ کاراکتر).
+        /// </summary>
         [MaxLength(200, ErrorMessage = "نام کسب‌وکار نمی‌تواند بیشتر از ۲۰۰ کاراکتر باشد")]
         public string? BusinessName { get; set; }
 

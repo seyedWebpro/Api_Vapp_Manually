@@ -4,6 +4,10 @@ namespace Api_Vapp.Constants
     {
         public const string Notebooks = "Notebooks";
         public const string Tags = "Tags";
+        /// <summary>
+        /// اجرای ارسال سریع روی یک مخاطب؛ از روی کمپین قالب (Ready/Active) ساخته می‌شود.
+        /// </summary>
+        public const string QuickSend = "QuickSend";
     }
 
     public static class ProfessionalCampaignStatuses

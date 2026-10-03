@@ -23,6 +23,11 @@ namespace Api_Vapp.DTOs.Message
         public List<ProfessionalCampaignStepInputDto> Steps { get; set; } = new();
     }
 
+    /// <summary>ویرایش کمپین — همان فیلدهای ساخت؛ فقط قبل از شروع ارسال مجاز است.</summary>
+    public class UpdateProfessionalCampaignDto : CreateProfessionalCampaignDto
+    {
+    }
+
     public class ProfessionalCampaignStepInputDto
     {
         [Required(ErrorMessage = "متن پیام الزامی است")]

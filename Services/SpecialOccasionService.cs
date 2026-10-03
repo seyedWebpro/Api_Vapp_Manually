@@ -428,7 +428,23 @@ namespace Api_Vapp.Services
                 var profile = await _profileRepository.GetOrCreateAsync(userId);
 
                 if (dto.BusinessName != null)
-                    profile.BusinessName = string.IsNullOrWhiteSpace(dto.BusinessName) ? null : dto.BusinessName.Trim();
+                {
+                    var trimmed = dto.BusinessName.Trim();
+                    if (trimmed.Length == 0)
+                    {
+                        profile.BusinessName = null;
+                    }
+                    else if (trimmed.Length < 2)
+                    {
+                        return ApiResponse<UserOccasionProfileDto>.BadRequest(
+                            "نام کسب‌وکار باید حداقل ۲ کاراکتر باشد",
+                            errorCode: ErrorCodes.ValidationFailed);
+                    }
+                    else
+                    {
+                        profile.BusinessName = trimmed;
+                    }
+                }
 
                 if (dto.CongratulationsEnabled.HasValue)
                     profile.CongratulationsEnabled = dto.CongratulationsEnabled.Value;
@@ -1040,6 +1056,7 @@ namespace Api_Vapp.Services
         private static UserOccasionProfileDto MapProfile(UserOccasionProfile profile) => new()
         {
             BusinessName = profile.BusinessName,
+            HasBusinessName = OccasionMessagePersonalizer.HasBusinessName(profile.BusinessName),
             CongratulationsEnabled = profile.CongratulationsEnabled,
             CondolencesEnabled = profile.CondolencesEnabled,
             ScheduledTimeTehran = FormatTehranTime(profile.ScheduledTimeTehran),

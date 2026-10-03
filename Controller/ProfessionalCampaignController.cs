@@ -44,10 +44,68 @@ namespace Api_Vapp.Controller
             return StatusCode(result.StatusCode, result);
         }
 
+        /// <summary>
+        /// لیست کمپین‌های آماده/فعال با متن تأییدشده برای انتخاب در ارسال سریع.
+        /// </summary>
+        [HttpGet("quick-send-options")]
+        [RequireSubscriptionFeature(SubscriptionFeatureCodes.FreeQuickSend)]
+        public async Task<ActionResult<ApiResponse<ProfessionalCampaignListResponseDto>>> GetQuickSendOptions(
+            [FromQuery] int pageNumber = 1,
+            [FromQuery] int pageSize = 20)
+        {
+            var result = await _service.GetQuickSendOptionsAsync(
+                await GetCurrentUserIdAsync(),
+                pageNumber,
+                pageSize);
+            return StatusCode(result.StatusCode, result);
+        }
+
         [HttpGet("{id:int}")]
         public async Task<ActionResult<ApiResponse<ProfessionalCampaignResponseDto>>> GetById(int id)
         {
             var result = await _service.GetByIdAsync(await GetCurrentUserIdAsync(), id);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        /// <summary>
+        /// ارسال سریع کمپین به یک مخاطب: پیام اول همان لحظه؛ بقیه طبق زمان‌بندی کمپین.
+        /// </summary>
+        [HttpPost("{id:int}/quick-send")]
+        [RequireSubscriptionFeature(SubscriptionFeatureCodes.FreeQuickSend)]
+        public async Task<ActionResult<ApiResponse<DirectSendResultDto>>> QuickSend(
+            int id,
+            [FromBody] QuickSendProfessionalCampaignDto? dto)
+        {
+            if (dto == null)
+            {
+                return StatusCode(400, ApiResponse<DirectSendResultDto>.BadRequest(
+                    "داده‌های ورودی الزامی است",
+                    errorCode: ErrorCodes.ValidationFailed));
+            }
+
+            var invalid = InvalidModelStateResponse<DirectSendResultDto>();
+            if (invalid != null) return invalid;
+
+            var result = await _service.QuickSendAsync(await GetCurrentUserIdAsync(), id, dto);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        [HttpPost("{id:int}/update")]
+        public async Task<ActionResult<ApiResponse<ProfessionalCampaignResponseDto>>> Update(
+            int id,
+            [FromBody] UpdateProfessionalCampaignDto dto)
+        {
+            var invalid = InvalidModelStateResponse<ProfessionalCampaignResponseDto>();
+            if (invalid != null) return invalid;
+
+            var result = await _service.UpdateAsync(await GetCurrentUserIdAsync(), id, dto);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        [HttpPost("{id:int}/delete")]
+        public async Task<ActionResult<ApiResponse<bool>>> Delete(int id)
+        {
+            var result = await _service.DeleteAsync(await GetCurrentUserIdAsync(), id);
             return StatusCode(result.StatusCode, result);
         }
 
