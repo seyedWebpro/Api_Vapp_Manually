@@ -39,6 +39,11 @@ namespace Api_Vapp.DTOs.Automation
         /// داده‌های تنظیمات اتوماسیون سفارشی
         /// </summary>
         public CustomAutomationSettingsData? CustomAutomationSettings { get; set; }
+
+        /// <summary>
+        /// سازگاری با کلاینت موبایل که کلید customSettings می‌فرستد
+        /// </summary>
+        public CustomAutomationSettingsData? CustomSettings { get; set; }
     }
 
     /// <summary>

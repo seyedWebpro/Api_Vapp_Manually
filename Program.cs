@@ -441,6 +441,7 @@ builder.Services.AddScoped<Api_Vapp.Interfaces.IMessageService, Api_Vapp.Service
 builder.Services.AddScoped<Api_Vapp.Interfaces.IProfessionalCampaignService, Api_Vapp.Services.ProfessionalCampaignService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IProfessionalCampaignRepository, Api_Vapp.Repositories.ProfessionalCampaignRepository>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IAutomatedMessageService, Api_Vapp.Services.AutomatedMessageService>();
+builder.Services.AddScoped<Api_Vapp.Interfaces.IAutomationRecipientEvaluator, Api_Vapp.Services.AutomationRecipientEvaluator>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.ISpecialOccasionService, Api_Vapp.Services.SpecialOccasionService>();
 builder.Services.AddScoped<Api_Vapp.Interfaces.IOccasionGreetingDispatchService, Api_Vapp.Services.OccasionGreetingDispatchService>();
 

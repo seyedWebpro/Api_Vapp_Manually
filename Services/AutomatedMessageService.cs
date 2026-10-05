@@ -38,6 +38,7 @@ namespace Api_Vapp.Services
         private readonly ISmsPricingService _smsPricing;
         private readonly IMemoryCache _cache;
         private readonly IForbiddenWordService _forbiddenWords;
+        private readonly IAutomationRecipientEvaluator _recipientEvaluator;
 
         private static readonly TimeSpan ActiveTypesCacheTtl = TimeSpan.FromMinutes(10);
 
@@ -58,7 +59,8 @@ namespace Api_Vapp.Services
             IAuditService audit,
             ISmsPricingService smsPricing,
             IMemoryCache cache,
-            IForbiddenWordService forbiddenWords)
+            IForbiddenWordService forbiddenWords,
+            IAutomationRecipientEvaluator recipientEvaluator)
         {
             _automatedMessageRepository = automatedMessageRepository;
             _messageRepository = messageRepository;
@@ -77,6 +79,7 @@ namespace Api_Vapp.Services
             _smsPricing = smsPricing;
             _cache = cache;
             _forbiddenWords = forbiddenWords;
+            _recipientEvaluator = recipientEvaluator;
         }
 
         public async Task<ApiResponse<AutomationTypeListResponseDto>> GetAutomationTypesAsync(int pageNumber = 1, int pageSize = 20)
@@ -359,8 +362,8 @@ namespace Api_Vapp.Services
 
                     // اعمال فیلتر بر اساس نوع پیام خودکار
                     var filteredContacts = await FilterContactsByAutomationTypeAsync(
-                        allContacts, 
-                        automatedMessage.AutomationType, 
+                        allContacts,
+                        automatedMessage,
                         userId);
 
                     recipients.AddRange(filteredContacts);
@@ -409,7 +412,7 @@ namespace Api_Vapp.Services
 
                     var filteredContacts = await FilterContactsByAutomationTypeAsync(
                         validContacts,
-                        automatedMessage.AutomationType,
+                        automatedMessage,
                         userId);
 
                     recipients.AddRange(filteredContacts);
@@ -1307,24 +1310,31 @@ namespace Api_Vapp.Services
         /// فیلتر کردن مخاطبین بر اساس نوع پیام خودکار
         /// </summary>
         private async Task<List<RecipientItemForAutomatedMessageDto>> FilterContactsByAutomationTypeAsync(
-            List<Contact> contacts, 
-            string automationType, 
+            List<Contact> contacts,
+            AutomatedMessage automatedMessage,
             int userId)
         {
             var recipients = new List<RecipientItemForAutomatedMessageDto>();
+            var automationType = automatedMessage.AutomationType;
+            var today = DateTime.UtcNow.Date;
 
-            // بهینه‌سازی: دریافت همه CashbackTransactions یکجا (فقط برای CashbackExpiry)
-            HashSet<int>? contactsWithCashback = null;
-            if (automationType == "CashbackExpiry")
+            IReadOnlyDictionary<int, AutomationContactMetrics>? metricsByContactId = null;
+            if (automationType is AutomationTypeCodes.CashbackExpiry
+                or AutomationTypeCodes.PurchaseReminder
+                or AutomationTypeCodes.Custom)
             {
-                var contactIds = contacts.Select(c => c.Id).ToList();
-                var cashbackContactIds = await _context.CashbackTransactions
-                    .Where(ct => contactIds.Contains(ct.ContactId) && 
-                                ct.Status == "Deposited")
-                    .Select(ct => ct.ContactId)
-                    .Distinct()
-                    .ToListAsync();
-                contactsWithCashback = cashbackContactIds.ToHashSet();
+                metricsByContactId = await _recipientEvaluator.LoadContactMetricsAsync(
+                    userId,
+                    contacts.Select(c => c.Id));
+            }
+
+            CustomAutomationConditions? customConditions = null;
+            if (automationType == AutomationTypeCodes.Custom
+                && AutomationActivationConditionsHelper.TryParseCustomConditions(
+                    automatedMessage.ActivationConditions, out var parsedCustom)
+                && parsedCustom.HasAnyRule)
+            {
+                customConditions = parsedCustom;
             }
 
             foreach (var contact in contacts)
@@ -1337,41 +1347,59 @@ namespace Api_Vapp.Services
                     IsEligible = true
                 };
 
-                // فیلتر بر اساس نوع پیام خودکار
-                if (automationType == "Birthday")
+                if (automationType == AutomationTypeCodes.Birthday)
                 {
-                    // بررسی وضعیت هر مخاطب برای birthday
                     var additionalInfo = contact.AdditionalInfo;
-                    var hasAdditionalInfo = additionalInfo != null;
                     var hasDateOfBirth = additionalInfo?.DateOfBirth.HasValue == true;
-
-                    // لاگ دقیق وضعیت هر مخاطب
-                    _logger.LogInformation("بررسی تولد - مخاطب {ContactId} ({Name}): " +
-                        "HasAdditionalInfo: {HasAdditionalInfo}, " +
-                        "DateOfBirth: {DateOfBirth}, " +
-                        "IsEligible: {IsEligible}",
-                        contact.Id, contact.FullName ?? "بدون نام",
-                        hasAdditionalInfo,
-                        additionalInfo?.DateOfBirth?.ToString("yyyy-MM-dd HH:mm:ss") ?? "null",
-                        hasDateOfBirth);
 
                     recipient.HasDateOfBirth = hasDateOfBirth;
                     recipient.IsEligible = hasDateOfBirth;
                 }
-                else if (automationType == "CashbackExpiry")
+                else if (automationType == AutomationTypeCodes.CashbackExpiry)
                 {
-                    // بررسی کش‌بک (از HashSet که قبلاً ایجاد کردم)
-                    var hasCashback = contactsWithCashback != null && 
-                                     contactsWithCashback.Contains(contact.Id);
+                    // مخاطب‌گزینی: کسانی که کش‌بک فعال با تاریخ انقضا دارند (مخاطب هدف)
+                    // اجرای واقعی در Background با DaysBeforeEvent دقیق فیلتر می‌شود
+                    var hasCashback = false;
+                    if (metricsByContactId != null
+                        && metricsByContactId.TryGetValue(contact.Id, out var cashbackMetrics))
+                    {
+                        hasCashback = cashbackMetrics.CashbackBalance > 0
+                            && cashbackMetrics.CashbackExpiryDate.HasValue
+                            && cashbackMetrics.CashbackExpiryDate.Value.Date >= today;
+                    }
+
                     recipient.HasCashback = hasCashback;
-                    // فعلاً همه واجد شرایط هستند (سیستم کامل نیست)
-                    recipient.IsEligible = true;
+                    recipient.IsEligible = hasCashback;
                 }
-                else
+                else if (automationType == AutomationTypeCodes.PurchaseReminder)
                 {
-                    // برای سایر انواع (Welcome, PurchaseReminder, SpecialOccasion, Custom)
-                    // همه واجد شرایط هستند
-                    recipient.IsEligible = true;
+                    // اگر DaysBeforeEvent هنوز ذخیره نشده (مرحله قبل از settings در ویزارد موبایل)
+                    // همه مخاطبین انتخاب‌شده را در استخر نگه می‌داریم؛ فیلتر واقعی در Background است.
+                    if (!automatedMessage.DaysBeforeEvent.HasValue)
+                    {
+                        recipient.IsEligible = true;
+                    }
+                    else
+                    {
+                        recipient.IsEligible = metricsByContactId != null
+                            && metricsByContactId.TryGetValue(contact.Id, out var metrics)
+                            && _recipientEvaluator.IsPurchaseReminderEligible(
+                                metrics, today, automatedMessage.DaysBeforeEvent.Value);
+                    }
+                }
+                else if (automationType == AutomationTypeCodes.Custom)
+                {
+                    // قبل از ذخیره شرایط: همه واجد انتخاب هستند؛ بعد از ذخیره: فیلتر شرط‌ها
+                    if (customConditions == null)
+                    {
+                        recipient.IsEligible = true;
+                    }
+                    else
+                    {
+                        recipient.IsEligible = metricsByContactId != null
+                            && metricsByContactId.TryGetValue(contact.Id, out var metrics)
+                            && _recipientEvaluator.IsCustomEligible(metrics, today, customConditions);
+                    }
                 }
 
                 recipients.Add(recipient);
@@ -1402,8 +1430,11 @@ namespace Api_Vapp.Services
                     break;
 
                 case "CashbackExpiry":
-                    info.Message = $"از {totalCount} مخاطب انتخاب شده";
-                    info.Warning = "⚠️ توجه: سیستم کش‌بک در حال توسعه است. فعلاً به همه مخاطبین انتخاب شده پیام ارسال می‌شود.";
+                    info.Message = $"از {totalCount} مخاطب، {eligibleCount} نفر کش‌بک فعال با تاریخ انقضا دارند";
+                    if (ineligibleCount > 0)
+                    {
+                        info.Warning = "⚠️ توجه: فقط به مخاطبینی که کش‌بک فعال با تاریخ انقضا دارند پیام یادآوری ارسال می‌شود.";
+                    }
                     break;
 
                 case "Welcome":
@@ -1412,8 +1443,11 @@ namespace Api_Vapp.Services
                     break;
 
                 case "PurchaseReminder":
-                    info.Message = $"از {totalCount} مخاطب انتخاب شده";
-                    info.Warning = "⚠️ توجه: سیستم خرید در حال توسعه است. فعلاً به همه مخاطبین انتخاب شده پیام ارسال می‌شود.";
+                    info.Message = $"از {totalCount} مخاطب، {eligibleCount} نفر در بازه یادآوری خرید هستند";
+                    if (ineligibleCount > 0)
+                    {
+                        info.Warning = "⚠️ توجه: فقط به مخاطبینی که مدت مشخصی خرید نکرده‌اند (یا از زمان ثبت‌شان گذشته) پیام ارسال می‌شود.";
+                    }
                     break;
 
                 case "SpecialOccasion":
@@ -1456,17 +1490,17 @@ namespace Api_Vapp.Services
                 case "cashbackexpiry":
                     if (eligibleCount == 0)
                     {
-                        return $"هیچ یک از {totalRecipients} مخاطب انتخاب شده دارای اعتبار کش‌بک منقضی شده نیست. لطفاً مخاطبینی با اعتبار کش‌بک انتخاب کنید.";
+                        return $"هیچ یک از {totalRecipients} مخاطب انتخاب شده در بازه یادآوری انقضای کش‌بک نیستند. لطفاً مخاطبینی با کش‌بک فعال و تاریخ انقضای مناسب انتخاب کنید.";
                     }
                     else
                     {
-                        return $"از {totalRecipients} مخاطب انتخاب شده، {eligibleCount} نفر اعتبار کش‌بک منقضی شده دارند و {ineligibleCount} نفر ندارند. پیام فقط به {eligibleCount} نفر ارسال خواهد شد.";
+                        return $"از {totalRecipients} مخاطب انتخاب شده، {eligibleCount} نفر در بازه یادآوری انقضای کش‌بک هستند و {ineligibleCount} نفر نیستند. پیام فقط به {eligibleCount} نفر ارسال خواهد شد.";
                     }
 
                 case "purchasereminder":
                     if (eligibleCount == 0)
                     {
-                        return $"هیچ یک از {totalRecipients} مخاطب انتخاب شده شرایط یادآوری خرید را ندارند. سیستم خرید در حال توسعه است.";
+                        return $"هیچ یک از {totalRecipients} مخاطب انتخاب شده شرایط یادآوری خرید را ندارند. لطفاً تعداد روز بدون خرید یا مخاطبین را بررسی کنید.";
                     }
                     else
                     {
@@ -1515,10 +1549,10 @@ namespace Api_Vapp.Services
                     return $"هشدار: از {totalRecipients} مخاطب انتخاب شده، فقط {eligibleCount} نفر تاریخ تولد دارند. {ineligibleCount} نفر بدون تاریخ تولد هستند و پیام دریاقت نخواهند کرد.";
 
                 case "cashbackexpiry":
-                    return $"هشدار: از {totalRecipients} مخاطب انتخاب شده، فقط {eligibleCount} نفر اعتبار کش‌بک منقضی شده دارند. {ineligibleCount} نفر شرایط لازم را ندارند.";
+                    return $"هشدار: از {totalRecipients} مخاطب انتخاب شده، فقط {eligibleCount} نفر در بازه یادآوری انقضای کش‌بک هستند. {ineligibleCount} نفر شرایط لازم را ندارند.";
 
                 case "purchasereminder":
-                    return $"هشدار: از {totalRecipients} مخاطب انتخاب شده، فقط {eligibleCount} نفر شرایط یادآوری خرید دارند. سیستم خرید در حال توسعه است.";
+                    return $"هشدار: از {totalRecipients} مخاطب انتخاب شده، فقط {eligibleCount} نفر شرایط یادآوری خرید دارند. {ineligibleCount} نفر واجد شرایط نیستند.";
 
                 case "specialoccasion":
                     return $"هشدار: از {totalRecipients} مخاطب انتخاب شده، فقط {eligibleCount} نفر مناسبت تعریف شده دارند. {ineligibleCount} نفر مناسبت ندارند.";
@@ -2051,6 +2085,14 @@ namespace Api_Vapp.Services
                         "فرمت JSON شرایط فعال‌سازی نامعتبر است");
                 }
 
+                if (!AutomationActivationConditionsHelper.TryParseCustomConditions(
+                        settingsDto.ActivationConditions, out _))
+                {
+                    await transaction.RollbackAsync();
+                    return ApiResponse<AutomatedMessageResponseDto>.BadRequest(
+                        "حداقل یک شرط قابل اجرا باید در JSON تعریف شود. کلیدهای مجاز: daysWithoutPurchase، daysSinceContactCreated، minCashbackBalance، maxCashbackBalance، hasCashback، hasDateOfBirth، minDaysUntilCashbackExpiry، maxDaysUntilCashbackExpiry");
+                }
+
                 // ذخیره ActivationConditions
                 automatedMessage.ActivationConditions = settingsDto.ActivationConditions;
                 automatedMessage.UpdatedAt = DateTime.UtcNow;
@@ -2111,7 +2153,10 @@ namespace Api_Vapp.Services
                     return await HandleSpecialOccasionSettingsAsync(automatedMessageId, userId, unifiedDto.SpecialOccasionSettings);
 
                 case "custom":
-                    return await HandleCustomAutomationSettingsAsync(automatedMessageId, userId, unifiedDto.CustomAutomationSettings);
+                    return await HandleCustomAutomationSettingsAsync(
+                        automatedMessageId,
+                        userId,
+                        unifiedDto.CustomAutomationSettings ?? unifiedDto.CustomSettings);
 
                 default:
                     return ApiResponse<object>.BadRequest($"نوع تنظیمات نامعتبر است: {unifiedDto.Type}");
@@ -2776,13 +2821,19 @@ namespace Api_Vapp.Services
                     recipients = JsonSerializer.Deserialize<List<RecipientItemForAutomatedMessageDto>>(session.RecipientsJson)
                         ?? new List<RecipientItemForAutomatedMessageDto>();
 
-                    // بررسی اینکه آیا Recipients شامل IsEligible هستند یا نه (برای سازگاری با داده‌های قدیمی)
-                    if (recipients.Any() && recipients.All(r => r.IsEligible == false))
-                    {
-                        // اگر همه IsEligible = false هستند، احتمالاً داده قدیمی است، دوباره فیلتر کن
-                        _logger.LogInformation("Recipients in session have no eligible recipients, re-filtering for automation {AutomationId}", automatedMessageId);
+                    var shouldRefilter =
+                        (recipients.Any() && recipients.All(r => r.IsEligible == false))
+                        || automatedMessage.AutomationType is AutomationTypeCodes.CashbackExpiry
+                            or AutomationTypeCodes.PurchaseReminder
+                            or AutomationTypeCodes.Custom;
 
-                        // دریافت مخاطبان از Recipients موجود
+                    // مخاطب‌گزینی ویزارد قبل از settings انجام می‌شود؛ در خلاصه با تنظیمات نهایی دوباره فیلتر می‌کنیم
+                    if (shouldRefilter && recipients.Any())
+                    {
+                        _logger.LogInformation(
+                            "Re-filtering recipients for automation {AutomationId} type {Type}",
+                            automatedMessageId, automatedMessage.AutomationType);
+
                         var contactIds = recipients
                             .Where(r => r.ContactId > 0)
                             .Select(r => r.ContactId)
@@ -2795,13 +2846,10 @@ namespace Api_Vapp.Services
                                 .Where(c => contactIds.Contains(c.Id) && !c.IsDeleted)
                                 .ToListAsync();
 
-                            // دوباره فیلتر کن
-                            var filteredRecipients = await FilterContactsByAutomationTypeAsync(contacts, automatedMessage.AutomationType, userId);
+                            var filteredRecipients = await FilterContactsByAutomationTypeAsync(contacts, automatedMessage, userId);
                             recipients = filteredRecipients;
 
-                            // بروزرسانی Session با داده‌های جدید
-                            var updatedRecipientsJson = JsonSerializer.Serialize(recipients);
-                            session.RecipientsJson = updatedRecipientsJson;
+                            session.RecipientsJson = JsonSerializer.Serialize(recipients);
                             await _context.SaveChangesAsync();
                         }
                     }

@@ -59,9 +59,9 @@ namespace Api_Vapp.Services.BackgroundServices
         {
             using var scope = _serviceProvider.CreateScope();
             var context = scope.ServiceProvider.GetRequiredService<Api_Context>();
-            var automatedMessageRepository = scope.ServiceProvider.GetRequiredService<IAutomatedMessageRepository>();
             var contactRepository = scope.ServiceProvider.GetRequiredService<IContactRepository>();
             var auditService = scope.ServiceProvider.GetRequiredService<IAuditService>();
+            var recipientEvaluator = scope.ServiceProvider.GetRequiredService<IAutomationRecipientEvaluator>();
 
             // مناسبت‌ها توسط OccasionGreetingBackgroundService از جدول مناسبت‌های کاربر ارسال می‌شوند
             var allAutomatedMessages = await context.AutomatedMessages
@@ -97,7 +97,13 @@ namespace Api_Vapp.Services.BackgroundServices
                     if (automatedMessage == null)
                         continue;
 
-                    await ProcessSingleAutomatedMessageAsync(context, automatedMessage, contactRepository, auditService, cancellationToken);
+                    await ProcessSingleAutomatedMessageAsync(
+                        context,
+                        automatedMessage,
+                        contactRepository,
+                        auditService,
+                        recipientEvaluator,
+                        cancellationToken);
                 }
                 catch (Exception ex)
                 {
@@ -112,30 +118,34 @@ namespace Api_Vapp.Services.BackgroundServices
             AutomatedMessage automatedMessage,
             IContactRepository contactRepository,
             IAuditService auditService,
+            IAutomationRecipientEvaluator recipientEvaluator,
             CancellationToken cancellationToken)
         {
             var today = DateTime.UtcNow.Date;
 
             switch (automatedMessage.AutomationType)
             {
-                case "Birthday":
+                case AutomationTypeCodes.Birthday:
                     await ProcessBirthdayAutomationAsync(context, automatedMessage, contactRepository, auditService, today, cancellationToken);
                     break;
 
-                case "CashbackExpiry":
-                    await ProcessCashbackExpiryAutomationAsync(context, automatedMessage, contactRepository, today, cancellationToken);
+                case AutomationTypeCodes.CashbackExpiry:
+                    await ProcessCashbackExpiryAutomationAsync(
+                        context, automatedMessage, auditService, recipientEvaluator, today, cancellationToken);
                     break;
 
-                case "Welcome":
+                case AutomationTypeCodes.Welcome:
                     // Welcome messages are handled when contact is created, not in background
                     break;
 
-                case "PurchaseReminder":
-                    await ProcessPurchaseReminderAutomationAsync(context, automatedMessage, contactRepository, today, cancellationToken);
+                case AutomationTypeCodes.PurchaseReminder:
+                    await ProcessPurchaseReminderAutomationAsync(
+                        context, automatedMessage, auditService, recipientEvaluator, today, cancellationToken);
                     break;
 
-                case "Custom":
-                    await ProcessCustomAutomationAsync(context, automatedMessage, contactRepository, today, cancellationToken);
+                case AutomationTypeCodes.Custom:
+                    await ProcessCustomAutomationAsync(
+                        context, automatedMessage, auditService, recipientEvaluator, today, cancellationToken);
                     break;
             }
         }
@@ -254,52 +264,223 @@ namespace Api_Vapp.Services.BackgroundServices
                 automatedMessage.Id, queuedCount, failedCount, skippedCount, eligibleContacts.Count, today.ToString("yyyy-MM-dd"));
         }
 
-        private Task ProcessCashbackExpiryAutomationAsync(
+        private async Task ProcessCashbackExpiryAutomationAsync(
             Api_Context context,
             AutomatedMessage automatedMessage,
-            IContactRepository contactRepository,
+            IAuditService auditService,
+            IAutomationRecipientEvaluator recipientEvaluator,
             DateTime today,
             CancellationToken cancellationToken)
         {
             if (!automatedMessage.DaysBeforeEvent.HasValue)
-                return Task.CompletedTask;
+                return;
 
-            var expiryDate = today.AddDays(automatedMessage.DaysBeforeEvent.Value);
+            var executionMode = AutomationActivationConditionsHelper.ReadExecutionMode(automatedMessage.ActivationConditions);
+            var targetExpiryDate = today.AddDays(automatedMessage.DaysBeforeEvent.Value);
 
-            // TODO: نیاز به جدول Cashback یا WalletTransaction برای بررسی انقضا
-            _logger.LogInformation("Processing CashbackExpiry automation {Id} for date {ExpiryDate}",
-                automatedMessage.Id, expiryDate);
-            return Task.CompletedTask;
+            _logger.LogInformation(
+                "CashbackExpiry automation {Id} — checking contacts with expiry on {TargetExpiryDate} (UTC), ExecutionMode={ExecutionMode}",
+                automatedMessage.Id, targetExpiryDate.ToString("yyyy-MM-dd"), executionMode);
+
+            var eligibleContacts = await ResolveEligibleContactsAsync(
+                context,
+                automatedMessage,
+                recipientEvaluator,
+                metrics => recipientEvaluator.IsCashbackExpiryEligible(
+                    metrics, today, automatedMessage.DaysBeforeEvent.Value),
+                cancellationToken);
+
+            await QueueEligibleContactsAsync(
+                context,
+                automatedMessage,
+                eligibleContacts,
+                executionMode,
+                auditService,
+                automationLabel: "CashbackExpiry",
+                cancellationToken);
         }
 
-        private Task ProcessPurchaseReminderAutomationAsync(
+        private async Task ProcessPurchaseReminderAutomationAsync(
             Api_Context context,
             AutomatedMessage automatedMessage,
-            IContactRepository contactRepository,
+            IAuditService auditService,
+            IAutomationRecipientEvaluator recipientEvaluator,
             DateTime today,
             CancellationToken cancellationToken)
         {
             if (!automatedMessage.DaysBeforeEvent.HasValue)
-                return Task.CompletedTask;
+                return;
 
-            var reminderDate = today.AddDays(-automatedMessage.DaysBeforeEvent.Value);
+            var executionMode = AutomationActivationConditionsHelper.ExecutionModeOnce;
+            var cutoffDate = today.AddDays(-automatedMessage.DaysBeforeEvent.Value);
 
-            // TODO: نیاز به جدول Purchase/Order برای بررسی آخرین خرید
-            _logger.LogInformation("Processing PurchaseReminder automation {Id} for date {ReminderDate}",
-                automatedMessage.Id, reminderDate);
-            return Task.CompletedTask;
+            _logger.LogInformation(
+                "PurchaseReminder automation {Id} — checking contacts without purchase since {CutoffDate} (UTC)",
+                automatedMessage.Id, cutoffDate.ToString("yyyy-MM-dd"));
+
+            var eligibleContacts = await ResolveEligibleContactsAsync(
+                context,
+                automatedMessage,
+                recipientEvaluator,
+                metrics => recipientEvaluator.IsPurchaseReminderEligible(
+                    metrics, today, automatedMessage.DaysBeforeEvent.Value),
+                cancellationToken);
+
+            await QueueEligibleContactsAsync(
+                context,
+                automatedMessage,
+                eligibleContacts,
+                executionMode,
+                auditService,
+                automationLabel: "PurchaseReminder",
+                cancellationToken);
         }
 
-        private Task ProcessCustomAutomationAsync(
+        private async Task ProcessCustomAutomationAsync(
             Api_Context context,
             AutomatedMessage automatedMessage,
-            IContactRepository contactRepository,
+            IAuditService auditService,
+            IAutomationRecipientEvaluator recipientEvaluator,
             DateTime today,
             CancellationToken cancellationToken)
         {
-            // TODO: پردازش شرایط سفارشی از ActivationConditions (JSON)
-            _logger.LogInformation("Processing Custom automation {Id}", automatedMessage.Id);
-            return Task.CompletedTask;
+            if (!AutomationActivationConditionsHelper.TryParseCustomConditions(
+                    automatedMessage.ActivationConditions, out var conditions))
+            {
+                _logger.LogWarning(
+                    "Custom automation {Id} has no executable conditions — skipping",
+                    automatedMessage.Id);
+                return;
+            }
+
+            _logger.LogInformation(
+                "Custom automation {Id} — evaluating custom conditions, ExecutionMode={ExecutionMode}",
+                automatedMessage.Id, conditions.ExecutionMode);
+
+            var eligibleContacts = await ResolveEligibleContactsAsync(
+                context,
+                automatedMessage,
+                recipientEvaluator,
+                metrics => recipientEvaluator.IsCustomEligible(metrics, today, conditions),
+                cancellationToken);
+
+            await QueueEligibleContactsAsync(
+                context,
+                automatedMessage,
+                eligibleContacts,
+                conditions.ExecutionMode,
+                auditService,
+                automationLabel: "Custom",
+                cancellationToken);
+        }
+
+        private async Task<List<Contact>> ResolveEligibleContactsAsync(
+            Api_Context context,
+            AutomatedMessage automatedMessage,
+            IAutomationRecipientEvaluator recipientEvaluator,
+            Func<AutomationContactMetrics, bool> isEligible,
+            CancellationToken cancellationToken)
+        {
+            var selectedScope = await ResolveSelectedContactScopeAsync(context, automatedMessage, cancellationToken);
+
+            var scopedContacts = await context.Contacts
+                .AsNoTracking()
+                .Include(c => c.ContactNotebook)
+                .Where(c => !c.IsDeleted
+                    && c.ContactNotebook.UserId == automatedMessage.UserId
+                    && !c.ContactNotebook.IsDeleted
+                    && !string.IsNullOrWhiteSpace(c.MobileNumber))
+                .ToListAsync(cancellationToken);
+
+            scopedContacts = scopedContacts
+                .Where(c => IsContactInSelectedScope(c, selectedScope))
+                .ToList();
+
+            if (scopedContacts.Count == 0)
+                return [];
+
+            var metricsByContactId = await recipientEvaluator.LoadContactMetricsAsync(
+                automatedMessage.UserId,
+                scopedContacts.Select(c => c.Id),
+                cancellationToken);
+
+            return scopedContacts
+                .Where(c => metricsByContactId.TryGetValue(c.Id, out var metrics) && isEligible(metrics))
+                .ToList();
+        }
+
+        private async Task QueueEligibleContactsAsync(
+            Api_Context context,
+            AutomatedMessage automatedMessage,
+            List<Contact> eligibleContacts,
+            string executionMode,
+            IAuditService auditService,
+            string automationLabel,
+            CancellationToken cancellationToken)
+        {
+            if (eligibleContacts.Count == 0)
+            {
+                _logger.LogInformation("{AutomationLabel} automation {Id} — no eligible contacts", automationLabel, automatedMessage.Id);
+                return;
+            }
+
+            var todayStart = DateTime.UtcNow.Date;
+            var todayEnd = todayStart.AddDays(1);
+
+            var handledTodayIds = await context.AutomationExecutions
+                .AsNoTracking()
+                .Where(ae => ae.AutomatedMessageId == automatedMessage.Id
+                    && ae.ContactId.HasValue
+                    && ae.ExecutedAt >= todayStart
+                    && ae.ExecutedAt < todayEnd)
+                .Select(ae => ae.ContactId!.Value)
+                .ToHashSetAsync(cancellationToken);
+
+            HashSet<int> everHandledIds = new();
+            if (string.Equals(executionMode, AutomationActivationConditionsHelper.ExecutionModeOnce, StringComparison.OrdinalIgnoreCase))
+            {
+                everHandledIds = await context.AutomationExecutions
+                    .AsNoTracking()
+                    .Where(ae => ae.AutomatedMessageId == automatedMessage.Id
+                        && ae.ContactId.HasValue
+                        && (ae.Status == "Success"
+                            || ae.Status == "PendingApproval"
+                            || ae.Status == "Sent"))
+                    .Select(ae => ae.ContactId!.Value)
+                    .ToHashSetAsync(cancellationToken);
+            }
+
+            var contactsToQueue = eligibleContacts
+                .Where(c => !handledTodayIds.Contains(c.Id))
+                .Where(c => !string.Equals(executionMode, AutomationActivationConditionsHelper.ExecutionModeOnce, StringComparison.OrdinalIgnoreCase)
+                    || !everHandledIds.Contains(c.Id))
+                .ToList();
+
+            var skippedCount = eligibleContacts.Count - contactsToQueue.Count;
+
+            if (contactsToQueue.Count == 0)
+            {
+                _logger.LogInformation(
+                    "{AutomationLabel} automation {Id} completed: 0 queued, {SkippedCount} skipped (dedupe), {EligibleCount} eligible",
+                    automationLabel, automatedMessage.Id, skippedCount, eligibleContacts.Count);
+                return;
+            }
+
+            try
+            {
+                var queuedCount = await EnqueueAutomatedBatchForAdminApprovalAsync(
+                    context, automatedMessage, contactsToQueue, auditService, cancellationToken);
+
+                _logger.LogInformation(
+                    "{AutomationLabel} automation {Id} completed: {QueuedCount} queued, {SkippedCount} skipped, {EligibleCount} eligible",
+                    automationLabel, automatedMessage.Id, queuedCount, skippedCount, eligibleContacts.Count);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Failed to queue {AutomationLabel} automation {Id} for admin approval",
+                    automationLabel, automatedMessage.Id);
+            }
         }
 
         /// <summary>
