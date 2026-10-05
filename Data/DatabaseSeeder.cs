@@ -385,16 +385,41 @@ namespace Api_Vapp.Data
         }
 
         /// <summary>
-        /// مناسبت‌های کاتالوگ کد را فقط در صورت نبودن درج می‌کند.
-        /// ردیف‌های موجود (حتی soft-deleted) را بازنویسی یا احیا نمی‌کند تا تغییرات پنل ادمین حفظ شود.
+        /// مناسبت‌های جدید کاتالوگ درج می‌شوند.
+        /// ردیف‌های سیستمی که هنوز قمری هستند یک‌بار به تاریخ شمسی کاتالوگ منتقل می‌شوند.
+        /// بعد از آن، ویرایش شمسی ادمین بازنویسی نمی‌شود.
         /// </summary>
         private static async Task SeedSystemOccasionsAsync(Api_Context context, ILogger logger)
         {
-            var existingCodes = await context.SpecialOccasions
+            var existing = await context.SpecialOccasions
                 .Where(o => o.IsSystem && o.Code != null)
-                .Select(o => o.Code!)
                 .ToListAsync();
-            var knownCodes = new HashSet<string>(existingCodes, StringComparer.OrdinalIgnoreCase);
+            var knownCodes = new HashSet<string>(
+                existing.Select(o => o.Code!),
+                StringComparer.OrdinalIgnoreCase);
+
+            var converted = 0;
+            var catalogByCode = SystemOccasionCatalog.All
+                .GroupBy(item => item.Code, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+
+            foreach (var occasion in existing)
+            {
+                if (occasion.Code == null
+                    || !catalogByCode.TryGetValue(occasion.Code, out var item)
+                    || !string.Equals(occasion.CalendarType, OccasionCalendarTypes.Hijri, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                occasion.CalendarType = OccasionCalendarTypes.Jalali;
+                occasion.Month = item.Month;
+                occasion.Day = item.Day;
+                occasion.OccasionDate = OccasionCalendarHelper.BuildReferenceOccasionDateUtc(
+                    OccasionCalendarTypes.Jalali, item.Month, item.Day);
+                occasion.UpdatedAt = DateTime.UtcNow;
+                converted++;
+            }
 
             var added = 0;
             var now = DateTime.UtcNow;
@@ -426,12 +451,12 @@ namespace Api_Vapp.Data
                 added++;
             }
 
-            if (added > 0)
+            if (added > 0 || converted > 0)
             {
                 await context.SaveChangesAsync();
                 logger.LogInformation(
-                    "System occasions seeded — Added: {Added}, Catalog: {Total}",
-                    added, SystemOccasionCatalog.All.Count);
+                    "System occasions seeded — Added: {Added}, ConvertedFromHijri: {Converted}, Catalog: {Total}",
+                    added, converted, SystemOccasionCatalog.All.Count);
             }
             else
             {

@@ -134,6 +134,51 @@ assert_eq 'recipient snapshot count' '1' "$(json_get "$TMP_DIR/create.json" data
 assert_eq 'campaign awaits approvals' 'PendingApproval' "$(json_get "$TMP_DIR/create.json" data.status)"
 CAMPAIGN_ID="$(json_get "$TMP_DIR/create.json" data.id)"
 
+echo '===== TIMEZONE: startAt WITHOUT offset (mobile Flutter bug) ====='
+# اپ موبایل DateTime.toIso8601String بدون Z/+03:30 می‌فرستد؛ باید ساعت تهران فرض شود نه UTC.
+TZ_NO_OFFSET_META="$(python3 - <<'PY'
+from datetime import datetime,timedelta,timezone
+import json
+tz=timezone(timedelta(hours=3,minutes=30))
+# چند ساعت جلوتر از الان تا validation «گذشته» رد نشود
+wall=(datetime.now(tz)+timedelta(hours=2)).replace(second=0,microsecond=0)
+# بدون offset — دقیقاً مثل Flutter
+raw=wall.strftime('%Y-%m-%dT%H:%M:%S')
+expected_utc=wall.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S')
+print(json.dumps({'raw':raw,'expectedUtc':expected_utc}))
+PY
+)"
+START_NO_OFFSET="$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['raw'])" "$TZ_NO_OFFSET_META")"
+EXPECTED_START_UTC="$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['expectedUtc'])" "$TZ_NO_OFFSET_META")"
+TZ_BODY="$(python3 - "$NOTEBOOK_ID" "$START_NO_OFFSET" "$SUFFIX" <<'PY'
+import json,sys
+print(json.dumps({
+ 'title':f'کمپین تایم‌زون {sys.argv[3]}','targetType':'Notebooks','targetIds':[int(sys.argv[1])],
+ 'startAt':sys.argv[2],
+ 'steps':[{'content':f'تایم‌زون ۱ {sys.argv[3]}','delayDays':0,'delayHours':0,'delayMinutes':0},
+          {'content':f'تایم‌زون ۲ {sys.argv[3]}','delayDays':0,'delayHours':0,'delayMinutes':5}]
+},ensure_ascii=False))
+PY
+)"
+HTTP="$(request POST '/api/professional-campaigns' "$TMP_DIR/create_tz.json" "$TZ_BODY")"
+assert_eq 'tz no-offset create HTTP' '201' "$HTTP"
+assert_eq 'tz no-offset create success' 'true' "$(json_get "$TMP_DIR/create_tz.json" success)"
+TZ_CAMPAIGN_ID="$(json_get "$TMP_DIR/create_tz.json" data.id)"
+python3 - "$TMP_DIR/create_tz.json" "$EXPECTED_START_UTC" <<'PY'
+import json,sys
+from datetime import datetime
+raw=json.load(open(sys.argv[1],encoding='utf-8'))['data']['startAtUtc']
+got=datetime.fromisoformat(raw.replace('Z','+00:00')).replace(tzinfo=None)
+exp=datetime.fromisoformat(sys.argv[2])
+delta=abs((got-exp).total_seconds())
+assert delta <= 1, f'startAtUtc mismatch: got={got} expected={exp} delta={delta}s raw={raw}'
+print(f'PASS: no-offset startAt stored as Tehran→UTC ({got.isoformat()}Z)')
+PY
+PASS=$((PASS+1))
+# پاکسازی کمپین کمکی تا نویز نماند
+HTTP="$(request POST "/api/professional-campaigns/${TZ_CAMPAIGN_ID}/delete" "$TMP_DIR/delete_tz.json")"
+assert_eq 'tz helper campaign delete HTTP' '200' "$HTTP"
+
 HTTP="$(request POST "/api/professional-campaigns/${CAMPAIGN_ID}/activate" "$TMP_DIR/activate_early.json")"
 assert_eq 'activation before approvals HTTP' '400' "$HTTP"
 

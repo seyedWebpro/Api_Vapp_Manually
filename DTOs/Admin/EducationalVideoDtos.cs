@@ -14,6 +14,9 @@ namespace Api_Vapp.DTOs.Admin
         public string PlaybackUrl { get; set; } = string.Empty;
         /// <summary>aparat_embed | file | direct</summary>
         public string PlaybackMode { get; set; } = "direct";
+        /// <summary>
+        /// کاور ویدیو: مسیر نسبی uploads/... یا لینک http(s). اپ موبایل همین فیلد را برای کاور استفاده می‌کند.
+        /// </summary>
         public string? ThumbnailUrl { get; set; }
         public int SortOrder { get; set; }
         public bool IsActive { get; set; }
@@ -46,6 +49,14 @@ namespace Api_Vapp.DTOs.Admin
         /// فایل ویدیو (mp4 / mov / avi) — حداکثر ۲ گیگابایت
         /// </summary>
         public IFormFile? VideoFile { get; set; }
+
+        /// <summary>
+        /// کاور تصویر (JPEG / PNG / GIF / WebP) — حداکثر ۵ مگابایت. در صورت ارسال، جایگزین ThumbnailUrl می‌شود.
+        /// </summary>
+        public IFormFile? CoverImage { get; set; }
+
+        /// <summary>حذف کاور فعلی بدون آپلود فایل جدید.</summary>
+        public bool ClearCover { get; set; }
     }
 
     public class UpdateEducationalVideoDto : CreateEducationalVideoDto

@@ -77,4 +77,29 @@ public class ProfessionalCampaignContractTests
         var actualSecondSend = utc.AddDays(1).AddSeconds(2);
         Assert.Equal(actualSecondSend.AddDays(7), ProfessionalCampaignSchedule.GetNextUtc(actualSecondSend, 7 * 24 * 60));
     }
+
+    [Fact]
+    public void Schedule_ZeroOffsetWallClock_IsInterpretedAsTehranLocal()
+    {
+        // شبیه‌سازی JSON موبایل بدون timezone: "2026-10-05T14:56:00"
+        var mobileLocalNoOffset = new DateTimeOffset(2026, 10, 5, 14, 56, 0, TimeSpan.Zero);
+        var utc = ProfessionalCampaignSchedule.ToUtc(mobileLocalNoOffset);
+
+        Assert.Equal(DateTimeKind.Utc, utc.Kind);
+        // تهران UTC+03:30 → 14:56 تهران = 11:26 UTC
+        Assert.Equal(new DateTime(2026, 10, 5, 11, 26, 0, DateTimeKind.Utc), utc);
+    }
+
+    [Fact]
+    public void Schedule_ZeroOffsetAndExplicitIranOffset_AgreeOnSameWallClock()
+    {
+        var wallHour = 14;
+        var wallMinute = 56;
+        var noOffset = new DateTimeOffset(2026, 10, 5, wallHour, wallMinute, 0, TimeSpan.Zero);
+        var withIranOffset = new DateTimeOffset(2026, 10, 5, wallHour, wallMinute, 0, TimeSpan.FromHours(3.5));
+
+        Assert.Equal(
+            ProfessionalCampaignSchedule.ToUtc(withIranOffset),
+            ProfessionalCampaignSchedule.ToUtc(noOffset));
+    }
 }

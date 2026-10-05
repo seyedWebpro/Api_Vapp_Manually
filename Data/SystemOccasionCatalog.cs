@@ -7,8 +7,9 @@ namespace Api_Vapp.Data
     /// منابع: تعطیلات رسمی مصوب + تقویم مرکز تقویم مؤسسه ژئوفیزیک دانشگاه تهران
     /// + مناسبت‌های رایج تقویم رسمی کشور.
     ///
-    /// جلالی = ماه/روز ثابت شمسی | قمری = ماه/روز هجری قمری (هر سال جابه‌جا می‌شود).
-    /// Hijri months: 1محرم 2صفر 3ربیع۱ 4ربیع۲ 5جمادی۱ 6جمادی۲ 7رجب 8شعبان 9رمضان 10شوال 11ذیقعده 12ذیحجه
+    /// همهٔ تاریخ‌ها شمسی (جلالی) هستند.
+    /// مناسبت‌های مذهبی طبق تقویم رسمی سال ۱۴۰۵ (مرکز تقویم مؤسسه ژئوفیزیک) ذخیره شده‌اند
+    /// و هر سال باید در پنل ادمین با تاریخ شمسی همان سال به‌روز شوند.
     /// </summary>
     public static class SystemOccasionCatalog
     {
@@ -82,60 +83,54 @@ namespace Api_Vapp.Data
                 Congrats("عید نوروزتان مبارک! سالی سرشار از سلامتی و موفقیت آرزو می‌کنیم."), 9),
 
             // ═══════════════════════════════════════════
-            // تعطیلات رسمی قمری — تسلیت / شهادت / رحلت
+            // مناسبت‌های مذهبی — تاریخ شمسی تقویم رسمی ۱۴۰۵
             // ═══════════════════════════════════════════
-            new("TASUA", "تاسوعای حسینی", OccasionTypeCodes.Death, OccasionCategories.Condolence, OccasionCalendarTypes.Hijri, 1, 9,
+            new("TASUA", "تاسوعای حسینی", OccasionTypeCodes.Death, OccasionCategories.Condolence, OccasionCalendarTypes.Jalali, 4, 3,
                 Condolence("تاسوعای حسینی"), 100),
-            new("ASHURA", "عاشورای حسینی", OccasionTypeCodes.Death, OccasionCategories.Condolence, OccasionCalendarTypes.Hijri, 1, 10,
+            new("ASHURA", "عاشورای حسینی", OccasionTypeCodes.Death, OccasionCategories.Condolence, OccasionCalendarTypes.Jalali, 4, 4,
                 Condolence("عاشورای حسینی"), 101),
-            new("ARBAYEEN", "اربعین حسینی", OccasionTypeCodes.Death, OccasionCategories.Condolence, OccasionCalendarTypes.Hijri, 2, 20,
+            new("ARBAYEEN", "اربعین حسینی", OccasionTypeCodes.Death, OccasionCategories.Condolence, OccasionCalendarTypes.Jalali, 5, 13,
                 Condolence("اربعین حسینی"), 110),
-            new("PROPHET_DEATH", "رحلت پیامبر (ص) و شهادت امام حسن (ع)", OccasionTypeCodes.Death, OccasionCategories.Condolence, OccasionCalendarTypes.Hijri, 2, 28,
+            new("PROPHET_DEATH", "رحلت پیامبر (ص) و شهادت امام حسن (ع)", OccasionTypeCodes.Death, OccasionCategories.Condolence, OccasionCalendarTypes.Jalali, 5, 21,
                 Condolence("رحلت پیامبر اکرم (ص) و شهادت امام حسن مجتبی (ع)"), 111),
-            // آخر صفر — با Day=30 و منطق «آخر ماه» در helper پوشش داده می‌شود
-            new("IMAM_REZA_DEATH", "شهادت امام رضا (ع)", OccasionTypeCodes.Death, OccasionCategories.Condolence, OccasionCalendarTypes.Hijri, 2, 30,
+            new("IMAM_REZA_DEATH", "شهادت امام رضا (ع)", OccasionTypeCodes.Death, OccasionCategories.Condolence, OccasionCalendarTypes.Jalali, 5, 22,
                 Condolence("شهادت امام رضا (ع)"), 112),
-            new("IMAM_ASKARI_DEATH", "شهادت امام حسن عسکری (ع)", OccasionTypeCodes.Death, OccasionCategories.Condolence, OccasionCalendarTypes.Hijri, 3, 8,
+            new("IMAM_ASKARI_DEATH", "شهادت امام حسن عسکری (ع)", OccasionTypeCodes.Death, OccasionCategories.Condolence, OccasionCalendarTypes.Jalali, 5, 30,
                 Condolence("شهادت امام حسن عسکری (ع)"), 120),
-            new("FATIMA_DEATH", "شهادت حضرت فاطمه زهرا (س)", OccasionTypeCodes.Death, OccasionCategories.Condolence, OccasionCalendarTypes.Hijri, 6, 3,
+            new("FATIMA_DEATH", "شهادت حضرت فاطمه زهرا (س)", OccasionTypeCodes.Death, OccasionCategories.Condolence, OccasionCalendarTypes.Jalali, 8, 22,
                 Condolence("شهادت حضرت فاطمه زهرا (س)"), 130),
-            new("FATIMIYYAH", "ایام فاطمیه", OccasionTypeCodes.Death, OccasionCategories.Condolence, OccasionCalendarTypes.Hijri, 6, 3,
+            new("FATIMIYYAH", "ایام فاطمیه", OccasionTypeCodes.Death, OccasionCategories.Condolence, OccasionCalendarTypes.Jalali, 8, 22,
                 Condolence("ایام فاطمیه"), 131),
-            new("IMAM_ALI_DEATH", "شهادت امام علی (ع)", OccasionTypeCodes.Death, OccasionCategories.Condolence, OccasionCalendarTypes.Hijri, 9, 21,
+            new("IMAM_ALI_DEATH", "شهادت امام علی (ع)", OccasionTypeCodes.Death, OccasionCategories.Condolence, OccasionCalendarTypes.Jalali, 12, 9,
                 Condolence("شهادت امام علی (ع)"), 140),
-            new("IMAM_SADEQ_DEATH", "شهادت امام جعفر صادق (ع)", OccasionTypeCodes.Death, OccasionCategories.Condolence, OccasionCalendarTypes.Hijri, 10, 25,
+            new("IMAM_SADEQ_DEATH", "شهادت امام جعفر صادق (ع)", OccasionTypeCodes.Death, OccasionCategories.Condolence, OccasionCalendarTypes.Jalali, 1, 25,
                 Condolence("شهادت امام جعفر صادق (ع)"), 150),
 
-            // ═══════════════════════════════════════════
-            // تعطیلات / مناسبت‌های رسمی قمری — تبریک / ولادت / اعیاد
-            // ═══════════════════════════════════════════
-            new("PROPHET_BIRTH", "ولادت پیامبر (ص) و امام صادق (ع)", OccasionTypeCodes.Holiday, OccasionCategories.Congratulation, OccasionCalendarTypes.Hijri, 3, 17,
+            new("PROPHET_BIRTH", "ولادت پیامبر (ص) و امام صادق (ع)", OccasionTypeCodes.Holiday, OccasionCategories.Congratulation, OccasionCalendarTypes.Jalali, 6, 8,
                 Congrats("ولادت پیامبر اکرم (ص) و امام جعفر صادق (ع) مبارک."), 200),
-            new("IMAM_ALI_BIRTH", "ولادت امام علی (ع) — روز پدر", OccasionTypeCodes.Holiday, OccasionCategories.Congratulation, OccasionCalendarTypes.Hijri, 7, 13,
+            new("IMAM_ALI_BIRTH", "ولادت امام علی (ع) — روز پدر", OccasionTypeCodes.Holiday, OccasionCategories.Congratulation, OccasionCalendarTypes.Jalali, 10, 2,
                 Congrats("ولادت امام علی (ع) و روز پدر مبارک."), 210),
-            // سازگاری کد قدیمی
-            new("FATHER_DAY", "روز پدر", OccasionTypeCodes.Holiday, OccasionCategories.Congratulation, OccasionCalendarTypes.Hijri, 7, 13,
+            new("FATHER_DAY", "روز پدر", OccasionTypeCodes.Holiday, OccasionCategories.Congratulation, OccasionCalendarTypes.Jalali, 10, 2,
                 Congrats("روز پدر مبارک."), 211),
-            new("MABATH", "مبعث پیامبر (ص)", OccasionTypeCodes.Holiday, OccasionCategories.Congratulation, OccasionCalendarTypes.Hijri, 7, 27,
+            new("MABATH", "مبعث پیامبر (ص)", OccasionTypeCodes.Holiday, OccasionCategories.Congratulation, OccasionCalendarTypes.Jalali, 10, 16,
                 Congrats("عید مبعث پیامبر اکرم (ص) مبارک."), 220),
-            new("IMAM_MAHDI_BIRTH", "ولادت امام زمان (عج) — نیمه شعبان", OccasionTypeCodes.Holiday, OccasionCategories.Congratulation, OccasionCalendarTypes.Hijri, 8, 15,
+            new("IMAM_MAHDI_BIRTH", "ولادت امام زمان (عج) — نیمه شعبان", OccasionTypeCodes.Holiday, OccasionCategories.Congratulation, OccasionCalendarTypes.Jalali, 11, 4,
                 Congrats("ولادت امام زمان (عج) و نیمه شعبان مبارک."), 230),
-            new("EID_FITR", "عید سعید فطر", OccasionTypeCodes.Holiday, OccasionCategories.Congratulation, OccasionCalendarTypes.Hijri, 10, 1,
+            new("EID_FITR", "عید سعید فطر", OccasionTypeCodes.Holiday, OccasionCategories.Congratulation, OccasionCalendarTypes.Jalali, 12, 19,
                 Congrats("عید سعید فطر مبارک."), 240),
-            new("EID_FITR_2", "تعطیلی عید فطر (۲ شوال)", OccasionTypeCodes.Holiday, OccasionCategories.Congratulation, OccasionCalendarTypes.Hijri, 10, 2,
+            new("EID_FITR_2", "تعطیلی عید فطر (۲ شوال)", OccasionTypeCodes.Holiday, OccasionCategories.Congratulation, OccasionCalendarTypes.Jalali, 12, 20,
                 Congrats("عید سعید فطر مبارک."), 241),
-            new("EID_ADHA", "عید سعید قربان", OccasionTypeCodes.Holiday, OccasionCategories.Congratulation, OccasionCalendarTypes.Hijri, 12, 10,
+            new("EID_ADHA", "عید سعید قربان", OccasionTypeCodes.Holiday, OccasionCategories.Congratulation, OccasionCalendarTypes.Jalali, 3, 6,
                 Congrats("عید سعید قربان مبارک."), 250),
-            new("EID_GHADIR", "عید سعید غدیر خم", OccasionTypeCodes.Holiday, OccasionCategories.Congratulation, OccasionCalendarTypes.Hijri, 12, 18,
+            new("EID_GHADIR", "عید سعید غدیر خم", OccasionTypeCodes.Holiday, OccasionCategories.Congratulation, OccasionCalendarTypes.Jalali, 3, 14,
                 Congrats("عید سعید غدیر خم مبارک."), 251),
 
-            // روز زن/مادر در ایران ≈ ولادت حضرت فاطمه (س) — ۲۰ جمادی‌الثانی
-            new("FATIMA_BIRTH", "ولادت حضرت فاطمه (س) — روز زن و مادر", OccasionTypeCodes.Holiday, OccasionCategories.Congratulation, OccasionCalendarTypes.Hijri, 6, 20,
+            new("FATIMA_BIRTH", "ولادت حضرت فاطمه (س) — روز زن و مادر", OccasionTypeCodes.Holiday, OccasionCategories.Congratulation, OccasionCalendarTypes.Jalali, 9, 9,
                 Congrats("ولادت حضرت فاطمه زهرا (س) و روز زن و مادر مبارک."), 260),
-            new("WOMEN_DAY", "روز زن / مادر", OccasionTypeCodes.Holiday, OccasionCategories.Congratulation, OccasionCalendarTypes.Hijri, 6, 20,
+            new("WOMEN_DAY", "روز زن / مادر", OccasionTypeCodes.Holiday, OccasionCategories.Congratulation, OccasionCalendarTypes.Jalali, 9, 9,
                 Congrats("روز زن و مادر مبارک."), 261),
 
-            new("MASUMEH_BIRTH", "ولادت حضرت معصومه (س) — روز دختران", OccasionTypeCodes.Holiday, OccasionCategories.Congratulation, OccasionCalendarTypes.Hijri, 11, 1,
+            new("MASUMEH_BIRTH", "ولادت حضرت معصومه (س) — روز دختران", OccasionTypeCodes.Holiday, OccasionCategories.Congratulation, OccasionCalendarTypes.Jalali, 2, 30,
                 Congrats("ولادت حضرت معصومه (س) و روز دختران مبارک."), 270),
         ];
     }

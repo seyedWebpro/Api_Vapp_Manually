@@ -926,11 +926,18 @@ namespace Api_Vapp.Services
             out DateTime occasionDate,
             out string? error)
         {
-            calendarType = OccasionCalendarTypes.Normalize(dto.CalendarType);
+            calendarType = OccasionCalendarTypes.Jalali;
             month = 0;
             day = 0;
             occasionDate = default;
             error = null;
+
+            if (!string.IsNullOrWhiteSpace(dto.CalendarType)
+                && !string.Equals(dto.CalendarType.Trim(), OccasionCalendarTypes.Jalali, StringComparison.OrdinalIgnoreCase))
+            {
+                error = "فقط تقویم شمسی پشتیبانی می‌شود";
+                return false;
+            }
 
             if (dto.Month.HasValue && dto.Day.HasValue)
             {

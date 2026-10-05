@@ -368,13 +368,14 @@ namespace Api_Vapp.Services.Admin
                 ? OccasionTypeCodes.ToCategory(type)
                 : OccasionCategories.Normalize(categoryRaw);
 
-            if (!OccasionCalendarTypes.IsKnown(calendarRaw))
+            if (!string.IsNullOrWhiteSpace(calendarRaw)
+                && !string.Equals(calendarRaw.Trim(), OccasionCalendarTypes.Jalali, StringComparison.OrdinalIgnoreCase))
             {
-                error = "نوع تقویم نامعتبر است";
+                error = "فقط تقویم شمسی پشتیبانی می‌شود";
                 return false;
             }
 
-            calendarType = OccasionCalendarTypes.Normalize(calendarRaw);
+            calendarType = OccasionCalendarTypes.Jalali;
 
             if (month < 1 || month > 12 || day < 1 || day > 31)
             {

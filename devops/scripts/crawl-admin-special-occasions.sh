@@ -236,6 +236,39 @@ HTTP=$(req POST "/api/Admin/SpecialOccasion/create" "$TMP/bad_type.json" \
   -d "{\"name\":\"بد نوع\",\"type\":\"Nope\",\"calendarType\":\"Jalali\",\"month\":1,\"day\":1,\"isActive\":true}")
 check "create bad type -> 400" "$([[ "$HTTP" == "400" ]] && echo 1 || echo 0)"
 
+HTTP=$(req POST "/api/Admin/SpecialOccasion/create" "$TMP/bad_hijri.json" \
+  -d "{\"name\":\"قمری ممنوع\",\"type\":\"Custom\",\"calendarType\":\"Hijri\",\"month\":7,\"day\":13,\"isActive\":true}")
+check "create Hijri -> 400" "$([[ "$HTTP" == "400" ]] && echo 1 || echo 0)"
+check "create Hijri persian message" "$(python3 - "$TMP/bad_hijri.json" <<'PY'
+import json,sys
+d=json.load(open(sys.argv[1],encoding='utf-8'))
+msg=(d.get('message') or '')
+print(1 if 'شمسی' in msg else 0)
+PY
+)"
+
+NO_HIJRI=$(python3 - "$TMP/list0.json" <<'PY'
+import json,sys
+d=json.load(open(sys.argv[1],encoding='utf-8'))
+items=d.get('data') or d.get('Data') or []
+print(0 if any(str(x.get('calendarType') or x.get('CalendarType') or '').lower()=='hijri' for x in items) else 1)
+PY
+)
+check "catalog has no Hijri rows" "$NO_HIJRI"
+FATHER=$(python3 - "$TMP/list0.json" <<'PY'
+import json,sys
+d=json.load(open(sys.argv[1],encoding='utf-8'))
+items=d.get('data') or d.get('Data') or []
+row=next((x for x in items if (x.get('code') or x.get('Code'))=='FATHER_DAY'), None)
+if not row:
+    print(0)
+else:
+    cal=str(row.get('calendarType') or row.get('CalendarType'))
+    print(1 if cal=='Jalali' and int(row.get('month') or row.get('Month'))==10 and int(row.get('day') or row.get('Day'))==2 else 0)
+PY
+)
+check "FATHER_DAY is Jalali 10/2" "$FATHER"
+
 # --- create ---
 NAME="کراول مناسبت $SUFFIX"
 MSG="سلام {{نام}} عزیز! کراول مناسبت $SUFFIX {{نام شرکت}}"
@@ -282,16 +315,20 @@ check "GET missing -> 404" "$([[ "$HTTP" == "404" ]] && echo 1 || echo 0)"
 # update
 EDITED_NAME="کراول ویرایش $SUFFIX"
 HTTP=$(req POST "/api/Admin/SpecialOccasion/${CREATED_ID}/update" "$TMP/update.json" \
-  -d "{\"name\":\"$EDITED_NAME\",\"type\":\"Holiday\",\"category\":\"Congratulation\",\"calendarType\":\"Gregorian\",\"month\":12,\"day\":25,\"defaultMessage\":\"متن ویرایش‌شده $SUFFIX\",\"sortOrder\":8888,\"isActive\":true}")
+  -d "{\"name\":\"$EDITED_NAME\",\"type\":\"Holiday\",\"category\":\"Congratulation\",\"calendarType\":\"Jalali\",\"month\":10,\"day\":2,\"defaultMessage\":\"متن ویرایش‌شده $SUFFIX\",\"sortOrder\":8888,\"isActive\":true}")
 check "update -> 200" "$([[ "$HTTP" == "200" ]] && echo 1 || echo 0)"
 check "update success" "$([[ "$(json_get "$TMP/update.json" success)" == "true" ]] && echo 1 || echo 0)"
 check "update name" "$([[ "$(json_get "$TMP/update.json" data.name)" == "$EDITED_NAME" ]] && echo 1 || echo 0)"
-check "update calendar Gregorian" "$([[ "$(json_get "$TMP/update.json" data.calendarType)" == "Gregorian" ]] && echo 1 || echo 0)"
-check "update day/month" "$([[ "$(json_get "$TMP/update.json" data.month)" == "12" && "$(json_get "$TMP/update.json" data.day)" == "25" ]] && echo 1 || echo 0)"
+check "update calendar stays Jalali" "$([[ "$(json_get "$TMP/update.json" data.calendarType)" == "Jalali" ]] && echo 1 || echo 0)"
+check "update day/month" "$([[ "$(json_get "$TMP/update.json" data.month)" == "10" && "$(json_get "$TMP/update.json" data.day)" == "2" ]] && echo 1 || echo 0)"
+
+HTTP=$(req POST "/api/Admin/SpecialOccasion/${CREATED_ID}/update" "$TMP/bad_cal.json" \
+  -d "{\"name\":\"$EDITED_NAME\",\"type\":\"Holiday\",\"category\":\"Congratulation\",\"calendarType\":\"Gregorian\",\"month\":12,\"day\":25,\"defaultMessage\":\"متن\",\"sortOrder\":1,\"isActive\":true}")
+check "update Gregorian -> 400" "$([[ "$HTTP" == "400" ]] && echo 1 || echo 0)"
 
 # deactivate
 HTTP=$(req POST "/api/Admin/SpecialOccasion/${CREATED_ID}/update" "$TMP/off.json" \
-  -d "{\"name\":\"$EDITED_NAME\",\"type\":\"Holiday\",\"category\":\"Congratulation\",\"calendarType\":\"Gregorian\",\"month\":12,\"day\":25,\"defaultMessage\":\"متن ویرایش‌شده $SUFFIX\",\"sortOrder\":8888,\"isActive\":false}")
+  -d "{\"name\":\"$EDITED_NAME\",\"type\":\"Holiday\",\"category\":\"Congratulation\",\"calendarType\":\"Jalali\",\"month\":10,\"day\":2,\"defaultMessage\":\"متن ویرایش‌شده $SUFFIX\",\"sortOrder\":8888,\"isActive\":false}")
 check "deactivate -> 200" "$([[ "$HTTP" == "200" ]] && echo 1 || echo 0)"
 check "deactivate isActive=false" "$([[ "$(json_get "$TMP/off.json" data.isActive)" == "false" ]] && echo 1 || echo 0)"
 
@@ -319,8 +356,22 @@ PY
 check "inactive visible when includeInactive=true" "$([[ "$ALL_HAS" == "1" ]] && echo 1 || echo 0)"
 
 # reactivate
+python3 - "$TMP/on_body.json" "$EDITED_NAME" "$SUFFIX" <<'PY'
+import json,sys
+open(sys.argv[1],"w",encoding="utf-8").write(json.dumps({
+  "name": sys.argv[2],
+  "type": "Holiday",
+  "category": "Congratulation",
+  "calendarType": "Jalali",
+  "month": 10,
+  "day": 2,
+  "defaultMessage": f"متن ویرایش شده {sys.argv[3]}",
+  "sortOrder": 8888,
+  "isActive": True,
+}, ensure_ascii=False))
+PY
 HTTP=$(req POST "/api/Admin/SpecialOccasion/${CREATED_ID}/update" "$TMP/on.json" \
-  -d "{\"name\":\"$EDITED_NAME\",\"type\":\"Holiday\",\"category\":\"Congratulation\",\"calendarType\":\"Gregorian\",\"month\":12,\"day\":25,\"defaultMessage\":\"متن ویرایش‌شده $SUFFIX\",\"sortOrder\":8888,\"isActive\":true}")
+  -d @"$TMP/on_body.json")
 check "reactivate -> 200" "$([[ "$HTTP" == "200" ]] && echo 1 || echo 0)"
 check "reactivate isActive=true" "$([[ "$(json_get "$TMP/on.json" data.isActive)" == "true" ]] && echo 1 || echo 0)"
 

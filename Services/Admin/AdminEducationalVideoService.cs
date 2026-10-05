@@ -116,6 +116,10 @@ namespace Api_Vapp.Services.Admin
             if (thumbnailUrl.Error != null)
                 return thumbnailUrl.Error;
 
+            var coverError = ValidateCoverFile(dto.CoverImage);
+            if (coverError != null)
+                return coverError;
+
             if (!hasFile && string.IsNullOrWhiteSpace(videoUrl.Value))
             {
                 return ApiResponse<EducationalVideoResponseDto>.BadRequest(
@@ -187,6 +191,13 @@ namespace Api_Vapp.Services.Admin
                 }
             }
 
+            var coverResult = await ApplyCoverAsync(video, dto, cancellationToken);
+            if (coverResult != null)
+            {
+                await RollbackCreateAsync(video, IsUploadedVideoPath(video.VideoUrl) ? video.VideoUrl : null);
+                return coverResult;
+            }
+
             InvalidateActiveCache();
 
             await _audit.WriteAsync(new AuditEntry
@@ -230,6 +241,10 @@ namespace Api_Vapp.Services.Admin
             var thumbnailUrl = NormalizeOptionalUrl(dto.ThumbnailUrl, "لینک تصویر بندانگشتی", allowEmpty: true);
             if (thumbnailUrl.Error != null)
                 return thumbnailUrl.Error;
+
+            var coverError = ValidateCoverFile(dto.CoverImage);
+            if (coverError != null)
+                return coverError;
 
             if (!hasFile && string.IsNullOrWhiteSpace(videoUrl.Value))
             {
@@ -279,12 +294,13 @@ namespace Api_Vapp.Services.Admin
             var before = Snapshot(video);
             var wasActive = video.IsActive;
             var oldVideoUrl = video.VideoUrl;
+            var oldThumbnail = video.ThumbnailUrl;
             var nextVideoUrl = uploadedPath ?? videoUrl.Value!;
 
             video.Title = dto.Title.Trim();
             video.Description = string.IsNullOrWhiteSpace(dto.Description) ? null : dto.Description.Trim();
             video.VideoUrl = nextVideoUrl;
-            video.ThumbnailUrl = thumbnailUrl.Value;
+            video.ThumbnailUrl = ResolveThumbnailWithoutFile(video.ThumbnailUrl, thumbnailUrl.Value, dto.ClearCover);
             video.SortOrder = dto.SortOrder;
             video.IsActive = dto.IsActive;
             video.UpdatedAt = DateTime.UtcNow;
@@ -300,6 +316,17 @@ namespace Api_Vapp.Services.Admin
                     await TryDeleteUploadedFileAsync(uploadedPath, video.Id);
                 return ApiResponse<EducationalVideoResponseDto>.InternalServerError(
                     ControlledErrorHelper.Database);
+            }
+
+            var coverResult = await ApplyCoverAsync(video, dto, cancellationToken);
+            if (coverResult != null)
+                return coverResult;
+
+            if (dto.ClearCover &&
+                IsUploadedVideoPath(oldThumbnail) &&
+                string.IsNullOrWhiteSpace(video.ThumbnailUrl))
+            {
+                await TryDeleteCoverAsync(oldThumbnail!, video.Id);
             }
 
             // حذف فایل قدیمی هنگام جایگزینی با فایل جدید یا لینک خارجی
@@ -352,6 +379,9 @@ namespace Api_Vapp.Services.Admin
 
             if (IsUploadedVideoPath(oldVideoUrl))
                 await TryDeleteUploadedFileAsync(oldVideoUrl, video.Id);
+
+            if (IsUploadedVideoPath(video.ThumbnailUrl))
+                await TryDeleteCoverAsync(video.ThumbnailUrl!, video.Id);
 
             // پاکسازی پوشه موجودیت در صورت باقی‌ماندن فایل‌های یتیم
             try
@@ -485,6 +515,107 @@ namespace Api_Vapp.Services.Admin
         }
 
         private void InvalidateActiveCache() => _cache.Remove(EducationalVideoCacheKeys.ActiveList);
+
+        private const long CoverMaxBytes = SecureFileValidator.ProfileImageMaxBytes;
+
+        private static ApiResponse<EducationalVideoResponseDto>? ValidateCoverFile(IFormFile? file)
+        {
+            if (file == null || file.Length == 0)
+                return null;
+
+            var validationError = SecureFileValidator.ValidateImage(file, CoverMaxBytes, "۵ مگابایت");
+            if (string.IsNullOrEmpty(validationError))
+                return null;
+
+            return ApiResponse<EducationalVideoResponseDto>.BadRequest(
+                validationError,
+                errorCode: ErrorCodes.ValidationFailed);
+        }
+
+        /// <summary>
+        /// بدون فایل جدید: ClearCover کاور را پاک می‌کند؛ در غیر این صورت لینک/مسیر ارسالی یا مقدار قبلی می‌ماند.
+        /// </summary>
+        private static string? ResolveThumbnailWithoutFile(string? current, string? submitted, bool clearCover)
+        {
+            if (clearCover)
+                return null;
+            return submitted ?? current;
+        }
+
+        private async Task<ApiResponse<EducationalVideoResponseDto>?> ApplyCoverAsync(
+            EducationalVideo video,
+            CreateEducationalVideoDto dto,
+            CancellationToken cancellationToken)
+        {
+            var hasCover = dto.CoverImage != null && dto.CoverImage.Length > 0;
+            if (!hasCover)
+                return null;
+
+            var previous = video.ThumbnailUrl;
+            string uploadedPath;
+            try
+            {
+                uploadedPath = await _fileUploadService.UploadFileAsync(
+                    dto.CoverImage!,
+                    FileUploadConstants.EntityType_EducationalVideo,
+                    video.Id,
+                    FileUploadConstants.SubFolder_Images,
+                    cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (ArgumentException ex)
+            {
+                return ApiResponse<EducationalVideoResponseDto>.BadRequest(
+                    ControlledErrorHelper.SanitizeArgumentMessage(ex.Message, ControlledErrorHelper.FileUploadFailed),
+                    errorCode: ErrorCodes.ValidationFailed);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "خطا در آپلود کاور ویدیو آموزشی — Id: {Id}", video.Id);
+                return ApiResponse<EducationalVideoResponseDto>.InternalServerError(
+                    ControlledErrorHelper.FileUploadFailed);
+            }
+
+            video.ThumbnailUrl = uploadedPath;
+            video.UpdatedAt = DateTime.UtcNow;
+            try
+            {
+                await _context.SaveChangesAsync(cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "خطا در ذخیره کاور ویدیو آموزشی — Id: {Id}", video.Id);
+                await TryDeleteCoverAsync(uploadedPath, video.Id);
+                return ApiResponse<EducationalVideoResponseDto>.InternalServerError(ControlledErrorHelper.Database);
+            }
+
+            if (IsUploadedVideoPath(previous) &&
+                !string.Equals(previous, uploadedPath, StringComparison.OrdinalIgnoreCase))
+            {
+                await TryDeleteCoverAsync(previous!, video.Id);
+            }
+
+            return null;
+        }
+
+        private async Task TryDeleteCoverAsync(string path, int videoId)
+        {
+            try
+            {
+                await _fileUploadService.DeleteFileAsync(
+                    path,
+                    FileUploadConstants.EntityType_EducationalVideo,
+                    videoId,
+                    FileUploadConstants.SubFolder_Images);
+            }
+            catch (Exception deleteEx)
+            {
+                _logger.LogWarning(deleteEx, "خطا در حذف کاور ویدیو — Path: {Path}", path);
+            }
+        }
 
         private static (string? Value, ApiResponse<EducationalVideoResponseDto>? Error) NormalizeOptionalUrl(
             string? raw,

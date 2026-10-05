@@ -14,7 +14,11 @@ namespace Api_Vapp.DTOs.Message
         [MinLength(1, ErrorMessage = "حداقل یک دفترچه یا تگ باید انتخاب شود")]
         public List<int> TargetIds { get; set; } = new();
 
-        /// <summary>زمان شروع با offset صریح؛ در سرور به UTC تبدیل می‌شود.</summary>
+        /// <summary>
+        /// زمان شروع کمپین.
+        /// با offset صریح (+03:30 یا Z) همان‌طور که هست به UTC می‌رود؛
+        /// بدون offset (مثل خروجی DateTime.toIso8601String موبایل) ساعت تهران فرض می‌شود.
+        /// </summary>
         public DateTimeOffset? StartAt { get; set; }
 
         [Required(ErrorMessage = "مراحل کمپین الزامی است")]
